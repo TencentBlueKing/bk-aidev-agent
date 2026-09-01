@@ -164,34 +164,20 @@ describe('FileUploadBtn', () => {
 
   // ---------- Props 测试 ----------
   describe('Props 测试', () => {
-    it('accept 默认值应该为 image/*（含 SVG）', () => {
+    it('默认不下发 accept，不限制文件类型', () => {
       wrapper = mount(FileUploadBtn);
 
       const input = wrapper.find('input[type="file"]');
-      expect(input.attributes('accept')).toBe('image/*');
+      expect(input.attributes('accept')).toBeUndefined();
     });
 
-    it('应该支持自定义 accept', () => {
+    it('应该支持自定义 accept 收窄类型', () => {
       wrapper = mount(FileUploadBtn, {
         props: { accept: '.pdf,.doc,.docx' },
       });
 
       const input = wrapper.find('input[type="file"]');
       expect(input.attributes('accept')).toBe('.pdf,.doc,.docx');
-    });
-
-    it('maxFiles 默认值应该为 3', () => {
-      wrapper = mount(FileUploadBtn);
-
-      expect((wrapper.props() as Record<string, unknown>).maxFiles).toBe(3);
-    });
-
-    it('应该支持自定义 maxFiles', () => {
-      wrapper = mount(FileUploadBtn, {
-        props: { maxFiles: 5 },
-      });
-
-      expect((wrapper.props() as Record<string, unknown>).maxFiles).toBe(5);
     });
 
     it('multiple 默认值应该为 true', () => {
@@ -291,9 +277,7 @@ describe('FileUploadBtn', () => {
   // ---------- 文件验证测试 ----------
   describe('文件验证测试', () => {
     it('单次多选时发出全部尺寸合法的文件，不在按钮层按个数截断或提示', async () => {
-      wrapper = mount(FileUploadBtn, {
-        props: { maxFiles: 2 },
-      });
+      wrapper = mount(FileUploadBtn);
 
       const files = [
         createFile('a.png', 1024),
@@ -310,15 +294,31 @@ describe('FileUploadBtn', () => {
     });
 
     it('文件数量不超过限制时不应该显示错误', async () => {
-      wrapper = mount(FileUploadBtn, {
-        props: { maxFiles: 3 },
-      });
+      wrapper = mount(FileUploadBtn);
 
       const files = [createFile('a.png', 1024), createFile('b.png', 1024), createFile('c.png', 1024)];
       await triggerFileChange(wrapper, files);
 
       expect(mockMessage).not.toHaveBeenCalled();
       expect(wrapper.emitted('upload')).toBeTruthy();
+    });
+
+    it('非图片类型文件也应正常发出（已解除类型限制）', async () => {
+      wrapper = mount(FileUploadBtn);
+
+      const files = [
+        createFile('report.pdf', 1024, 'application/pdf'),
+        createFile('data.xlsx', 2048, 'application/vnd.ms-excel'),
+        createFile('archive.zip', 4096, 'application/zip'),
+      ];
+      await triggerFileChange(wrapper, files);
+
+      expect(mockMessage).not.toHaveBeenCalled();
+      expect((wrapper.emitted('upload')?.[0]?.[0] as File[]).map(f => f.name)).toEqual([
+        'report.pdf',
+        'data.xlsx',
+        'archive.zip',
+      ]);
     });
 
     it('应该过滤掉大小为 0 的文件', async () => {
@@ -353,10 +353,8 @@ describe('FileUploadBtn', () => {
       expect(emittedFiles[0].name).toBe('small.png');
     });
 
-    it('maxFiles 较小仍一次发出多选的全部合法文件（个数由上层处理）', async () => {
-      wrapper = mount(FileUploadBtn, {
-        props: { maxFiles: 1 },
-      });
+    it('超过数量上限时仍一次发出多选的全部合法文件（个数由上层处理）', async () => {
+      wrapper = mount(FileUploadBtn);
 
       const files = [createFile('a.png', 1024), createFile('b.png', 1024), createFile('c.png', 1024)];
       await triggerFileChange(wrapper, files);

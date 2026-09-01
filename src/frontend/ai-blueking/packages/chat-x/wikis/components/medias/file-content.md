@@ -88,26 +88,34 @@ sinceVersion: 1.0.0
 
 > **能力域**：媒体文件
 
-文件列表展示组件，支持图片缩略图预览、点击图片全屏预览（`ImagePreview`）、文档卡片展示（文件名/扩展名/文件大小）、图片加载失败占位和删除操作。
+文件列表展示组件，支持图片缩略图预览、点击图片全屏预览（`ImagePreview`）、文件卡片展示（类型图标 / 文件名 / 文件大小）、图片加载失败占位和删除操作。
+
+内部由两个子组件承载单项渲染：
+
+| 子组件             | 源码位置                                                            | 职责                                          |
+| ------------------ | ------------------------------------------------------------------- | --------------------------------------------- |
+| `UploadImageItem`  | `src/components/chat-content/file-content/upload-image-item.vue`  | 图片缩略图、加载失败占位、hover 删除徽标      |
+| `UploadFileItem`   | `src/components/chat-content/file-content/upload-file-item.vue`   | 180px 文件卡片（`FileIcon` + 文件名 + 大小） |
 
 ## 渲染决策逻辑
 
-每个文件按以下优先级决定渲染方式：
+先分组、再渲染。设计稿要求**图片始终排在文件前方**，两类各自成行：
 
 ```
-file.url 存在？
-├── 是 → 图片模式（用 file.url 作为 <img src>，点击可全屏预览）
-│        图片加载失败 → 错误占位（粉色背景 + 红色边框 + 灰色图标）
-└── 否 → 检查 mimeType 或 file.file?.type
-         ├── 以 'image/' 开头 → 图片模式（用 getFilePreviewUrl(file.file) 作为 src，点击可全屏预览）
-         └── 其他            → 文档卡片模式（图标 + 文件名 + 扩展名 + 大小）
+splitUploadFiles(files)  // 单次遍历
+├── 图片组（.ai-files-content-row.is-images）
+│     判定依据：mimeType 或 file.file?.type 以 'image/' 开头
+│     src：file.url 优先，否则用本地 File 的 blob URL（按 key 缓存，移除 / 卸载时 revoke）
+│     加载失败 → 错误占位（粉色背景 + 红色边框 + 灰色图标），且不进入预览列表
+└── 文件组（.ai-files-content-row.is-files）
+      文件卡片：类型图标（FileIcon，按文件名解析扩展名）+ 文件名 + 文件大小
 ```
 
-> **注意**：`file.url` 存在时**无论文件 MIME 类型是什么**都会走图片模式。若要将 PDF 等非图片文件显示为文档卡片，确保不设置 `url` 字段（或设为 `undefined`）。
+> **是否为图片只看 MIME，不看 `url`。** 解除上传类型限制后，任意文件上传成功都会拿到 `url`，若按 `url` 判断会把 PDF / DOC 渲染成破图。因此 `url` 只决定 `<img src>` 从哪里来，不参与图片判定。
 
-## 基础用法（文档文件）
+## 基础用法（文件卡片）
 
-无 `url` 字段、MIME 类型非 `image/*` 的文件，渲染为文档卡片（文档图标 + 文件名 + 扩展名 + 大小）：
+MIME 类型非 `image/*` 的文件，渲染为固定宽 180px 的文件卡片（类型图标 + 文件名 + 大小）。类型图标与文件产物侧栏共用 `FileIcon` 的扩展名映射，`pdf` / `py` / `docx` 等各有专属图标，未登记的扩展名回退兜底图标：
 
 ```vue
 <template>
@@ -133,7 +141,7 @@ file.url 存在？
 </script>
 ```
 
-**渲染效果**（悬停文件卡片，右上角出现删除按钮）
+**渲染效果**（悬停文件卡片，底色加深并在右上角出现删除徽标）
 
 <div class="demo">
   <FileContentComp :files="docFiles" @delete-file="handleDeleteFile" />
@@ -141,7 +149,7 @@ file.url 存在？
 
 ## 图片文件预览
 
-设置了 `url` 字段时，渲染为 48×48 的图片缩略图（`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
+MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击图片可打开全屏预览（内部集成 `ImagePreview` 组件），支持缩放、旋转、下载等操作：
 
 ```vue
 <script setup lang="ts">
@@ -150,9 +158,9 @@ file.url 存在？
 
   const imageFiles = ref<Partial<UploadFile>[]>([
     {
-      url: 'https://example.com/cat.jpg', // 有 url → 图片模式
+      url: 'https://example.com/cat.jpg',
       filename: 'cat.jpg',
-      mimeType: 'image/jpeg',
+      mimeType: 'image/jpeg', // 图片判定依据
       file: new File([''], 'cat.jpg', { type: 'image/jpeg' }),
     },
     {
@@ -205,9 +213,9 @@ file.url 存在？
   <FileContentComp :files="errorImageFiles" @delete-file="handleDeleteFile" />
 </div>
 
-## 混合文件（图片 + 文档）
+## 混合文件（图片 + 文件）
 
-同一列表中可同时包含图片和文档文件，横向 flex 布局、换行排列：
+同一列表可同时包含图片和其他文件，组件内部自动把图片排在前一行、文件排在后一行，各行内部横向排列并按需换行：
 
 ```vue
 <script setup lang="ts">
@@ -241,19 +249,20 @@ file.url 存在？
 
 ## 仅有 filename（无 File 对象）
 
-从服务端恢复的历史文件没有 `File` 对象时，仍可渲染文档卡片，但**文件大小不显示**，扩展名从 `filename` 或 `mimeType` 推断：
+从服务端恢复的历史文件没有 `File` 对象时仍可渲染文件卡片，类型图标从 `filename` 推断。文件大小取 `size` 字段；未下发 `size` 时大小节点不渲染：
 
 ```vue
 <script setup lang="ts">
   const remoteFiles = [
-    // 无 file 对象，文件大小显示为空
+    // 无 file 对象，未带 size，文件大小不渲染
     { filename: 'server-report.pdf', mimeType: 'application/pdf' },
-    { filename: 'config.json', mimeType: 'application/json' },
+    // 带 size 时正常显示「1.00M」
+    { filename: 'config.json', mimeType: 'application/json', size: 1024 * 1024 },
   ];
 </script>
 ```
 
-**渲染效果**（大小区域为空）
+**渲染效果**（未带 `size` 的项无大小行）
 
 <div class="demo">
   <FileContentComp :files="remoteFiles" :readonly="true" />
@@ -296,10 +305,20 @@ file.url 存在？
 
 ### Props
 
-| 属性名   | 类型                    | 默认值  | 必填 | 说明                            |
-| -------- | ----------------------- | ------- | ---- | ------------------------------- |
-| files    | `Partial<UploadFile>[]` | -       | ✅   | 文件列表                        |
-| readonly | `boolean`               | `false` | -    | 只读模式，`true` 时隐藏删除按钮 |
+| 属性名   | 类型                    | 默认值    | 必填 | 说明                                        |
+| -------- | ----------------------- | --------- | ---- | ------------------------------------------- |
+| files    | `Partial<UploadFile>[]` | -         | ✅   | 文件列表                                    |
+| readonly | `boolean`               | `false`   | -    | 只读模式，`true` 时隐藏删除徽标与 hover 态 |
+| variant  | `'input' \| 'message'`  | `'input'` | -    | 展示形态，见下方「展示形态」                |
+
+### 展示形态（variant）
+
+只影响图片缩略图的圆角描边与整体对齐，文件卡片两种形态一致。图片尺寸规则两种形态相同：**定高 48px，宽度按原图比例，并在 48~120px 之间夹取**（竖图不至于过窄，长图不会撑破容器），超出部分由 `object-fit: cover` 裁切。
+
+| variant     | 使用场景           | 图片圆角 / 描边 | 对齐   |
+| ----------- | ------------------ | --------------- | ------ |
+| `'input'`   | 输入框内待发送态   | 8px / `#f0f1f5` | 左对齐 |
+| `'message'` | 用户消息内已发送态 | 4px / `#eaebf0` | 右对齐 |
 
 ### Events
 
@@ -311,19 +330,21 @@ file.url 存在？
 
 ### 图片模式
 
-| 条件                               | 图片 src                         | 点击行为       |
-| ---------------------------------- | -------------------------------- | -------------- |
-| `file.url` 有值（优先）            | `file.url`                       | 打开全屏预览   |
-| MIME 以 `image/` 开头（无 url 时） | `URL.createObjectURL(file.file)` | 打开全屏预览   |
-| 图片加载失败                       | 错误占位                         | 不进入预览列表 |
+| 条件                | 图片 src                                          | 点击行为       |
+| ------------------- | ------------------------------------------------- | -------------- |
+| `file.url` 有值     | `file.url`                                        | 打开全屏预览   |
+| 无 url、有 `File`   | `URL.createObjectURL(file.file)`（按 key 缓存）  | 打开全屏预览   |
+| 图片加载失败        | 错误占位                                          | 不进入预览列表 |
 
-### 文档卡片模式
+blob URL 按附件 key 缓存，同一文件重复渲染不会重复创建；文件被移除或组件卸载时统一 `revokeObjectURL`。
 
-| 字段     | 取值优先级                                                                                                   |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| 文件名   | `file.filename` → `file.file?.name`                                                                          |
-| 扩展名   | 有 `file.file`：取文件名最后一段 `.xxx` 或 MIME 后缀<br>无 `file.file`：取 `filename` 后缀 → `mimeType` 后缀 |
-| 文件大小 | 仅当有 `file.file`（`File` 对象）时显示，否则为空                                                            |
+### 文件卡片模式
+
+| 字段     | 取值优先级                                    |
+| -------- | --------------------------------------------- |
+| 文件名   | `file.filename` → `file.file?.name`           |
+| 类型图标 | 由文件名解析扩展名，交给 `FileIcon` 映射      |
+| 文件大小 | `file.file?.size` → `file.size`；都没有则不渲染 |
 
 ## 类型定义
 
@@ -346,48 +367,43 @@ type UploadFile = BinaryInputContent & {
 // 二进制内容基础类型
 interface BinaryInputContent {
   type: 'binary';
-  url?: string; // 文件访问地址，存在时强制走图片模式
-  filename?: string; // 文件名（用于文档卡片）
-  mimeType?: string; // MIME 类型（用于图片判断和扩展名推断）
+  url?: string; // 文件访问地址，只决定 <img src> 来源，不参与图片判定
+  filename?: string; // 文件名（文件卡片展示 + 类型图标解析）
+  mimeType?: string; // MIME 类型（图片判定依据）
+  size?: number; // 文件字节数，发送时由原始 File 写入
 }
 ```
 
-## 工具函数（内部使用）
+## 工具函数（`src/utils/upload-file.ts`）
+
+组件内的取值与分组逻辑都收敛在这里，`ChatInput`、`UserMessage` 共用同一套判定：
 
 ```typescript
-// 判断是否走图片模式
-// ⚠️ file.url 存在时直接返回 true，不判断 MIME 类型
-const isImage = (file: Partial<UploadFile>): boolean => {
-  if (file.url) return true;
-  return isImageFile(file.mimeType || file.file?.type);
-};
+import {
+  getFileIdentity,
+  getUploadFileKey,
+  getUploadFileName,
+  getUploadFileSize,
+  isUploadImageFile,
+  splitUploadFiles,
+} from '@blueking/chat-x';
 
-// 判断 MIME 类型是否为图片
-const isImageFile = (mimeType?: string): boolean => {
-  if (!mimeType) return false;
-  return mimeType.startsWith('image/');
-};
+// File 身份：文件名 + 大小 + 修改时间，用于去重与列表 key
+getFileIdentity(file); // 'report.pdf_2048_1700000000000'
 
-// 获取 File 对象的临时预览 URL（无 url 时的图片模式备选）
-const getFilePreviewUrl = (file?: File): string => {
-  if (!file) return '';
-  return URL.createObjectURL(file);
-};
+// 附件稳定 key：待发送态用 File 身份（上传成功回填 url 后不变），已发送态退回 url / 文件名
+getUploadFileKey({ file }); // 'report.pdf_2048_1700000000000'
+getUploadFileKey({ url: 'https://x/a.pdf' }); // 'https://x/a.pdf'
 
-// 获取文件扩展名
-const getFileExtension = (file?: File): string => {
-  if (!file) return '';
-  return file.name.split('.').pop() || file.type?.split('/').pop() || '';
-};
+// 是否按图片渲染：只看 MIME，有 url 也不例外
+isUploadImageFile({ mimeType: 'application/pdf', url: 'https://x/a.pdf' }); // false
 
-// 格式化文件大小（需要 File 对象）
-const formatFileSize = (file?: File): string => {
-  if (!file) return '';
-  const size = file.size;
-  const units = ['B', 'KB', 'M', 'GB'];
-  const index = Math.floor(Math.log2(size || 1) / 10);
-  return `${(size / Math.pow(1024, index)).toFixed(2)} ${units[index]}`;
-};
+// 文件名 / 字节数取值优先级
+getUploadFileName({ filename: 'remote.pdf', file }); // 'remote.pdf'
+getUploadFileSize({ size: 2048 }); // 2048
+
+// 单次遍历分出图片组与其他文件组（图片在前）
+splitUploadFiles(files); // { imageFiles, otherFiles }
 ```
 
 ## 使用场景

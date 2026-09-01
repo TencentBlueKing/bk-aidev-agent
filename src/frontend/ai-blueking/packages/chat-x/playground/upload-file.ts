@@ -41,6 +41,25 @@ export interface UploadFileResponse {
   [key: string]: unknown;
 }
 
+/** mock 上传延时区间（毫秒）：模拟网络往返，便于观察附件从 pending 到 success */
+const MOCK_UPLOAD_DELAY_RANGE = [300, 800] as const;
+
+/**
+ * 本地 mock 上传：不依赖后端网关与 access_token，playground 开箱即用。
+ *
+ * 返回原文件的 blob URL 作为 download_url —— 发送后的消息里附件只剩
+ * `url / filename / mimeType / size`（没有 File 引用），只有 url 真实可达
+ * 才能看到图片缩略图与全屏预览的实际效果。
+ *
+ * blob URL 在页面存活期内一直有效，playground 不做回收。
+ */
+export async function mockUploadFileToSession(file: File): Promise<{ download_url: string }> {
+  const [minDelay, maxDelay] = MOCK_UPLOAD_DELAY_RANGE;
+  await new Promise(resolve => setTimeout(resolve, minDelay + Math.random() * (maxDelay - minDelay)));
+
+  return { download_url: URL.createObjectURL(file) };
+}
+
 /**
  * 批量上传文件
  * @param files 文件数组
@@ -60,7 +79,13 @@ export async function uploadFilesToSession(
  * @returns Promise<UploadFileResponse>
  */
 export async function uploadFileToSession(options: UploadFileOptions): Promise<UploadFileResponse> {
-  const { sessionCode, file, host = import.meta.env.VITE_API_HOST || 'https://your-api-gateway.example.com', accessToken, fileName } = options;
+  const {
+    sessionCode,
+    file,
+    host = import.meta.env.VITE_API_HOST || 'https://your-api-gateway.example.com',
+    accessToken,
+    fileName,
+  } = options;
 
   const finalFileName = fileName || file.name;
   const uploadUrl = `${host}/bkaidev/resource/chat/v1/session/${sessionCode}/upload/${encodeURIComponent(finalFileName)}/`;

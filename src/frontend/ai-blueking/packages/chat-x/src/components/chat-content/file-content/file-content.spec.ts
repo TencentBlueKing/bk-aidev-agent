@@ -33,22 +33,13 @@ import FileContent from './file-content.vue';
 
 import type { UploadFile } from '../../../types';
 
+vi.mock('tippy.js/dist/tippy.css', () => ({}));
+
 vi.mock('../../../icons', () => ({
-  DeleteCircleIcon: defineComponent({
-    name: 'DeleteCircleIcon',
-    emits: ['click'],
-    setup(_, { emit }) {
-      return () =>
-        h('span', {
-          class: 'mock-delete-icon',
-          onClick: () => emit('click'),
-        });
-    },
-  }),
-  DocumentIcon: defineComponent({
-    name: 'DocumentIcon',
+  CloseIcon: defineComponent({
+    name: 'CloseIcon',
     setup() {
-      return () => h('span', { class: 'mock-document-icon' });
+      return () => h('span', { class: 'mock-close-icon' });
     },
   }),
   ImageErrorIcon: defineComponent({
@@ -59,11 +50,14 @@ vi.mock('../../../icons', () => ({
   }),
 }));
 
-vi.mock('../../../utils', () => ({
-  formatFileSize: (file?: File) => (file ? `${file.size}B` : ''),
-  getFileExtension: (file?: File) => (file ? file.name.split('.').pop() || '' : ''),
-  getFilePreviewUrl: (file?: File) => (file ? `blob:preview-${file.name}` : ''),
-  isImageFile: (mimeType?: string) => !!mimeType?.startsWith('image/'),
+vi.mock('../../file-icon/file-icon.vue', () => ({
+  default: defineComponent({
+    name: 'FileIcon',
+    props: { fileName: { type: String, default: '' } },
+    setup(props) {
+      return () => h('span', { class: 'mock-file-icon', 'data-file-name': props.fileName });
+    },
+  }),
 }));
 
 vi.mock('../../image-preview/image-preview.vue', () => ({
@@ -81,11 +75,18 @@ vi.mock('../../image-preview/image-preview.vue', () => ({
   }),
 }));
 
+const IMAGE_SELECTOR = '.ai-upload-image-item-thumb';
+const FILE_SELECTOR = '.ai-upload-file-item';
+const DELETE_SELECTOR = '.ai-upload-image-item-delete, .ai-upload-file-item-delete';
+
 describe('FileContent', () => {
   let wrapper: VueWrapper;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // jsdom 未实现 createObjectURL / revokeObjectURL
+    URL.createObjectURL = vi.fn((file: Blob) => `blob:${(file as File).name}`);
+    URL.revokeObjectURL = vi.fn();
   });
 
   afterEach(() => {
@@ -95,39 +96,63 @@ describe('FileContent', () => {
   describe('渲染测试', () => {
     it('应该正确渲染组件', () => {
       wrapper = mount(FileContent, {
-        props: {
-          files: [],
-        },
+        props: { files: [] },
       });
 
       expect(wrapper.find('.ai-files-content').exists()).toBe(true);
     });
 
-    it('应该渲染图片文件', () => {
-      const files: Partial<UploadFile>[] = [{ file: new File(['img'], 'photo.png', { type: 'image/png' }) }];
+    it('应该按图片渲染缩略图', () => {
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' },
+      ];
 
-      wrapper = mount(FileContent, {
-        props: { files },
-      });
+      wrapper = mount(FileContent, { props: { files } });
 
-      expect(wrapper.find('.file-content-image').exists()).toBe(true);
+      expect(wrapper.find(IMAGE_SELECTOR).exists()).toBe(true);
+      expect(wrapper.find(FILE_SELECTOR).exists()).toBe(false);
     });
 
-    it('应该渲染非图片文件', () => {
-      const files: Partial<UploadFile>[] = [{ file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }) }];
+    it('应该按文件卡片渲染非图片文件，并显示文件名与大小', () => {
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }), mimeType: 'application/pdf' },
+      ];
 
-      wrapper = mount(FileContent, {
-        props: { files },
-      });
+      wrapper = mount(FileContent, { props: { files } });
 
-      expect(wrapper.find('.file-content-object').exists()).toBe(true);
-      expect(wrapper.find('.file-name').text()).toBe('doc.pdf');
+      expect(wrapper.find(FILE_SELECTOR).exists()).toBe(true);
+      expect(wrapper.find('.ai-upload-file-item-name').text()).toBe('doc.pdf');
+      expect(wrapper.find('.ai-upload-file-item-size').text()).toBe('4.00B');
+    });
+
+    it('文件图标应按文件名解析（与文件产物侧栏同一套映射）', () => {
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }), mimeType: 'application/pdf' },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find('.mock-file-icon').attributes('data-file-name')).toBe('doc.pdf');
+    });
+
+    it('图片应始终排在文件前方', () => {
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }), mimeType: 'application/pdf' },
+        { file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      const rows = wrapper.findAll('.ai-files-content-row');
+      expect(rows).toHaveLength(2);
+      expect(rows[0].classes()).toContain('is-images');
+      expect(rows[1].classes()).toContain('is-files');
     });
 
     it('应该渲染 ImagePreview 组件', () => {
       wrapper = mount(FileContent, {
         props: {
-          files: [{ file: new File(['img'], 'photo.png', { type: 'image/png' }) }],
+          files: [{ file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' }],
         },
       });
 
@@ -139,61 +164,123 @@ describe('FileContent', () => {
     it('readonly 为 false 时应该显示删除按钮', () => {
       wrapper = mount(FileContent, {
         props: {
-          files: [{ file: new File(['data'], 'test.txt', { type: 'text/plain' }) }],
+          files: [{ file: new File(['data'], 'test.txt', { type: 'text/plain' }), mimeType: 'text/plain' }],
           readonly: false,
         },
       });
 
-      expect(wrapper.find('.mock-delete-icon').exists()).toBe(true);
+      expect(wrapper.find(DELETE_SELECTOR).exists()).toBe(true);
     });
 
     it('readonly 为 true 时不应该显示删除按钮', () => {
       wrapper = mount(FileContent, {
         props: {
-          files: [{ file: new File(['data'], 'test.txt', { type: 'text/plain' }) }],
+          files: [{ file: new File(['data'], 'test.txt', { type: 'text/plain' }), mimeType: 'text/plain' }],
           readonly: true,
         },
       });
 
-      expect(wrapper.find('.mock-delete-icon').exists()).toBe(false);
+      expect(wrapper.find(DELETE_SELECTOR).exists()).toBe(false);
     });
 
-    it('有 url 的文件应被识别为图片', () => {
-      const files: Partial<UploadFile>[] = [{ url: 'http://example.com/image.png', filename: 'image.png' }];
-
+    it('variant 默认为 input，图片使用输入态样式', () => {
       wrapper = mount(FileContent, {
-        props: { files },
+        props: {
+          files: [{ url: 'http://example.com/a.png', mimeType: 'image/png', filename: 'a.png' }],
+        },
       });
 
-      expect(wrapper.find('.file-content-image').exists()).toBe(true);
+      expect(wrapper.find(IMAGE_SELECTOR).classes()).toContain('is-input');
+    });
+
+    it('variant 为 message 时图片使用消息态样式', () => {
+      wrapper = mount(FileContent, {
+        props: {
+          files: [{ url: 'http://example.com/a.png', mimeType: 'image/png', filename: 'a.png' }],
+          variant: 'message' as const,
+        },
+      });
+
+      expect(wrapper.find('.ai-files-content').classes()).toContain('is-message');
+      expect(wrapper.find(IMAGE_SELECTOR).classes()).toContain('is-message');
+    });
+
+    it('有 url 但非图片类型的文件应渲染为文件卡片而非缩略图', () => {
+      const files: Partial<UploadFile>[] = [
+        { url: 'http://example.com/report.pdf', mimeType: 'application/pdf', filename: 'report.pdf' },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find(IMAGE_SELECTOR).exists()).toBe(false);
+      expect(wrapper.find(FILE_SELECTOR).exists()).toBe(true);
+    });
+
+    it('消息态附件带 size 时应显示文件大小', () => {
+      const files: Partial<UploadFile>[] = [
+        {
+          url: 'http://example.com/report.pdf',
+          mimeType: 'application/pdf',
+          filename: 'report.pdf',
+          size: 1024 * 1024,
+        },
+      ];
+
+      wrapper = mount(FileContent, { props: { files, readonly: true, variant: 'message' as const } });
+
+      expect(wrapper.find('.ai-upload-file-item-size').text()).toBe('1.00M');
+    });
+
+    it('消息态附件无 size 时不渲染大小节点', () => {
+      const files: Partial<UploadFile>[] = [
+        { url: 'http://example.com/report.pdf', mimeType: 'application/pdf', filename: 'report.pdf' },
+      ];
+
+      wrapper = mount(FileContent, { props: { files, readonly: true, variant: 'message' as const } });
+
+      expect(wrapper.find('.ai-upload-file-item-size').exists()).toBe(false);
     });
   });
 
   describe('事件测试', () => {
-    it('点击删除按钮应该触发 deleteFile 事件', async () => {
-      const file: Partial<UploadFile> = { file: new File(['data'], 'test.txt', { type: 'text/plain' }) };
+    it('点击文件删除按钮应该触发 deleteFile 事件', async () => {
+      const file: Partial<UploadFile> = {
+        file: new File(['data'], 'test.txt', { type: 'text/plain' }),
+        mimeType: 'text/plain',
+      };
 
       wrapper = mount(FileContent, {
-        props: {
-          files: [file],
-          readonly: false,
-        },
+        props: { files: [file], readonly: false },
       });
 
-      await wrapper.find('.mock-delete-icon').trigger('click');
+      await wrapper.find('.ai-upload-file-item-delete').trigger('click');
 
-      expect(wrapper.emitted('deleteFile')).toBeTruthy();
+      expect(wrapper.emitted('deleteFile')?.[0]).toEqual([file]);
+    });
+
+    it('点击图片删除按钮应该触发 deleteFile 事件', async () => {
+      const file: Partial<UploadFile> = {
+        file: new File(['img'], 'photo.png', { type: 'image/png' }),
+        mimeType: 'image/png',
+      };
+
+      wrapper = mount(FileContent, {
+        props: { files: [file], readonly: false },
+      });
+
+      await wrapper.find('.ai-upload-image-item-delete').trigger('click');
+
       expect(wrapper.emitted('deleteFile')?.[0]).toEqual([file]);
     });
 
     it('点击图片应该打开预览', async () => {
-      const files: Partial<UploadFile>[] = [{ file: new File(['img'], 'photo.png', { type: 'image/png' }) }];
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' },
+      ];
 
-      wrapper = mount(FileContent, {
-        props: { files },
-      });
+      wrapper = mount(FileContent, { props: { files } });
 
-      await wrapper.find('.file-content-image').trigger('click');
+      await wrapper.find(IMAGE_SELECTOR).trigger('click');
 
       const preview = wrapper.findComponent({ name: 'ImagePreview' });
       expect(preview.props('visible')).toBe(true);
@@ -202,45 +289,86 @@ describe('FileContent', () => {
 
     it('点击第二张图片应该预览对应索引', async () => {
       const files: Partial<UploadFile>[] = [
-        { file: new File(['img1'], 'a.png', { type: 'image/png' }) },
-        { file: new File(['img2'], 'b.jpg', { type: 'image/jpeg' }) },
+        { file: new File(['img1'], 'a.png', { type: 'image/png' }), mimeType: 'image/png' },
+        { file: new File(['img2'], 'b.jpg', { type: 'image/jpeg' }), mimeType: 'image/jpeg' },
       ];
 
-      wrapper = mount(FileContent, {
-        props: { files },
-      });
+      wrapper = mount(FileContent, { props: { files } });
 
-      const images = wrapper.findAll('.file-content-image');
-      await images[1].trigger('click');
+      await wrapper.findAll(IMAGE_SELECTOR)[1].trigger('click');
 
       const preview = wrapper.findComponent({ name: 'ImagePreview' });
-      expect(preview.props('visible')).toBe(true);
       expect(preview.props('current')).toBe(1);
+    });
+
+    it('加载失败的图片应降级为错误占位且不进入预览列表', async () => {
+      const files: Partial<UploadFile>[] = [
+        { file: new File(['img1'], 'broken.png', { type: 'image/png' }), mimeType: 'image/png' },
+        { file: new File(['img2'], 'ok.png', { type: 'image/png' }), mimeType: 'image/png' },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      await wrapper.findAll(IMAGE_SELECTOR)[0].trigger('error');
+
+      expect(wrapper.find('.mock-image-error-icon').exists()).toBe(true);
+      expect(wrapper.findComponent({ name: 'ImagePreview' }).props('images')).toHaveLength(1);
+    });
+  });
+
+  describe('资源回收测试', () => {
+    it('同一文件多次渲染只创建一个 blob URL', async () => {
+      const file: Partial<UploadFile> = {
+        file: new File(['img'], 'photo.png', { type: 'image/png' }),
+        mimeType: 'image/png',
+      };
+
+      wrapper = mount(FileContent, { props: { files: [file] } });
+      await wrapper.setProps({ readonly: true });
+
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+
+    it('卸载时应回收已创建的 blob URL', () => {
+      wrapper = mount(FileContent, {
+        props: {
+          files: [{ file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' }],
+        },
+      });
+
+      wrapper.unmount();
+
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:photo.png');
+    });
+
+    it('文件被移除后应回收对应 blob URL', async () => {
+      wrapper = mount(FileContent, {
+        props: {
+          files: [{ file: new File(['img'], 'photo.png', { type: 'image/png' }), mimeType: 'image/png' }],
+        },
+      });
+
+      await wrapper.setProps({ files: [] });
+
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:photo.png');
     });
   });
 
   describe('边界情况测试', () => {
     it('应该处理空文件列表', () => {
-      wrapper = mount(FileContent, {
-        props: { files: [] },
-      });
+      wrapper = mount(FileContent, { props: { files: [] } });
 
       expect(wrapper.find('.ai-files-content').exists()).toBe(true);
-      expect(wrapper.find('.file-content').exists()).toBe(false);
+      expect(wrapper.find('.ai-files-content-row').exists()).toBe(false);
     });
 
-    it('应该正确渲染混合类型文件', () => {
-      const files: Partial<UploadFile>[] = [
-        { file: new File(['img'], 'photo.png', { type: 'image/png' }) },
-        { file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }) },
-      ];
+    it('无 mimeType 的文件退回文件卡片，不渲染破图', () => {
+      const files: Partial<UploadFile>[] = [{ filename: 'unknown-file' }];
 
-      wrapper = mount(FileContent, {
-        props: { files },
-      });
+      wrapper = mount(FileContent, { props: { files } });
 
-      expect(wrapper.find('.file-content-image').exists()).toBe(true);
-      expect(wrapper.find('.file-content-object').exists()).toBe(true);
+      expect(wrapper.find(IMAGE_SELECTOR).exists()).toBe(false);
+      expect(wrapper.find('.ai-upload-file-item-name').text()).toBe('unknown-file');
     });
   });
 });

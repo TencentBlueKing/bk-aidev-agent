@@ -173,15 +173,17 @@ ai-chat-input-container（padding: 0 16px 16px，底部间距 16px）
 
 ## 发送状态（messageStatus）
 
-`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
+`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空且没有附件时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
 
-| `messageStatus`               | 输入框有内容时按钮表现                                 | 输入框空时               |
+| `messageStatus`               | 输入框有内容或已有附件时按钮表现                       | 输入框空且无附件时       |
 | ----------------------------- | ------------------------------------------------------ | ------------------------ |
 | `complete` / `stop` / `error` | 蓝色发送按钮，点击触发 `onSendMessage`                 | 灰色禁用                 |
 | `streaming` / `pending` / `fetching` | 蓝色停止按钮（Loading 图标），点击触发 `onStopSending` | 蓝色停止按钮（仍可点击） |
 | `disabled`                    | 灰色禁用，点击无效                                     | 灰色禁用                 |
 
-> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则**已有上传附件时视为可发送**（纯附件消息无需输入文字）；再否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+
+> **纯附件消息**：只上传附件不输入文字时，`onSendMessage` 的 `content` 只含 `binary` 项，**不会**附带空文本段。
 
 ### onSendMessage 第三参数 options（UserQuestion 上下文）
 
