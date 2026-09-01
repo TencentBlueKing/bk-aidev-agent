@@ -34,7 +34,7 @@ schema_view = get_schema_view(
 WxAiBotViewSetWithoutLogin = method_decorator(login_exempt, name="dispatch")(WxAiBotViewSet)
 IndexViewForLocalE2E = (
     method_decorator(login_exempt, name="dispatch")(IndexView)
-    if os.getenv("E2E_AUTH_MOCK_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+    if settings.ENVIRONMENT == "dev" and os.getenv("E2E_AUTH_MOCK_ENABLED", "").lower() in {"1", "true", "yes", "on"}
     else IndexView
 )
 urlpatterns = [
