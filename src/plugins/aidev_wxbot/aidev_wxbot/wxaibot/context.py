@@ -13,6 +13,7 @@ WxBot 流式协议适配层。
 - 并发：同 group_id 下每条消息独立 stream_id，队列按 stream_id 隔离，互不串流。
 """
 
+import contextlib
 import json
 import logging
 import time
@@ -27,6 +28,8 @@ from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.context import Context, Message
 from aidev_wxbot.context.message import MsgType
 from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS, THINKING_MESSAGE
+from aidev_wxbot.wxaibot.stream_registry import stream_registry
+from aidev_wxbot.wxaibot.tracing import CLIENT, record_failure, wxbot_span
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +69,8 @@ def _normalize_url(raw_url: str) -> str:
             parts.netloc,
             quote(parts.path, safe="/%:@+-._~"),
             quote(parts.query, safe="=&%:@/+,-._~"),
-            quote(parts.fragment, safe="%:@/+,-._~"),
+            # Hash 路由可能包含查询参数，必须保留分隔符及已有的百分号编码。
+            quote(parts.fragment, safe="?=&%:@/+,-._~"),
         )
     )
 
@@ -108,10 +112,8 @@ class LlmChunkMsg(BaseModel):
     @staticmethod
     def _safe_delete_queue(rabbitmq_client, queue_name: str):
         """安全删除队列，忽略异常以避免影响主流程"""
-        try:
+        with contextlib.suppress(Exception):
             rabbitmq_client.delete_queue(queue_name)
-        except Exception:
-            pass
 
     def append_to_cache(self, rabbitmq_client):
         """将消息内容发送到RabbitMQ队列"""
@@ -132,8 +134,9 @@ class LlmChunkMsg(BaseModel):
                 "timestamp": time.time(),
             }
             # 使用独立的连接发送消息，避免并发冲突
+            queue_expires_ms = max(QUEUE_EXPIRES_MS, (settings.MAX_MESSAGE_TIME + 60) * 1000)
             rabbitmq_client.declare_queue(
-                queue_name, durable=False, auto_delete=False, arguments={"x-expires": QUEUE_EXPIRES_MS}
+                queue_name, durable=False, auto_delete=False, arguments={"x-expires": queue_expires_ms}
             )
             success = rabbitmq_client.publish_message("", queue_name, message_data)
             if not success:
@@ -150,6 +153,13 @@ class LlmChunkMsg(BaseModel):
             stream_time = int(self.stream_id.split("_")[1])
             # 检查消息是否超时
             if time.time() - stream_time > settings.MAX_MESSAGE_TIME:  # 消息时间太久
+                cancelled = stream_registry.cancel(self.stream_id)
+                logger.warning(
+                    "event=wxbot_stream_timeout stream_id=%s max_message_time=%s agent_cancelled=%s",
+                    self.stream_id,
+                    settings.MAX_MESSAGE_TIME,
+                    cancelled,
+                )
                 self._safe_delete_queue(rabbitmq_client, queue_name)
                 return stream_msg("消息超时！请重新发送！", True, self.stream_id)
 
@@ -237,11 +247,15 @@ class ContextGenerator:
     def generate(self) -> WxWorkAiBotContext:
         logger.info(f"企微传递的参数是 {json.dumps(self.payload, ensure_ascii=False)}")
         sender_code = self.payload.get("from", {}).get("userid")
-        try:
-            sender_id = BkAiDevApi().convert_to_rtx(sender_code)["userid"]
-        except Exception as e:
-            logger.error(f"convert_to_rtx 出错: {e}")
-            sender_id = sender_code
+        with wxbot_span("wxbot.identity.convert_to_rtx", kind=CLIENT) as span:
+            try:
+                sender_id = BkAiDevApi().convert_to_rtx(sender_code)["userid"]
+                span.set_attribute("wxbot.identity.fallback", False)
+            except Exception as e:
+                record_failure(span, e)
+                span.set_attribute("wxbot.identity.fallback", True)
+                logger.error("convert_to_rtx 出错: %s", type(e).__name__)
+                sender_id = sender_code
         from_type = self.payload.get("chattype")
         chat_id = self.payload.get("chatid")
         ctx_data = {

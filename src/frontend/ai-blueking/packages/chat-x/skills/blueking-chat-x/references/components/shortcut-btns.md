@@ -24,18 +24,18 @@
 ## 组件结构
 
 ```
-div.shortcut-btns（flex，gap: 4px，width: 100%，min-width: 168px，max-width: 1000px，overflow: hidden）
+div.ai-shortcut-btns（flex，gap: 4px，width: 100%，min-width: 168px，max-width: 1000px，overflow: hidden）
   │
-  ├── ShortcutBtn.shortcut-btns-item × N（每个快捷指令）
+  ├── ShortcutBtn.ai-shortcut-btns-item × N（每个快捷指令）
   │     height: 24px，padding: 0 6px，white-space: nowrap，background: #fff，border-radius: 4px
-  │     溢出时追加 .shortcut-btns-item-hidden（position: absolute; visibility: hidden; pointer-events: none; opacity: 0）
+  │     溢出时追加 .ai-shortcut-btns-item-hidden（position: absolute; visibility: hidden; pointer-events: none; opacity: 0）
   │       注意：隐藏项仍在 DOM 中，仅通过 CSS 不可见，offsetWidth 仍可读
   │
   └── [hiddenShortcuts.length > 0] Tippy（trigger="manual"，append-to="body"，interactive）
         │  offset=[0,6]，z-index=SHORTCUT_MENU_Z_INDEX，theme="ai-chat-box-light light"
-        ├── ShortcutBtn.shortcut-btns-more（触发按钮）
+        ├── ShortcutBtn.ai-shortcut-btns-more（触发按钮）
         │     MoreAgentIcon（rotate(90deg)） + "更多"
-        └── #content: div.shortcut-menu
+        └── #content: div.ai-shortcut-menu
               ShortcutBtn（mode="menu"） × 隐藏数量
 ```
 
@@ -245,16 +245,16 @@ interface BaseShortcutComponent<T> {
 
 | 类名                         | 样式                                                                       | 说明                                               |
 | ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------- |
-| `.shortcut-btns`             | `width: 100%; min-width: 168px; max-width: 1000px; overflow: hidden`       | 容器，宽度撑满父元素，超出 1000px 截断             |
-| `.shortcut-btns-item`        | `height: 24px; padding: 0 6px; background: #fff; border-radius: 4px`       | 每个快捷指令按钮的外层包装 class                   |
-| `.shortcut-btns-item-hidden` | `position: absolute; visibility: hidden; pointer-events: none; opacity: 0` | 溢出按钮的隐藏态；仍在 DOM 中以便 offsetWidth 计算 |
-| `.shortcut-btns-more`        | `flex-shrink: 0; padding: 0 6px`                                           | "更多"按钮，`MoreAgentIcon` 旋转 90°               |
-| `.shortcut-menu`             | `@include menu.ai-common-menu-style`                                       | 下拉菜单容器样式                                   |
+| `.ai-shortcut-btns`             | `width: 100%; min-width: 168px; max-width: 1000px; overflow: hidden`       | 容器，宽度撑满父元素，超出 1000px 截断             |
+| `.ai-shortcut-btns-item`        | `height: 24px; padding: 0 6px; background: #fff; border-radius: 4px`       | 每个快捷指令按钮的外层包装 class                   |
+| `.ai-shortcut-btns-item-hidden` | `position: absolute; visibility: hidden; pointer-events: none; opacity: 0` | 溢出按钮的隐藏态；仍在 DOM 中以便 offsetWidth 计算 |
+| `.ai-shortcut-btns-more`        | `flex-shrink: 0; padding: 0 6px`                                           | "更多"按钮，`MoreAgentIcon` 旋转 90°               |
+| `.ai-shortcut-menu`             | `@include menu.ai-common-menu-style`                                       | 下拉菜单容器样式                                   |
 
 ## 注意事项
 
 1. **`key` 字段优先于 `id`**：`v-for` 使用 `shortcut.key || shortcut.id`，当多个指令 `id` 相同但代表不同实例时，可通过 `key` 字段区分
-2. **溢出项不可交互**：`.shortcut-btns-item-hidden` 通过 `pointer-events: none` 屏蔽点击，不会误触发事件
+2. **溢出项不可交互**：`.ai-shortcut-btns-item-hidden` 通过 `pointer-events: none` 屏蔽点击，不会误触发事件
 3. **"更多"菜单 Teleport 至 body**：Tippy 使用 `append-to="body"`，避免被父容器的 `overflow: hidden` 裁剪
 4. **容器宽度限制**：`min-width: 168px` 和 `max-width: 1000px` 来自 `$chat-input-min-width` / `$chat-input-max-width` 变量，与输入框宽度保持一致
 5. **表单流程在外部**：`ShortcutBtns` 只负责显示和触发事件，`components` 的表单弹窗逻辑需配合 `ShortcutRender` 实现（`ChatInput` 已内置此流程）

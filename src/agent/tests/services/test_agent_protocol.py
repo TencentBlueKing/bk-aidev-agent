@@ -132,10 +132,10 @@ class TestAgentBuildContext:
             agent_type=AgentType.FLOW,
             agent_config=_make_agent_config("x"),
             resource_manager=MagicMock(),
-            flow=FlowBuildExtras(task_id="T-1", poll_interval=0.5),
+            flow=FlowBuildExtras(task_id=1, poll_interval=0.5),
             extra={"trace_id": "tx-1"},
         )
-        assert ctx.flow.task_id == "T-1"
+        assert ctx.flow.task_id == 1
         assert ctx.flow.poll_interval == 0.5
         assert ctx.extra == {"trace_id": "tx-1"}
 
@@ -247,7 +247,7 @@ class TestFlowAgentCompletionAgentBuild:
         ctx = _make_flow_ctx(
             flow=FlowBuildExtras(
                 flow_resource_manager=flow_rm,
-                task_id="preset-task",
+                task_id=1,
                 flow_start_params={"k": "v"},
                 poll_interval=0.1,
                 poll_timeout=1.0,
@@ -257,7 +257,7 @@ class TestFlowAgentCompletionAgentBuild:
         assert isinstance(agent, FlowAgentCompletionAgent)
         assert agent.resource_manager is flow_rm  # flow.flow_resource_manager 优先
         assert agent.session_code == "sess-1"
-        assert agent.task_id == "preset-task"
+        assert agent.task_id == 1
         assert agent.flow_start_params == {"k": "v"}
         assert agent.poll_interval == 0.1
         assert agent.poll_timeout == 1.0
@@ -323,19 +323,33 @@ class TestFactoryEndToEnd:
             session_context_data=[],
             username="bob",
             flow_resource_manager=flow_rm,
-            task_id="task-9",
+            task_id=9,
             flow_start_params={"a": 1},
             poll_interval=0.2,
             poll_timeout=2.0,
         )
         assert isinstance(agent, FlowAgentCompletionAgent)
-        assert agent.task_id == "task-9"
+        assert agent.task_id == 9
         assert agent.flow_start_params == {"a": 1}
         assert agent.session_code == "sess-2"
         assert agent.poll_interval == 0.2
         assert agent.poll_timeout == 2.0
         assert agent.resource_manager is flow_rm
         assert agent.username == "bob"
+
+    def test_flow_factory_coerces_session_str_task_id(self):
+        """工厂是 task_id 唯一入口：历史 session 数字字符串收成 int"""
+        flow_rm = MagicMock(name="flow_rm")
+        agent = AgentInstanceFactory.build_agent(
+            agent_type=AgentType.FLOW,
+            build_type=AgentBuildType.DIRECT,
+            session_code="sess-hist",
+            session_context_data=[],
+            username="bob",
+            flow_resource_manager=flow_rm,
+            task_id="1576996",
+        )
+        assert agent.task_id == 1576996
 
     def test_make_build_context_appends_token_usage_callback_with_channel_type(self):
         resource_manager = MagicMock(name="rm")

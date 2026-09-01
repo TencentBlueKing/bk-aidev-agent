@@ -31,12 +31,30 @@ from aidev_bkplugin.services.agent_session import SessionManager
 
 from .auth import WxFlowAgentClient
 from .context import LlmChunkMsg
+from .direct_stream import AgentStream
 from .stream import consume_chat_stream, consume_flow_stream
+from .stream_registry import stream_registry
 
 if TYPE_CHECKING:
     from ..utils.rabbitmq import RabbitMQClient
 
 logger = getLogger(__name__)
+
+WECOM_AGENT_EXECUTION_POLICY = (
+    "企业微信会话执行规则：\n"
+    "1. 用户已给出目标对象、时间范围、数据类型和返回数量时，直接调用工具；"
+    "过滤条件等可选参数未提供时使用无过滤默认值，不得重复询问确认。\n"
+    "2. 用户要求先说明将开始查询时，先只输出一句简短说明，然后立即调用工具。\n"
+    "3. 用户要求返回 N 条记录时，最终回复必须完整展示实际获得的 N 条不同记录，"
+    "使用序号 1 到 N 的 Markdown 表格；不得用摘要、样例或省略号代替。\n"
+    "4. 工具实际返回少于 N 条时，完整展示已有记录并明确实际条数；不得虚构数据。"
+)
+WECOM_LONG_CONNECTION_EXECUTION_POLICY = (
+    WECOM_AGENT_EXECUTION_POLICY + "\n5. 如果工具把结果保存到文件，必须继续读取文件并把记录写入最终回复；"
+    "在明细表格完成前不得只返回概览、文件路径或询问用户是否需要查看详情。"
+)
+WECOM_AGENT_TEMPERATURE = 0.1
+WECOM_AGENT_RETRY_STRATEGY = "sdk"
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +76,16 @@ class AgentStrategy(Protocol):
         rabbitmq_client: RabbitMQClient,
     ) -> None: ...
 
+    def open_stream(
+        self,
+        *,
+        content: str,
+        username: str,
+        thread_id: str,
+        group_id: str,
+        retry_strategy: str | None = None,
+    ) -> AgentStream: ...
+
 
 # ---------------------------------------------------------------------------
 # Chat Agent 策略
@@ -78,6 +106,52 @@ class ChatAgentStrategy:
         rabbitmq_client: RabbitMQClient,
     ) -> None:
         start_time = time.time()
+        agent_stream = self.open_stream(
+            content=content,
+            username=username,
+            thread_id=thread_id,
+            group_id=group_id,
+        )
+        result = agent_stream.generator
+        session_code = agent_stream.session_code
+        logger.info(f"stream_id:{stream_id} chat agent ok, session_code={session_code}")
+        stream_registry.register(stream_id, session_code)
+        try:
+            if agent_stream.is_stream:
+                consume_chat_stream(
+                    result,
+                    stream_id,
+                    start_time,
+                    rabbitmq_client,
+                    on_run_started=lambda run_id: stream_registry.set_run_id(stream_id, run_id),
+                    is_cancelled=lambda: stream_registry.is_cancel_requested(stream_id),
+                )
+                return
+
+            # 非流式兜底
+            final_content = ""
+            if isinstance(result, dict):
+                choices = result.get("choices") or [{}]
+                final_content = (choices[0].get("delta") or {}).get("content", "") or ""
+            if not stream_registry.is_cancel_requested(stream_id):
+                LlmChunkMsg(
+                    content=final_content or "未获取到回答内容",
+                    is_finish=True,
+                    stream_id=stream_id,
+                ).append_to_cache(rabbitmq_client)
+        finally:
+            stream_registry.unregister(stream_id)
+
+    def open_stream(
+        self,
+        *,
+        content: str,
+        username: str,
+        thread_id: str,
+        group_id: str,
+        retry_strategy: str | None = None,
+    ) -> AgentStream:
+        """创建 Chat Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
         execute_kwargs = build_execute_kwargs(
             {"stream": True, "thread_id": thread_id, "executor": username, "group_id": group_id},
             username,
@@ -89,23 +163,19 @@ class ChatAgentStrategy:
             execute_kwargs=execute_kwargs,
             channel_type=ChannelType.RTX.value,
             save_content=True,
+            transient_system_prompt=(
+                WECOM_LONG_CONNECTION_EXECUTION_POLICY if retry_strategy else WECOM_AGENT_EXECUTION_POLICY
+            ),
+            enable_query_clarification=False,
+            temperature=WECOM_AGENT_TEMPERATURE,
+            retry_strategy=retry_strategy,
         )
-        logger.info(f"stream_id:{stream_id} chat agent ok, session_code={session_code}")
-
-        if execute_kwargs.stream:
-            consume_chat_stream(result, stream_id, start_time, rabbitmq_client)
-            return
-
-        # 非流式兜底
-        final_content = ""
-        if isinstance(result, dict):
-            choices = result.get("choices") or [{}]
-            final_content = (choices[0].get("delta") or {}).get("content", "") or ""
-        LlmChunkMsg(
-            content=final_content or "未获取到回答内容",
-            is_finish=True,
-            stream_id=stream_id,
-        ).append_to_cache(rabbitmq_client)
+        return AgentStream(
+            kind="chat",
+            generator=result,
+            session_code=session_code,
+            is_stream=bool(execute_kwargs.stream),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -135,23 +205,48 @@ class FlowAgentStrategy:
         rabbitmq_client: RabbitMQClient,
     ) -> None:
         start_time = time.time()
+        agent_stream = self.open_stream(
+            content=content,
+            username=username,
+            thread_id=thread_id,
+            group_id=group_id,
+        )
+        session_code = agent_stream.session_code
+        stream_registry.register(stream_id, session_code)
+        try:
+            logger.info(f"stream_id:{stream_id} flow agent started, session_code={session_code}")
+            consume_flow_stream(
+                agent_stream.generator,
+                stream_id,
+                start_time,
+                rabbitmq_client,
+                session_code=session_code,
+                on_run_started=lambda run_id: stream_registry.set_run_id(stream_id, run_id),
+                is_cancelled=lambda: stream_registry.is_cancel_requested(stream_id),
+            )
+        finally:
+            stream_registry.unregister(stream_id)
 
-        # 1. username 由 ContextGenerator 通过 convert_to_rtx 转换而来
+    def open_stream(
+        self,
+        *,
+        content: str,
+        username: str,
+        thread_id: str,
+        group_id: str,
+        retry_strategy: str | None = None,
+    ) -> AgentStream:
+        """创建 Flow Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
         rtx_username = username
         logger.info(f"[FlowAgentStrategy] 使用 RTX: {rtx_username}")
         turn_id = uuid.uuid4().hex
-
-        # 2. 获取/创建 session
         session_manager = SessionManager(username=rtx_username)
-        session_code = session_manager.get_or_create_by_thread_id(thread_id)
-
-        # 3. 保存用户输入
+        session_code = session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=ChannelType.RTX.value,
+        )
         session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
 
-        # 4. 构建 agent 依赖（统一走 AgentInstanceFactory）
-        # FlowAgent 不需要工厂 SESSION 路径的会话上下文清洗，统一走 DIRECT；
-        # session_code 通过工厂 __init__ 透传到 factory.session_code，再由
-        # FlowAgentCompletionAgent.build 取用。
         agent_instance = AgentInstanceFactory.build_agent(
             agent_type=AgentType.FLOW,
             build_type=AgentBuildType.DIRECT,
@@ -164,19 +259,16 @@ class FlowAgentStrategy:
                 turn_id=turn_id,
             ),
             username=rtx_username,
-            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)；
-            # flow_resource_manager 是 flow start 接口专用 client（带特殊认证），与
-            # 工厂的 resource_manager（用于会话上下文等通用 API）解耦。
             flow_resource_manager=WxFlowAgentClient(username, rtx_username=rtx_username),
             flow_start_params={"session_code": session_code, "channel_type": ChannelType.RTX.value},
             poll_interval=float(agent_settings.FLOW_AGENT_POLL_INTERVAL),
             poll_timeout=float(agent_settings.FLOW_AGENT_POLL_TIMEOUT),
         )
-
-        # 5. 执行并消费 SSE 流
-        generator = agent_instance.execute()
-        logger.info(f"stream_id:{stream_id} flow agent started, session_code={session_code}")
-        consume_flow_stream(generator, stream_id, start_time, rabbitmq_client, session_code=session_code)
+        return AgentStream(
+            kind="flow",
+            generator=agent_instance.execute(),
+            session_code=session_code,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,19 @@ from functools import wraps
 
 logger = logging.getLogger(__name__)
 
+try:
+    from aidev_agent.packages.opentelemetry.resilience import (
+        current_operation_scope,
+        is_timeout_error,
+        record_operation_retry,
+        record_operation_timeout,
+    )
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    current_operation_scope = None
+    is_timeout_error = None
+    record_operation_retry = None
+    record_operation_timeout = None
+
 
 def timeit(message=""):
     """
@@ -58,12 +71,31 @@ def retry(max_retries=5, max_seconds=1800):
                 try:
                     try_cnt += 1
                     return func(*args, **kwargs)
-                except Exception:  # noqa: PERF203
+                except Exception as error:  # noqa: PERF203
+                    exhausted = try_cnt >= max_retries or (time.time() - start_time) >= max_seconds
+                    outcome = "exhausted" if exhausted else "scheduled"
+                    if record_operation_retry is not None:
+                        record_operation_retry(
+                            outcome=outcome,
+                            attempt=try_cnt,
+                            max_attempts=max_retries,
+                            error=error,
+                        )
+                    if (
+                        is_timeout_error is not None
+                        and is_timeout_error(error)
+                        and record_operation_timeout is not None
+                    ):
+                        record_operation_timeout(
+                            scope=current_operation_scope() if current_operation_scope is not None else "external",
+                            outcome=outcome,
+                            error=error,
+                        )
                     logger.info(
                         f"\n\n=====\n>>>>> 执行出错，重试中。当前尝试次数: {try_cnt}。"
                         f"详细错误情况：\n{traceback.format_exc()}\n=====\n\n"
                     )
-                    if try_cnt >= max_retries or (time.time() - start_time) >= max_seconds:
+                    if exhausted:
                         # 如果达到最大重试次数或者超过最大时间限制，最后一次重试的异常将被抛出。
                         # 这样可以确保在所有重试都失败的情况下，异常会被正确地抛出并处理。
                         raise

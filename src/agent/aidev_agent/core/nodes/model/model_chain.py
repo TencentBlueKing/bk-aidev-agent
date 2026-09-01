@@ -33,6 +33,12 @@ from tenacity import RetryError
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
 
+try:
+    from aidev_agent.packages.opentelemetry.resilience import record_model_rate_limit, record_model_retry
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    record_model_rate_limit = None
+    record_model_retry = None
+
 from .pydantic_models import (
     RETRYABLE_EXCEPTIONS,
     ProcessorContext,
@@ -42,6 +48,14 @@ from .quality_gate import QualityGate
 from .utils import promote_plain_text_tool_call_message
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_retry_strategy(llm) -> str:
+    configured = getattr(llm, "retry_strategy", None)
+    if configured:
+        return configured
+    primary = getattr(llm, "runnable", None)
+    return getattr(primary, "retry_strategy", None) or settings.LLM_RETRY_STRATEGY
 
 
 def _promote_message(message: AnyMessage, allowed_tool_names: set[str]) -> AnyMessage:
@@ -72,9 +86,9 @@ def _extract_query_text_and_images(query: Any) -> tuple[Any, list[dict[str, Any]
             text = item.get("text")
             if isinstance(text, str):
                 text_parts.append(text)
-        elif item_type == "image_url":
-            image_contents.append(item)
-        elif item_type == "binary" and str(item.get("mime_type") or "").startswith("image/"):
+        elif (
+            item_type == "image_url" or item_type == "binary" and str(item.get("mime_type") or "").startswith("image/")
+        ):
             image_contents.append(item)
 
     return "\n".join(text_parts), image_contents
@@ -182,6 +196,8 @@ def _build_model_chain(
         Runnable，支持 .invoke() 和 .ainvoke()
     """
 
+    retry_strategy = _resolve_retry_strategy(llm)
+
     # ------------------------------------------------------------------
     # 内部函数：消息渲染
     # ------------------------------------------------------------------
@@ -223,18 +239,49 @@ def _build_model_chain(
             invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
             response = llm_with_tools.invoke(ctx.messages, config=ctx.config, **invoke_kwargs)
-        except RateLimitError:
-            if settings.LLM_RETRY_STRATEGY != "sdk":
+        except RateLimitError as error:
+            if record_model_rate_limit is not None:
+                record_model_rate_limit(retry_strategy=retry_strategy, error=error)
+            if retry_strategy != "sdk":
                 raise
             ctx.model_chain_state.empty_content_retries += 1
+            attempt = ctx.model_chain_state.empty_content_retries
+            max_attempts = ctx.model_chain_state.max_retries
             logger.warning(
                 "Rate limit error, waiting 60s before retry (%d/%d)",
-                ctx.model_chain_state.empty_content_retries,
-                ctx.model_chain_state.max_retries,
+                attempt,
+                max_attempts,
             )
-            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_retries:
+            if attempt > max_attempts:
+                if record_model_retry is not None:
+                    record_model_retry(
+                        outcome="exhausted",
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        wait_seconds=60,
+                        retry_strategy=retry_strategy,
+                        error=error,
+                    )
                 raise
+            if record_model_retry is not None:
+                record_model_retry(
+                    outcome="scheduled",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    wait_seconds=60,
+                    retry_strategy=retry_strategy,
+                    error=error,
+                )
             time.sleep(60)
+            if record_model_retry is not None:
+                record_model_retry(
+                    outcome="started",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    wait_seconds=60,
+                    retry_strategy=retry_strategy,
+                    error=error,
+                )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
         ctx.response = response
         return ctx
@@ -256,18 +303,61 @@ def _build_model_chain(
             invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
             response = await llm_with_tools.ainvoke(ctx.messages, config=ctx.config, **invoke_kwargs)
-        except RateLimitError:
-            if settings.LLM_RETRY_STRATEGY != "sdk":
+        except RateLimitError as error:
+            if record_model_rate_limit is not None:
+                record_model_rate_limit(retry_strategy=retry_strategy, error=error)
+            if retry_strategy != "sdk":
                 raise
             ctx.model_chain_state.empty_content_retries += 1
+            attempt = ctx.model_chain_state.empty_content_retries
+            max_attempts = ctx.model_chain_state.max_retries
             logger.warning(
                 "Rate limit error, waiting 60s before retry (%d/%d)",
-                ctx.model_chain_state.empty_content_retries,
-                ctx.model_chain_state.max_retries,
+                attempt,
+                max_attempts,
             )
-            if ctx.model_chain_state.empty_content_retries > ctx.model_chain_state.max_retries:
+            if attempt > max_attempts:
+                if record_model_retry is not None:
+                    record_model_retry(
+                        outcome="exhausted",
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        wait_seconds=60,
+                        retry_strategy=retry_strategy,
+                        error=error,
+                    )
                 raise
-            await asyncio.sleep(60)
+            if record_model_retry is not None:
+                record_model_retry(
+                    outcome="scheduled",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    wait_seconds=60,
+                    retry_strategy=retry_strategy,
+                    error=error,
+                )
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                if record_model_retry is not None:
+                    record_model_retry(
+                        outcome="cancelled",
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        wait_seconds=60,
+                        retry_strategy=retry_strategy,
+                        error=error,
+                    )
+                raise
+            if record_model_retry is not None:
+                record_model_retry(
+                    outcome="started",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    wait_seconds=60,
+                    retry_strategy=retry_strategy,
+                    error=error,
+                )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
         ctx.response = response
         return ctx

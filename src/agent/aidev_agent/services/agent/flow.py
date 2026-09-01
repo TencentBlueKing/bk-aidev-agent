@@ -64,7 +64,7 @@ class FlowAgentCompletionAgent(BaseModel):
 
     flow_start_params: dict = Field(default_factory=dict, description="传给 flow_agent/start/ 接口的请求体")
 
-    task_id: str | None = Field(default=None, description="已有的 task_id，指定后跳过 start 直接轮询")
+    task_id: int | None = Field(default=None, description="已有的 task_id，指定后跳过 start 直接轮询")
 
     resume_from_node: str | None = Field(
         default=None,
@@ -192,7 +192,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(error_event)
                 return
 
-            # 优先使用已指定的 task_id，否则调用 start 接口
+            # 优先使用已指定的 task_id，否则调用 start 接口。入口已收成 int，此处不再转换
             task_id = self.task_id
             if not task_id:
                 logger.debug(
@@ -218,7 +218,7 @@ class FlowAgentCompletionAgent(BaseModel):
             if not self.task_id:
                 start_event = self._make_custom_event(
                     name=CustomMessageType.FLOW_AGENT_START.value,
-                    value=[{"task_id": str(task_id)}],
+                    value=[{"task_id": task_id}],
                 )
                 self._dispatch_event(start_event)
                 yield encoder.encode(start_event)
@@ -226,7 +226,7 @@ class FlowAgentCompletionAgent(BaseModel):
             elif self.resume_from_node:
                 resumed_event = self._make_custom_event(
                     name=CustomMessageType.FLOW_AGENT_RESTART.value,
-                    value=[{"task_id": str(task_id), "action": self.resume_from_node}],
+                    value=[{"task_id": task_id, "action": self.resume_from_node}],
                 )
                 self._dispatch_event(resumed_event)
                 yield encoder.encode(resumed_event)
@@ -242,7 +242,7 @@ class FlowAgentCompletionAgent(BaseModel):
 
             # 轮询任务状态
             rm = self._get_client()
-            yield from self._poll_task(rm, str(task_id), encoder, run_id)
+            yield from self._poll_task(rm, task_id, encoder, run_id)
 
         except StreamCancelledError as e:
             # 任务被取消，通过 generator 机制向外传递异常
@@ -256,7 +256,7 @@ class FlowAgentCompletionAgent(BaseModel):
             yield from self._emit_error_and_finish(encoder, run_id, str(e))
 
     def _poll_task(
-        self, client: ResourceManagerProtocol, task_id: str, encoder: EventEncoder, run_id: str
+        self, client: ResourceManagerProtocol, task_id: int, encoder: EventEncoder, run_id: str
     ) -> Generator[str, None, None]:
         """轮询任务状态并产出 SSE 事件
 
@@ -376,7 +376,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 )
                 # 兼容 task_outputs 和 outputs 两种字段名
                 end_value = {
-                    "task_id": str(task_id),
+                    "task_id": task_id,
                     "task_outputs": task_info.get("task_outputs", task_info.get("outputs", {})),
                 }
                 if task_state in FLOW_TASK_FAILED_STATES:
@@ -462,7 +462,7 @@ class FlowAgentCompletionAgent(BaseModel):
         return CustomEvent(type=EventType.CUSTOM, name=name, value=value)
 
     def _emit_cancel_result(
-        self, encoder: EventEncoder, task_id: str, last_task_info: dict | None
+        self, encoder: EventEncoder, task_id: int, last_task_info: dict | None
     ) -> Generator[str, None, None]:
         """发送取消后的 flow_agent_result 事件
 

@@ -86,6 +86,7 @@ opentelemetry = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aidev-agent", extra = ["opentelemetry"] },
     { name = "djangorestframework" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -104,6 +105,7 @@ provides-extras = ["opentelemetry"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aidev-agent", extras = ["opentelemetry"], specifier = ">=2.2.2rc28" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
     { name = "pytest", specifier = ">=7.4.4,<9" },
     { name = "pytest-cov", specifier = ">=4.1.0,<4.2.0" },

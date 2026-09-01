@@ -51,7 +51,7 @@ class AGUISessionWriter(BaseSessionWriter):
         username: str = "",
         tools: list | None = None,
         turn_id: str = "",
-        task_id: str = "",
+        task_id: int | str = "",
     ):
         """初始化 API 回写器
 
@@ -334,7 +334,7 @@ class AGUISessionWriter(BaseSessionWriter):
                 )
                 time.sleep(delay)
 
-    def update_flow_agent_info(self, task_id: str) -> None:
+    def update_flow_agent_info(self, task_id: int | str) -> None:
         """更新 session 中的 Flow Agent task_id
 
         通过 session_property.flow_info 持久化 task_id 到 session 元数据，

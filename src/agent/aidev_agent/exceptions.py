@@ -26,6 +26,10 @@ class AgentException(AIDevException):
     MESSAGE = "Agent异常"
 
 
+class AgentDeadlineExceededError(TimeoutError):
+    """The configured total Agent/session runtime limit was exhausted."""
+
+
 def find_mcp_errors(exc):
     if isinstance(exc, McpError):
         _logger.exception(f"MCP error: {exc}")

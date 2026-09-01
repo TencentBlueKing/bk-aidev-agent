@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from aidev_agent.pydantic_models import (
     AgentExecutorKwargs,
     AgentOptions,
@@ -10,6 +9,7 @@ from aidev_agent.pydantic_models import (
     IntentRecognition,
     KnowledgebaseSettings,
     SessionContentExtra,
+    SessionContentProperty,
 )
 from aidev_agent.services.common_agent import CommonQAAgent
 
@@ -54,6 +54,12 @@ def test_chat_prompt():
 
     chat_prompt = ChatPrompt(role="system", content="aaa")
     assert chat_prompt.content == "aaa"
+
+
+def test_session_content_property_keeps_trace_id():
+    trace_id = "a" * 32
+
+    assert SessionContentProperty(trace_id=trace_id).model_dump()["trace_id"] == trace_id
 
 
 def test_legacy_agent_options_allow_extra_fields():

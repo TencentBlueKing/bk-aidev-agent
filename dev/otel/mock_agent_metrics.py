@@ -408,6 +408,34 @@ def _record_initial_error_samples(
         },
         error=MockToolInvocationError("mock tool invocation failed"),
     )
+    retry_attributes = {
+        "model_role": "primary",
+        "retry_strategy": "sdk",
+        "error.type": "RateLimitError",
+        "outcome": "encountered",
+    }
+    recorder.record_llm_rate_limit(retry_attributes)
+    recorder.record_llm_retry({**retry_attributes, "outcome": "scheduled"}, wait_seconds=60)
+    recorder.record_llm_retry({**retry_attributes, "outcome": "started"})
+    recorder.record_llm_retry({**retry_attributes, "outcome": "exhausted"})
+    fallback_attributes = {
+        "model_role": "fallback",
+        "error.type": "RateLimitError",
+    }
+    recorder.record_llm_fallback({**fallback_attributes, "outcome": "started"})
+    recorder.record_llm_fallback({**fallback_attributes, "outcome": "succeeded"})
+    recorder.record_llm_fallback({**fallback_attributes, "outcome": "failed"})
+    recorder.record_operation_timeout(
+        {"timeout.scope": "session", "error.type": "AgentDeadlineExceededError", "outcome": "cancelled"}
+    )
+    recorder.record_operation_timeout({"timeout.scope": "tool", "error.type": "TimeoutError", "outcome": "failed"})
+    recorder.record_operation_timeout(
+        {"timeout.scope": "external", "error.type": "ReadTimeout", "outcome": "scheduled"}
+    )
+    recorder.record_operation_retry({"operation.scope": "tool", "error.type": "TimeoutError", "outcome": "scheduled"})
+    recorder.record_operation_retry(
+        {"operation.scope": "external", "error.type": "ReadTimeout", "outcome": "exhausted"}
+    )
     for handler_type in handlers:
         recorder.record_message_publish(
             handler_type=handler_type,

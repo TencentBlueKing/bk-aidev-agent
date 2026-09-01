@@ -163,7 +163,7 @@ class LocalBackend:
 
         返回的平台原始上下文列表（``session_context_data``）将通过
         ``ctx.session_context_data`` 传入 ``ChatCompletionAgent.build(ctx)``，
-        复用 ``ChatAgentBuilder.build_chat_history`` → ``convert_history_to_messages``
+        复用 ``ChatAgentBuilder.build_chat_history`` → ``convert_chat_history_to_messages``
         管道完成转换，无需在本层重复实现。
 
         Args:

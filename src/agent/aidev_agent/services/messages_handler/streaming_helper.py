@@ -142,12 +142,14 @@ class GeneratorStreamingHelper:
         message_handler: BaseMessageQueueHandler | None = None,
         thread_id: str | None = None,
         defer_cleanup_on_complete: bool = False,
+        producer_observer: Any = None,
     ) -> None:
         self.message_handler = message_handler if message_handler else message_handler_factory.get()
         self.thread_id = thread_id or uuid.uuid4().hex
         # 后台 drain（无 SSE 下游）场景：读到 EOD 时不立即 mark_completed 清队列，
         # 保留缓存历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
+        self.producer_observer = producer_observer
         self._producer_completion_error: Exception | None = None
         self.run_id: str = ""
         self._cancel_event: threading.Event | None = None
@@ -1299,6 +1301,8 @@ class GeneratorStreamingHelper:
                 if (is_run_finished and cancel_finished_emitted) or (not is_run_finished and cancel_error_emitted):
                     continue
                 self.message_handler.put(self.thread_id, encoded_event)
+                if self.producer_observer is not None:
+                    self.producer_observer.on_chunk(encoded_event)
                 _record_published_sse_event()
                 if event_handler is not None:
                     try:
@@ -1357,6 +1361,8 @@ class GeneratorStreamingHelper:
                     # 初始化帧也由后台 producer 写入。RUN_STARTED 到达后立即提交，
                     # 避免等待批量写入周期，同时保持 MESSAGES_SNAPSHOT 在其之前。
                     self.message_handler.flush(self.thread_id)
+                if self.producer_observer is not None:
+                    self.producer_observer.on_chunk(chunk)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
                 if is_run_finished:
                     _complete_session()
@@ -1383,6 +1389,8 @@ class GeneratorStreamingHelper:
                         if is_run_finished:
                             run_finished_seen = True
                         self.message_handler.put(self.thread_id, event)
+                        if self.producer_observer is not None:
+                            self.producer_observer.on_chunk(event)
                         _record_published_sse_event()
                         if is_run_finished:
                             _complete_session()
@@ -1420,14 +1428,14 @@ class GeneratorStreamingHelper:
                         self.thread_id,
                         expected_run_id,
                     )
-                    self.message_handler.put(
-                        self.thread_id,
-                        emit_run_finished_event(
-                            thread_id=self.thread_id,
-                            run_id=expected_run_id,
-                            event_handler=event_handler,
-                        ),
+                    fallback = emit_run_finished_event(
+                        thread_id=self.thread_id,
+                        run_id=expected_run_id,
+                        event_handler=event_handler,
                     )
+                    self.message_handler.put(self.thread_id, fallback)
+                    if self.producer_observer is not None:
+                        self.producer_observer.on_chunk(fallback)
                     _record_published_sse_event()
                     _complete_session()
 
@@ -1480,6 +1488,8 @@ class GeneratorStreamingHelper:
 
                 if on_complete and self._supports_replay_from_start():
                     _complete_session()
+                if self.producer_observer is not None:
+                    self.producer_observer.on_complete(self._producer_completion_error)
                 if self._producer_completion_error is not None:
                     raise self._producer_completion_error
             finally:

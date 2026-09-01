@@ -11,6 +11,12 @@ from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, ASK_USER_QUESTION_SKIPPED_CONTENT
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import CustomMessageType, SessionPersistenceEventNames
+from aidev_agent.core.nodes.model.chat_history_assembly import (
+    _filter_unmatched_tool_calls,
+    _remove_reference_doc,
+    convert_chat_history_to_messages,
+    inject_role_system,
+)
 from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_agent.enums import PromptRole
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
@@ -34,6 +40,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import ToolException, tool
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph.message import add_messages
 
 
 class _ConcreteWriter(BaseSessionWriter):
@@ -1048,8 +1055,8 @@ def test_chat_agent_builder_ignores_none_extra_in_last_user_message():
     assert builder._specific_resources == []
 
 
-def test_build_chat_history_prepends_config_role_prompts_once():
-    """角色提示词由 ChatAgentBuilder 统一构建，插件层不需要提前拼上下文。"""
+def test_build_chat_history_does_not_prepend_config_role_prompts():
+    """角色提示词不在 build_chat_history 前置，role/system 交由注入挂点延迟拼接。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder
 
     ctx = _make_dummy_chat_ctx()
@@ -1065,10 +1072,9 @@ def test_build_chat_history_prepends_config_role_prompts_once():
         [{"role": PromptRole.USER.value, "content": "hi"}],
     )
 
+    # build_chat_history 只消费 session_context_data，不前置 role_prompts；
+    # role/system 由 inject_role_system 在 convert 链拼接期实际注入。
     assert [(item.role, item.content) for item in history] == [
-        (PromptRole.SYSTEM.value, "system prompt"),
-        (PromptRole.PAUSE.value, "pause prompt"),
-        (PromptRole.USER.value, "hidden user prompt"),
         (PromptRole.USER.value, "hi"),
     ]
 
@@ -1094,6 +1100,18 @@ class TestBuildChatModelFast:
         assert result is not None
         assert mock_setup.call_args[1]["model"] == "fast-model-v1"
 
+    @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
+    @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
+    def test_channel_retry_strategy_overrides_global_strategy(self, mock_setup):
+        mock_setup.return_value = MagicMock(spec=BaseChatModel)
+        ctx = self._make_ctx(fast_llm="fast-model-v1")
+        ctx.chat = ChatBuildExtras(retry_strategy="sdk")
+
+        ChatAgentBuilder(ctx).build_chat_model_fast()
+
+        assert mock_setup.call_args.kwargs["retry_strategy"] == "sdk"
+        assert mock_setup.call_args.kwargs["max_retries"] == 0
+
     def test_returns_none_when_fast_llm_empty(self):
         """``agent_config.fast_llm`` 为空时返回 None。"""
         builder = ChatAgentBuilder(self._make_ctx(fast_llm=None))
@@ -1106,28 +1124,109 @@ class TestBuildChatModelFast:
             assert builder.build_chat_model_fast() is None
 
 
+class TestStreamSnapshotSource:
+    """``_stream`` 首帧快照数据源：lossless chat_history 单账本（唯一历史事实源）。"""
+
+    @staticmethod
+    def _run(agent: ChatCompletionAgent, input_text: str = "") -> list[dict]:
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True, input=input_text))]
+        assert results[0].get("type") == EventType.MESSAGES_SNAPSHOT.value, "首条事件应为 MESSAGES_SNAPSHOT"
+        return results
+
+    @staticmethod
+    def _make_agent(**kwargs) -> ChatCompletionAgent:
+        llm = MockChatModel(responses=["你好，我可以帮你。"], stream_chunk_size=2)
+        base = dict(chat_model=llm, checkpointer=MemorySaver(), event_handler=_RecordingEventWriter())
+        base.update(kwargs)
+        return ChatCompletionAgent(**base)
+
+    def test_stream_snapshot_uses_contents_and_includes_turn_user_message(self):
+        """首帧快照 messages 来自 chat_history 单账本，且含本轮 user 消息。
+
+        build 期账本（适配层输出 dict 记录经 build_chat_history 承接）不含本轮 user 消息，
+        由 _prepare_pre_run_history 在 execute 期直接并入 chat_history；
+        快照应同时含历史 user 记录与本轮 "hello" 消息。
+        """
+        agent = self._make_agent(
+            chat_history=[
+                {"id": "hist-1", "role": "user", "content": "历史上的问题"},
+                {"id": "hist-2", "role": "assistant", "content": "历史上的回答"},
+            ],
+        )
+        results = self._run(agent, input_text="hello")
+        snapshot_messages = results[0].get("messages") or []
+
+        # 历史 user 记录来自账本（chat_history 单账本数据源）
+        hist_user = [m for m in snapshot_messages if m.get("id") == "hist-1"]
+        assert hist_user, "快照应包含来自 chat_history 账本的历史 user 记录"
+        assert hist_user[0].get("content") == "历史上的问题"
+
+        # 本轮 user 消息已并入账本（首轮不丢）
+        turn_user = [m for m in snapshot_messages if m.get("content") == "hello"]
+        assert turn_user, "快照应包含本轮 user 消息 hello"
+
+    def test_stream_snapshot_converts_all_ledger_records(self):
+        """快照对账本全量转换，无 id 过滤。
+
+        账本中并存的 pending 与终态 interrupt 记录都进入快照；
+        skip/answer 改写由 _prepare_pre_run_history 就地完成（原 id 不变），
+        快照构建不做任何记录剔除。
+        """
+        agent = self._make_agent(
+            chat_history=[
+                {
+                    "id": "int1",
+                    "role": PromptRole.INTERRUPT.value,
+                    "content": {"status": "pending", "question": "是否继续？"},
+                    "status": "complete",
+                },
+                {
+                    "id": "int1-terminal",
+                    "role": PromptRole.INTERRUPT.value,
+                    "content": {"status": "cancelled", "answers": []},
+                    "status": "complete",
+                },
+            ],
+        )
+        results = self._run(agent)
+        snapshot_messages = results[0].get("messages") or []
+
+        # pending 记录仍在快照中（全量转换，无 id 过滤）
+        pending = [
+            m
+            for m in snapshot_messages
+            if m.get("role") == PromptRole.INTERRUPT.value
+            and m.get("content") == {"status": "pending", "question": "是否继续？"}
+        ]
+        assert pending, "快照应包含账本中的 pending interrupt 记录（全量转换）"
+
+        # 终态 CANCELLED interrupt 同样进入快照
+        terminal = [
+            m
+            for m in snapshot_messages
+            if m.get("role") == PromptRole.INTERRUPT.value
+            and m.get("content") == {"status": "cancelled", "answers": []}
+        ]
+        assert terminal, "快照应包含账本中的终态 interrupt 记录"
+
+
 class TestFilterUnmatchedToolCalls:
     """测试过滤没有匹配工具结果的 assistant 消息"""
 
     def test_filter_assistant_without_tool_calls(self):
         """case 1: assistant 消息没有 tool_calls，应该保留"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
         chat_history = [
             ChatPrompt(id="1", role="user", content="你好"),
             ChatPrompt(id="2", role="assistant", content="你好！有什么我可以帮助你的吗？"),
             ChatPrompt(id="3", role="user", content="今天天气怎么样？"),
         ]
 
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls(chat_history)
+        filtered = _filter_unmatched_tool_calls(chat_history)
 
         assert len(filtered) == 3, "没有 tool_calls 的消息应该全部保留"
 
     def test_filter_assistant_with_matched_tool_calls(self):
         """case 2: assistant 消息有 tool_calls 且有对应的 tool 结果，应该保留"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
         chat_history = [
             ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
             ChatPrompt(
@@ -1152,8 +1251,7 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="广州今天多云，温度25度。"),
         ]
 
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls(chat_history)
+        filtered = _filter_unmatched_tool_calls(chat_history)
 
         assert len(filtered) == 4, "完整匹配的工具调用链应该保留"
         assert filtered[1].role == "assistant", "assistant 消息应该保留"
@@ -1161,8 +1259,6 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_assistant_with_unmatched_tool_calls(self):
         """case 3: assistant 消息有 tool_calls 但没有对应的 tool 结果，应该被过滤"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
         chat_history = [
             ChatPrompt(id="1", role="user", content="今天广州天气怎么样？"),
             ChatPrompt(
@@ -1182,8 +1278,7 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="抱歉，查询失败。"),
         ]
 
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls(chat_history)
+        filtered = _filter_unmatched_tool_calls(chat_history)
 
         # 有 tool_calls 但没有结果的 assistant 消息被过滤
         assert len(filtered) == 2, "没有匹配结果的 assistant 消息应该被过滤"
@@ -1195,8 +1290,6 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_multiple_tool_calls_partial_match(self):
         """case 4: assistant 消息有多个 tool_calls，仅部分有对应结果，保留消息但移除未匹配的 tool_calls"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
         chat_history = [
             ChatPrompt(id="1", role="user", content="帮我查询广州和深圳的天气"),
             ChatPrompt(
@@ -1226,8 +1319,7 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="4", role="assistant", content="广州今天多云。"),
         ]
 
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls(chat_history)
+        filtered = _filter_unmatched_tool_calls(chat_history)
 
         # assistant 消息应该保留，但只有 call_gz 这个 tool_call
         assert len(filtered) == 4, "部分匹配时应该保留 assistant 消息"
@@ -1250,8 +1342,6 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_multiple_unmatched_assistant_messages(self):
         """case 5: 多条连续的 assistant 消息都有 tool_calls，只有最后一条有完整结果"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
         chat_history = [
             ChatPrompt(id="1", role="user", content="帮我创建需求"),
             ChatPrompt(
@@ -1295,8 +1385,7 @@ class TestFilterUnmatchedToolCalls:
             ChatPrompt(id="7", role="assistant", content="需求已创建完成。"),
         ]
 
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls(chat_history)
+        filtered = _filter_unmatched_tool_calls(chat_history)
 
         # 前 3 条 assistant 消息(id=2,3,4)的 tool_calls 都没有匹配的结果，应该被过滤
         # id=5 的 assistant 有匹配结果，应该保留
@@ -1316,12 +1405,138 @@ class TestFilterUnmatchedToolCalls:
 
     def test_filter_empty_chat_history(self):
         """case 6: 空聊天历史，应该返回空列表"""
-        from aidev_agent.services.agent.chat import ChatAgentBuilder
-
-        builder = ChatAgentBuilder(_make_dummy_chat_ctx())
-        filtered = builder._filter_unmatched_tool_calls([])
+        filtered = _filter_unmatched_tool_calls([])
 
         assert filtered == [], "空聊天历史应该返回空列表"
+
+
+class TestLlmInputHtmlCleanup:
+    """LLM 输入视图剥离 think/知识库召回 HTML（账本保留原文供快照忠实展示）"""
+
+    THINK_HTML = '<section class="think-head click-close">思考</section><section class="think-body">深度思考</section>'
+    REF_HTML = (
+        '<section class="knowledge-head click-close">引用</section>'
+        '<ul class="knowledge-body"><li>文档片段</li></ul>'
+        '<section class="knowledge-tips">提示</section>'
+    )
+
+    def _make_agent(self, chat_history, generating_keyword=None):
+        return ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["hi"]),
+            checkpointer=MemorySaver(),
+            agent_info={"prompt_setting": {"content": []}},
+            chat_history=chat_history,
+            generating_keyword=generating_keyword,
+        )
+
+    @pytest.mark.parametrize("role", ["assistant", "ai", "pause"])
+    def test_convert_strips_think_and_reference_html_for_three_roles(self, role):
+        original = f"答案{self.THINK_HTML}{self.REF_HTML}"
+        agent = self._make_agent([ChatPrompt(id="m1", role=role, content=original)])
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert "think-" not in ai_msgs[0].content
+        assert "knowledge-" not in ai_msgs[0].content
+        assert agent.chat_history[0].content == original  # 账本原文不动（单账本语义）
+
+    def test_cleanup_skips_non_str_content(self):
+        content_list = [{"type": "text", "text": "hi"}]
+        agent = self._make_agent([ChatPrompt(id="m1", role="assistant", content=content_list)])
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert ai_msgs[0].content == content_list
+
+    def test_cleanup_emptied_message_still_enters_llm(self):
+        # 空 content 过滤发生在清理前（_build_llm_history_view 深拷贝阶段）；清理后变空的消息以空 content 进 LLM
+        agent = self._make_agent(
+            [ChatPrompt(id="m1", role="assistant", content='<ul class="knowledge-body"><li>x</li></ul>')]
+        )
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert ai_msgs[0].content == ""
+
+    def test_remove_reference_doc_strips_each_pattern(self):
+        content = f"前文{self.REF_HTML}后文"
+        assert _remove_reference_doc(content) == "前文后文"
+
+    @pytest.mark.parametrize(
+        "role, content, keyword, expected_keep",
+        [
+            ("assistant", "生成中内容", "生成中", False),  # 命中：末条 assistant 含关键词 → 丢弃
+            ("user", "生成中内容", "生成中", True),  # 末条非 assistant → 保留
+            ("assistant", [{"type": "text", "text": "生成中"}], "生成中", True),  # 非 str content → 保留
+            ("assistant", "普通回答", "生成中", True),  # 关键词不在 content → 保留
+        ],
+    )
+    def test_clean_last_generating_assistant(self, role, content, keyword, expected_keep):
+        original = content
+        agent = self._make_agent([ChatPrompt(id="m1", role=role, content=original)], generating_keyword=keyword)
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+
+        if expected_keep:
+            assert len(msgs) == 1
+        else:
+            assert len(msgs) == 0
+        assert agent.chat_history[-1].content == original  # 账本原文无损
+
+    def test_clean_last_generating_assistant_none_keyword_keeps(self):
+        # generating_keyword 为 None（不传 agent_config）时跳过清理
+        agent = self._make_agent([ChatPrompt(id="m1", role="assistant", content="生成中内容")])
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert ai_msgs[0].content == "生成中内容"
 
 
 # =====================================================================
@@ -1885,32 +2100,22 @@ class TestAgentFactory2Chat:
         mock_execute.assert_called_once()
 
     @pytest.mark.parametrize(
-        "prompt_content, expected_role, expected_content",
+        "prompt_content",
         [
-            # collection 类型：hidden-system → 转为 system
-            (
-                [{"role": "hidden-system", "content": "你是一个专业的中英文翻译官"}],
-                "system",
-                "你是一个专业的中英文翻译官",
-            ),
-            # user_define 类型：system 保持不变
-            (
-                [{"role": "system", "content": "你是一个人工智能助手"}],
-                "system",
-                "你是一个人工智能助手",
-            ),
+            # collection 类型：hidden-system 提示词
+            [{"role": "hidden-system", "content": "你是一个专业的中英文翻译官"}],
+            # user_define 类型：system 提示词
+            [{"role": "system", "content": "你是一个人工智能助手"}],
         ],
     )
-    def test_chat_history_with_role_prompt(self, prompt_content, expected_role, expected_content):
-        """role_prompts 中的 hidden-system / system 角色应被正确拼接到 chat_history 头部"""
+    def test_chat_history_does_not_prepend_role_prompts(self, prompt_content):
+        """role_prompts 不再前置到 chat_history，role/system 交由注入挂点延迟拼接。"""
         raw = _build_factory_raw()
         raw["prompt_setting"]["content"] = prompt_content
         agent = self._build_agent(raw=raw)
-        # chat_history 头部应为 role_history 中的系统提示词
-        assert len(agent.chat_history) >= 1
-        first = agent.chat_history[0]
-        assert first.role == expected_role
-        assert first.content == expected_content
+        # chat_history 只含 session_context_data 转换结果；本测试无会话数据，故为空，
+        # 不再包含 role_prompts 的 system 提示词（role/system 由注入挂点延迟拼接）。
+        assert agent.chat_history == []
 
     def test_chat_model_from_llm_code(self):
         """prompt_setting.llm_code → chat_model（通过 ChatModel.get_setup_instance），同时验证 model_name 和 temperature"""
@@ -2398,14 +2603,22 @@ class TestTerminalResumeReplay:
 
         with (
             patch.object(agent, "_build_terminal_resume_replay") as mock_replay,
-            patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])),
+            patch(f"{_CHAT_MODULE}.async_to_sync_generator", return_value=iter(["X"])) as mock_astream,
         ):
-            producer = agent._build_resume_aware_producer(agui_entry, agent_input, agent_e=None, cfg=None, resume=False)
+            producer = agent._build_resume_aware_producer(
+                agui_entry,
+                agent_input,
+                agent_e=None,
+                cfg=None,
+                resume=False,
+                total_timeout=600,
+            )
             out = list(producer)
 
         assert out == ["X"]
         mock_replay.assert_not_called()
         agui_entry.run.assert_called_once_with(agent_input)
+        assert mock_astream.call_args.kwargs["total_timeout"] == 600
 
     def test_producer_resume_missing_context_uses_astream(self):
         """resume=True 但缺少 agent_e/cfg → 不查 checkpoint，直接 astream"""
@@ -2590,6 +2803,8 @@ class TestDispatchSessionPersistenceEvents:
         agent, writer = self._make_agent()
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(), input="hi", turn_id="t1")
         agent._prepare_pre_run_history(kwargs)
+        # 单账本语义：skip 仅补 tool 记录，interrupt 就地改写（原位不动），
+        # 末尾两条依次为 tool → 本轮 user。
         roles = [p.role for p in agent.chat_history]
         assert roles[-2:] == [PromptRole.TOOL.value, PromptRole.USER.value]
         assert agent.chat_history[-2].builtin_property.get("tool_call_id") == "call_auq_001"
@@ -2601,6 +2816,7 @@ class TestDispatchSessionPersistenceEvents:
         assert (outcome.get("interrupts") or [{}])[0].get("metadata", {}).get("status") == "cancelled"
         assert isinstance(writer.events[0], ExtendToolCallResultEvent)
         assert writer.events[0].content == ASK_USER_QUESTION_SKIPPED_CONTENT
+        assert writer.events[0].tool_call_name == "ask_user_question"
         custom_names = [e.name for e in writer.events if isinstance(e, CustomEvent)]
         assert custom_names == [
             SessionPersistenceEventNames.AskUserQuestionFinalized.value,
@@ -2613,7 +2829,9 @@ class TestDispatchSessionPersistenceEvents:
         answers = [{"question": "Q", "answer": [{"label": "A"}]}]
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=answers), input="", turn_id="t1")
         agent._prepare_pre_run_history(kwargs)
+        # 单账本语义：答题路径零 append，末尾 interrupt 记录就地改写为终态（原 id 不变）。
         assert len(agent.chat_history) == before
+        assert agent.chat_history[-1].role == PromptRole.INTERRUPT.value
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
         outcome = interrupt_after.content.get("outcome") or {}
         assert outcome.get("type") == "success"
@@ -2713,7 +2931,7 @@ class TestDispatchSessionPersistenceEvents:
         kwargs = ExecuteKwargs(resume=self._ask_user_resume(answers=[]), input="", turn_id="t1")
         agent._prepare_pre_run_history(kwargs)
         assert kwargs.resume is None
-        # 不补 user 记录（无 input），但补 tool 记录（有 tool_call_id）
+        # 不补 user 记录（无 input），仅补 tool 记录；interrupt 就地改写为 CANCELLED 终态（零 append）
         assert len(agent.chat_history) == before + 1
         assert agent.chat_history[-1].role == PromptRole.TOOL.value
         interrupt_after = next(p for p in agent.chat_history if p.role == PromptRole.INTERRUPT.value)
@@ -2768,11 +2986,11 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, resources, expected_ekn",
         [
-            (None, [{"type": "knowledgebase", "id": 58}], True),   # env 未设 + 含 kb → resources 覆盖为 True
-            (None, [{"type": "mcp", "code": "x"}], False),         # env 未设 + 不含 kb → 保持默认 False
-            (None, [], False),                                     # env 未设 + 无 resources → 默认 False
+            (None, [{"type": "knowledgebase", "id": 58}], True),  # env 未设 + 含 kb → resources 覆盖为 True
+            (None, [{"type": "mcp", "code": "x"}], False),  # env 未设 + 不含 kb → 保持默认 False
+            (None, [], False),  # env 未设 + 无 resources → 默认 False
             ("false", [{"type": "knowledgebase", "id": 58}], False),  # env 已设 false → 取 env，忽略 resources
-            ("true", [], True),                                    # env 已设 true → 取 env True
+            ("true", [], True),  # env 已设 true → 取 env True
         ],
     )
     def test_enable_knowledge_node_env_and_resources_priority(self, monkeypatch, env_val, resources, expected_ekn):
@@ -2796,7 +3014,7 @@ class TestBuildKnowledgeQueryOptions:
     @pytest.mark.parametrize(
         "env_val, expected",
         [
-            (None, True),    # env 未设 → 保持字段默认 True
+            (None, True),  # env 未设 → 保持字段默认 True
             ("true", True),  # env=true → True
             ("false", False),  # env=false → False
             ("abc", False),  # 非法值 → False（严格 .lower()=="true" 匹配）
@@ -2895,3 +3113,192 @@ class TestFetchExecutePv:
             assert len(result) == 1
             assert result[0]["source"] == "platform"
             assert result[0]["volume_id"] == "vol-platform"
+
+
+class TestInjectRoleSystem:
+    """inject_role_system 预设注入规则单测（P12-01）"""
+
+    @staticmethod
+    def _agent(content):
+        return ChatCompletionAgent(agent_info={"prompt_setting": {"content": content}})
+
+    @pytest.mark.parametrize(
+        "preset, expected",
+        [
+            # hidden-system → SystemMessage 固定 id
+            ([{"role": "hidden-system", "content": "预设A"}], [("system", "role-system-preset", "预设A")]),
+            # system → SystemMessage 固定 id（user_define 会话）
+            ([{"role": "system", "content": "预设B"}], [("system", "role-system-preset", "预设B")]),
+            # 多 system 条目 \\n\\n.join 合并为单条 SystemMessage
+            (
+                [{"role": "system", "content": "A"}, {"role": "hidden-system", "content": "B"}],
+                [("system", "role-system-preset", "A\n\nB")],
+            ),
+            # hidden-user few-shot → HumanMessage，id 带下标
+            (
+                [{"role": "hidden-user", "content": "示例1"}, {"role": "hidden-user", "content": "示例2"}],
+                [("human", "role-user-preset-0", "示例1"), ("human", "role-user-preset-1", "示例2")],
+            ),
+            # pause/其他/空 content 忽略，数据空透传
+            ([{"role": "pause", "content": "p"}], []),
+            ([], []),  # 数据空整体透传
+        ],
+    )
+    def test_inject_maps_preset_entries(self, preset, expected):
+        agent = self._agent(preset)
+        out = inject_role_system(
+            [HumanMessage(id="h1", content="hi")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        injected = [("system" if isinstance(m, SystemMessage) else "human", m.id, m.content) for m in out[:-1]]
+        assert injected == expected
+        assert out[-1].id == "h1"
+
+    def test_inject_skips_malformed_entries(self):
+        agent = self._agent(
+            [
+                "not-a-dict",
+                {"content": "no-role"},
+                {"role": "system", "content": 123},  # 非 str content
+                {"role": "system", "content": ""},  # 空 content
+                {"role": "system", "content": "ok"},
+            ]
+        )
+        out = inject_role_system(
+            [HumanMessage(id="h1", content="hi")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        assert [m.id for m in out[:-1]] == ["role-system-preset"]
+        assert out[-1].id == "h1"
+
+    @pytest.mark.parametrize(
+        "prompt_setting, expected_system",
+        [
+            # collection_content 优先于 prompt_content 与遗留 content
+            (
+                {
+                    "collection_content": [{"role": "system", "content": "集合预设"}],
+                    "prompt_content": [{"role": "system", "content": "自定义预设"}],
+                    "content": [{"role": "system", "content": "遗留预设"}],
+                },
+                "集合预设",
+            ),
+            # collection_content 缺失 → prompt_content
+            (
+                {
+                    "prompt_content": [{"role": "system", "content": "自定义预设"}],
+                    "content": [{"role": "system", "content": "遗留预设"}],
+                },
+                "自定义预设",
+            ),
+            # 仅遗留 content
+            ({"content": [{"role": "system", "content": "遗留预设"}]}, "遗留预设"),
+            # 三者皆缺 → 整体透传
+            ({}, None),
+        ],
+    )
+    def test_inject_preset_source_fallback(self, prompt_setting, expected_system):
+        """预设数据源回退链：collection_content → prompt_content → content → 空。"""
+        agent = ChatCompletionAgent(agent_info={"prompt_setting": prompt_setting})
+        out = inject_role_system(
+            [HumanMessage(id="h1", content="hi")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        if expected_system is None:
+            assert [m.id for m in out] == ["h1"]
+        else:
+            assert out[0].id == "role-system-preset"
+            assert out[0].content == expected_system
+            assert out[-1].id == "h1"
+
+    def test_inject_fixed_id_dedups_across_turns(self):
+        agent = self._agent([{"role": "system", "content": "NEW"}])
+        checkpoint = [HumanMessage(id="h1", content="hi"), SystemMessage(id="role-system-preset", content="OLD")]
+        new_turn = inject_role_system(
+            [HumanMessage(id="h2", content="q2")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        merged = add_messages(checkpoint, new_turn)
+        systems = [m for m in merged if isinstance(m, SystemMessage)]
+        assert len(systems) == 1
+        assert systems[0].content == "NEW"
+
+    def test_inject_r1_downgrades_system_to_human(self):
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(model_name="deepseek-r1-test"),
+            agent_info={"prompt_setting": {"content": [{"role": "system", "content": "预设"}]}},
+        )
+        out = inject_role_system(
+            [HumanMessage(id="h1", content="hi")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        assert isinstance(out[0], HumanMessage)
+        assert out[0].id == "role-system-preset"
+
+    def test_inject_checkpoint_no_duplicate_on_resume(self):
+        preset = [{"role": "system", "content": "预设"}]
+        thread_id = "inject-resume-test"
+        checkpointer = MemorySaver()
+        llm = MockChatModel(responses=["r1", "r2"], stream_chunk_size=3)
+        agent = ChatCompletionAgent(
+            thread_id=thread_id,
+            chat_model=llm,
+            checkpointer=checkpointer,
+            agent_info={"prompt_setting": {"content": preset}},
+            chat_history=[ChatPrompt(role="user", content="第一轮")],
+        )
+        first = list(agent.execute(ExecuteKwargs(stream=True)))
+        agent2 = ChatCompletionAgent(
+            thread_id=thread_id,
+            chat_model=llm,
+            checkpointer=checkpointer,
+            agent_info={"prompt_setting": {"content": preset}},
+            chat_history=[ChatPrompt(role="user", content="第二轮")],
+        )
+        second = list(agent2.execute(ExecuteKwargs(stream=True)))
+        assert len(first) > 0
+        assert len(second) > 0
+
+    def test_convert_contents_maps_hidden_role_to_system(self):
+        """hidden-role 账本记录剥前缀后按 system 语义进 LLM 视图（P12-02）"""
+        agent = ChatCompletionAgent(
+            chat_model=MockChatModel(responses=["hi"]),
+            checkpointer=MemorySaver(),
+            agent_info={"prompt_setting": {"content": []}},  # 数据空，隔离注入干扰
+            chat_history=[
+                ChatPrompt(role="hidden-role", content="角色设定A"),
+                ChatPrompt(role="user", content="提问"),
+            ],
+        )
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+        systems = [m for m in msgs if isinstance(m, SystemMessage) and m.content == "角色设定A"]
+        assert len(systems) == 1
+        assert msgs[-1].content == "提问"
+
+    def test_handle_agent_switch_no_longer_rewrites_ledger(self):
+        """handle_agent_switch 仅保留日志，不再改写账本 system（P12-03）"""
+        ctx = _make_dummy_chat_ctx()
+        ctx.agent_code = "switch-test"
+        ctx.switch_agent = True
+        ctx.agent_config.role_prompts = [{"role": "system", "content": "新角色"}]
+        ctx.session_context_data = [
+            {"role": "user", "content": "切换"},
+            {"role": "system", "content": "旧角色"},
+        ]
+        builder = ChatAgentBuilder(ctx)
+        builder.handle_agent_switch()
+        assert ctx.session_context_data[-1]["content"] == "旧角色"  # 未被改写
+
+    def test_switch_inject_follows_new_agent(self):
+        """switch 后 inject_role_system 用新 agent 的 preset（P12-03）"""
+        raw_new = _build_factory_raw()
+        raw_new["prompt_setting"]["content"] = [{"role": "system", "content": "新agent预设"}]
+        agent = TestAgentFactory2Chat._build_agent(raw=raw_new)
+        out = inject_role_system(
+            [HumanMessage(id="h1", content="hi")], agent_info=agent.agent_info, model_name=agent.model_name
+        )
+        assert out[0].id == "role-system-preset"
+        assert out[0].content == "新agent预设"

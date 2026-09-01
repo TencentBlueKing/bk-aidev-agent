@@ -203,6 +203,7 @@
     MOCK_MODELS,
     MOCK_PROMPTS,
     MOCK_RESOURCES,
+    MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
   import { uploadFileToSession } from './upload-file';
@@ -212,7 +213,7 @@
 
   import '../src/styles/global.scss';
 
-  const chatMode = shallowRef<RenderMode>(RenderMode.Share);
+  const chatMode = shallowRef<RenderMode>(RenderMode.Chat);
   const openingRemark = shallowRef(`你好，我是小鲸
 我是由蓝鲸智云开发的智能助手
 我可以帮助你完成各种任务`);
@@ -228,6 +229,7 @@
   // Info 分隔提示 + ToolCall 各状态 + 含 toolCalls 的会话 mock + 待回答 UserQuestion
   const messages = deepRef<Message[]>([
     ...MOCK_INFO_MESSAGES,
+    ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
     // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
   ]);

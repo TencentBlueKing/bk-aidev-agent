@@ -18,6 +18,8 @@ to the current version of the project delivered to anyone in the future.
 
 import os
 
+from aidev_agent.config import settings as agent_settings
+
 from .utils import get_env_bool
 
 
@@ -36,12 +38,15 @@ class OTelConfig:
 
         # ===== 功能开关 =====
         self.enable_traces: bool = get_env_bool("BKAI_AGENT_ENABLE_TRACES", True)
-        self.enable_metrics: bool = get_env_bool("BKAI_AGENT_ENABLE_METRICS", False)
+        self.enable_metrics: bool = bool(agent_settings.BKAI_AGENT_ENABLE_METRICS)
         # bkplugin may install a BKM-specific MeterProvider while the Agent SDK keeps metric instrumentation enabled.
         self.metric_provider_managed_externally: bool = False
         self.metric_export_interval_millis: int = max(1000, int(os.getenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")))
         self.metric_export_timeout_millis: int = max(1000, int(os.getenv("OTEL_METRIC_EXPORT_TIMEOUT", "30000")))
         self.enable_logs: bool = get_env_bool("BKAI_AGENT_ENABLE_LOGS", False)
+        # ``logging`` 用于本地调试：仍生成完整 trace/span，但只写应用日志，
+        # 不创建任何远程 OTLP exporter。线上默认保持 ``otlp``。
+        self.trace_exporter: str = os.getenv("BKAI_AGENT_TRACE_EXPORTER", "otlp").strip().lower()
 
         # ===== 性能优化配置 =====
         # 最大字符串长度限制
@@ -57,5 +62,6 @@ class OTelConfig:
             f"enabled={self.enabled}, "
             f"service_name={self.service_name}, "
             f"otel_endpoints={endpoints_summary}, "
-            f"enable_traces={self.enable_traces})"
+            f"enable_traces={self.enable_traces}, "
+            f"trace_exporter={self.trace_exporter})"
         )

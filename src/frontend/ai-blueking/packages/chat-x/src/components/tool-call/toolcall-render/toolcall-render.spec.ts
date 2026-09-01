@@ -34,21 +34,6 @@ import ToolcallRender from './toolcall-render.vue';
 
 import type { ToolCall } from '../../../ag-ui/types/messages';
 
-// Mock bkui-vue Loading
-vi.mock('bkui-vue', () => ({
-  Loading: defineComponent({
-    name: 'Loading',
-    props: {
-      mode: { type: String, default: 'default' },
-      size: { type: String, default: 'default' },
-      theme: { type: String, default: 'default' },
-    },
-    setup() {
-      return () => h('span', { class: 'mock-loading' });
-    },
-  }),
-}));
-
 // Mock i18n
 vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
@@ -60,28 +45,18 @@ vi.mock('../../../utils/utils', () => ({
   getCookieByName: vi.fn(() => 'zh-cn'),
 }));
 
-// Mock icons
-vi.mock('../../../icons/content', () => ({
-  ArrowRightIcon: defineComponent({
-    name: 'ArrowRightIcon',
-    setup() {
-      return () => h('span', { class: 'mock-arrow-icon' });
-    },
-  }),
-}));
-
-// Mock 流程状态图标（成功 / 失败）
+// Mock 图标：工具调用图标 + 折叠箭头
 vi.mock('../../../icons', () => ({
-  BkFlowSuccessIcon: defineComponent({
-    name: 'BkFlowSuccessIcon',
+  ToolCallIcon: defineComponent({
+    name: 'ToolCallIcon',
     setup() {
-      return () => h('span', { class: 'mock-bkflow-success' });
+      return () => h('span', { class: 'mock-toolcall-icon' });
     },
   }),
-  BkFlowFailedIcon: defineComponent({
-    name: 'BkFlowFailedIcon',
+  ChevronRightIcon: defineComponent({
+    name: 'ChevronRightIcon',
     setup() {
-      return () => h('span', { class: 'mock-bkflow-failed' });
+      return () => h('span', { class: 'mock-chevron-icon' });
     },
   }),
 }));
@@ -120,7 +95,6 @@ vi.mock('../../../composables/use-common', () => ({
   useKeywordMatch: vi.fn(() => ({ keywordMatched: { value: null }, keyword: { value: '' } })),
 }));
 
-// style-note: chat-x PR1 — 文档化状态间距 / 禁用态样式约定，配合 wiki 同步提交
 describe('ToolcallRender', () => {
   let wrapper: VueWrapper;
 
@@ -133,6 +107,9 @@ describe('ToolcallRender', () => {
       arguments: '{"query": "test"}',
     },
   } as unknown as ToolCall;
+
+  /** 状态段用 &nbsp; 撑开括号两侧间距，断言前统一归一为普通空格 */
+  const getStatusText = () => wrapper.find('.toolcall-header-status').text().replace(/\u00A0/g, ' ');
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -151,36 +128,18 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.ai-toolcall-render').exists()).toBe(true);
-    });
-
-    it('应该渲染标题区域', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-        },
-      });
-
       expect(wrapper.find('.ai-toolcall-render-header').exists()).toBe(true);
+      expect(wrapper.find('.ai-toolcall-render-content').exists()).toBe(true);
     });
 
-    it('应该显示工具名称', () => {
+    it('应该渲染工具调用图标', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
         },
       });
 
-      expect(wrapper.find('.toolcall-header-title').text()).toBe('search');
-    });
-
-    it('应该渲染 ArrowRightIcon', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-        },
-      });
-
-      expect(wrapper.find('.mock-arrow-icon').exists()).toBe(true);
+      expect(wrapper.find('.mock-toolcall-icon').exists()).toBe(true);
     });
 
     it('应该渲染 DescPanel 组件', () => {
@@ -194,8 +153,64 @@ describe('ToolcallRender', () => {
     });
   });
 
+  describe('调用类型前缀测试', () => {
+    const mountWithFunction = (fn: Record<string, unknown>) =>
+      mount(ToolcallRender, {
+        props: {
+          toolCall: {
+            ...mockToolCall,
+            function: { ...mockToolCall.function, ...fn },
+          },
+          status: MessageStatus.Success,
+        },
+      });
+
+    it('type 为 function 时应该显示「调用工具」前缀', () => {
+      wrapper = mountWithFunction({ type: 'function' });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 search');
+    });
+
+    it('type 为 mcp 时应该显示「调用 MCP」前缀，标题带 MCP 名', () => {
+      wrapper = mountWithFunction({ type: 'mcp', mcpName: 'bk-data-server' });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用 MCP bk-data-server / search');
+    });
+
+    it('type 为 skill 时应该显示「读取 Skill」前缀', () => {
+      wrapper = mountWithFunction({ type: 'skill' });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('读取 Skill search');
+    });
+
+    it('无 type 且无 mcpName 时应该显示「调用工具」前缀', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Success,
+        },
+      });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 search');
+    });
+
+    // 旧版数据兼容：未下发 type 时回退到 mcpName 判定
+    it('无 type 但有 mcpName 时应该兼容判定为「调用 MCP」', () => {
+      wrapper = mountWithFunction({ mcpName: 'bk-data-server' });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用 MCP bk-data-server / search');
+    });
+
+    // type 优先于 mcpName：显式 function 不应被 mcpName 覆盖为 MCP
+    it('type 显式为 function 时即使有 mcpName 也显示「调用工具」前缀', () => {
+      wrapper = mountWithFunction({ type: 'function', mcpName: 'bk-data-server' });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 bk-data-server / search');
+    });
+  });
+
   describe('状态显示测试', () => {
-    it('Pending 状态应该显示调用中', () => {
+    it('Pending 状态应该显示「正在调用」，且无状态段与折叠箭头', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -203,23 +218,12 @@ describe('ToolcallRender', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用中');
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('正在调用 search');
+      expect(wrapper.find('.toolcall-header-status').exists()).toBe(false);
+      expect(wrapper.find('.mock-chevron-icon').exists()).toBe(false);
     });
 
-    it('Pending 状态应该显示 Loading，且不显示成功/失败图标', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Pending,
-        },
-      });
-
-      expect(wrapper.find('.mock-loading').exists()).toBe(true);
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
-    });
-
-    it('Streaming 状态应该显示 Loading，且不显示成功/失败图标', () => {
+    it('Streaming 状态应该显示「正在调用」', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -227,85 +231,51 @@ describe('ToolcallRender', () => {
         },
       });
 
-      expect(wrapper.find('.mock-loading').exists()).toBe(true);
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('正在调用 search');
     });
 
-    it('Complete 状态应该显示调用成功', () => {
+    it('skill 进行中应该显示「正在读取」，而非「正在调用」', () => {
       wrapper = mount(ToolcallRender, {
         props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Complete,
+          toolCall: {
+            ...mockToolCall,
+            function: { ...mockToolCall.function, type: 'skill' },
+          },
+          status: MessageStatus.Pending,
         },
       });
 
-      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('正在读取 search');
     });
 
-    // Completed 与 Complete 同为完成态，兼容协议/后端返回的 completed
-    it('Completed 状态应该显示调用成功', () => {
+    it('进行中态标题应该带 is-loading 类以启用渐变闪动', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
-          status: MessageStatus.Completed,
+          status: MessageStatus.Pending,
         },
       });
 
-      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
+      expect(wrapper.find('.toolcall-header-title').classes()).toContain('is-loading');
     });
 
-    it('Success 状态应该显示调用成功', () => {
+    it.each([
+      ['Complete', MessageStatus.Complete],
+      ['Completed', MessageStatus.Completed],
+      ['Success', MessageStatus.Success],
+    ])('%s 状态应该显示成功', (_name, status) => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
-          status: MessageStatus.Success,
+          status,
         },
       });
 
-      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用成功');
+      expect(getStatusText()).toBe('( 成功 )');
+      expect(wrapper.find('.toolcall-header-result').classes()).toContain('is-success');
     });
 
-    it('Success 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Success,
-        },
-      });
-
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
-      expect(wrapper.find('.mock-loading').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
-    });
-
-    it('Complete 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Complete,
-        },
-      });
-
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
-      expect(wrapper.find('.mock-loading').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
-    });
-
-    it('Completed 状态应该显示成功图标，且不显示 Loading / 失败图标', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Completed,
-        },
-      });
-
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(true);
-      expect(wrapper.find('.mock-loading').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(false);
-    });
-
-    it('Error 状态应该显示调用失败', () => {
+    it('Error 状态应该显示失败', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -313,20 +283,36 @@ describe('ToolcallRender', () => {
         },
       });
 
-      expect(wrapper.find('.toolcall-status-title').text()).toContain('调用失败');
+      expect(getStatusText()).toBe('( 失败 )');
+      expect(wrapper.find('.toolcall-header-result').classes()).toContain('is-error');
     });
 
-    it('Error 状态应该显示失败图标，且不显示 Loading / 成功图标', () => {
+    // 括号与耗时不参与状态着色，仅状态词着色
+    it('着色元素应该只包含状态词，不含括号与耗时', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
-          status: MessageStatus.Error,
+          status: MessageStatus.Success,
+          duration: 1500,
         },
       });
 
-      expect(wrapper.find('.mock-bkflow-failed').exists()).toBe(true);
-      expect(wrapper.find('.mock-loading').exists()).toBe(false);
-      expect(wrapper.find('.mock-bkflow-success').exists()).toBe(false);
+      expect(wrapper.find('.toolcall-header-result').text()).toBe('成功');
+    });
+
+    // toolMessage.error 优先于 status 判定失败态
+    it('toolMessage.error 为真时应该显示失败', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: {
+            ...mockToolCall,
+            toolMessage: { error: '执行超时' },
+          },
+          status: MessageStatus.Success,
+        },
+      });
+
+      expect(wrapper.find('.toolcall-header-result').classes()).toContain('is-error');
     });
   });
 
@@ -335,66 +321,58 @@ describe('ToolcallRender', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
+          status: MessageStatus.Success,
         },
       });
 
       expect(wrapper.find('.ai-toolcall-render-content').attributes('style')).toContain('display: none');
+      expect(wrapper.find('.ai-toolcall-render-header').classes()).not.toContain('is-expanded');
     });
 
-    it('点击头部应该触发折叠状态变化', async () => {
+    it('点击头部应该展开内容并翻转箭头', async () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
+          status: MessageStatus.Success,
         },
       });
 
-      expect(wrapper.find('.ai-toolcall-render-content').attributes('style')).toContain('display: none');
-      expect(wrapper.find('.mock-arrow-icon').classes()).toContain('is-collapsed');
+      expect(wrapper.find('.mock-chevron-icon').classes()).not.toContain('is-expanded');
 
       await wrapper.find('.ai-toolcall-render-header').trigger('click');
+
       const styleAfterClick = wrapper.find('.ai-toolcall-render-content').attributes('style') ?? '';
       expect(styleAfterClick).not.toContain('display: none');
-      expect(wrapper.find('.mock-arrow-icon').classes()).not.toContain('is-collapsed');
-    });
-
-    it('折叠时箭头应该有 is-collapsed 类', async () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-        },
-      });
-
-      expect(wrapper.find('.mock-arrow-icon').classes()).toContain('is-collapsed');
-
-      await wrapper.find('.ai-toolcall-render-header').trigger('click');
-
-      expect(wrapper.find('.mock-arrow-icon').classes()).not.toContain('is-collapsed');
+      expect(wrapper.find('.ai-toolcall-render-header').classes()).toContain('is-expanded');
+      expect(wrapper.find('.mock-chevron-icon').classes()).toContain('is-expanded');
     });
   });
 
   describe('Duration 显示测试', () => {
-    it('有 duration 时应该显示耗时', () => {
+    it('有 duration 时状态段应该带耗时', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
+          status: MessageStatus.Success,
           duration: 1500,
         },
       });
 
-      expect(wrapper.find('.toolcall-duration').text()).toContain('1500ms');
+      expect(getStatusText()).toBe('( 成功，耗时：1500ms )');
     });
 
     it('没有 duration 时不应该显示耗时', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
+          status: MessageStatus.Success,
         },
       });
 
-      expect(wrapper.find('.toolcall-duration').exists()).toBe(false);
+      expect(getStatusText()).toBe('( 成功 )');
     });
 
-    it('从 toolMessage 获取 duration', () => {
+    it('应该从 toolMessage 获取 duration', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: {
@@ -404,10 +382,11 @@ describe('ToolcallRender', () => {
               duration: 2000,
             },
           },
+          status: MessageStatus.Success,
         },
       });
 
-      expect(wrapper.find('.toolcall-duration').text()).toContain('2000ms');
+      expect(getStatusText()).toBe('( 成功，耗时：2000ms )');
     });
   });
 
@@ -450,11 +429,12 @@ describe('ToolcallRender', () => {
               arguments: '{}',
             },
           },
+          status: MessageStatus.Success,
         },
       });
 
       // 应该使用 id 作为标题
-      expect(wrapper.find('.toolcall-header-title').text()).toBe('tool-1');
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 tool-1');
     });
 
     it('应该处理 undefined toolCall', () => {
@@ -463,42 +443,6 @@ describe('ToolcallRender', () => {
       });
 
       expect(wrapper.find('.ai-toolcall-render').exists()).toBe(true);
-    });
-  });
-
-  describe('样式测试', () => {
-    it('应该具有正确的类名结构', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-        },
-      });
-
-      expect(wrapper.find('.ai-toolcall-render').exists()).toBe(true);
-      expect(wrapper.find('.ai-toolcall-render-header').exists()).toBe(true);
-      expect(wrapper.find('.ai-toolcall-render-content').exists()).toBe(true);
-    });
-
-    it('状态 class 应该正确应用', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Complete,
-        },
-      });
-
-      expect(wrapper.find('.ai-toolcall-render-header').classes()).toContain('toolcall-status-complete');
-    });
-
-    it('Completed 状态 class 应该正确应用', () => {
-      wrapper = mount(ToolcallRender, {
-        props: {
-          toolCall: mockToolCall,
-          status: MessageStatus.Completed,
-        },
-      });
-
-      expect(wrapper.find('.ai-toolcall-render-header').classes()).toContain('toolcall-status-completed');
     });
   });
 });

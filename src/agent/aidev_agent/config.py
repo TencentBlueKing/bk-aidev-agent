@@ -108,6 +108,8 @@ def update_django_settings(django_settings=None):
 
 env = environs.Env()
 env.read_env()
+
+
 existed_keys = list(locals().keys())
 existed_keys.append("existed_keys")
 
@@ -160,6 +162,19 @@ LLM_RETRY_STRATEGY = env.str("LLM_RETRY_STRATEGY", "llm_gw")
 BKAI_FAST_LLM = env.str("BKAI_FAST_LLM", None)
 # 是否启用任务完成度评估（None 表示不覆盖平台配置）
 BKAI_ENABLE_JUDGE_RESPONSE = env.bool("BKAI_ENABLE_JUDGE_RESPONSE", None)
+
+# Agent 事件配置
+BKAI_EVENT_DATABASE_ENABLED = env.bool("BKAI_EVENT_DATABASE_ENABLED", True)
+
+# Agent 指标与异步任务配置
+# None 表示未通过环境变量显式覆盖，允许平台下发的 otel_info.metrics.enabled 生效。
+BKAI_AGENT_ENABLE_METRICS = env.bool("BKAI_AGENT_ENABLE_METRICS", None)
+BKAI_AGENT_METRICS_DATA_ID = env.str("BKAI_AGENT_METRICS_DATA_ID", "")
+BKAI_AGENT_METRICS_TOKEN = env.str("BKAI_AGENT_METRICS_TOKEN", "")
+BKAI_AGENT_METRICS_HOST = env.str("BKAI_AGENT_METRICS_HOST", "") or env.str("PROXY_IP", "")
+BKAI_AGENT_METRICS_TARGET = env.str("BKAI_AGENT_METRICS_TARGET", "")
+BKAI_AGENT_METRICS_TASK_TTL_SECONDS = max(1, env.int("BKAI_AGENT_METRICS_TASK_TTL_SECONDS", 3600))
+BKAI_AGENT_TASK = "bkai_agent_task"
 # end: 配置
 
 

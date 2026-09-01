@@ -41,7 +41,7 @@ class ChatSessionViewSet(PluginViewSet):
 
     @property
     def channel_type(self):
-        """会话创建/查询入口的默认渠道"""
+        """会话创建渠道；Web 列表的默认可见渠道由平台决定。"""
         return ChannelType.POPUP.value
 
     def list(self, request):
@@ -49,6 +49,9 @@ class ChatSessionViewSet(PluginViewSet):
             "session_type": self.session_type,
             "protocol_version": AGUI_PROTOCOL_VERSION,
         }
+        # Web 不补渠道，让平台返回小鲸 + 企微；OpenAPI 等入口保留原有筛选。
+        if self.channel_type != ChannelType.POPUP.value:
+            params["channel_type"] = self.channel_type
         page = request.query_params.get("page")
         page_size = request.query_params.get("page_size")
         # 兼容旧前端：仅当显式传入 page 或 page_size 时启用分页，否则保持数组返回

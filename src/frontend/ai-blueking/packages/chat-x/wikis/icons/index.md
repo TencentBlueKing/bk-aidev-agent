@@ -19,6 +19,7 @@ import {
   ImageBrokenIcon, ImageSizeIcon,
   BkFlowSuccessIcon, BkFlowFailedIcon, BkFlowSuspendedIcon,
   ExecutionIcon, NodeOutputIcon, NodeTabIcon,
+  ToolCallIcon, ChevronRightIcon,
 } from '@blueking/chat-x';
 
 const iconColor = ref('#63656e');
@@ -140,6 +141,8 @@ const groups = [
       { name: 'ExecutionIcon', icon: w(ExecutionIcon) },
       { name: 'NodeOutputIcon', icon: w(NodeOutputIcon) },
       { name: 'NodeTabIcon', icon: w(NodeTabIcon) },
+      { name: 'ToolCallIcon', icon: w(ToolCallIcon) },
+      { name: 'ChevronRightIcon', icon: w(ChevronRightIcon) },
     ],
   },
 ];
@@ -306,7 +309,7 @@ type Key = ToolIcons;
 
 ### 执行图标 `execution.ts`
 
-用于流程编排 / Agent 执行状态展示。
+用于流程编排 / Agent 执行状态与工具调用展示。
 
 | 导出名                | class                       | viewBox         | 颜色                  | 说明     |
 | --------------------- | --------------------------- | --------------- | --------------------- | -------- |
@@ -316,6 +319,8 @@ type Key = ToolIcons;
 | `ExecutionIcon`       | `ai-execution-icon`         | `0 0 1024 1024` | currentColor          | 执行时钟 |
 | `NodeOutputIcon`      | `ai-node-output-icon`       | `0 0 1024 1024` | currentColor          | 节点输出 |
 | `NodeTabIcon`         | `ai-node-tab-icon`          | `0 0 1024 1024` | currentColor          | 节点 Tab |
+| `ToolCallIcon`        | `ai-toolcall-icon`          | `0 0 16 16`     | currentColor          | 工具调用（ToolcallRender 头部，16×16） |
+| `ChevronRightIcon`    | `ai-chevron-right-icon`     | `0 0 10 10`     | currentColor          | 折叠箭头（10×10，展开态 rotate 90deg） |
 
 ### 图片预览图标 `image-preview.ts`
 
@@ -337,5 +342,5 @@ type Key = ToolIcons;
 
 1. **VNode 而非组件**：图标是 `h()` 预创建的 VNode 实例，同一个 VNode 不能被多处挂载。在列表渲染中使用 `cloneVNode()` 创建副本，或用 `defineComponent` 包装
 2. **硬编码颜色**：`DocumentIcon`、`RemoveIcon`（`#737987`）、`AIBluekingIcon` / `AIBluekingBannerIcon`（渐变）、`ImageBrokenIcon`、`BkFlowSuccessIcon`（`#18B456`）、`BkFlowFailedIcon`（`#EA3636`）、`BkFlowSuspendedIcon`（`#F59500`）内部使用固定颜色，不响应父元素 `color` 继承
-3. **非标准 viewBox**：`TargetIcon` / `RemoveIcon` 为 `0 0 64 64`，`ImageErrorIcon` 为 `0 0 24 18`，`AIBluekingIcon` 为 `0 0 24 24`，`AIBluekingBannerIcon` 为 `0 0 309 93`，`ImageBrokenIcon` 为 `0 0 200 180`，`BkFlowSuccessIcon` / `BkFlowFailedIcon` / `BkFlowSuspendedIcon` / `ArtifactTabIcon` 为 `0 0 16 16`，设置 `width` / `height` 时注意比例
+3. **非标准 viewBox**：`TargetIcon` / `RemoveIcon` 为 `0 0 64 64`，`ImageErrorIcon` 为 `0 0 24 18`，`AIBluekingIcon` 为 `0 0 24 24`，`AIBluekingBannerIcon` 为 `0 0 309 93`，`ImageBrokenIcon` 为 `0 0 200 180`，`BkFlowSuccessIcon` / `BkFlowFailedIcon` / `BkFlowSuspendedIcon` / `ArtifactTabIcon` / `ToolCallIcon` 为 `0 0 16 16`，`ChevronRightIcon` 为 `0 0 10 10`，设置 `width` / `height` 时注意比例
 4. **`FileUploadIcon` 类名**：源码中 class 为 `ai-delete-circle-icon`（与 `DeleteCircleIcon` 相同），通过 CSS 定位时需注意

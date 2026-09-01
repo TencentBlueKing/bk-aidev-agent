@@ -213,17 +213,9 @@ enum MessageContentType {
   KnowledgeRag = 'knowledge_rag',
   Other = 'other',
 }
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending',
-  Streaming = 'streaming',
-  Complete = 'complete',
-  Error = 'error',
-  Stop = 'stop',
-  Disabled = 'disabled',
-}
 ```
+
+> `MessageStatus` 完整取值见 [常量枚举](../../types/constants)；本组件主要关心 `error`（错误内容）与流式相关状态。
 
 ## 使用场景
 

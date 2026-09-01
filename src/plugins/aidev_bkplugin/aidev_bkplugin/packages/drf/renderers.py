@@ -18,6 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 import json
 
+from aidev_agent.utils.tracing import get_current_trace_id
 from pydantic import BaseModel
 from rest_framework import status
 from rest_framework.renderers import JSONRenderer
@@ -30,6 +31,12 @@ class BKAIDevJSONRenderer(encoders.JSONEncoder):
         if isinstance(obj, BaseModel):
             return obj.model_dump()
         return super().default(obj)
+
+
+def get_response_trace_id(request) -> str | None:
+    """Resolve the request trace ID, falling back to the active OTel span."""
+
+    return getattr(request, "otel_trace_id", None) or get_current_trace_id()
 
 
 class APIRenderer(JSONRenderer):
@@ -45,7 +52,7 @@ class APIRenderer(JSONRenderer):
         统一处理返回数据
         """
         response = renderer_context["response"]
-        trace_id = getattr(renderer_context.get("request"), "otel_trace_id", None)
+        trace_id = get_response_trace_id(renderer_context.get("request"))
 
         if is_success(response.status_code):
             response.status_code = status.HTTP_200_OK

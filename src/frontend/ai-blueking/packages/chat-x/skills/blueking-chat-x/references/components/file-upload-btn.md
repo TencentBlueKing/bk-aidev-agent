@@ -22,7 +22,7 @@
 ## 组件结构
 
 ```
-.file-upload-btn（display: flex，align-items: center）
+.ai-file-upload-btn（display: flex，align-items: center）
 ├── input[type="file"]（.file-upload-btn-input，display: none，multiple，:accept）
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
 └── span.ai-shortcut-btn.file-upload-btn-icon（热区 32×32px / 圆角 8px；图标字号跟随 --ai-icon-size-sm：small=16px、normal=18px；color: #979ba5；hover: #f0f1f5）

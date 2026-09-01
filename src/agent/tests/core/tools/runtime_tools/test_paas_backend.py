@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 from aidev_agent.core.tools.runtime_tools.paas_backend import ExecResult, PaasSandboxBackend
 from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, WriteResult
+from aidev_agent.utils.tracing import set_agent_tracer
 from requests.exceptions import HTTPError
 
 # ---------------------------------------------------------------------------
@@ -742,6 +743,31 @@ class TestPaasSandboxBackendErrors:
 
 class TestPaasSandboxBackendHTTPMethods:
     """测试各 HTTP API 方法（通过 mock client）。"""
+
+    def test_exec_command_records_sandbox_client_span(self, http_backend):
+        TracerProvider = pytest.importorskip("opentelemetry.sdk.trace").TracerProvider
+        SimpleSpanProcessor = pytest.importorskip("opentelemetry.sdk.trace.export").SimpleSpanProcessor
+        InMemorySpanExporter = pytest.importorskip(
+            "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+        ).InMemorySpanExporter
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        set_agent_tracer(provider.get_tracer(__name__))
+        http_backend.client.exec_command.request.return_value = _make_http_response(
+            json_data={"stdout": "ok", "stderr": "", "exit_code": 0}
+        )
+
+        try:
+            http_backend.exec_command("sb-123", "echo hello")
+        finally:
+            set_agent_tracer(None)
+
+        span = exporter.get_finished_spans()[0]
+        assert span.name == "sandbox.execute"
+        assert span.kind.name == "CLIENT"
+        assert span.attributes["sandbox.operation.name"] == "execute"
+        assert "echo hello" not in str(span.attributes)
 
     @pytest.fixture()
     def http_backend(self):

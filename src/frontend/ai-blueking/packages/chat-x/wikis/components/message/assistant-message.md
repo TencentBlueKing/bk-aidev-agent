@@ -156,13 +156,14 @@ AI 助手消息展示组件：正文（Markdown）、工具调用（Tool Calls�
 AssistantMessage（根类名：ai-assistant-message）
 ├── ai-assistant-message-content（内容区，v-if content）
 │   └── [default slot { content }] 或 ContentRender → MarkdownContent
-├── ToolCallRender × N（toolCalls，不受 slot 影响）
+├── ai-assistant-message-toolcalls（v-if toolCalls 非空，flex column，gap: 8px）
+│   └── ToolCallRender × N（toolCalls，不受 slot 影响）
 └── MessageArtifacts（v-if property.artifacts 非空）
       └── ArtifactFileCard × N（点击 → useArtifactPreview → 侧栏 FileArtifactPanel → ArtifactPreviewHost）
 ```
 
 - **内容区**：`content` 经 `ContentRender`（`MessageContentType.Text`）由 `MarkdownContent` 渲染；default slot 仅收到 `{ content }`
-- **工具调用区**：每个 `toolCall` 渲染一个 `ToolCallRender`，位于内容区下方
+- **工具调用区**：每个 `toolCall` 渲染一个 `ToolCallRender`，位于内容区下方；多条工具调用由 `.ai-assistant-message-toolcalls` 容器统一控制为 `8px` 间距，不受消息根节点 `12px` 间距影响
 - **文件产物区**：读取 `property.artifacts`，用 `uid ?? String(id)` 作为 `messageUid` 传给 `MessageArtifacts`
 
 ## 基础用法
@@ -391,7 +392,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 ### MCP 工具调用
 
-`function.mcpName` 标识 MCP 服务名称，`ToolCallRender` 的标题会显示为「调用 MCP：{mcpName} / {name}」：
+`function.type` 为 `'mcp'`（或旧数据仅有 `mcpName`）时，`ToolCallRender` 头部显示为「调用 MCP {mcpName} / {name}」：
 
 ```vue
 <script setup lang="ts">
@@ -400,6 +401,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
       id: 'call_mcp_1',
       type: 'function',
       function: {
+        type: 'mcp', // 调用类型，缺省时有 mcpName 也会兼容判定为 MCP
         name: 'query_database',
         arguments: '{"sql": "SELECT * FROM users LIMIT 10"}',
         description: '执行数据库查询',
@@ -499,11 +501,11 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 传给每个 `ToolCallRender` 的 `status` 按以下优先级计算：
 
-1. 无 `toolMessage` → `MessageStatus.Pending`（调用中）
-2. `toolMessage.error` 为真 → `MessageStatus.Error`（调用失败）
+1. 无 `toolMessage` → `MessageStatus.Pending`（进行中）
+2. `toolMessage.error` 为真 → `MessageStatus.Error`（失败）
 3. 否则 → `toolMessage.status ??` 本组件 `status`
 
-**调用中**（有 `toolCalls`、尚无 `toolMessage`；即便助手 `status` 已是 `complete` 也显示调用中）：
+**进行中**（有 `toolCalls`、尚无 `toolMessage`；即便助手 `status` 已是 `complete`，工具调用仍显示「正在调用」）：
 
 <div class="demo">
   <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">无 toolMessage → Pending</p>
@@ -514,7 +516,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
   />
 </div>
 
-**调用成功**（`toolMessage.status = "complete"`）：
+**成功**（`toolMessage.status = "complete"`）：
 
 <div class="demo">
   <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">toolMessage.status = "complete"</p>

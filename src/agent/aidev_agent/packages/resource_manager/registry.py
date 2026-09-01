@@ -19,6 +19,8 @@ from typing_extensions import Protocol
 from aidev_agent.utils.factory import SingletonFactory
 
 if TYPE_CHECKING:
+    from ag_ui.core import BaseEvent
+
     from aidev_agent.api.bk_aidev import Client
     from aidev_agent.pydantic_models import AgentConfig
 
@@ -30,6 +32,14 @@ class ResourceManagerProtocol(Protocol):
     所有方法定义业务契约（含返回结构语义），由 ``AgentResourceManager`` 提供默认实现。
     Plugin / 测试侧若要替换或 Mock，按本协议鸭子类型实现即可（不必继承）。
     """
+
+    def publish_event(self, event: BaseEvent) -> None:
+        """Publish an integration event; acceptance is not channel delivery."""
+        ...
+
+    def event_publishing_enabled(self) -> bool:
+        """Whether this manager has an integration event backend."""
+        ...
 
     def get_client(self, **kwargs) -> "Client":
         """获取已完成认证信息注入的 API Client。"""
@@ -49,6 +59,10 @@ class ResourceManagerProtocol(Protocol):
 
     def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
         """取回会话上下文消息列表（业务返回结构 = 后端 ``data`` 字段）"""
+        ...
+
+    def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
+        """取回会话全部落库内容记录（业务返回结构 = 后端 ``data`` 字段，与前端历史接口同源）。"""
         ...
 
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:

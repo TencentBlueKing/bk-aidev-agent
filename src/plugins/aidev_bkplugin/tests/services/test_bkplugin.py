@@ -22,7 +22,7 @@ sys.modules.setdefault("bk_plugin_framework", _bk_plugin_framework)
 sys.modules.setdefault("bk_plugin_framework.kit", _bk_plugin_framework.kit)
 sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framework.kit.decorators)
 
-from aidev_agent.enums import AgentType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
+from aidev_agent.enums import AgentType, ChannelType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError  # noqa: E402
 from aidev_bkplugin.enums import PluginPollTaskState  # noqa: E402
 from aidev_bkplugin.services.agent_session import SessionManager  # noqa: E402
@@ -94,7 +94,13 @@ def test_poll_task_state(status, contents, turn_id, expected, monkeypatch):
 
 def test_prepare_session_turn_uses_user_content_turn_id(monkeypatch):
     sm = SessionManager("alice")
-    monkeypatch.setattr(sm, "get_or_create_by_thread_id", lambda tid: "sc-1")
+    seen_channel_types: list[str] = []
+
+    def _get_or_create(_thread_id, channel_type):
+        seen_channel_types.append(channel_type)
+        return "sc-1"
+
+    monkeypatch.setattr(sm, "get_or_create_by_thread_id", _get_or_create)
     saved: list[tuple[str, str]] = []
 
     def _save(session_code, role, content, **kw):
@@ -104,6 +110,7 @@ def test_prepare_session_turn_uses_user_content_turn_id(monkeypatch):
     monkeypatch.setattr(sm, "save_content", _save)
 
     assert sm.prepare_session_turn("thread-a", input_text="q") == ("sc-1", "generated-turn")
+    assert seen_channel_types == [ChannelType.POPUP.value]
     assert saved == [(PromptRole.USER.value, "")]
 
 
@@ -131,7 +138,12 @@ class TestBkpluginExecution:
             with patch.dict(sys.modules, {"aidev_bkplugin.tasks": fake_tasks}):
                 storage = agent.dispatch_async()
 
-        mock_sm.prepare_session_turn.assert_called_once_with("thread-1", input_text="hi", turn_id=ANY)
+        mock_sm.prepare_session_turn.assert_called_once_with(
+            "thread-1",
+            input_text="hi",
+            turn_id=ANY,
+            channel_type=ChannelType.BKPLUGIN.value,
+        )
         assert storage["turn_id"] and storage["agent_type"] == agent_type.value
         task.delay.assert_called_once()
         assert task.delay.call_args.kwargs["execute_payload"]["turn_id"] == "turn-1"

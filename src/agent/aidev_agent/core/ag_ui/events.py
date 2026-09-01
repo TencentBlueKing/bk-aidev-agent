@@ -16,6 +16,7 @@ class ExtendToolCallStartEvent(ToolCallStartEvent):
 
 
 class ExtendToolCallResultEvent(ToolCallResultEvent):
+    tool_call_name: str | None = Field(default=None, description="工具名，供无 START 事件的恢复流展示")
     duration: float | None = Field(default=None, description="工具调用的耗时")
     is_error: bool | None = Field(default=None, description="工具调用是否出错")
     additional_metadata: dict | None = Field(

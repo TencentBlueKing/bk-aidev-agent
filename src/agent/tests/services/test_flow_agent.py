@@ -43,7 +43,7 @@ class MockResourceManager:
     """实现 ResourceManagerProtocol 的 Mock，同时覆盖 flow agent 所需方法"""
 
     def __init__(self, start_result=None, start_error=None, task_info_sequence=None, error_on_call=None):
-        self._start_result = start_result or {"task_id": "12345"}
+        self._start_result = start_result or {"task_id": 12345}
         self._start_error = start_error
         self._sequence = task_info_sequence or [
             {"task_state": "RUNNING", "nodes": {}},
@@ -153,7 +153,7 @@ class TestFlowAgentMainFlow:
         验证 SSE 事件序列：RUN_STARTED → flow_agent_start → flow_agent_result×N → flow_agent_end → RUN_FINISHED
         """
         mock_rm = MockResourceManager(
-            start_result={"task_id": "99999"},
+            start_result={"task_id": 99999},
             task_info_sequence=[
                 {"task_state": "RUNNING", "nodes": {"n1": {"status": "running"}}},
                 {"task_state": "RUNNING", "nodes": {"n1": {"status": "completed"}, "n2": {"status": "running"}}},
@@ -176,7 +176,7 @@ class TestFlowAgentMainFlow:
         # 2) 紧跟 flow_agent_start，携带 task_id（数组格式）
         start_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_START.value)
         assert len(start_events) == 1
-        assert start_events[0]["value"][0]["task_id"] == "99999"
+        assert start_events[0]["value"][0]["task_id"] == 99999
 
         # 3) 3 次轮询产生 3 个 flow_agent_result（RUNNING, RUNNING, FINISHED）
         result_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)
@@ -185,7 +185,7 @@ class TestFlowAgentMainFlow:
         # 4) flow_agent_end 携带 task_outputs，无 error（数组格式）
         end_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_END.value)
         assert len(end_events) == 1
-        assert end_events[0]["value"][0]["task_id"] == "99999"
+        assert end_events[0]["value"][0]["task_id"] == 99999
         assert end_events[0]["value"][0]["task_outputs"] == [{"key": "output", "value": "ok"}]
         assert "error" not in end_events[0]["value"][0]
 
@@ -196,7 +196,7 @@ class TestFlowAgentMainFlow:
     def test_task_failed_has_error_flag(self, mock_cancelled):
         """任务以 FAILED 终态结束，flow_agent_end 应携带 error=True 和 state=FAILED"""
         mock_rm = MockResourceManager(
-            start_result={"task_id": "88888"},
+            start_result={"task_id": 88888},
             task_info_sequence=[
                 {"task_state": "RUNNING", "nodes": {}},
                 {"task_state": "FAILED", "task_outputs": []},
@@ -250,7 +250,7 @@ class TestFlowAgentMainFlow:
     def test_poll_timeout_emits_error(self, mock_cancelled):
         """轮询超时后应产出 RUN_ERROR + RUN_FINISHED"""
         never_finish = MockResourceManager(
-            start_result={"task_id": "timeout_task"},
+            start_result={"task_id": 3001},
             task_info_sequence=[{"task_state": "RUNNING"}],
         )
 
@@ -267,6 +267,31 @@ class TestFlowAgentMainFlow:
         assert len(error_events) == 1
         assert "timeout" in error_events[0]["message"].lower()
         assert events[-1]["type"] == EventType.RUN_FINISHED
+
+    @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
+    def test_sse_task_id_is_int_across_events(self, mock_cancelled):
+        """start / result / end 的 task_id 必须是同一 int，前端 === 才能匹配"""
+        mock_rm = MockResourceManager(
+            start_result={"task_id": 1576996},
+            task_info_sequence=[
+                {"task_id": 1576996, "task_state": "RUNNING", "nodes": {}},
+                {"task_id": 1576996, "task_state": "FINISHED", "task_outputs": []},
+            ],
+        )
+        agent = FlowAgentCompletionAgent(
+            resource_manager=mock_rm,
+            flow_start_params={"session_code": "s_int"},
+            poll_interval=0.01,
+            poll_timeout=10.0,
+        )
+        events = _parse_sse_events(agent._run_flow())
+
+        start = _find_custom_events(events, CustomMessageType.FLOW_AGENT_START.value)[0]["value"][0]
+        result = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)[0]["value"][0]
+        end = _find_custom_events(events, CustomMessageType.FLOW_AGENT_END.value)[0]["value"][0]
+        assert start["task_id"] == result["task_id"] == end["task_id"] == 1576996
+        assert type(start["task_id"]) is int
+        assert type(end["task_id"]) is int
 
 
 class TestFlowAgentStop:
@@ -292,7 +317,7 @@ class TestFlowAgentStop:
             return poll_count["n"] >= 4
 
         mock_rm = MockResourceManager(
-            start_result={"task_id": "cancel_task"},
+            start_result={"task_id": 3002},
             task_info_sequence=[{"task_state": "RUNNING"}] * 10,
         )
 
@@ -347,7 +372,7 @@ class TestFlowAgentStop:
             "statistics": {"total": 3, "state_counts": {"FINISHED": 1, "RUNNING": 1, "PENDING": 1}},
         }
         mock_rm = MockResourceManager(
-            start_result={"task_id": "999"},
+            start_result={"task_id": 999},
             task_info_sequence=[running_data] * 10,
         )
 
@@ -512,7 +537,7 @@ class TestFlowAgentRetrySkip:
             agent = FlowAgentCompletionAgent(
                 resource_manager=mock_rm,
                 flow_start_params={"session_code": "s_resume"},
-                task_id="existing_task_001",
+                task_id=1001,
                 resume_from_node=action,
                 poll_interval=0.01,
                 poll_timeout=10.0,
@@ -527,7 +552,7 @@ class TestFlowAgentRetrySkip:
             # 2) 发送 flow_agent_restart，携带 task_id 和 action
             resumed_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESTART.value)
             assert len(resumed_events) == 1
-            assert resumed_events[0]["value"][0]["task_id"] == "existing_task_001"
+            assert resumed_events[0]["value"][0]["task_id"] == 1001
             assert resumed_events[0]["value"][0]["action"] == action
 
             # 3) resume 场景轮询通过 flow_agent_update 事件推送给前端
@@ -537,7 +562,7 @@ class TestFlowAgentRetrySkip:
             # 4) flow_agent_end 正常
             end_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_END.value)
             assert len(end_events) == 1
-            assert end_events[0]["value"][0]["task_id"] == "existing_task_001"
+            assert end_events[0]["value"][0]["task_id"] == 1001
             assert "error" not in end_events[0]["value"][0]
 
             # 5) 完整事件序列
@@ -561,7 +586,7 @@ class TestFlowAgentRetrySkip:
             agent = FlowAgentCompletionAgent(
                 resource_manager=mock_rm,
                 flow_start_params={"session_code": "s_skip_start"},
-                task_id="existing_task_002",
+                task_id=1002,
                 resume_from_node=action,
                 poll_interval=0.01,
                 poll_timeout=10.0,
@@ -589,7 +614,7 @@ class TestFlowAgentRetrySkip:
         agent = FlowAgentCompletionAgent(
             resource_manager=mock_rm,
             flow_start_params={"session_code": "s_retry_fail"},
-            task_id="retry_fail_task",
+            task_id=2001,
             resume_from_node="retry",
             poll_interval=0.01,
             poll_timeout=10.0,
@@ -619,7 +644,7 @@ class TestFlowAgentRetrySkip:
 
         running_data = {
             "task_state": "RUNNING",
-            "task_id": "cancel_resume_task",
+            "task_id": 2002,
             "nodes": {
                 "n1": {"id": "n1", "name": "重试节点", "type": "ServiceActivity", "state": "RUNNING"},
                 "n2": {"id": "n2", "name": "已完成节点", "type": "ServiceActivity", "state": "FINISHED"},
@@ -627,14 +652,14 @@ class TestFlowAgentRetrySkip:
             "statistics": {"total": 2, "state_counts": {"RUNNING": 1, "FINISHED": 1}},
         }
         mock_rm = MockResourceManager(
-            start_result={"task_id": "cancel_resume_task"},
+            start_result={"task_id": 2002},
             task_info_sequence=[running_data] * 10,
         )
 
         agent = FlowAgentCompletionAgent(
             resource_manager=mock_rm,
             flow_start_params={"session_code": "s_cancel_resume"},
-            task_id="cancel_resume_task",
+            task_id=2002,
             resume_from_node="retry",
             poll_interval=0.01,
             poll_timeout=60.0,
@@ -683,7 +708,7 @@ class TestFlowAgentRetrySkip:
         agent = FlowAgentCompletionAgent(
             resource_manager=mock_rm,
             flow_start_params={"session_code": "s_existing"},
-            task_id="existing_task_003",
+            task_id=1003,
             poll_interval=0.01,
             poll_timeout=10.0,
         )

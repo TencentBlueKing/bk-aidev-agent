@@ -293,6 +293,7 @@ class BkpluginAgentRunner(ABC):
             thread_id,
             input_text=self.input_text or "",
             turn_id=ek.turn_id,
+            channel_type=ChannelType.BKPLUGIN.value,
         )
         ek.session_code = session_code
         ek.turn_id = turn_id

@@ -18,6 +18,7 @@ from aidev_agent.services.agent.registry import (
 )
 from aidev_agent.services.common_agent import CommonAgentProtocol, common_agent_factory
 from aidev_agent.services.token_usage import BKAidevTokenUsageSink, TokenUsageCallbackHandler
+from aidev_agent.utils.migrations import migration_chat_session_context_from_chat_session_contents_v1
 
 logger = logging.getLogger("aidev-agent")
 
@@ -35,8 +36,8 @@ class AgentInstanceFactory:
     ``_FACTORY_TOKEN``（约定的"知情人"凭证）。
 
     职责：
-    1. 拉取 / 清洗 ``session_context_data``（含 ``_check_agent_switch`` 决定 final agent_code、
-       ``_clean_last_assistant_message`` 清理 generating 占位）。
+    1. 拉取 / 清洗 ``session_context_data``（含 ``_check_agent_switch`` 决定 final agent_code；
+       generating 占位清理已移至 LLM 输入视图链（core/nodes/model/chat_history_assembly），factory 不再做账本清理）。
     2. 暴露 ``get_agent_config`` 配置存取出口（被 ``ChatAgentBuilder`` 等装配器使用）。
     3. 装配 ``AgentBuildContext`` 并调度 ``agent_class().build(ctx)`` 出实例。
 
@@ -57,6 +58,7 @@ class AgentInstanceFactory:
         default_headers: dict[str, str] | None = None,
         temperature: float = None,
         max_tokens: int = None,
+        retry_strategy: str | None = None,
         switch_agent_by_scene: bool = False,
         resource_manager: Optional[ResourceManagerProtocol] = None,
         is_temporary: bool = False,
@@ -104,6 +106,7 @@ class AgentInstanceFactory:
         self.default_headers = default_headers or None
         self.temperature = temperature or None
         self.max_tokens = max_tokens or None
+        self.retry_strategy = retry_strategy or None
         self.switch_agent_by_scene = switch_agent_by_scene
         self.is_temporary = is_temporary
         self.checkpointer = checkpointer
@@ -124,6 +127,7 @@ class AgentInstanceFactory:
         default_headers: dict[str, str] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = settings.MAX_TOKENS,
+        retry_strategy: str | None = None,
         switch_agent_by_scene: bool = False,
         resource_manager: Optional[ResourceManagerProtocol] = None,
         is_temporary: bool = False,
@@ -171,6 +175,7 @@ class AgentInstanceFactory:
             default_headers=default_headers,
             temperature=temperature,
             max_tokens=max_tokens,
+            retry_strategy=retry_strategy,
             switch_agent_by_scene=switch_agent_by_scene,
             resource_manager=resource_manager,
             is_temporary=is_temporary,
@@ -259,10 +264,10 @@ class AgentInstanceFactory:
         )
 
         session_code = cast(str, self.session_code)
-        session_context_data = self.resource_manager.get_chat_session_context(session_code) or []
-
-        # 去掉 system prompts 在 config_manager 中处理
-        session_context_data = [each for each in session_context_data if each.get("role", "") != "system"]
+        # 换源（失败异常上抛，无 try/except 静默降级）：get_chat_session_contents 替代旧源 get_chat_session_context 方法
+        raw_records = self.resource_manager.get_chat_session_contents(session_code) or []
+        # 迁移层批量转 ChatPrompt 单账本形状；不再过滤 system —— 单账本保持无损（system 剔除由 build_chat_history 在 LLM 路径承担）
+        session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)
 
         base_agent_config = self.get_agent_config(self.agent_code)
 
@@ -275,8 +280,6 @@ class AgentInstanceFactory:
 
         if not switch_agent and self.switch_agent_by_scene:
             switch_agent = True
-
-        self._clean_last_assistant_message(session_context_data, base_agent_config)
 
         return {
             "agent_code": final_agent_code,
@@ -339,26 +342,6 @@ class AgentInstanceFactory:
 
         return switch_agent, final_agent_code
 
-    def _clean_last_assistant_message(self, session_context_data: List[dict], base_agent_config):
-        """清理最后一条 assistant 消息（如果包含生成中关键词）"""
-        if not session_context_data:
-            return
-
-        if session_context_data[-1]["role"] != "assistant":
-            return
-
-        logger.info(
-            f"AgentInstanceFactory: session->[{self.session_code}] last message is assistant, checking if should remove"
-        )
-
-        content = session_context_data[-1]["content"]
-
-        if base_agent_config.generating_keyword not in content:
-            return
-
-        logger.info("AgentInstanceFactory: removing last assistant message with generating keyword")
-        session_context_data.pop()
-
     def _make_build_context(
         self,
         base_args: dict,
@@ -398,13 +381,15 @@ class AgentInstanceFactory:
                 default_headers=self.default_headers,
                 temperature=self.temperature,
                 max_tokens=self.max_tokens,
+                retry_strategy=self.retry_strategy,
                 checkpointer=self.checkpointer,
             )
         elif self.agent_type == AgentType.FLOW:
             # FLOW 路径不依赖 agent 配置（与原行为保持一致），跳过预读
+            raw_task_id = remaining_extra.pop("task_id", None)
             flow_extras = FlowBuildExtras(
                 flow_resource_manager=remaining_extra.pop("flow_resource_manager", None),
-                task_id=remaining_extra.pop("task_id", None),
+                task_id=int(raw_task_id) if raw_task_id else None,
                 flow_start_params=remaining_extra.pop("flow_start_params", None) or {},
                 poll_interval=remaining_extra.pop("poll_interval", None),
                 poll_timeout=remaining_extra.pop("poll_timeout", None),

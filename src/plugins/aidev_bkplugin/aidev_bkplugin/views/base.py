@@ -20,6 +20,7 @@ from rest_framework.viewsets import ViewSetMixin
 
 from aidev_bkplugin.packages.drf.authentication import custom_authentication_classes
 from aidev_bkplugin.packages.drf.decorators import login_exempt
+from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.permissions import AgentPluginPermission
 from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_helpers import AgentHelper
@@ -153,7 +154,7 @@ class PluginViewSet(ViewSetMixin, APIView):
             return response
         # 目前仅对 Restful Response 进行处理
         if isinstance(response, Response):
-            trace_id = getattr(request, "otel_trace_id", None)
+            trace_id = get_response_trace_id(request)
             if is_success(response.status_code):
                 response.status_code = status.HTTP_200_OK
                 response.data = {

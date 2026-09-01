@@ -54,12 +54,18 @@ def test_agent_metrics_only_create_instruments_used_by_the_dashboard():
         "gen_ai.client.operation.active",
         "gen_ai.client.operation.duration",
         "gen_ai.client.operation.time_to_first_chunk",
+        "gen_ai.client.fallback.count",
+        "gen_ai.client.rate_limit.count",
+        "gen_ai.client.retry.count",
+        "gen_ai.client.retry.wait.duration",
         "gen_ai.execute_tool.active",
         "gen_ai.execute_tool.duration",
         "gen_ai.invoke_agent.duration",
         "gen_ai.invoke_agent.iteration_count",
         "gen_ai.invoke_agent.started",
         "gen_ai.invoke_agent.time_to_first_token",
+        "aidev.operation.retry.count",
+        "aidev.operation.timeout.count",
     }
 
 
@@ -229,3 +235,34 @@ def test_failed_message_publish_is_not_counted_as_successful_broker_writes():
     assert meter.instruments["aidev.message.publish.event_count"].calls == []
     assert meter.instruments["aidev.message.publish.size"].calls == []
     assert meter.instruments["aidev.message.publish.duration"].calls[0][1]["error.type"] == "TimeoutError"
+
+
+def test_resilience_metrics_keep_model_names_and_run_ids_out_of_dimensions():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    attributes = {
+        "model_role": "fallback",
+        "retry_strategy": "sdk",
+        "error.type": "RateLimitError",
+        "outcome": "scheduled",
+    }
+
+    recorder.record_llm_rate_limit(attributes)
+    recorder.record_llm_retry(attributes, wait_seconds=60)
+    recorder.record_llm_fallback({**attributes, "outcome": "succeeded"})
+    recorder.record_operation_timeout(
+        {"timeout.scope": "session", "error.type": "AgentDeadlineExceededError", "outcome": "cancelled"}
+    )
+
+    for instrument_name in (
+        "gen_ai.client.rate_limit.count",
+        "gen_ai.client.retry.count",
+        "gen_ai.client.retry.wait.duration",
+        "gen_ai.client.fallback.count",
+        "aidev.operation.timeout.count",
+    ):
+        _, metric_attributes = meter.instruments[instrument_name].calls[0]
+        assert "gen_ai.request.model" not in metric_attributes
+        assert "gen_ai.response.model" not in metric_attributes
+        assert "agent.session.session_code" not in metric_attributes
+        assert "run_id" not in metric_attributes

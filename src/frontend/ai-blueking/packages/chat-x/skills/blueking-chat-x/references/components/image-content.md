@@ -24,7 +24,7 @@ Markdown Token 层的图片渲染基础组件，被 `MarkdownContent` 在解析�
 ## 组件结构
 
 ```
-span.md-image-wrapper（inline-block，vertical-align: middle）
+span.ai-md-image-wrapper（inline-block，vertical-align: middle）
 ├── [showLoading] span.md-image-loading（inline-flex，gap: 6px，padding: 4px 8px，bg: #f5f7fa）
 │     ├── bkui-vue Loading（spin，mini，primary）
 │     └── "图片加载中..."

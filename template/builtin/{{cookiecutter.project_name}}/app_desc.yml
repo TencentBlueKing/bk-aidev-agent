@@ -104,7 +104,7 @@ modules:
               targetPort: 5000
               port: 80
         - name: celery
-          procCommand: celery -A blueapps.core.celery worker -P threads -Q plugin_schedule -l INFO -c 2 --max-tasks-per-child 256
+          procCommand: celery -A blueapps.core.celery worker -P threads -Q plugin_schedule,bkai_agent_task -l INFO -c 2 --max-tasks-per-child 256
           resQuotaPlan: 4C4G
           replicas: 1
         - name: wxaibot

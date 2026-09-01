@@ -20,6 +20,7 @@ from copy import deepcopy
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, List, Optional
 
+from ag_ui.core import BaseEvent
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -35,6 +36,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
 )
 from aidev_agent.pydantic_models import AgentConfig
 from aidev_agent.utils.loop import run_coro_sync
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
 
 try:
     import bkoauth
@@ -92,6 +94,12 @@ class BaseResourceManager(abc.ABC):
     def get_agent_code(self, **kwargs: Any) -> str:
         """获取resource manager的agent code。子类可覆写按照其他场景获取agent code"""
         return self.app_code
+
+    def publish_event(self, event: BaseEvent) -> None:
+        """Optional integration boundary; standalone agents have no event backend."""
+
+    def event_publishing_enabled(self) -> bool:
+        return False
 
     def resolve_access_token(self, username: str = None) -> str:
         """获取 access_token，优先级：self.access_token > username 参数 > self.username > 空字符串。
@@ -152,6 +160,14 @@ class BaseResourceManager(abc.ABC):
     def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
         client = self.get_client()
         return client.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get("data", [])
+
+    def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
+        """取回会话全部落库内容记录（与前端历史消息接口同源，property 不含 builtin_property）。
+
+        返回结构 = 后端 ``data`` 字段。快照 messages 数据源以此为准。
+        """
+        client = self.get_client()
+        return client.api.get_chat_session_contents(params={"session_code": session_code}, **kwargs).get("data", [])
 
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
@@ -554,10 +570,24 @@ class BaseResourceManager(abc.ABC):
 
         async def _load_tool(server_name, selected_tools_map, index) -> tuple[list[StructuredTool], Any | None]:
             _start = time.monotonic()
+            server_config = new_server_config[server_name]
+            transport = str(server_config.get("transport") or "unknown")
             for _i in range(2):
                 client = MultiServerMCPClient(new_server_config)
                 try:
-                    tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                    with recording_span(
+                        "mcp.tools.list",
+                        kind=CLIENT_SPAN_KIND,
+                        attributes={
+                            "rpc.system": "mcp",
+                            "mcp.operation.name": "tools/list",
+                            "mcp.server.name": server_name,
+                            "mcp.transport": transport,
+                            "mcp.retry.count": _i,
+                        },
+                    ) as span:
+                        tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                        span.set_attribute("mcp.tool.count", len(tools))
                     total_count = len(tools)
                     if selected_tools_map.get(server_name):
                         tools = [each for each in tools if each.name in selected_tools_map[server_name]]
@@ -574,6 +604,7 @@ class BaseResourceManager(abc.ABC):
                         if not each.metadata:
                             each.metadata = {}
                         each.metadata["mcp_name"] = server_name
+                        each.metadata["mcp_transport"] = transport
                     return (tools, None)
                 except Exception as err:
                     error_detail = _extract_mcp_tools_error_detail(err)

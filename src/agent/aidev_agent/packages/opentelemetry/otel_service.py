@@ -35,7 +35,12 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import ProcessResourceDetector, Resource, ResourceDetector, get_aggregated_resources
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 from opentelemetry.semconv.resource import ResourceAttributes
 from typing_extensions import assert_never
 
@@ -54,6 +59,28 @@ from .metrics import (
 from .utils import ExporterType
 
 logger = logging.getLogger(__name__)
+
+
+class LoggingSpanExporter(SpanExporter):
+    """将本地 span 以单行结构化事件写入应用日志，不输出 prompt/attributes。"""
+
+    def export(self, spans) -> SpanExportResult:
+        for span in spans:
+            context = span.get_span_context()
+            parent_span_id = f"{span.parent.span_id:016x}" if span.parent else ""
+            duration_ms = max(0, span.end_time - span.start_time) / 1_000_000
+            logger.info(
+                "event=aidev_otel_span trace_id=%032x span_id=%016x parent_span_id=%s "
+                "name=%s kind=%s status=%s duration_ms=%.3f",
+                context.trace_id,
+                context.span_id,
+                parent_span_id,
+                span.name,
+                span.kind.name,
+                span.status.status_code.name,
+                duration_ms,
+            )
+        return SpanExportResult.SUCCESS
 
 
 class BkAgentOTelService:
@@ -129,6 +156,11 @@ class BkAgentOTelService:
         """
         # 创建 TracerProvider
         self.tracer_provider = TracerProvider(resource=resource)
+
+        if self.config.trace_exporter == "logging":
+            self.tracer_provider.add_span_processor(SimpleSpanProcessor(LoggingSpanExporter()))
+            logger.info("Trace logging exporter added; remote OTLP export disabled")
+            return
 
         # 为每个端点创建独立的 SpanProcessor
         for idx, endpoint_config in enumerate(self.config.otel_endpoints):

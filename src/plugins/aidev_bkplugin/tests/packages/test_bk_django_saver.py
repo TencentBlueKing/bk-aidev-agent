@@ -3,7 +3,7 @@
 import threading
 
 import pytest
-from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver, bulk_upsert
+from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver, _database_write_lock, bulk_upsert
 from django.db import OperationalError, connection, models
 
 
@@ -83,6 +83,66 @@ def test_put_raises_after_database_lock_retries_exhausted(mocker, saver, checkpo
     assert exc_info.value is error
     assert saver.checkpoint_model.objects.update_or_create.call_count == 3
     assert [call.args[0] for call in sleep.call_args_list] == [0.05, 0.1]
+
+
+def test_put_retries_sqlite_database_locked_error(mocker, saver, checkpoint_args):
+    saver.checkpoint_model.objects.update_or_create.side_effect = [
+        OperationalError("database is locked"),
+        (mocker.Mock(), True),
+    ]
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.router.db_for_write", return_value="default")
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    connections.__getitem__.return_value.vendor = "sqlite"
+    sleep = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.time.sleep")
+
+    saver.put(*checkpoint_args)
+
+    assert saver.checkpoint_model.objects.update_or_create.call_count == 2
+    sleep.assert_called_once_with(0.05)
+
+
+def test_database_write_lock_serializes_sqlite_saver_instances(mocker):
+    model = mocker.Mock()
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.router.db_for_write", return_value="default")
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    connections.__getitem__.return_value.vendor = "sqlite"
+    first_entered = threading.Event()
+    second_entered = threading.Event()
+    release = threading.Event()
+
+    def hold_lock(entered):
+        with _database_write_lock(model):
+            entered.set()
+            release.wait(timeout=1)
+
+    first = threading.Thread(target=hold_lock, args=(first_entered,))
+    second = threading.Thread(target=hold_lock, args=(second_entered,))
+    first.start()
+    assert first_entered.wait(timeout=1)
+    second.start()
+    assert not second_entered.wait(timeout=0.1)
+    release.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+    assert second_entered.is_set()
+
+
+def test_database_write_lock_keeps_mysql_writes_parallel(mocker):
+    model = mocker.Mock()
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.router.db_for_write", return_value="default")
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    connections.__getitem__.return_value.vendor = "mysql"
+    entered = threading.Event()
+
+    def take_lock():
+        with _database_write_lock(model):
+            entered.set()
+
+    with _database_write_lock(model):
+        contender = threading.Thread(target=take_lock)
+        contender.start()
+        assert entered.wait(timeout=1)
+    contender.join(timeout=1)
 
 
 @pytest.fixture

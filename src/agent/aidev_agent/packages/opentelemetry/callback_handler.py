@@ -41,6 +41,12 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 
 from .metrics import AgentMetrics, get_agent_metrics
 from .metrics import extract_token_usage as extract_metric_token_usage
+from .resilience import (
+    is_timeout_error,
+    record_operation_timeout,
+    reset_operation_scope,
+    set_operation_scope,
+)
 from .span_utils import (
     SpanHolder,
     set_chat_request,
@@ -332,6 +338,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         self._llm_first_chunk_seen: set[UUID] = set()
         self._tool_started_at: Dict[UUID, float] = {}
         self._tool_metric_attributes: Dict[UUID, Dict[str, str]] = {}
+        self._tool_operation_scope_tokens: Dict[UUID, Any] = {}
         self._active_llm_operation_count = 0
         self._active_tool_operation_count = 0
         self._agent_phase: str | None = None
@@ -449,6 +456,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             self._metrics.record_active_tool(-1, attributes)
         self._llm_active_attributes.clear()
         self._tool_metric_attributes.clear()
+        for token in self._tool_operation_scope_tokens.values():
+            reset_operation_scope(token)
+        self._tool_operation_scope_tokens.clear()
         self._llm_started_at.clear()
         self._tool_started_at.clear()
         self._llm_first_chunk_seen.clear()
@@ -1116,6 +1126,20 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             "tool.call_index": self.tool_call_counter,
             "tool.input": input_str,
         }
+        metadata = metadata or {}
+        if mcp_name := metadata.get("mcp_name"):
+            attributes.update(
+                {
+                    "tool.type": "mcp",
+                    "rpc.system": "mcp",
+                    "mcp.operation.name": "tools/call",
+                    "mcp.server.name": str(mcp_name),
+                    "mcp.tool.name": tool_name,
+                    "mcp.transport": str(metadata.get("mcp_transport") or "unknown"),
+                }
+            )
+        elif tool_code := metadata.get("tool_code"):
+            attributes.update({"tool.type": "http_api", "tool.code": str(tool_code)})
         self._create_span(
             run_id=run_id,
             parent_run_id=parent_run_id,
@@ -1123,6 +1147,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             kind=SpanKind.INTERNAL,
             attributes=attributes,
         )
+        self._tool_operation_scope_tokens[run_id] = set_operation_scope("tool")
         if self._metrics is not None:
             self._tool_started_at[run_id] = time.monotonic()
             metric_attributes = {
@@ -1161,6 +1186,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                 self._metrics.record_active_tool(-1, metric_attributes)
                 self._active_tool_operation_count = max(0, self._active_tool_operation_count - 1)
                 self._transition_agent_phase(self._operation_phase())
+        operation_scope_token = self._tool_operation_scope_tokens.pop(run_id, None)
+        if operation_scope_token is not None:
+            reset_operation_scope(operation_scope_token)
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 
@@ -1190,6 +1218,11 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                 self._metrics.record_active_tool(-1, metric_attributes)
                 self._active_tool_operation_count = max(0, self._active_tool_operation_count - 1)
                 self._transition_agent_phase(self._operation_phase())
+        operation_scope_token = self._tool_operation_scope_tokens.pop(run_id, None)
+        if operation_scope_token is not None:
+            reset_operation_scope(operation_scope_token)
+        if is_timeout_error(error):
+            record_operation_timeout(scope="tool", outcome="failed", error=error)
         # 使用统一的错误处理
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 

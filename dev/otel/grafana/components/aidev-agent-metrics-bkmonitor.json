@@ -2605,6 +2605,332 @@
       ],
       "title": "错误速率（指标来源与 error.type）",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "bkmonitor-timeseries-datasource",
+        "uid": "cfjy28njb6ghsd"
+      },
+      "description": "含义：模型限流以及 SDK 重试生命周期事件的每秒速率。scheduled 表示已决定等待，started 表示等待结束并开始下一次尝试，exhausted 表示超过 max_model_retries，cancelled 表示等待期间被总时限或取消信号中断。计算：分别对 rate_limit.count 与 retry.count Counter 按 model_role、retry_strategy、outcome、error.type 求 rate；一次重试会依次贡献 scheduled 和 started，请勿把全部 outcome 相加当作重试次数。",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 108
+      },
+      "id": 111,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "限流 · $tag_model_role · $tag_retry_strategy · $tag_error_type",
+          "query_configs": [],
+          "refId": "A",
+          "showLastPoint": false,
+          "source": "sum by (model_role, retry_strategy, error_type) (rate({__name__=~\"gen_ai_client_rate_limit_count.*_total\",agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window]))",
+          "step": "",
+          "type": "range"
+        },
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "重试 · $tag_outcome · $tag_model_role · $tag_retry_strategy · $tag_error_type",
+          "query_configs": [],
+          "refId": "B",
+          "showLastPoint": false,
+          "source": "sum by (model_role, retry_strategy, outcome, error_type) (rate({__name__=~\"gen_ai_client_retry_count.*_total\",agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window]))",
+          "step": "",
+          "type": "range"
+        }
+      ],
+      "title": "模型限流与重试事件速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "bkmonitor-timeseries-datasource",
+        "uid": "cfjy28njb6ghsd"
+      },
+      "description": "含义：所选时段内主模型切换到备选模型及其结果。started 表示发生切换，succeeded/failed 表示备选模型最终成功/失败；一次完整成功 fallback 会分别贡献 started 与 succeeded。计算：对 fallback.count Counter 按 outcome 与 error.type 求 increase，并按值降序展示。请求模型、实际响应模型与触发原因的明细保留在 gen_ai.fallback.switch/result Span Event 中，不作为指标标签。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 108
+      },
+      "id": 112,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "$tag_outcome · $tag_error_type",
+          "query_configs": [],
+          "refId": "A",
+          "showLastPoint": false,
+          "source": "sort_desc(sum by (outcome, error_type) (increase({__name__=~\"gen_ai_client_fallback_count.*_total\",agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window])))",
+          "step": "",
+          "type": "range"
+        }
+      ],
+      "title": "备选模型切换与结果（所选时段）",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "bkmonitor-timeseries-datasource",
+        "uid": "cfjy28njb6ghsd"
+      },
+      "description": "含义：已计划模型重试的等待时长 P95，当前 SDK 限流策略固定为 60 秒，因此正常情况下曲线应接近 60 秒。计算：对 gen_ai.client.retry.wait.duration Histogram bucket 按 model_role、retry_strategy 求 rate，再使用 histogram_quantile(0.95, …) 估算；只在 scheduled 时记录一次，started/exhausted 不重复进入等待分布。",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 116
+      },
+      "id": 113,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "P95 · $tag_model_role · $tag_retry_strategy",
+          "query_configs": [],
+          "refId": "A",
+          "showLastPoint": false,
+          "source": "histogram_quantile(0.95, sum by (le, model_role, retry_strategy) (rate(gen_ai_client_retry_wait_duration_seconds_bucket{agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window])))",
+          "step": "",
+          "type": "range"
+        }
+      ],
+      "title": "模型重试等待时长 P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "bkmonitor-timeseries-datasource",
+        "uid": "cfjy28njb6ghsd"
+      },
+      "description": "含义：所选时段内各类超时事件。timeout.scope=session 表示整次 Agent/session 总时限耗尽并取消图执行；tool 表示单个工具调用超时；external 表示检索或外部依赖调用超时，三者互不混用。计算：对 aidev.operation.timeout.count Counter 按 timeout.scope、outcome、error.type 求 increase。session_code、run_id、trace_id 仅在关联 Span/Event 中定位，不作为指标标签。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 116
+      },
+      "id": 114,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "$tag_timeout_scope · $tag_outcome · $tag_error_type",
+          "query_configs": [],
+          "refId": "A",
+          "showLastPoint": false,
+          "source": "sort_desc(sum by (timeout_scope, outcome, error_type) (increase({__name__=~\"aidev_operation_timeout_count.*_total\",agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window])))",
+          "step": "",
+          "type": "range"
+        }
+      ],
+      "title": "总时限与 Tool/外部超时（所选时段）",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "bkmonitor-timeseries-datasource",
+        "uid": "cfjy28njb6ghsd"
+      },
+      "description": "含义：工具或外部调用重试生命周期事件速率，与模型重试和 session 总时限分开。scheduled 表示准备再次调用，exhausted 表示达到 max_retries 或 max_seconds；当前通用重试器不主动等待，因此无等待时长分布。计算：对 aidev.operation.retry.count Counter 按 operation.scope、outcome、error.type 求 rate。",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 124
+      },
+      "id": 115,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "cluster": [],
+          "datasource": {
+            "type": "bkmonitor-timeseries-datasource",
+            "uid": "cfjy28njb6ghsd"
+          },
+          "enableDownSampling": true,
+          "expressionList": [],
+          "format": "time_series",
+          "host": [],
+          "mode": "code",
+          "module": [],
+          "promqlAlias": "$tag_operation_scope · $tag_outcome · $tag_error_type",
+          "query_configs": [],
+          "refId": "A",
+          "showLastPoint": false,
+          "source": "sum by (operation_scope, outcome, error_type) (rate({__name__=~\"aidev_operation_retry_count.*_total\",agent_info_code=~\"$agent_code\",agent_info_sdk_version=~\"$agent_version\"}[$window]))",
+          "step": "",
+          "type": "range"
+        }
+      ],
+      "title": "Tool/外部调用重试事件速率",
+      "type": "timeseries"
     }
   ],
   "refresh": "1m",
