@@ -13,7 +13,7 @@ from celery import shared_task
 from .services.metric_runtime import RetryableMetricPushError, get_metric_service
 
 # 与模板 app_desc.yml 中 celery worker 的 -Q 保持一致，否则任务会进默认 celery 队列而无人消费
-AIDEV_AGENT_TASK_QUEUE = "AIDEV_AGENT_TASK"
+BKAI_AGENT_TASK_QUEUE = "BKAI_AGENT_TASK"
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @shared_task(
     name="aidev_bkplugin.push_bkm_metrics",
     ignore_result=True,
-    queue=AIDEV_AGENT_TASK_QUEUE,
+    queue=BKAI_AGENT_TASK_QUEUE,
     autoretry_for=(RetryableMetricPushError,),
     retry_backoff=True,
     retry_jitter=True,
@@ -65,7 +65,7 @@ def enqueue_bkm_metrics_task(
 @shared_task(
     name="aidev_bkplugin.run_background_agent",
     ignore_result=True,
-    queue=AIDEV_AGENT_TASK_QUEUE,
+    queue=BKAI_AGENT_TASK_QUEUE,
 )
 def run_bkplugin_background_agent_task(
     session_code: str,

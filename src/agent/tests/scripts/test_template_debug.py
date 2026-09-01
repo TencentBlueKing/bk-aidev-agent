@@ -36,4 +36,4 @@ def test_template_celery_worker_listens_to_agent_task_queue():
     repo_root = Path(__file__).resolve().parents[4]
     app_desc = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}" / "app_desc.yml"
 
-    assert "-Q AIDEV_AGENT_TASK" in app_desc.read_text(encoding="utf-8")
+    assert "-Q BKAI_AGENT_TASK" in app_desc.read_text(encoding="utf-8")
