@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
+from .constants import CARD_SIGNATURE_MAX_AGE
 from .context import _normalize_url
 
 _PREFIX = "flow_node:"
@@ -71,7 +72,7 @@ def decode_flow_event_key(key: str) -> FlowNodeAction | None:
     if not isinstance(key, str) or not key.startswith(_PREFIX) or len(key) > 2048:
         return None
     try:
-        data = signing.loads(key[len(_PREFIX) :], salt=_SALT, max_age=86400)
+        data = signing.loads(key[len(_PREFIX) :], salt=_SALT, max_age=CARD_SIGNATURE_MAX_AGE)
         action = FlowNodeAction(**data)
     except (signing.BadSignature, ValueError, TypeError):
         return None

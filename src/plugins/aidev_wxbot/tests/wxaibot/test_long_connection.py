@@ -37,6 +37,7 @@ try:
         BUSY_BY_OTHERS_REPLY,
         BUSY_REPLY,
         PREPARING_REPLY,
+        SESSION_EXPIRED_REPLY,
         STOP_NO_ACTIVE_REPLY,
         STOP_NOTICE,
         STOP_REPLY,
@@ -123,6 +124,11 @@ def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
     service._metrics = StreamMetrics()
     service._view = MagicMock()
     service._frame_semaphore = asyncio.Semaphore(16)
+    service._side_tasks = set()
+    service._ai_renamed_sessions = set()
+    # 现有 consume 单测不跑副作用；覆盖 rename / 审批轮询的用例会重新绑定真方法。
+    service._schedule_ai_rename = MagicMock()
+    service._schedule_approval_poll = MagicMock()
     return service
 
 
@@ -231,6 +237,21 @@ async def test_database_question_click_binds_route_without_local_delivery(questi
     assert submit.call_args.args == (submission, None)
     local_delivery.assert_not_called()
     assert len(service._client.update_template_card_calls) == 1
+
+
+async def test_expired_question_card_does_not_resume(question_callback):
+    service = _service()
+    service._view.is_live_session_code.return_value = False
+    service._view.resolve_event_username.return_value = "alice"
+    with (
+        patch.object(long_connection_module, "prepare_question_submission") as prepare,
+        patch.object(long_connection_module, "submit_question_resume") as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    submit.assert_not_called()
+    assert service._client.update_template_card_calls == []
+    assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
 
 
 @pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
@@ -616,7 +637,7 @@ class TestSessionScope:
     """会话轮换的粒度必须和上下文的粒度对齐。
 
     上下文本来就是每人一份（session_code 由 username 参与哈希），但 thread_id 原先
-    按群存一行，于是 /new 和 30 分钟超时都成了全群连坐。
+    按群存一行，于是 /new 和 24 小时超时都成了全群连坐。
     """
 
     @staticmethod
@@ -718,11 +739,11 @@ class TestLongConnectionStreaming:
             thread_id="thread-1",
             group_id="group-1",
             retry_strategy="sdk",
-            task_id=None,
-            resume_from_node=None,
         )
         strategy.execute.assert_not_called()
         assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
+        service._schedule_approval_poll.assert_not_called()
 
     async def test_request_starts_independent_trace_and_propagates_traceparent(self, monkeypatch):
         from aidev_agent.utils import tracing
@@ -786,6 +807,8 @@ class TestLongConnectionStreaming:
         assert service._client.reply_stream_calls == [(STREAM_ERROR_REPLY, True)]
         assert service._metrics.failed == 1
         assert service._metrics.completed == 0
+        service._schedule_ai_rename.assert_not_called()
+        service._schedule_approval_poll.assert_not_called()
 
     async def test_pending_approval_is_not_counted_as_completed(self):
         service = _service()
@@ -819,6 +842,8 @@ class TestLongConnectionStreaming:
         assert body["msgtype"] == "template_card"
         assert card["button_list"][0]["text"] == "取消审批"
         assert service._metrics.approval_cards_sent == 1
+        service._schedule_approval_poll.assert_called_once()
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
 
     @pytest.mark.parametrize(
         ("payload", "expected"),
@@ -908,6 +933,16 @@ class TestLongConnectionStreaming:
         with patch.object(long_connection_module, "dispatch_user_operation", side_effect=RuntimeError("failed")):
             await service._handle_frame({"body": approval_card_case.event})
         assert service._client.update_template_card_calls == []
+
+    async def test_expired_approval_card_does_not_dispatch(self, approval_card_case):
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        service._view.resolve_event_username.return_value = "alice"
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": approval_card_case.event})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
 
     async def test_forwarded_cancel_card_cannot_change_reply_target(self, approval_card_case):
         case = approval_card_case
@@ -1222,6 +1257,19 @@ class TestFlowNodeCard:
             delivery.finish()
             await delivery.task
 
+    async def test_expired_flow_card_does_not_dispatch(self):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        service._view.resolve_event_username.return_value = "alice"
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
+
     async def test_click_rejects_modified_binding(self):
         from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
 
@@ -1418,3 +1466,116 @@ class TestLongConnectionLifecycle:
         assert time.monotonic() - started < 0.2
         assert service._client.disconnected
         service._loop.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+class TestLongConnectionSideEffects:
+    async def test_ai_rename_delegates_to_session_manager(self):
+        service = _service()
+        with patch.object(long_connection_module, "_run_ai_rename") as rename:
+            await WxAiBotLongConnectionService._ai_rename(service, "alice", "sc-1")
+        rename.assert_called_once_with("alice", "sc-1")
+
+    async def test_ai_rename_runs_once_per_session(self):
+        service = _service()
+        created = []
+
+        def create_task(coro):
+            created.append(coro)
+            coro.close()
+            return MagicMock()
+
+        with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-2")
+        assert len(created) == 2
+        assert service._ai_renamed_sessions == {"sc-1", "sc-2"}
+
+    async def test_poll_approval_submits_resume_without_updating_card(self):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        frame = {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}
+        delivery = MagicMock()
+        with (
+            patch.object(
+                long_connection_module,
+                "wait_for_approval_result",
+                AsyncMock(return_value={"approve_result": "approved"}),
+            ),
+            patch.object(long_connection_module, "submit_polled_approval_resume", return_value=True) as submit,
+            patch.object(service, "_new_resume_delivery", return_value=delivery),
+        ):
+            await WxAiBotLongConnectionService._poll_approval(service, frame, action, "alice")
+        submit.assert_called_once()
+        assert submit.call_args.args[0] == action
+        assert submit.call_args.args[1] == "alice"
+        assert submit.call_args.args[2] is delivery
+        assert service._client.send_message_calls == []
+
+    async def test_poll_approval_skips_resume_when_session_is_not_live(self):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        with (
+            patch.object(
+                long_connection_module,
+                "wait_for_approval_result",
+                AsyncMock(return_value={"approve_result": "approved"}),
+            ),
+            patch.object(long_connection_module, "submit_polled_approval_resume") as submit,
+        ):
+            await WxAiBotLongConnectionService._poll_approval(
+                service, {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}, action, "alice"
+            )
+        submit.assert_not_called()
+        assert service._client.send_message_calls == []
+
+    async def test_poll_approval_timeout_does_not_resume(self):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        with (
+            patch.object(long_connection_module, "wait_for_approval_result", AsyncMock(return_value=None)),
+            patch.object(long_connection_module, "submit_polled_approval_resume") as submit,
+        ):
+            await WxAiBotLongConnectionService._poll_approval(
+                service, {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}, action, "alice"
+            )
+        submit.assert_not_called()
+
+    async def test_schedule_approval_poll_binds_target_from_card(self, approval_card_case):
+        service = _service()
+        created = []
+
+        def create_task(coro):
+            created.append(coro)
+            coro.close()
+            task = MagicMock()
+            return task
+
+        frame = {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}
+        with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            WxAiBotLongConnectionService._schedule_approval_poll(
+                service, frame, approval_card_case.card, "alice"
+            )
+        assert len(created) == 1
+        assert service._side_tasks
+
+    async def test_shutdown_cancels_side_tasks(self):
+        service = _service()
+        service._health_task = None
+        service._state_lock = threading.Lock()
+        service._service_state = ServiceState.STOPPING
+        service._loop = MagicMock()
+        service._loop.is_running.return_value = False
+        blocked = asyncio.Event()
+        task = asyncio.create_task(blocked.wait())
+        service._side_tasks.add(task)
+        await service._cancel_side_tasks()
+        assert task.cancelled()

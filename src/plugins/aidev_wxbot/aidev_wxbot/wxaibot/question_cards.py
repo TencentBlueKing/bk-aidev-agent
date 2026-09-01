@@ -10,11 +10,12 @@ from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
+from .constants import CARD_SIGNATURE_MAX_AGE
 from .context import _escape_markdown_text, _normalize_url
 
 _PREFIX = "question_answer:"
 _SALT = "aidev.wxbot.question.v1"
-MAX_AGE = 86400
+MAX_AGE = CARD_SIGNATURE_MAX_AGE
 # Hard limits from https://developer.work.weixin.qq.com/document/path/101032.
 # Title/option text lengths there are display recommendations, not rejection rules.
 _MAX_VOTE_OPTIONS = 20

@@ -78,6 +78,36 @@ def test_failed_submission_releases_dedup_entry(approval_resume_case, raises):
     assert not case.module._pending
 
 
+@pytest.mark.parametrize("status, approved", [("approved", True), ("rejected", False), ("cancelled", False)])
+def test_polled_resume_accepts_all_final_results(approval_resume_case, status, approved):
+    case = approval_resume_case
+    case.result["approve_result"] = status
+    case.module._poll_resume_worker(case.action, "alice")
+    resume = case.run.call_args.args[1].resume
+    assert resume[0]["interruptId"] == case.action.interrupt_id
+    assert resume[0]["payload"] == {"approved": approved}
+    assert resume[0]["status"] == ("resolved" if approved else "cancelled")
+
+
+def test_polled_resume_shares_dedup_with_cancel(approval_resume_case):
+    case = approval_resume_case
+    case.module._pending.add(case.action)
+    delivery = MagicMock()
+    assert case.module.submit_polled_approval_resume(case.action, "alice", delivery)
+    case.executor.submit.assert_not_called()
+    delivery.finish.assert_called_once()
+
+
+def test_submit_polled_approval_resume_schedules_poll_worker(approval_resume_case):
+    case = approval_resume_case
+    assert case.module.submit_polled_approval_resume(case.action, "alice")
+    _, worker, action, username, delivery = case.executor.submit.call_args.args
+    assert worker is case.module._poll_resume_worker
+    assert action == case.action
+    assert username == "alice"
+    assert delivery is None
+
+
 def test_resume_uses_original_session_and_denies_cancelled_tool(approval_resume_case):
     case = approval_resume_case
     case.module._resume_worker(case.action, "alice")

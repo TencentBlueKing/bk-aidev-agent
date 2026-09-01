@@ -84,8 +84,6 @@ class AgentStrategy(Protocol):
         thread_id: str,
         group_id: str,
         retry_strategy: str | None = None,
-        task_id: str | None = None,
-        resume_from_node: str | None = None,
     ) -> AgentStream: ...
 
 
@@ -152,11 +150,8 @@ class ChatAgentStrategy:
         thread_id: str,
         group_id: str,
         retry_strategy: str | None = None,
-        task_id: str | None = None,
-        resume_from_node: str | None = None,
     ) -> AgentStream:
         """创建 Chat Agent 原始 SSE，供 callback 或 WebSocket 各自消费。"""
-        _ = task_id, resume_from_node
         execute_kwargs = build_execute_kwargs(
             {"stream": True, "thread_id": thread_id, "executor": username, "group_id": group_id},
             username,

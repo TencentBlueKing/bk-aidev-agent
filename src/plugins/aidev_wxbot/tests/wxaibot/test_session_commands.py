@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_wxbot.wxaibot import views
+from aidev_wxbot.wxaibot.constants import SESSION_EXPIRED_REPLY
 from aidev_wxbot.wxaibot.long_connection import _LongConnectionViewSet
 
 
@@ -91,6 +92,17 @@ def test_missing_or_inaccessible_session_is_never_created(command_case, missing,
     assert "当前没有" in response["stream"]["content"] or "操作未成功" in response["stream"]["content"]
     assert "private detail" not in response["stream"]["content"]
     case.manager.get_or_create_by_thread_id.assert_not_called()
+    case.manager.update_session_name.assert_not_called()
+    case.link.assert_not_called()
+
+
+@pytest.mark.parametrize("command", ["/title 新标题", "/web"])
+def test_expired_session_command_does_not_touch_platform(command_case, command):
+    case = command_case
+    case.record.is_session_valid.return_value = False
+    response = case.view._resolve_builtin_command(command, "s1", case.context)
+    assert response["stream"]["content"] == SESSION_EXPIRED_REPLY
+    case.manager_cls.assert_not_called()
     case.manager.update_session_name.assert_not_called()
     case.link.assert_not_called()
 

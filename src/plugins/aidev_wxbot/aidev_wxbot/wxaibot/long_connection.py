@@ -32,18 +32,22 @@ from aidev_bkplugin.services.execution import (
 from django.conf import settings
 
 from .approval_cards import (
+    ApprovalCancelAction,
+    approval_action_from_card,
     approval_task_id,
     bind_approval_target,
     build_approval_result_card,
     decode_cancel_event_key,
 )
-from .approval_resume import submit_cancelled_approval_resume
+from .approval_poll import wait_for_approval_result
+from .approval_resume import submit_cancelled_approval_resume, submit_polled_approval_resume
 from .constants import (
     AGENT_STREAM_DRAIN_TIMEOUT,
     BUSY_BY_OTHERS_REPLY,
     BUSY_REPLY,
     GROUP_CHAT_TYPE,
     PREPARING_REPLY,
+    SESSION_EXPIRED_REPLY,
     STOP_NO_ACTIVE_REPLY,
     STOP_NOTICE,
     STOP_REPLY,
@@ -88,6 +92,13 @@ def dispatch_user_operation(operation: str, username: str, data: dict) -> dict:
     return dispatch(operation, username, data)
 
 
+def _run_ai_rename(username: str, session_code: str) -> None:
+    """延迟加载 SessionManager，避免长连接启动时拉起会话模块。"""
+    from aidev_bkplugin.services.agent_session import SessionManager
+
+    SessionManager(username=username).ai_rename(session_code)
+
+
 class LongConnectionConfigError(ValueError):
     """长连接配置缺失或非法。"""
 
@@ -120,6 +131,7 @@ class ActiveStream:
     started_at: float
     # 最后一次发给企微的全量快照。中止时要带上它重发，否则用户已经看到的半截回答会被抹掉
     last_content: str = ""
+    session_code: str = ""
 
 
 @dataclass(slots=True)
@@ -284,7 +296,7 @@ class _LongConnectionViewSet(WxAiBotViewSet):
 
         上下文本来就是每人一份——平台侧的 session_code 是 MD5(username:agent_code:thread_id)，
         username 参与了哈希。但 thread_id 原先只按群存一行，于是一个人 /new 会把全群
-        每个人的上下文一起清掉，30 分钟超时也被别人的活跃度顺带续期。
+        每个人的上下文一起清掉，24 小时超时也被别人的活跃度顺带续期。
         单聊的 group_id 就是发起人本身，不必再拼一次。
         """
         return group_id if group_id == username else f"{group_id}:{username}"
@@ -329,6 +341,8 @@ class WxAiBotLongConnectionService:
         self._startup_failed_event: asyncio.Event | None = None
         self._startup_error: Exception | None = None
         self._frame_semaphore = asyncio.Semaphore(int(getattr(settings, "WXAIBOT_WS_MAX_INFLIGHT_FRAMES", 16)))
+        self._side_tasks: set[asyncio.Task] = set()
+        self._ai_renamed_sessions: set[str] = set()
         self._client = WSClient(
             WSClientOptions(
                 bot_id=self._config.bot_id,
@@ -530,12 +544,13 @@ class WxAiBotLongConnectionService:
             logger.warning("event=wxbot_approval_cancel_rejected reason=task_mismatch")
             return True
 
+        username = await self._ensure_live_session(frame, payload, action.session_code)
+        if username is None:
+            return True
+
         succeeded = False
         result_card = None
         try:
-            username = await asyncio.to_thread(
-                run_with_database_connections, self._view.resolve_event_username, payload
-            )
             with wxbot_span("wxbot.approval.cancel", kind=CLIENT) as span:
                 envelope = await asyncio.to_thread(
                     run_with_database_connections,
@@ -609,6 +624,31 @@ class WxAiBotLongConnectionService:
             )
         )
 
+    async def _ensure_live_session(self, frame: dict[str, Any], payload: dict[str, Any], session_code: str) -> str | None:
+        """会话仍有效则返回 username；已失效则提示并返回 None。"""
+
+        def _check() -> str | None:
+            username = self._view.resolve_event_username(payload)
+            group_id = str(payload.get("chatid") or username)
+            if not self._view.is_live_session_code(group_id, username, session_code):
+                return None
+            return username
+
+        username = await asyncio.to_thread(run_with_database_connections, _check)
+        if username is not None:
+            return username
+        target = self._resolve_message_target(frame)
+        if target:
+            await self._send_resume_message(
+                target, {"msgtype": "markdown", "markdown": {"content": SESSION_EXPIRED_REPLY}}
+            )
+        return None
+
+    def _is_polled_session_live(self, frame: dict[str, Any], username: str, session_code: str) -> bool:
+        payload = frame.get("body") or {}
+        group_id = str(payload.get("chatid") or username)
+        return self._view.is_live_session_code(group_id, username, session_code)
+
     def _new_resume_delivery(self, frame: dict, resume_type: str, *, paused: bool = False) -> ResumeDelivery:
         target = self._resolve_message_target(frame)
         if not target:
@@ -668,11 +708,11 @@ class WxAiBotLongConnectionService:
         ):
             logger.warning("event=wxbot_question_rejected reason=invalid_action")
             return True
+        username = await self._ensure_live_session(frame, payload, action.session_code)
+        if username is None:
+            return True
         delivery = None
         try:
-            username = await asyncio.to_thread(
-                run_with_database_connections, self._view.resolve_event_username, payload
-            )
             submission = await asyncio.to_thread(
                 prepare_question_submission,
                 action,
@@ -739,14 +779,14 @@ class WxAiBotLongConnectionService:
             logger.warning("event=wxbot_flow_card_rejected reason=task_mismatch")
             return True
 
+        username = await self._ensure_live_session(frame, payload, action.session_code)
+        if username is None:
+            return True
+
         operation = f"flow_node_{action.operation}"
         succeeded = False
         result_card = None
-        username = ""
         try:
-            username = await asyncio.to_thread(
-                run_with_database_connections, self._view.resolve_event_username, payload
-            )
             with wxbot_span("wxbot.flow_node.action", kind=CLIENT) as span:
                 envelope = await asyncio.to_thread(
                     run_with_database_connections,
@@ -988,6 +1028,8 @@ class WxAiBotLongConnectionService:
                         if item.pending_approval:
                             current_span().set_attribute("wxbot.outcome", "approval_pending")
                             self._metrics.approval_pending += 1
+                            if item.template_card:
+                                self._schedule_approval_poll(frame, item.template_card, request.username)
                         elif item.pending_question:
                             current_span().set_attribute("wxbot.outcome", "question_pending")
                         elif item.failed:
@@ -995,6 +1037,10 @@ class WxAiBotLongConnectionService:
                             self._metrics.failed += 1
                         else:
                             self._metrics.completed += 1
+                        if not item.failed:
+                            active = self._active_streams.get(request.stream_id)
+                            if active and active.session_code:
+                                self._schedule_ai_rename(request.username, active.session_code)
                         self._metrics.final_frame_latency_total += sse_to_send
                         logger.info(
                             "event=wxbot_ws_stream_finished stream_id=%s failed=%s duration_ms=%.3f",
@@ -1061,12 +1107,11 @@ class WxAiBotLongConnectionService:
                 thread_id=thread_id,
                 group_id=request.group_id,
                 retry_strategy=WECOM_AGENT_RETRY_STRATEGY,
-                task_id=getattr(request, "task_id", None) or None,
-                resume_from_node=getattr(request, "resume_from_node", None) or None,
             )
             stream_registry.register(request.stream_id, agent_stream.session_code)
+            if active := self._active_streams.get(request.stream_id):
+                active.session_code = agent_stream.session_code
             if self._database_events_enabled() and agent_stream.kind == "chat":
-                active = self._active_streams.get(request.stream_id)
                 target = self._resolve_message_target(active.frame) if active else ""
                 self._bind_resume_route(agent_stream.session_code, request.username, target)
             frames = iter_direct_stream_frames(
@@ -1246,6 +1291,74 @@ class WxAiBotLongConnectionService:
             return await self._send_with_retry(
                 lambda: self._client.reply_stream(frame, stream_id, content, finish), span, "wxbot_stream_reply_retry"
             )
+
+    def _track_side_task(self, task: asyncio.Task) -> None:
+        self._side_tasks.add(task)
+        task.add_done_callback(self._side_tasks.discard)
+
+    def _schedule_ai_rename(self, username: str, session_code: str) -> None:
+        if session_code in self._ai_renamed_sessions:
+            return
+        self._ai_renamed_sessions.add(session_code)
+        self._track_side_task(asyncio.create_task(self._ai_rename(username, session_code)))
+
+    async def _ai_rename(self, username: str, session_code: str) -> None:
+        try:
+            await asyncio.to_thread(run_with_database_connections, _run_ai_rename, username, session_code)
+        except Exception:
+            logger.exception("event=wxbot_ai_rename_failed")
+
+    def _schedule_approval_poll(self, frame: dict[str, Any], template_card: dict[str, Any], username: str) -> None:
+        target = self._resolve_message_target(frame)
+        if not target:
+            return
+        action = approval_action_from_card(bind_approval_target(template_card, target))
+        if action is None:
+            return
+        self._track_side_task(asyncio.create_task(self._poll_approval(frame, action, username)))
+
+    async def _poll_approval(self, frame: dict[str, Any], action: ApprovalCancelAction, username: str) -> None:
+        from aidev_agent.services.agent.approval import ApprovalStateHandler
+
+        async def query():
+            try:
+                return await asyncio.to_thread(
+                    run_with_database_connections,
+                    ApprovalStateHandler(username=username).query_approval_info,
+                    action.session_code,
+                )
+            except Exception:
+                logger.exception("event=wxbot_approval_poll_query_failed session_code=%s", action.session_code)
+                return None
+
+        try:
+            info = await wait_for_approval_result(query)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("event=wxbot_approval_poll_failed session_code=%s", action.session_code)
+            return
+        if info is None or self._shutdown_requested:
+            return
+        if not await asyncio.to_thread(
+            run_with_database_connections, self._is_polled_session_live, frame, username, action.session_code
+        ):
+            return
+        delivery = None
+        try:
+            if action.target:
+                if self._database_events_enabled():
+                    await asyncio.to_thread(self._bind_resume_route, action.session_code, username, action.target)
+                else:
+                    delivery = self._new_resume_delivery(frame, "tool_approval")
+            submitted = await asyncio.to_thread(submit_polled_approval_resume, action, username, delivery)
+            if not submitted and delivery is not None:
+                delivery.finish()
+        except Exception:
+            if delivery is not None:
+                delivery.failed()
+                delivery.finish()
+            logger.exception("event=wxbot_approval_poll_resume_failed session_code=%s", action.session_code)
 
     async def _send_template_card(self, frame: dict[str, Any], template_card: dict[str, Any]) -> float:
         """在流式消息结束后，向原会话主动推送独立交互卡片。"""
@@ -1443,17 +1556,26 @@ class WxAiBotLongConnectionService:
         finally:
             with contextlib.suppress(Exception):
                 self._client.disconnect()
+            await self._cancel_side_tasks()
             await self._cancel_stream_tasks()
             await self._cancel_stream_drains(wait=False)
             self._set_service_state(ServiceState.STOPPED)
             if self._loop and self._loop.is_running():
                 self._loop.stop()
 
+    async def _cancel_side_tasks(self) -> None:
+        tasks = [task for task in self._side_tasks if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _graceful_shutdown(self) -> None:
         event_task = getattr(self, "_event_consumer_task", None)
         if event_task is not None:
             event_task.cancel()
             await asyncio.gather(event_task, return_exceptions=True)
+        await self._cancel_side_tasks()
         deliveries = tuple(getattr(self, "_resume_deliveries", ()))
         for delivery in deliveries:
             delivery.close()

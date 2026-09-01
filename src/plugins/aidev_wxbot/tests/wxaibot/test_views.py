@@ -1,11 +1,19 @@
 """wxbot 视图层的后台执行、内置命令与会话终态测试。"""
 
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
-from aidev_wxbot.wxaibot.constants import HELP_REPLY, STOP_NO_ACTIVE_REPLY
+from django.utils import timezone
+from aidev_wxbot.wxaibot.constants import (
+    CARD_SIGNATURE_MAX_AGE,
+    HELP_REPLY,
+    STOP_NO_ACTIVE_REPLY,
+    WECOM_REPLY_WINDOW_SECONDS,
+)
+from aidev_wxbot.wxaibot.models import AgentSession
 from aidev_wxbot.wxaibot.views import WxAiBotViewSet, WxBotAgentRequest
 
 
@@ -148,3 +156,37 @@ class TestBuiltinCommands:
         response, content = view._process_mention_fallback("@某机器人 /help", "s1", context)
         assert response["stream"]["content"] == HELP_REPLY
         assert content == ""
+
+
+def test_session_ttl_aligns_with_wecom_reply_window():
+    assert CARD_SIGNATURE_MAX_AGE == int(WECOM_REPLY_WINDOW_SECONDS)
+    live = AgentSession(last_session_time=timezone.now() - timedelta(seconds=WECOM_REPLY_WINDOW_SECONDS - 1))
+    expired = AgentSession(last_session_time=timezone.now() - timedelta(seconds=WECOM_REPLY_WINDOW_SECONDS + 1))
+    assert live.is_session_valid()
+    assert not expired.is_session_valid()
+
+
+@pytest.mark.parametrize(
+    ("exists", "valid", "session_code", "expected"),
+    [
+        (True, True, "session-1", True),
+        (True, True, "other-session", False),
+        (True, False, "session-1", False),
+        (False, True, "session-1", False),
+        (True, True, "", False),
+    ],
+)
+def test_is_live_session_code_requires_current_thread(exists, valid, session_code, expected):
+    view = WxAiBotViewSet()
+    record = SimpleNamespace(thread_id="thread-1", is_session_valid=lambda: valid)
+
+    def _get(**_):
+        if not exists:
+            raise AgentSession.DoesNotExist
+        return record
+
+    with (
+        patch("aidev_wxbot.wxaibot.views.AgentSession.objects.get", side_effect=_get),
+        patch("aidev_wxbot.wxaibot.views.SessionManager.generate_session_code", return_value="session-1"),
+    ):
+        assert view.is_live_session_code("group-1", "alice", session_code) is expected

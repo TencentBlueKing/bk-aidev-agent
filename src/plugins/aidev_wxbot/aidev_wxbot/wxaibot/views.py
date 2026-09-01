@@ -30,6 +30,7 @@ from .constants import (
     HELP_CMDS,
     HELP_REPLY,
     NEW_CONVERSATION_CMDS,
+    SESSION_EXPIRED_REPLY,
     STOP_CMDS,
     STOP_NO_ACTIVE_REPLY,
     WRONG_MENTION_PROMPT,
@@ -62,8 +63,6 @@ class WxBotAgentRequest:
     stream_id: str
     username: str
     group_id: str
-    task_id: str = ""
-    resume_from_node: str = ""
 
 
 class WxAiBotViewSet(ViewSet):
@@ -158,8 +157,7 @@ class WxAiBotViewSet(ViewSet):
             # 尝试获取现有会话
             agent_session = AgentSession.objects.get(group_id=scope)
 
-            # 检查会话是否有效（30分钟内）
-            if agent_session.is_session_valid(timeout_minutes=30):
+            if agent_session.is_session_valid():
                 # 每条消息都会命中，放 INFO 没有信息量
                 logger.debug(f"scope:{scope} 使用现有会话 thread_id:{agent_session.thread_id}")
                 # 更新最后会话时间
@@ -178,6 +176,20 @@ class WxAiBotViewSet(ViewSet):
             AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
             logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
             return new_thread_id
+
+    def is_live_session_code(self, group_id: str, username: str, session_code: str) -> bool:
+        """卡片续流只认当前未过期、未轮换的本地会话。"""
+        if not session_code:
+            return False
+        try:
+            local = AgentSession.objects.get(group_id=self._session_scope(group_id, username))
+        except AgentSession.DoesNotExist:
+            return False
+        if not local.is_session_valid():
+            return False
+        agent_code = getattr(settings, "APP_CODE", None) or settings.BKPAAS_APP_CODE
+        expected = SessionManager.generate_session_code(username, agent_code, local.thread_id)
+        return expected == session_code
 
     def _reply_text(self, payload: dict) -> dict:
         """
@@ -316,6 +328,8 @@ class WxAiBotViewSet(ViewSet):
         try:
             scope = self._session_scope(context.group_id, context.sender_id)
             local_session = AgentSession.objects.get(group_id=scope)
+            if not local_session.is_session_valid():
+                return stream_msg(SESSION_EXPIRED_REPLY, True, stream_id)
             manager = SessionManager(username=context.sender_id)
             session_code = manager.generate_session_code(context.sender_id, manager.agent_code, local_session.thread_id)
             if not manager.retrieve_session(session_code):

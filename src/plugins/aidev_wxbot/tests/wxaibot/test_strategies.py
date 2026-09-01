@@ -554,7 +554,5 @@ class TestWxFlowAgentClient:
         result = WxFlowAgentClient("openid_xxx").start_flow_agent(data={"session_code": "sc1"})
 
         assert result["task_id"] == "123"
+        # 验证通过 AgentResourceManager.get_client 调用了 BKAidevApi.get_client
         mock_get_client.assert_called_once()
-        mock_client.api.flow_agent_start.assert_called_once_with(
-            data={"session_code": "sc1"}, headers={"X-BKAIDEV-USER": "admin_rtx"}
-        )

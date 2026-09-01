@@ -26,6 +26,8 @@ STREAM_TIMEOUT_REPLY = "处理超过 10 分钟，已终止本次请求"
 BUSY_REPLY = "当前会话正在生成回复，请等待完成，或发送 /stop 结束后再提问"
 # 群里占用名额的是别人的提问时用这条：/stop 只能停自己的，让他等而不是让他去停别人的
 BUSY_BY_OTHERS_REPLY = "群里有其他成员的提问正在处理，请稍后再试"
+# 超过企微可回复窗口或本地会话已轮换后，点旧卡 / 续流统一用这条。
+SESSION_EXPIRED_REPLY = "该会话已失效，请重新发送问题，或使用 /new 开启新会话"
 
 # 收尾时等待 Agent 统一流接口自然结束的上限（秒）。排空由 Bkplugin 有界收尾执行器执行；
 # 超时会取消 Agent run，因此既不继续占住生成 worker，也不会为每条流留下新线程。
@@ -72,3 +74,11 @@ TOOL_TARGET_LIMIT = 50
 # RabbitMQ 队列自动过期时间
 QUEUE_EXPIRES_MS = 360000
 WS_INSTANCE_LOCK_CACHE_KEY_PREFIX = "wxaibot:ws:instance:"
+
+# 企微官方：收到消息后 24 小时内可回复。会话、卡片签名、审批轮询共用这一把尺。
+WECOM_REPLY_WINDOW_SECONDS = 86400.0
+CARD_SIGNATURE_MAX_AGE = int(WECOM_REPLY_WINDOW_SECONDS)
+# 间隔按 2s、4s、8s… 指数拉长，单次不超过 5 分钟，直到窗口用尽。
+APPROVAL_POLL_INITIAL_SECONDS = 2.0
+APPROVAL_POLL_MAX_INTERVAL_SECONDS = 300.0
+APPROVAL_POLL_MAX_SECONDS = WECOM_REPLY_WINDOW_SECONDS
