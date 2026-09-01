@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="rootRef"
     :class="['ai-chatbot', props.extCls, { 'welcome-state': isWelcomeState }]"
     :style="chatbotStyle"
   >
@@ -11,7 +12,7 @@
       v-model:selected-model="selectedModelName"
       v-model:selected-shortcut="selectedShortcut"
       :chat-loading="effectiveChatLoading"
-      :common-tippy-options="messageToolsTippyOptions"
+      :common-tippy-options="effectiveTippyOptions"
       :execution-tab-visible="props.executionTabVisible"
       :get-side-render-component="props.getSideRenderComponent"
       :get-side-tab-render-component="props.getSideTabRenderComponent"
@@ -84,7 +85,7 @@
           :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
           :on-interrupt-resume="onInterruptResume"
           :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
-          :tippy-options="messageToolsTippyOptions"
+          :tippy-options="effectiveTippyOptions"
         >
           <template
             v-if="$slots.codeHeader"
@@ -120,7 +121,7 @@
 
   import type { IShortcut } from '../manager/business/types';
   import type { IChatHelper, IRequestOptions } from '../types';
-  import type { ChatBotEmits, ChatBotExpose, ChatBotProps } from './types';
+  import type { ChatBotEmits, ChatBotExpose, ChatBotProps, MessageToolsTippyOptions } from './types';
   import type { ILlmItem, ISupportUpload } from '@blueking/chat-helper';
   import type {
     CustomBkFlowTab,
@@ -185,8 +186,18 @@
   }>();
 
   // ==================== Template Refs ====================
+  const rootRef = ref<HTMLElement>();
   const chatContainerRef = ref<InstanceType<typeof ChatContainer>>();
   const chatInputRef = ref<InstanceType<typeof ChatInput>>();
+
+  /**
+   * tippy 浮层默认挂载到 ChatBot 根节点：挂 body 时浮层脱离组件层级，容易被外层弹窗/抽屉遮挡。
+   * 外部显式传入 appendTo 时以外部为准。
+   */
+  const effectiveTippyOptions = computed<MessageToolsTippyOptions>(() => ({
+    ...props.messageToolsTippyOptions,
+    appendTo: props.messageToolsTippyOptions?.appendTo ?? (() => rootRef.value ?? document.body),
+  }));
 
   // 共享 ref（由组装层创建，注入到多个 composable）
   const selectedResources = shallowRef<IAiSlashMenuItem[]>([]);

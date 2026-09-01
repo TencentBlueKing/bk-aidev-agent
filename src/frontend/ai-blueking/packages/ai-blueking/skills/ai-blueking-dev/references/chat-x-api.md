@@ -121,7 +121,7 @@ import {
 
 | 来源 | 主要字段 | 说明 |
 |------|-----------|------|
-| ChatContainerProps | `chatLoading?`、`commonTippyOptions?`、`executionTabVisible?`（默认 `true`）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
+| ChatContainerProps | `chatLoading?`、`commonTippyOptions?`（原样透传；仅全屏态强制把 `appendTo` 改为全屏容器，未传时不注入 `appendTo`，各浮层沿用自身默认挂载点）、`executionTabVisible?`（默认 `true`）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
 | ChatInputProps | 同 [ChatInput](#chatinput-聊天输入框) | 内部透传 `ChatInput` |
 | MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`userMessageTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools`/`userMessageTools` 与内置工具按 id 合并 |
 
