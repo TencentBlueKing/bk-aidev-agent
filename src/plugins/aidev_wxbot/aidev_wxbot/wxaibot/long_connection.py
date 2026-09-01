@@ -47,7 +47,7 @@ from .constants import (
     BUSY_REPLY,
     GROUP_CHAT_TYPE,
     PREPARING_REPLY,
-    SESSION_EXPIRED_REPLY,
+    CARD_EXPIRED_REPLY,
     STOP_NO_ACTIVE_REPLY,
     STOP_NOTICE,
     STOP_REPLY,
@@ -92,11 +92,11 @@ def dispatch_user_operation(operation: str, username: str, data: dict) -> dict:
     return dispatch(operation, username, data)
 
 
-def _run_ai_rename(username: str, session_code: str) -> None:
+def _run_ai_rename(username: str, session_code: str) -> dict:
     """延迟加载 SessionManager，避免长连接启动时拉起会话模块。"""
     from aidev_bkplugin.services.agent_session import SessionManager
 
-    SessionManager(username=username).ai_rename(session_code)
+    return SessionManager(username=username).ai_rename(session_code)
 
 
 class LongConnectionConfigError(ValueError):
@@ -536,6 +536,9 @@ class WxAiBotLongConnectionService:
         task_id = str(card_event.get("task_id") or event.get("task_id") or "")
         action = decode_cancel_event_key(event_key)
         if action is None:
+            if event_key.startswith("approval_cancel:"):
+                await self._notify_card_expired(frame)
+                return True
             return False
 
         expected_task_id = approval_task_id(action)
@@ -637,12 +640,18 @@ class WxAiBotLongConnectionService:
         username = await asyncio.to_thread(run_with_database_connections, _check)
         if username is not None:
             return username
-        target = self._resolve_message_target(frame)
-        if target:
-            await self._send_resume_message(
-                target, {"msgtype": "markdown", "markdown": {"content": SESSION_EXPIRED_REPLY}}
-            )
+        await self._notify_card_expired(frame)
         return None
+
+    async def _notify_card_expired(self, frame: dict[str, Any]) -> None:
+        """签名过期或会话已轮换时提示卡片失效。"""
+        target = self._resolve_message_target(frame)
+        if not target:
+            return
+        logger.info("event=wxbot_card_expired trace_id=%s", get_current_trace_id())
+        await self._send_resume_message(
+            target, {"msgtype": "markdown", "markdown": {"content": CARD_EXPIRED_REPLY}}
+        )
 
     def _is_polled_session_live(self, frame: dict[str, Any], username: str, session_code: str) -> bool:
         payload = frame.get("body") or {}
@@ -699,13 +708,11 @@ class WxAiBotLongConnectionService:
         if not isinstance(key, str) or not key.startswith("question_answer:"):
             return False
         action = decode_question_key(key)
+        if action is None:
+            await self._notify_card_expired(frame)
+            return True
         target = self._resolve_message_target(frame)
-        if (
-            action is None
-            or not target
-            or action.target != target
-            or card_event.get("task_id") != question_task_id(action)
-        ):
+        if not target or action.target != target or card_event.get("task_id") != question_task_id(action):
             logger.warning("event=wxbot_question_rejected reason=invalid_action")
             return True
         username = await self._ensure_live_session(frame, payload, action.session_code)
@@ -770,6 +777,9 @@ class WxAiBotLongConnectionService:
         event_key = str(card_event.get("event_key") or event.get("event_key") or "")
         action = decode_flow_event_key(event_key)
         if action is None:
+            if event_key.startswith("flow_node:"):
+                await self._notify_card_expired(frame)
+                return True
             return False
 
         expected_task_id = flow_card_task_id(action)
@@ -1037,10 +1047,6 @@ class WxAiBotLongConnectionService:
                             self._metrics.failed += 1
                         else:
                             self._metrics.completed += 1
-                        if not item.failed:
-                            active = self._active_streams.get(request.stream_id)
-                            if active and active.session_code:
-                                self._schedule_ai_rename(request.username, active.session_code)
                         self._metrics.final_frame_latency_total += sse_to_send
                         logger.info(
                             "event=wxbot_ws_stream_finished stream_id=%s failed=%s duration_ms=%.3f",
@@ -1111,6 +1117,8 @@ class WxAiBotLongConnectionService:
             stream_registry.register(request.stream_id, agent_stream.session_code)
             if active := self._active_streams.get(request.stream_id):
                 active.session_code = agent_stream.session_code
+            if agent_stream.session_code:
+                loop.call_soon_threadsafe(self._schedule_ai_rename, request.username, agent_stream.session_code)
             if self._database_events_enabled() and agent_stream.kind == "chat":
                 target = self._resolve_message_target(active.frame) if active else ""
                 self._bind_resume_route(agent_stream.session_code, request.username, target)
@@ -1297,16 +1305,23 @@ class WxAiBotLongConnectionService:
         task.add_done_callback(self._side_tasks.discard)
 
     def _schedule_ai_rename(self, username: str, session_code: str) -> None:
-        if session_code in self._ai_renamed_sessions:
+        if not session_code or session_code in self._ai_renamed_sessions:
             return
         self._ai_renamed_sessions.add(session_code)
+        logger.info("event=wxbot_ai_rename_scheduled session_code=%s", session_code)
         self._track_side_task(asyncio.create_task(self._ai_rename(username, session_code)))
 
     async def _ai_rename(self, username: str, session_code: str) -> None:
         try:
-            await asyncio.to_thread(run_with_database_connections, _run_ai_rename, username, session_code)
+            data = await asyncio.to_thread(run_with_database_connections, _run_ai_rename, username, session_code)
         except Exception:
-            logger.exception("event=wxbot_ai_rename_failed")
+            logger.exception("event=wxbot_ai_rename_failed session_code=%s username=%s", session_code, username)
+            return
+        logger.info(
+            "event=wxbot_ai_rename_done session_code=%s session_name=%s",
+            session_code,
+            (data or {}).get("session_name"),
+        )
 
     def _schedule_approval_poll(self, frame: dict[str, Any], template_card: dict[str, Any], username: str) -> None:
         target = self._resolve_message_target(frame)
@@ -1332,7 +1347,7 @@ class WxAiBotLongConnectionService:
                 return None
 
         try:
-            info = await wait_for_approval_result(query)
+            info = await wait_for_approval_result(query, session_code=action.session_code)
         except asyncio.CancelledError:
             raise
         except Exception:

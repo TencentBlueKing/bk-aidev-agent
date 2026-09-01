@@ -482,6 +482,55 @@ def test_flow_failed_end_attaches_retry_skip_card_for_first_failed_node(mock_det
     mock_detail_url.assert_called()
 
 
+@patch("aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1")
+def test_flow_resume_failed_end_still_attaches_retry_skip_card(mock_detail_url):
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "RUN_STARTED", "run_id": "flow-run"}),
+                _sse({"type": "CUSTOM", "name": "flow_agent_restart", "value": [{"task_id": "42", "action": "retry"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_update",
+                        "value": [
+                            {
+                                "task_state": "FAILED",
+                                "nodes": {
+                                    "n2": {
+                                        "id": "n2",
+                                        "name": "HTTP请求",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "FAILED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-resume-fail"))
+
+    assert frames[-1].finish
+    assert frames[-1].failed
+    assert frames[-1].template_card is not None
+    assert [button["text"] for button in frames[-1].template_card["button_list"]] == ["重试", "跳过"]
+    mock_detail_url.assert_called()
+
+
 def test_flow_failed_end_without_actionable_node_has_no_card():
     stream = AgentStream(
         kind="flow",

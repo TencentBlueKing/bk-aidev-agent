@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from logging import getLogger
 from typing import Any
 
 from aidev_agent.core.ag_ui.approval import ApproveResult
@@ -13,6 +14,8 @@ from .constants import (
     APPROVAL_POLL_MAX_INTERVAL_SECONDS,
     APPROVAL_POLL_MAX_SECONDS,
 )
+
+logger = getLogger(__name__)
 
 
 def approval_poll_intervals(
@@ -42,12 +45,18 @@ async def wait_for_approval_result(
     *,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
     intervals: list[float] | None = None,
+    session_code: str = "",
 ) -> dict | None:
     """立即查一次，未终态则按指数间隔继续查，直到命中三态或用尽时长。"""
     info = await query()
     if is_final_approve_result(info):
         return info
     for wait in intervals if intervals is not None else approval_poll_intervals():
+        logger.info(
+            "event=wxbot_card_poll_backoff session_code=%s interval_seconds=%s",
+            session_code,
+            wait,
+        )
         await sleep(wait)
         info = await query()
         if is_final_approve_result(info):

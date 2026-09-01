@@ -53,7 +53,7 @@ def test_resume_binds_signed_session_and_consumes_flow_kind(flow_resume_case):
     assert kwargs["session_code"] == "session-1"
     assert kwargs["task_id"] == "42"
     assert kwargs["resume_from_node"] == "skip"
-    assert kwargs["content"] == "跳过节点：HTTP请求"
+    assert kwargs["content"] == ""
     delivery.consume.assert_called_once()
     assert delivery.consume.call_args.kwargs["kind"] == "flow"
     delivery.finish.assert_called_once()

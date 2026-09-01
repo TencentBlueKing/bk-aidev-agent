@@ -30,7 +30,6 @@ from .constants import (
     HELP_CMDS,
     HELP_REPLY,
     NEW_CONVERSATION_CMDS,
-    SESSION_EXPIRED_REPLY,
     STOP_CMDS,
     STOP_NO_ACTIVE_REPLY,
     WRONG_MENTION_PROMPT,
@@ -328,8 +327,6 @@ class WxAiBotViewSet(ViewSet):
         try:
             scope = self._session_scope(context.group_id, context.sender_id)
             local_session = AgentSession.objects.get(group_id=scope)
-            if not local_session.is_session_valid():
-                return stream_msg(SESSION_EXPIRED_REPLY, True, stream_id)
             manager = SessionManager(username=context.sender_id)
             session_code = manager.generate_session_code(context.sender_id, manager.agent_code, local_session.thread_id)
             if not manager.retrieve_session(session_code):

@@ -148,12 +148,13 @@ class SessionManager:
         if (result.get("data") or {}).get("session_name") != session_name:
             raise ValueError("Session title update was not confirmed")
 
-    def ai_rename(self, session_code: str) -> None:
+    def ai_rename(self, session_code: str) -> dict:
         """按最新 user prompt 调平台生成会话名。"""
-        self._client().api.rename_chat_session(
+        result = self._client().api.rename_chat_session(
             path_params={"session_code": session_code},
             headers=self._user_headers(),
         )
+        return result.get("data") or {}
 
     def get_flow_info(self, session_code: str) -> dict:
         """读取 ``session_property.flow_info``（流程智能体执行信息），不存在时返回空 dict。"""

@@ -77,9 +77,8 @@ def _resume_flow_node(action: FlowNodeAction, username: str, delivery=None) -> N
             delivery.failed()
         return
 
-    content = f"{'重试' if action.operation == 'retry' else '跳过'}节点：{action.node_name or action.node_id}"
     agent_stream = FlowAgentStrategy().open_stream(
-        content=content,
+        content="",
         username=username,
         thread_id="",
         group_id="",

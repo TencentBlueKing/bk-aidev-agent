@@ -187,7 +187,7 @@ class TestFlowAgentStrategyExecute:
         mock_factory.build_agent.return_value = MagicMock()
 
         FlowAgentStrategy().open_stream(
-            content="重试节点：HTTP请求",
+            content="",
             username="wxid_123",
             thread_id="t1",
             group_id="g1",
@@ -198,6 +198,7 @@ class TestFlowAgentStrategyExecute:
         factory_kwargs = mock_factory.build_agent.call_args.kwargs
         assert factory_kwargs["task_id"] == "42"
         assert factory_kwargs["resume_from_node"] == "retry"
+        session_manager.save_content.assert_not_called()
         session_manager.set_flow_resume_pending.assert_called_once_with("sc_abc", False)
         mock_writer.assert_called_once()
         assert mock_writer.call_args.kwargs["task_id"] == "42"
@@ -220,7 +221,7 @@ class TestFlowAgentStrategyExecute:
         mock_factory.build_agent.return_value = MagicMock()
 
         FlowAgentStrategy().open_stream(
-            content="跳过节点：HTTP请求",
+            content="",
             username="wxid_123",
             thread_id="",
             group_id="",
@@ -231,6 +232,7 @@ class TestFlowAgentStrategyExecute:
 
         session_manager.get_or_create_by_session_code.assert_called_once_with("session-1", channel_type="rtx")
         session_manager.get_or_create_by_thread_id.assert_not_called()
+        session_manager.save_content.assert_not_called()
         assert mock_factory.build_agent.call_args.kwargs["session_code"] == "session-1"
 
 

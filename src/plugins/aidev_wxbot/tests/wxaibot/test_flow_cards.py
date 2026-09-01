@@ -1,6 +1,8 @@
 """Flow 失败节点重试/跳过卡片：选取、签名绑定与结果卡。"""
 
 import copy
+import hashlib
+
 import pytest
 from aidev_wxbot.wxaibot.flow_cards import (
     FlowNodeAction,
@@ -130,3 +132,23 @@ def test_result_card_replaces_buttons(ok, operation, label, monkeypatch):
 def test_result_card_rejects_mismatched_task_id():
     action = FlowNodeAction("session-1", "42", "n1", "retry")
     assert build_flow_action_result_card(action, "other-task", ok=True) is None
+
+
+def test_legacy_card_without_card_id_keeps_stable_wecom_task_id():
+    action = FlowNodeAction("session-1", "42", "n1", "retry")
+    assert action.card_id == ""
+    assert flow_card_task_id(action) == "flow_" + hashlib.sha256(b"session-1\x0042\x00n1").hexdigest()[:24]
+
+
+def test_each_issued_card_gets_unique_wecom_task_id(monkeypatch):
+    monkeypatch.setattr(
+        "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+        lambda _session: "https://agent.example.com/session-1",
+    )
+    nodes = {"n1": {"id": "n1", "name": "HTTP请求", "state": "FAILED", "retryable": True, "skippable": True}}
+    first = build_flow_action_card(session_code="session-1", task_id="42", nodes=nodes)
+    second = build_flow_action_card(session_code="session-1", task_id="42", nodes=nodes)
+    assert first["task_id"] != second["task_id"]
+    first_id = decode_flow_event_key(first["button_list"][0]["key"]).card_id
+    second_id = decode_flow_event_key(second["button_list"][0]["key"]).card_id
+    assert first_id and second_id and first_id != second_id

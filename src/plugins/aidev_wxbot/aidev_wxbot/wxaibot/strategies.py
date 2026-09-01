@@ -251,7 +251,9 @@ class FlowAgentStrategy:
                 thread_id,
                 channel_type=ChannelType.RTX.value,
             )
-        session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
+        # 节点重试/跳过已由 user_operation 作用在同一会话上，续流不再写假 user 消息。
+        if content and not (task_id or resume_from_node):
+            session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
         if task_id:
             try:
                 session_manager.set_flow_resume_pending(session_code, False)

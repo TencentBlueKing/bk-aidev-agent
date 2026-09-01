@@ -37,7 +37,7 @@ try:
         BUSY_BY_OTHERS_REPLY,
         BUSY_REPLY,
         PREPARING_REPLY,
-        SESSION_EXPIRED_REPLY,
+        CARD_EXPIRED_REPLY,
         STOP_NO_ACTIVE_REPLY,
         STOP_NOTICE,
         STOP_REPLY,
@@ -251,7 +251,19 @@ async def test_expired_question_card_does_not_resume(question_callback):
     prepare.assert_not_called()
     submit.assert_not_called()
     assert service._client.update_template_card_calls == []
-    assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
+    assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
+
+
+async def test_stale_question_signature_notifies_card_expired(question_callback):
+    service = _service()
+    with (
+        patch.object(long_connection_module, "decode_question_key", return_value=None),
+        patch.object(long_connection_module, "prepare_question_submission") as prepare,
+    ):
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    assert service._client.update_template_card_calls == []
+    assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
 
 
 @pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
@@ -807,8 +819,24 @@ class TestLongConnectionStreaming:
         assert service._client.reply_stream_calls == [(STREAM_ERROR_REPLY, True)]
         assert service._metrics.failed == 1
         assert service._metrics.completed == 0
-        service._schedule_ai_rename.assert_not_called()
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
         service._schedule_approval_poll.assert_not_called()
+
+    async def test_ai_rename_is_scheduled_when_session_is_opened(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", iter(()), "session-1")
+        request = SimpleNamespace(content="query", stream_id="stream-trigger", username="user-1", group_id="group-1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-trigger"].task
+
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
 
     async def test_pending_approval_is_not_counted_as_completed(self):
         service = _service()
@@ -942,7 +970,18 @@ class TestLongConnectionStreaming:
             await service._handle_frame({"body": approval_card_case.event})
         dispatch.assert_not_called()
         assert service._client.update_template_card_calls == []
-        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
+
+    async def test_stale_approval_signature_notifies_card_expired(self, approval_card_case):
+        service = _service()
+        with (
+            patch.object(long_connection_module, "decode_cancel_event_key", return_value=None),
+            patch.object(long_connection_module, "dispatch_user_operation") as dispatch,
+        ):
+            await service._handle_frame({"body": approval_card_case.event})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
 
     async def test_forwarded_cancel_card_cannot_change_reply_target(self, approval_card_case):
         case = approval_card_case
@@ -1268,7 +1307,21 @@ class TestFlowNodeCard:
             await service._handle_frame({"body": self._event(action)})
         dispatch.assert_not_called()
         assert service._client.update_template_card_calls == []
-        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == SESSION_EXPIRED_REPLY
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
+
+    async def test_stale_flow_signature_notifies_card_expired(self):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        with (
+            patch.object(long_connection_module, "decode_flow_event_key", return_value=None),
+            patch.object(long_connection_module, "dispatch_user_operation") as dispatch,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == CARD_EXPIRED_REPLY
 
     async def test_click_rejects_modified_binding(self):
         from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
@@ -1486,6 +1539,7 @@ class TestLongConnectionSideEffects:
             return MagicMock()
 
         with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "")
             WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
             WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
             WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-2")

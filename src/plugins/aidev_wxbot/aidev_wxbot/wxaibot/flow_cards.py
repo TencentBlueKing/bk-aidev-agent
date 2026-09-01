@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
+import secrets
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 from urllib.parse import urlsplit
@@ -32,6 +33,7 @@ class FlowNodeAction:
     operation: str
     node_name: str = ""
     target: str = field(default="", compare=False)
+    card_id: str = ""
 
 
 def _node_actions(node: dict) -> tuple[bool, bool]:
@@ -60,7 +62,11 @@ def pick_first_actionable_failed_node(nodes) -> tuple[str, dict, bool, bool] | N
 
 
 def flow_card_task_id(action: FlowNodeAction) -> str:
-    digest = hashlib.sha256(f"{action.session_code}\0{action.task_id}\0{action.node_id}".encode()).hexdigest()[:24]
+    """企微卡片 task_id。未带 card_id 的旧卡保持原哈希，避免回调对不上。"""
+    parts = [action.session_code, action.task_id, action.node_id]
+    if action.card_id:
+        parts.append(action.card_id)
+    digest = hashlib.sha256("\0".join(parts).encode()).hexdigest()[:24]
     return f"flow_{digest}"
 
 
@@ -112,6 +118,7 @@ def build_flow_action_card(*, session_code: str, task_id: str, nodes) -> dict[st
         node_id=node_id,
         operation="retry",
         node_name=node_name,
+        card_id=secrets.token_hex(8),
     )
     card: dict[str, Any] = {
         "card_type": "button_interaction",

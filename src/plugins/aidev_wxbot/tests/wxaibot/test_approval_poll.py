@@ -55,6 +55,24 @@ async def test_wait_for_approval_result_returns_on_first_hit():
     assert slept == []
 
 
+async def test_wait_for_approval_result_logs_each_backoff_interval(caplog):
+    results = [None, {"approve_result": "pending"}, {"approve_result": "approved"}]
+
+    async def query():
+        return results.pop(0)
+
+    with caplog.at_level("INFO"):
+        info = await wait_for_approval_result(query, sleep=_noop_sleep, intervals=[2, 4], session_code="sc-1")
+    assert info == {"approve_result": "approved"}
+    assert "interval_seconds=2" in caplog.text
+    assert "interval_seconds=4" in caplog.text
+    assert "session_code=sc-1" in caplog.text
+
+
+async def _noop_sleep(_wait):
+    return None
+
+
 async def test_wait_for_approval_result_uses_backoff_until_final():
     results = [None, {"approve_result": "pending"}, {"approve_result": "rejected"}]
 
