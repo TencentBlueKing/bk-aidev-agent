@@ -53,7 +53,6 @@ WECOM_LONG_CONNECTION_EXECUTION_POLICY = (
     WECOM_AGENT_EXECUTION_POLICY + "\n5. 如果工具把结果保存到文件，必须继续读取文件并把记录写入最终回复；"
     "在明细表格完成前不得只返回概览、文件路径或询问用户是否需要查看详情。"
 )
-WECOM_AGENT_TEMPERATURE = 0.1
 WECOM_AGENT_RETRY_STRATEGY = "sdk"
 
 
@@ -167,7 +166,6 @@ class ChatAgentStrategy:
                 WECOM_LONG_CONNECTION_EXECUTION_POLICY if retry_strategy else WECOM_AGENT_EXECUTION_POLICY
             ),
             enable_query_clarification=False,
-            temperature=WECOM_AGENT_TEMPERATURE,
             retry_strategy=retry_strategy,
         )
         return AgentStream(

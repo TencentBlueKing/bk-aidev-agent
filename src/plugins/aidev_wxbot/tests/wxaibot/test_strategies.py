@@ -24,7 +24,6 @@ from aidev_wxbot.wxaibot.context import LlmChunkMsg
 from aidev_wxbot.wxaibot.formatters import handle_flow_custom_event
 from aidev_wxbot.wxaibot.strategies import (
     WECOM_AGENT_EXECUTION_POLICY,
-    WECOM_AGENT_TEMPERATURE,
     WECOM_LONG_CONNECTION_EXECUTION_POLICY,
     ChatAgentStrategy,
     FlowAgentStrategy,
@@ -192,6 +191,7 @@ class TestChatAgentStrategyExecute:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["retry_strategy"] == "sdk"
         assert call_kwargs["transient_system_prompt"] == WECOM_LONG_CONNECTION_EXECUTION_POLICY
+        assert "temperature" not in call_kwargs
 
     @patch("aidev_wxbot.wxaibot.strategies.AgentExecutor.run_chat_completion_with_thread_id")
     @patch("aidev_wxbot.wxaibot.strategies.build_execute_kwargs")
@@ -221,7 +221,7 @@ class TestChatAgentStrategyExecute:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["transient_system_prompt"] == WECOM_AGENT_EXECUTION_POLICY
         assert call_kwargs["enable_query_clarification"] is False
-        assert call_kwargs["temperature"] == WECOM_AGENT_TEMPERATURE
+        assert "temperature" not in call_kwargs
         assert call_kwargs["retry_strategy"] is None
         assert mock_rabbitmq.publish_message.call_count >= 1
 
