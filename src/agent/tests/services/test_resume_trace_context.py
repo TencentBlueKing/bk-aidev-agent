@@ -7,6 +7,9 @@ from unittest.mock import Mock
 import pytest
 from aidev_agent.core.ag_ui.types import AgentInput
 from aidev_agent.services.agent.chat import ChatCompletionAgent
+
+pytest.importorskip("opentelemetry.trace")
+
 from opentelemetry import trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
