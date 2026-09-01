@@ -18,14 +18,12 @@ from unittest.mock import MagicMock, patch
 
 def configure_database(path):
     os.environ["MESSAGE_HANDLER_TYPE"] = "inmemory"
+    import aidev_wxbot_test_settings as test_settings
     import django
     from django.conf import settings
 
-    from tests import settings as test_settings
-
     values = {key: getattr(test_settings, key) for key in dir(test_settings) if key.isupper()}
     values.update(APP_CODE="app", AIDEV_DATABASE_EVENTS_ENABLED=True)
-    values["INSTALLED_APPS"] = [*values["INSTALLED_APPS"], "tests.apps.WxAiBotTestConfig"]
     values.update(
         BK_APIGW_MANAGER_URL_TMPL="https://{api_name}.example.invalid",
         AIDEV_GATEWAY_NAME="test",
