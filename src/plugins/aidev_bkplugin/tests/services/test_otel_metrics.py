@@ -17,8 +17,11 @@ from aidev_agent.packages.opentelemetry.metrics import (
 )
 from aidev_bkplugin.services.metric_runtime import RetryableMetricPushError
 from aidev_bkplugin.services.otel_metrics import (
+    BKM_PUSH_MODE_CELERY,
+    BKM_PUSH_MODE_DIRECT,
     BkPluginMetricService,
     CeleryMetricExporter,
+    DirectBkmMetricExporter,
     MetricExportSettings,
     _bkm_endpoint_key,
     _bkm_metric_name,
@@ -47,6 +50,8 @@ def isolate_agent_metric_settings(monkeypatch):
 
     defaults = {
         "BKAI_AGENT_ENABLE_METRICS": None,
+        "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS": 10_000,
+        "BKAI_AGENT_METRICS_PUSH_MODE": BKM_PUSH_MODE_CELERY,
         "BKAI_AGENT_METRICS_DATA_ID": "",
         "BKAI_AGENT_METRICS_TOKEN": "",
         "BKAI_AGENT_METRICS_HOST": "",
@@ -163,6 +168,35 @@ def test_metric_settings_parse_nested_otel_info():
     assert settings.bkm_target == "127.0.0.1"
 
 
+def test_metric_settings_prefer_platform_interval_over_agent_setting(monkeypatch):
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS", 2500)
+    agent_info = {"otel_info": {"metrics": {"export_interval_millis": 1500}}}
+
+    settings = MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
+
+    assert settings.export_interval_millis == 1500
+
+
+def test_metric_settings_prefer_platform_push_mode_over_agent_setting(monkeypatch):
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_PUSH_MODE", BKM_PUSH_MODE_DIRECT)
+    agent_info = {"otel_info": {"metrics": {"push_mode": BKM_PUSH_MODE_CELERY}}}
+
+    settings = MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
+
+    assert settings.bkm_push_mode == BKM_PUSH_MODE_CELERY
+
+
+def test_metric_settings_reject_unknown_push_mode():
+    agent_info = {"otel_info": {"metrics": {"push_mode": "unknown"}}}
+
+    with pytest.raises(ValueError, match="Unsupported metric push mode"):
+        MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
+
+
 def test_metric_settings_use_local_environment_fallback(monkeypatch):
     from aidev_bkplugin.services import otel_metrics
 
@@ -170,6 +204,8 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TOKEN", "local-secret")
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_HOST", "local-proxy")
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TARGET", "local-target")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS", 2500)
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_PUSH_MODE", BKM_PUSH_MODE_DIRECT)
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TASK_TTL_SECONDS", 1800)
 
     settings = MetricExportSettings.from_agent_info({}, default_enabled=False)
@@ -180,7 +216,8 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
     assert settings.bkm_target == "local-target"
     assert settings.export_via_celery is True
-    assert settings.export_interval_millis == 10_000
+    assert settings.export_interval_millis == 2500
+    assert settings.bkm_push_mode == BKM_PUSH_MODE_DIRECT
     assert settings.task_ttl_seconds == 1800
 
 
@@ -367,12 +404,68 @@ def test_metric_service_uses_credential_free_bkm_endpoint_key():
         enqueue_bkm_metrics=lambda *_args: None,
     )
 
-    exporter = service._create_celery_exporter()
+    exporter = service._create_bkm_exporter()
 
     assert isinstance(exporter, CeleryMetricExporter)
     assert exporter.endpoint_key == _bkm_endpoint_key(settings)
     assert exporter.task_ttl_seconds == 3600
     assert settings.bkm_access_token not in exporter.endpoint_key
+
+
+def test_direct_bkm_exporter_pushes_without_celery_metadata(mocker):
+    push = mocker.Mock()
+
+    result = DirectBkmMetricExporter(
+        endpoint_key="endpoint-fingerprint",
+        target="127.0.0.1",
+        push=push,
+    ).export(_sample_metrics_data())
+
+    assert result is MetricExportResult.SUCCESS
+    endpoint_key, payload = push.call_args.args
+    assert endpoint_key == "endpoint-fingerprint"
+    assert "secret" not in payload
+    assert json.loads(payload)[0]["target"] == "127.0.0.1"
+
+
+def test_direct_bkm_exporter_returns_failure_when_push_fails(mocker):
+    push = mocker.Mock(side_effect=requests.Timeout)
+    exporter = DirectBkmMetricExporter("endpoint-fingerprint", "127.0.0.1", push)
+
+    result = exporter.export(_sample_metrics_data())
+
+    assert result is MetricExportResult.FAILURE
+
+
+def test_metric_service_selects_direct_bkm_exporter_without_celery_enqueue():
+    service = BkPluginMetricService(
+        service_name="ai-demo",
+        endpoints=[],
+        agent_info={},
+        settings=_bkm_settings(bkm_push_mode=BKM_PUSH_MODE_DIRECT),
+    )
+
+    exporter = service._create_bkm_exporter()
+
+    assert isinstance(exporter, DirectBkmMetricExporter)
+
+
+def test_metric_service_starts_direct_bkm_without_celery_enqueue(mocker):
+    provider = mocker.Mock()
+    meter_provider = mocker.patch("aidev_bkplugin.services.otel_metrics.MeterProvider", return_value=provider)
+    reader = mocker.patch("aidev_bkplugin.services.otel_metrics.PeriodicExportingMetricReader")
+    mocker.patch("aidev_bkplugin.services.otel_metrics.metrics.set_meter_provider")
+    mocker.patch("aidev_bkplugin.services.otel_metrics.metrics.get_meter_provider", return_value=provider)
+    service = BkPluginMetricService(
+        service_name="ai-demo",
+        endpoints=[],
+        agent_info={},
+        settings=_bkm_settings(bkm_push_mode=BKM_PUSH_MODE_DIRECT),
+    )
+
+    assert service.start() is True
+    assert isinstance(reader.call_args.args[0], DirectBkmMetricExporter)
+    assert meter_provider.call_count == 1
 
 
 def test_metric_service_does_not_enable_incomplete_bkm_export():

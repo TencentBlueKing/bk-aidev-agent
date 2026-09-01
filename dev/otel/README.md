@@ -195,6 +195,7 @@ make test
     "export_interval_millis": 10000,
     "export_timeout_millis": 30000,
     "export_via_celery": true,
+    "push_mode": "celery",
     "agent_data_id": 1001,
     "agent_access_token": "<由平台下发>",
     "agent_push_url": "http://proxy.example:10205/v2/push/",
@@ -227,9 +228,12 @@ make test
 
 OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le` 维度）、
 `*_sum` 和 `*_count`，因此现有速率与 P95 查询语义保持不变。这里不依赖 Celery Beat：
-各产生指标的进程负责按 `export_interval_millis` 截取自己的累计快照，Celery Worker 只负责
-可靠隔离实际网络请求，避免 Worker 无法读取其他进程内存中的 OTel 聚合器。
-生产默认周期为 10 秒；显式下发 `export_interval_millis` 时仍以配置值为准。本地 mock 为了缩短
+各产生指标的进程负责按 `export_interval_millis` 截取自己的累计快照。`push_mode=celery`（默认）
+将快照交给 Celery Worker 隔离实际网络请求；`push_mode=direct` 则由周期导出线程直接请求 BKM，
+但不改变快照周期。两种模式都不要求 Worker 读取其他进程内存中的 OTel 聚合器。
+`direct` 模式不经过 Celery 的 TTL 和退避重试，失败后由下一次周期快照继续上报累计值。
+生产默认周期为 10 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，平台显式
+下发的 `export_interval_millis` 优先于智能体环境变量，且周期最小为 1 秒。本地 mock 为了缩短
 仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
@@ -238,6 +242,8 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 
 ```bash
 BKAI_AGENT_ENABLE_METRICS=true
+BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS=10000
+BKAI_AGENT_METRICS_PUSH_MODE=celery
 BKAI_AGENT_METRICS_HOST=proxy.example
 BKAI_AGENT_METRICS_DATA_ID=1001
 BKAI_AGENT_METRICS_TOKEN=<本地密钥>
