@@ -32,6 +32,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FileContent from './file-content.vue';
 
 import type { UploadFile } from '../../../types';
+import { UploadStatus } from '../../../types';
 
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
@@ -313,6 +314,81 @@ describe('FileContent', () => {
 
       expect(wrapper.find('.mock-image-error-icon').exists()).toBe(true);
       expect(wrapper.findComponent({ name: 'ImagePreview' }).props('images')).toHaveLength(1);
+    });
+  });
+
+  describe('上传状态展示', () => {
+    it('文件上传中应显示遮罩和圈圈 loading，并保留删除', () => {
+      const files: Partial<UploadFile>[] = [
+        {
+          file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }),
+          mimeType: 'application/pdf',
+          status: UploadStatus.Pending,
+        },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find('.ai-upload-file-item').classes()).toContain('is-pending');
+      expect(wrapper.find('.ai-upload-file-item-overlay').exists()).toBe(true);
+      expect(wrapper.find('.ai-upload-spinner').exists()).toBe(true);
+      expect(wrapper.find('.ai-upload-file-item-size').text()).toBe('4.00B');
+      expect(wrapper.find('.ai-upload-file-item-delete').exists()).toBe(true);
+    });
+
+    it('文件上传失败应显示红色失败态和「上传失败」', () => {
+      const files: Partial<UploadFile>[] = [
+        {
+          file: new File(['data'], 'doc.pdf', { type: 'application/pdf' }),
+          mimeType: 'application/pdf',
+          status: UploadStatus.Error,
+        },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find('.ai-upload-file-item').classes()).toContain('is-error');
+      expect(wrapper.find('.ai-upload-file-item-size').text()).toBe('上传失败');
+      expect(wrapper.find('.ai-upload-file-item-overlay').exists()).toBe(false);
+      expect(wrapper.find('.ai-upload-file-item-delete').exists()).toBe(true);
+    });
+
+    it('图片上传中应覆盖 loading，且不可打开预览', async () => {
+      const files: Partial<UploadFile>[] = [
+        {
+          file: new File(['img'], 'photo.png', { type: 'image/png' }),
+          mimeType: 'image/png',
+          status: UploadStatus.Pending,
+        },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find('.ai-upload-image-item').classes()).toContain('is-pending');
+      expect(wrapper.find('.ai-upload-image-item-overlay').exists()).toBe(true);
+      expect(wrapper.find('.ai-upload-spinner').exists()).toBe(true);
+      expect(wrapper.find(IMAGE_SELECTOR).exists()).toBe(true);
+      expect(wrapper.find('.ai-upload-image-item-delete').exists()).toBe(true);
+
+      await wrapper.find(IMAGE_SELECTOR).trigger('click');
+
+      expect(wrapper.findComponent({ name: 'ImagePreview' }).props('visible')).toBe(false);
+    });
+
+    it('图片上传失败应显示裂图占位而非原图', () => {
+      const files: Partial<UploadFile>[] = [
+        {
+          file: new File(['img'], 'photo.png', { type: 'image/png' }),
+          mimeType: 'image/png',
+          status: UploadStatus.Error,
+        },
+      ];
+
+      wrapper = mount(FileContent, { props: { files } });
+
+      expect(wrapper.find('.ai-upload-image-item-thumb.is-error').exists()).toBe(true);
+      expect(wrapper.find('.mock-image-error-icon').exists()).toBe(true);
+      expect(wrapper.find('img.ai-upload-image-item-thumb').exists()).toBe(false);
     });
   });
 

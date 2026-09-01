@@ -151,6 +151,43 @@ describe('useMessageSender', () => {
       expect(result).toEqual({ download_url: 'https://example.com/file.png' });
     });
 
+    it('should accept pv_files success without download_url', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.uploadFile as any).mockResolvedValue({
+        type: 'file',
+        id: 'files/doc.pdf',
+        path: 'files/doc.pdf',
+        name: 'doc.pdf',
+        mime_type: 'application/pdf',
+        size: 10,
+        status: 'success',
+      });
+      const { handleUpload } = useMessageSender(params);
+
+      const result = await handleUpload(new File(['pdf'], 'doc.pdf'));
+
+      expect(result).toMatchObject({ id: 'files/doc.pdf', status: 'success' });
+    });
+
+    it('should throw when pv_files item status is failed', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.uploadFile as any).mockResolvedValue({
+        type: 'file',
+        id: 'files/bad.exe',
+        path: 'files/bad.exe',
+        name: 'bad.exe',
+        mime_type: 'application/octet-stream',
+        size: 1,
+        status: 'failed',
+        error: 'extension not allowed',
+      });
+      const { handleUpload } = useMessageSender(params);
+
+      await expect(handleUpload(new File(['x'], 'bad.exe'))).rejects.toThrow('extension not allowed');
+    });
+
     it('should throw when no active session', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = null;

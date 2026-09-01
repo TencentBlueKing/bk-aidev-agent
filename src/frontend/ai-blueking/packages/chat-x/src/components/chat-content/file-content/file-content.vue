@@ -15,6 +15,7 @@
         :name="item.name"
         :readonly="readonly"
         :src="item.src"
+        :status="item.file.status"
         :variant="variant"
         @delete="handleDeleteFile(item.file)"
         @error="handleImageError(item.key)"
@@ -44,7 +45,7 @@
 <script lang="ts" setup>
   import { computed, onBeforeUnmount, shallowReactive, shallowRef, watch } from 'vue';
 
-  import { type UploadFile, type UploadFileVariant } from '../../../types';
+  import { type UploadFile, type UploadFileVariant, UploadStatus } from '../../../types';
   import { getUploadFileKey, getUploadFileName, splitUploadFiles } from '../../../utils';
   import ImagePreview from '../../image-preview/image-preview.vue';
   import UploadFileItem from './upload-file-item.vue';
@@ -120,7 +121,15 @@
   const previewIndex = shallowRef(0);
 
   // 仅加载成功的图片可预览，下标需与 previewImages 对齐
-  const previewItems = computed(() => imageItems.value.filter(item => !item.hasError && item.src));
+  const previewItems = computed(() =>
+    imageItems.value.filter(
+      item =>
+        !item.hasError &&
+        item.src &&
+        item.file.status !== UploadStatus.Pending &&
+        item.file.status !== UploadStatus.Error,
+    ),
+  );
   const previewImages = computed<ImageItem[]>(() =>
     previewItems.value.map(item => ({ name: item.name, url: item.src })),
   );

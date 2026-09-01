@@ -3,9 +3,9 @@ name: FileContent 文件内容
 slug: file-content
 kind: component
 domain: medias
-description: 渲染文件附件，支持图片预览和下载事件。
+description: 渲染文件附件，支持图片预览、上传中/失败态和下载事件。
 aiSummary: >
-  渲染文件附件，支持图片预览和下载事件。
+  渲染文件附件，支持图片预览、上传中/失败态和下载事件。
   源码位置：src/components/chat-content/file-content/file-content.vue。
 relatedComponents:
   - slug: image-preview
@@ -82,20 +82,21 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-content/file-content/file-content.vue`
 - **能力域**：媒体文件
-- **能力说明**：渲染文件附件，支持图片预览和下载事件。
+- **能力说明**：渲染文件附件，支持图片预览、上传中/失败态和下载事件。
 
 
 
 > **能力域**：媒体文件
 
-文件列表展示组件，支持图片缩略图预览、点击图片全屏预览（`ImagePreview`）、文件卡片展示（类型图标 / 文件名 / 文件大小）、图片加载失败占位和删除操作。
+文件列表展示组件，支持图片缩略图预览、点击图片全屏预览（`ImagePreview`）、文件卡片展示（类型图标 / 文件名 / 文件大小）、上传中/失败态、图片加载失败占位和删除操作。
 
-内部由两个子组件承载单项渲染：
+内部由三个子组件承载单项渲染：
 
 | 子组件             | 源码位置                                                            | 职责                                          |
 | ------------------ | ------------------------------------------------------------------- | --------------------------------------------- |
-| `UploadImageItem`  | `src/components/chat-content/file-content/upload-image-item.vue`  | 图片缩略图、加载失败占位、hover 删除徽标      |
-| `UploadFileItem`   | `src/components/chat-content/file-content/upload-file-item.vue`   | 180px 文件卡片（`FileIcon` + 文件名 + 大小） |
+| `UploadImageItem`  | `src/components/chat-content/file-content/upload-image-item.vue`  | 图片缩略图、上传中遮罩、失败占位、hover 删除徽标 |
+| `UploadFileItem`   | `src/components/chat-content/file-content/upload-file-item.vue`   | 180px 文件卡片（`FileIcon` + 文件名 + 大小 / 失败文案） |
+| `UploadSpinner`    | `src/components/chat-content/file-content/upload-spinner.vue`     | 16px 白色环形 loading，文件与图片共用         |
 
 ## 渲染决策逻辑
 
@@ -106,9 +107,12 @@ splitUploadFiles(files)  // 单次遍历
 ├── 图片组（.ai-files-content-row.is-images）
 │     判定依据：mimeType 或 file.file?.type 以 'image/' 开头
 │     src：file.url 优先，否则用本地 File 的 blob URL（按 key 缓存，移除 / 卸载时 revoke）
-│     加载失败 → 错误占位（粉色背景 + 红色边框 + 灰色图标），且不进入预览列表
+│     加载失败或 status=error → 错误占位（粉色背景 + 红色边框 + 灰色图标），且不进入预览列表
+│     status=pending → 半透明遮罩 + 16px 环形 loading，禁止点击预览
 └── 文件组（.ai-files-content-row.is-files）
       文件卡片：类型图标（FileIcon，按文件名解析扩展名）+ 文件名 + 文件大小
+      status=pending → 半透明遮罩 + 16px 环形 loading
+      status=error → 浅红底 + 红边框，第二行展示「上传失败」
 ```
 
 > **是否为图片只看 MIME，不看 `url`。** 解除上传类型限制后，任意文件上传成功都会拿到 `url`，若按 `url` 判断会把 PDF / DOC 渲染成破图。因此 `url` 只决定 `<img src>` 从哪里来，不参与图片判定。
@@ -205,9 +209,21 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 
 > **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败的图片被自动过滤。
 
+## 上传中 / 上传失败
+
+`FileContent` 消费每项的 `status`（`UploadStatus`）。尺寸不变：文件卡片仍是 180×48，图片仍是定高 48、宽 48~120。loading 用共享的 `UploadSpinner`（16px 白环），不要用 `AiLoading`。删除徽标始终叠在遮罩之上。
+
+| status    | 文件卡片 | 图片缩略图 |
+| --------- | -------- | ---------- |
+| `pending` | `rgba(0,0,0,0.3)` 遮罩 + spinner | 保留预览图 + `rgba(0,0,0,0.5)` 遮罩 + spinner，点击不打开预览 |
+| `error`   | 背景 `#fff0f0`、边框 `#ea3636`，第二行「上传失败」 | 与加载失败相同的破图占位（18px `ImageErrorIcon`） |
+| `success` / 未设置 | 正常卡片 | 正常缩略图，可预览 |
+
+上传中与上传失败的图片都不会进入 `ImagePreview` 列表。`ChatInput` 在存在 `pending` / `error` 附件时会拦截发送（见 [ChatInput](/components/input/chat-input)）。
+
 ## 图片加载失败
 
-`<img>` 触发 `onerror` 时，切换为粉色背景 + 红色边框的错误占位：
+`<img>` 触发 `onerror` 时，切换为粉色背景 + 红色边框的错误占位（与 `status=error` 同一套 UI）：
 
 <div class="demo">
   <FileContentComp :files="errorImageFiles" @delete-file="handleDeleteFile" />
@@ -335,6 +351,7 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 | `file.url` 有值     | `file.url`                                        | 打开全屏预览   |
 | 无 url、有 `File`   | `URL.createObjectURL(file.file)`（按 key 缓存）  | 打开全屏预览   |
 | 图片加载失败        | 错误占位                                          | 不进入预览列表 |
+| `status` 为 pending / error | 遮罩 loading 或错误占位                    | 不进入预览列表 |
 
 blob URL 按附件 key 缓存，同一文件重复渲染不会重复创建；文件被移除或组件卸载时统一 `revokeObjectURL`。
 
@@ -351,7 +368,7 @@ blob URL 按附件 key 缓存，同一文件重复渲染不会重复创建；文
 ```typescript
 import type { UploadFile, BinaryInputContent } from '@blueking/chat-x';
 
-// 上传状态（ChatInput 内部使用，FileContent 不使用此字段）
+// 上传状态：ChatInput 写入，FileContent 消费以渲染 pending / error
 enum UploadStatus {
   Pending = 'pending', // 上传中
   Success = 'success', // 上传成功
@@ -361,7 +378,7 @@ enum UploadStatus {
 // 上传文件（FileContent 的 files 数组中每一项）
 type UploadFile = BinaryInputContent & {
   file?: File; // 原始 File 对象，无则文件大小不显示
-  status?: UploadStatus; // 上传状态（ChatInput 使用，FileContent 不消费）
+  status?: UploadStatus; // 上传状态（pending 遮罩 loading，error 失败样式）
 };
 
 // 二进制内容基础类型

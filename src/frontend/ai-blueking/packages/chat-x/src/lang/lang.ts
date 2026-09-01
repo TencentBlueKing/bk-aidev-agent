@@ -188,6 +188,9 @@ export const lang = {
   搜索文件关键字: 'Search file keyword',
   预览加载失败: 'Failed to load preview',
   暂无可预览的文件: 'No file to preview',
+  '文件上传中，请稍候': 'Uploading files, please wait',
+  '存在上传失败的文件，请删除后重试': 'Remove failed uploads before sending',
+  上传失败: 'Upload failed',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

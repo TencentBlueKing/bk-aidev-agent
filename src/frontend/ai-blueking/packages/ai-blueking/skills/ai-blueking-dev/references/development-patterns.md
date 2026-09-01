@@ -186,7 +186,13 @@ const handleUserShortcutConfirm = async (
 
 ## 文件上传
 
-ChatInput 支持文件上传功能，传入 `onUpload` 回调后自动显示上传按钮：
+ChatInput 支持文件上传功能，传入 `onUpload` 回调后自动显示上传按钮。`session.uploadFile` 会按 `agent.info.agentSdkVersion` 分流：`< 2.2.2rc25` 走旧 `upload/{fileName}/`，`≥ 2.2.2rc25` 走 `pv_files/upload/`。
+
+成功条件：有 `id`（新接口永久身份）或 `download_url`（旧接口 / 新接口图片预览链）。发送 Binary 时应带上 `id`。
+
+上传进行中（附件 `status === pending`）或存在失败附件（`status === error`）时，ChatInput **禁止发送**（点击、Enter、`triggerSendMessage` 均拦截），失败项需用户删除后才能再发。不要把附件 Pending 映射到 `MessageStatus.Pending`，否则发送钮会变成停止生成。
+
+文件芯片 / 图片缩略图按状态展示：上传中为半透明遮罩 + 16px 白圈；失败为红框（文件第二行「上传失败」，图片为裂图占位）。尺寸沿用现有附件布局，不改自适应宽。
 
 ```typescript
 const handleUpload = async (file: File) => {

@@ -296,6 +296,8 @@ interface IAgentInfo {
   agentName?: string;
   /** Agent 类型：`single` 为普通智能体；`claw` 时 ChatBot 自动隐藏编辑/删除/重新生成 */
   agentType?: 'claw' | 'single' | string;
+  /** 后端 agent_sdk_version，如 2.2.2rc17；上传接口按 ≥ 2.2.2rc25 分流 */
+  agentSdkVersion?: string;
   resources?: IAgentResourceItem[];
   saasUrl?: string;
   chatGroup?: { enabled: boolean; staff: string[]; username: string };
@@ -535,15 +537,20 @@ await session.postSessionFeedback({
 
 #### uploadFile
 
-上传文件。
+上传文件。按 `agent.info.agentSdkVersion` 自动分流：
+
+- **`< 2.2.2rc25` 或缺失**：`POST session/{code}/upload/{fileName}/`，返回 `{ download_url? }`
+- **`≥ 2.2.2rc25`**：`POST session/{code}/pv_files/upload/`（multipart 字段 `files`），返回单条 `{ id, path, status, download_url?, ... }`
+  - `id` / `path` 为永久身份（`files/<filename>`）
+  - `download_url` 仅成功图片有，约 1 小时有效
 
 ```typescript
-const result = await session.uploadFile(
-  sessionCode: string,
-  file: File
-);
-// result: 上传结果对象（具体结构由后端定义）
+const result = await session.uploadFile(sessionCode, file);
+// 旧：{ download_url?: string }
+// 新：{ id, path, name, mime_type, size, status, download_url?, error? }
 ```
+
+`session.uploadFiles(sessionCode, files)` 为批量入口，分流规则相同。
 
 #### isResumeSession（HITL 审批轮询端点）
 

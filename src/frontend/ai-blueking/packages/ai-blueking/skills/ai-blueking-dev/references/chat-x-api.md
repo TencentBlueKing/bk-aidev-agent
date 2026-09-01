@@ -192,7 +192,7 @@ import {
 | tippyOptions | `AITippyProps` | - | 附件区 Tippy 配置 |
 | onSendMessage | 见下方 | - | 发送（第三参可携带中断/resume） |
 | onStopSending | `() => Promise<void>` | - | 停止 |
-| onUpload | `(files: File) => Promise<{ download_url?: string }>` | - | 上传（参数为 `File`，非数组） |
+| onUpload | `(file: File) => Promise<{ download_url?: string; error?: string; id?: string; status?: 'failed' \| 'success' }>` | - | 上传（参数为单个 `File`）。上传中或存在失败附件时禁止发送 |
 
 > 底层编辑器为 **`AiSlashInput`**（`/` 唤起 Skill 菜单，基于 `edix` schema 的富文本）。
 

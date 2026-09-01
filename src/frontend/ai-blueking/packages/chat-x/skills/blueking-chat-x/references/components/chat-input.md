@@ -319,8 +319,9 @@ const handleSendMessage = async (
 
 - 底部工具栏出现文件上传按钮（在快捷指令左侧）
 - 支持**点击选择**、**拖拽上传**、**粘贴上传**（Ctrl+V）
-- `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string }`
+- `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
+- **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 发送成功后，`uploadFiles` 自动清空
 
 **个数与大小校验（与 `FileUploadBtn` 分工）**：
@@ -598,7 +599,7 @@ const handleSendMessage = async (
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |
-| onUpload           | `(file: File) => Promise<{ download_url?: string }>`                       | -        | -    | 文件上传回调（每次单文件）                              |
+| onUpload           | `(file: File) => Promise<{ download_url?: string; error?: string; id?: string; status?: 'failed' \| 'success' }>` | -        | -    | 文件上传回调（每次单文件）；上传中/失败附件会阻塞发送 |
 
 ### 默认占位符
 

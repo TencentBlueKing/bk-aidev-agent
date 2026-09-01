@@ -74,7 +74,8 @@ export async function uploadFilesToSession(
 }
 
 /**
- * 上传文件到会话
+ * 上传文件到会话（旧接口，agent_sdk_version < 2.2.2rc25）。
+ * 正式环境请用 chat-helper session.uploadFile，会按 agentSdkVersion 自动分流到 pv_files/upload。
  * @param options 上传配置
  * @returns Promise<UploadFileResponse>
  */

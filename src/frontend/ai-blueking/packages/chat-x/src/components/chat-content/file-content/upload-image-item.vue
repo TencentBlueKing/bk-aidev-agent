@@ -1,12 +1,15 @@
 <template>
-  <div class="ai-upload-image-item">
+  <div
+    class="ai-upload-image-item"
+    :class="{ 'is-pending': isPending }"
+  >
     <img
-      v-if="!hasError"
+      v-if="!showError"
       :alt="name"
       class="ai-upload-image-item-thumb"
       :class="`is-${variant}`"
       :src="src"
-      @click="emit('preview')"
+      @click="handlePreview"
       @error="emit('error')"
     />
     <div
@@ -15,6 +18,12 @@
       :class="`is-${variant}`"
     >
       <ImageErrorIcon class="ai-upload-image-item-error-icon" />
+    </div>
+    <div
+      v-if="isPending"
+      class="ai-upload-image-item-overlay"
+    >
+      <UploadSpinner />
     </div>
     <span
       v-if="!readonly"
@@ -26,19 +35,24 @@
   </div>
 </template>
 <script setup lang="ts">
+  import { computed } from 'vue';
+
   import { CloseIcon, ImageErrorIcon } from '../../../icons';
+  import { UploadStatus } from '../../../types';
+  import UploadSpinner from './upload-spinner.vue';
 
   import type { UploadFileVariant } from '../../../types';
 
   defineOptions({ name: 'UploadImageItem' });
 
-  withDefaults(
+  const props = withDefaults(
     defineProps<{
       // 图片加载失败：由容器统一记录，失败项不进入预览列表
       hasError?: boolean;
       name?: string;
       readonly?: boolean;
       src?: string;
+      status?: UploadStatus;
       variant?: UploadFileVariant;
     }>(),
     {
@@ -48,6 +62,16 @@
   const emit = defineEmits<{
     (e: 'delete' | 'error' | 'preview'): void;
   }>();
+
+  const isPending = computed(() => props.status === UploadStatus.Pending);
+  const showError = computed(() => !!props.hasError || props.status === UploadStatus.Error);
+
+  const handlePreview = () => {
+    if (isPending.value) {
+      return;
+    }
+    emit('preview');
+  };
 </script>
 <style lang="scss">
   @use '../../../styles/attachment.scss' as attachment;
@@ -87,6 +111,18 @@
         background: #fff0f0;
         border-color: #ea3636;
       }
+    }
+
+    &-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      background: rgb(0 0 0 / 50%);
+      border-radius: 8px;
     }
 
     &-error-icon {

@@ -1,7 +1,11 @@
 <template>
   <div
     class="ai-upload-file-item"
-    :class="{ 'is-readonly': readonly }"
+    :class="{
+      'is-readonly': readonly,
+      'is-pending': isPending,
+      'is-error': isError,
+    }"
   >
     <span class="ai-upload-file-item-icon">
       <!-- 与文件产物侧栏共用一套扩展名 → 图标映射，解除类型限制后各类文件都有对应图标 -->
@@ -19,11 +23,18 @@
         {{ name }}
       </span>
       <span
-        v-if="sizeText"
+        v-if="isError || sizeText"
         class="ai-upload-file-item-size"
+        :class="{ 'is-error': isError }"
       >
-        {{ sizeText }}
+        {{ isError ? t('上传失败') : sizeText }}
       </span>
+    </div>
+    <div
+      v-if="isPending"
+      class="ai-upload-file-item-overlay"
+    >
+      <UploadSpinner />
     </div>
     <span
       v-if="!readonly"
@@ -40,8 +51,11 @@
   import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
   import { CloseIcon } from '../../../icons';
+  import { t } from '../../../lang/lang';
+  import { UploadStatus } from '../../../types';
   import { formatUploadFileSize, getUploadFileName } from '../../../utils';
   import FileIcon from '../../file-icon/file-icon.vue';
+  import UploadSpinner from './upload-spinner.vue';
 
   import type { UploadFile } from '../../../types';
 
@@ -59,6 +73,8 @@
 
   const name = computed(() => getUploadFileName(props.file));
   const sizeText = computed(() => formatUploadFileSize(props.file));
+  const isPending = computed(() => props.file.status === UploadStatus.Pending);
+  const isError = computed(() => props.file.status === UploadStatus.Error);
 </script>
 <style lang="scss">
   @use '../../../styles/attachment.scss' as attachment;
@@ -81,8 +97,13 @@
     border-radius: 8px;
     transition: background-color 0.2s;
 
-    &:not(.is-readonly):hover {
+    &:not(.is-readonly):not(.is-pending):not(.is-error):hover {
       background: variables.$color-border;
+    }
+
+    &.is-error {
+      background: #fff0f0;
+      border: 1px solid #ea3636;
     }
 
     &-icon {
@@ -114,6 +135,22 @@
 
     &-size {
       color: variables.$color-text-secondary;
+
+      &.is-error {
+        color: #ea3636;
+      }
+    }
+
+    &-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      background: rgb(0 0 0 / 30%);
+      border-radius: 8px;
     }
 
     &-delete {

@@ -50,7 +50,7 @@
       />
       <InputAttachment
         :message-state="messageState"
-        :send-disabled-tip="sendDisabledTip"
+        :send-disabled-tip="effectiveSendDisabledTip"
         :tippy-options="tippyOptions"
         @send-message="handleSendMessage"
         @stop-sending="handleStopSending"
@@ -105,7 +105,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
+  import { computed, reactive, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -128,6 +128,7 @@
     type UploadFile,
     UploadStatus,
   } from '../../types';
+  import { t } from '../../lang/lang';
   import { formatUploadNotAddedMessage, getFileIdentity, getUploadFileName, getUploadFileSize } from '../../utils';
   import FileUploadBtn from '../ai-buttons/file-upload-btn/file-upload-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
@@ -173,6 +174,9 @@
     onStopSending?: () => Promise<void>;
     onUpload?: (files: File) => Promise<{
       download_url?: string;
+      error?: string;
+      id?: string;
+      status?: 'failed' | 'success';
     }>;
     placeholder?: string;
     prompts?: string[];
@@ -227,6 +231,20 @@
     }
     return props.messageStatus;
   });
+  const isUploading = computed(() => uploadFiles.value.some(file => file.status === UploadStatus.Pending));
+  const hasUploadError = computed(() => uploadFiles.value.some(file => file.status === UploadStatus.Error));
+  const effectiveSendDisabledTip = computed(() => {
+    if (props.sendDisabledTip) {
+      return props.sendDisabledTip;
+    }
+    if (isUploading.value) {
+      return t('文件上传中，请稍候');
+    }
+    if (hasUploadError.value) {
+      return t('存在上传失败的文件，请删除后重试');
+    }
+    return undefined;
+  });
 
   watchPostEffect(() => {
     const defaultHeight = props.inputMaxHeight || 280;
@@ -239,7 +257,7 @@
   });
   const handleSendMessage = async () => {
     try {
-      if (props.sendDisabledTip) {
+      if (effectiveSendDisabledTip.value) {
         return;
       }
       aiSlashInputRef.value?.cleanup?.();
@@ -253,6 +271,7 @@
         // 取值统一走 helper：编辑态回填的附件只有 BinaryInputContent（无 File），不能只读 file.*
         content = uploadFiles.value?.slice().map(file => ({
           type: MessageContentType.Binary,
+          id: file.id,
           url: file.url,
           mimeType: file.mimeType || file.file?.type || '',
           filename: getUploadFileName(file),
@@ -280,7 +299,7 @@
       if (messageState.value === MessageStatus.Disabled) {
         return;
       }
-      if (props.sendDisabledTip) {
+      if (effectiveSendDisabledTip.value) {
         return;
       }
       if (
@@ -345,17 +364,20 @@
         continue;
       }
       existingKeys.add(key);
-      const fileItem: Partial<UploadFile> = {
+      const fileItem = reactive<Partial<UploadFile>>({
         file,
         mimeType: file.type,
         status: UploadStatus.Pending,
-      };
+      });
       uploadFiles.value.push(fileItem);
       addedCount += 1;
       props
         .onUpload?.(file)
-        .then((res: { download_url?: string }) => {
-          if (res && typeof res === 'object' && 'download_url' in res) {
+        .then(res => {
+          const failed = res?.status === 'failed';
+          const succeeded = !failed && (!!res?.id || !!res?.download_url || res?.status === 'success');
+          if (succeeded) {
+            fileItem.id = res.id;
             fileItem.url = res.download_url;
             fileItem.status = UploadStatus.Success;
             return;
