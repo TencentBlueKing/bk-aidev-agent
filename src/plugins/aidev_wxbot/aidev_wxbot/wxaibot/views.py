@@ -156,7 +156,8 @@ class WxAiBotViewSet(ViewSet):
             # 尝试获取现有会话
             agent_session = AgentSession.objects.get(group_id=scope)
 
-            if agent_session.is_session_valid():
+            # 检查会话是否有效（30分钟内）
+            if agent_session.is_session_valid(timeout_minutes=30):
                 # 每条消息都会命中，放 INFO 没有信息量
                 logger.debug(f"scope:{scope} 使用现有会话 thread_id:{agent_session.thread_id}")
                 # 更新最后会话时间
@@ -175,20 +176,6 @@ class WxAiBotViewSet(ViewSet):
             AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
             logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
             return new_thread_id
-
-    def is_live_session_code(self, group_id: str, username: str, session_code: str) -> bool:
-        """卡片续流只认当前未过期、未轮换的本地会话。"""
-        if not session_code:
-            return False
-        try:
-            local = AgentSession.objects.get(group_id=self._session_scope(group_id, username))
-        except AgentSession.DoesNotExist:
-            return False
-        if not local.is_session_valid():
-            return False
-        agent_code = getattr(settings, "APP_CODE", None) or settings.BKPAAS_APP_CODE
-        expected = SessionManager.generate_session_code(username, agent_code, local.thread_id)
-        return expected == session_code
 
     def _reply_text(self, payload: dict) -> dict:
         """

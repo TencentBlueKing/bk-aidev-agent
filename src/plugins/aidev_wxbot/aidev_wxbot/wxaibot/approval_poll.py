@@ -46,8 +46,9 @@ async def wait_for_approval_result(
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
     intervals: list[float] | None = None,
     session_code: str = "",
+    is_live: Callable[[], Awaitable[bool]] | None = None,
 ) -> dict | None:
-    """立即查一次，未终态则按指数间隔继续查，直到命中三态或用尽时长。"""
+    """立即查一次，未终态则按指数间隔继续查，直到命中三态、会话失效或用尽时长。"""
     info = await query()
     if is_final_approve_result(info):
         return info
@@ -58,6 +59,10 @@ async def wait_for_approval_result(
             wait,
         )
         await sleep(wait)
+        # /new 之后这张卡对应的会话已经换了 thread，没必要再把剩下的退避表跑完。
+        if is_live is not None and not await is_live():
+            logger.info("event=wxbot_card_poll_abandoned session_code=%s", session_code)
+            return None
         info = await query()
         if is_final_approve_result(info):
             return info

@@ -16,7 +16,6 @@ from aidev_agent.core.nodes.tool.approval_wrapper import TOOL_APPROVAL_REASON
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
-from .constants import CARD_SIGNATURE_MAX_AGE
 from .context import _normalize_url
 
 _CANCEL_EVENT_PREFIX = "approval_cancel:"
@@ -97,9 +96,7 @@ def decode_cancel_event_key(event_key: str) -> ApprovalCancelAction | None:
 
 def _decode_bound_cancel(key: str) -> ApprovalCancelAction | None:
     try:
-        values = signing.loads(
-            key[len(_BOUND_CANCEL_PREFIX) :], salt=_BOUND_CANCEL_SALT, max_age=CARD_SIGNATURE_MAX_AGE
-        )
+        values = signing.loads(key[len(_BOUND_CANCEL_PREFIX) :], salt=_BOUND_CANCEL_SALT)
     except (signing.BadSignature, ValueError, TypeError):
         return None
     if not isinstance(values, list) or len(values) != 3:

@@ -393,7 +393,7 @@ class TestConsumeFlowStream:
 
 
 class TestHandleFlowCustomEvent:
-    """验证三阶段展示策略：start→缓存task_id, result→think(节点名称列表)+缓存nodes, end→content(最终状态)"""
+    """验证三阶段展示策略：start→缓存task_id, result→think(重绘节点进度)+缓存nodes, end→content(最终状态)"""
 
     def test_start_saves_task_id(self, mock_rabbitmq):
         """flow_agent_start: 缓存 task_id，不写 think_content，content 为空"""
@@ -401,44 +401,40 @@ class TestHandleFlowCustomEvent:
         handle_flow_custom_event("flow_agent_start", {"value": [{"task_id": "42"}]}, chunk, mock_rabbitmq)
 
         assert chunk._flow_task_id == "42"
-        assert chunk._flow_nodes_initialized is False
         assert chunk.think_content == ""
         assert chunk.content == ""
         assert not chunk.is_finish
 
-    def test_result_shows_node_names_and_caches_data(self, mock_rabbitmq):
-        """flow_agent_result: 首次展示节点名称列表（无状态），缓存 nodes 和 task_state"""
+    def test_every_result_redraws_node_progress(self, mock_rabbitmq):
+        """flow_agent_result: 每轮都整体重绘节点进度，而不是只在首帧写一次"""
         chunk = LlmChunkMsg(stream_id="s_1_1000")
-        handle_flow_custom_event(
-            "flow_agent_result",
-            {
+
+        def _result(training_state, training_elapsed):
+            return {
                 "value": [
                     {
                         "task_state": "RUNNING",
                         "nodes": {
                             "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
-                            "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
+                            "n2": {"name": "模型训练", "state": training_state, "elapsed_time": training_elapsed},
                             "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
                         },
-                        "statistics": {"total": 3, "state_counts": {"FINISHED": 1, "RUNNING": 1, "PENDING": 1}},
                     }
                 ]
-            },
-            chunk,
-            mock_rabbitmq,
-        )
+            }
 
-        think_lines = chunk.think_content.split("\n")
-        node_names = [line.strip()[2:] for line in think_lines if line.strip().startswith("- ")]
-        assert "数据清洗" in node_names
-        assert "模型训练" in node_names
-        assert "汇总" in node_names
-        assert "共包含3个节点" in chunk.think_content
-        assert chunk._flow_nodes_cache == {
-            "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
-            "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
-            "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
-        }
+        handle_flow_custom_event("flow_agent_result", _result("RUNNING", 30), chunk, mock_rabbitmq)
+        assert "共3个节点" in chunk.think_content
+        assert "- 🟢 数据清洗: 成功 (90s)" in chunk.think_content
+        assert "- 🔄 模型训练: 执行中 (30s)" in chunk.think_content
+        assert "- ⚪ 汇总: 待执行" in chunk.think_content
+
+        handle_flow_custom_event("flow_agent_update", _result("FINISHED", 75), chunk, mock_rabbitmq)
+        assert "- 🟢 模型训练: 成功 (75s)" in chunk.think_content
+        assert "🔄" not in chunk.think_content
+        assert chunk.think_content.count("数据清洗") == 1
+
+        assert chunk._flow_nodes_cache["n2"] == {"name": "模型训练", "state": "FINISHED", "elapsed_time": 75}
         assert chunk._flow_last_task_state == "RUNNING"
         assert chunk.content == ""
 

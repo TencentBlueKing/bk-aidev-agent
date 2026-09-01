@@ -114,7 +114,7 @@ def test_encrypted_session_command_does_not_start_a_worker(polling_case, monkeyp
     monkeypatch.setattr(
         views.AgentSession.objects,
         "get",
-        lambda **_: SimpleNamespace(thread_id="original-thread", is_session_valid=lambda: True),
+        lambda **_: SimpleNamespace(thread_id="original-thread"),
     )
     monkeypatch.setattr(
         views.AgentHelper, "build_session_detail_url", lambda *_, **__: "https://agent.example.com/session-1"

@@ -5,8 +5,6 @@ Django models for aidev_wxbot.
 from django.db import models
 from django.utils import timezone
 
-from .constants import WECOM_REPLY_WINDOW_SECONDS
-
 
 class AgentSession(models.Model):
     """Agent会话记录模型"""
@@ -25,12 +23,21 @@ class AgentSession(models.Model):
     def __str__(self):
         return f"AgentSession(group_id={self.group_id}, thread_id={self.thread_id})"
 
-    def is_session_valid(self, timeout_seconds: float | None = None) -> bool:
-        """检查会话是否仍在企微可回复窗口内。"""
+    def is_session_valid(self, timeout_minutes: int = 30) -> bool:
+        """
+        检查会话是否仍然有效
+
+        Args:
+            timeout_minutes: 超时时间（分钟），默认30分钟
+
+        Returns:
+            bool: 会话是否有效
+        """
         if not self.last_session_time:
             return False
-        timeout = WECOM_REPLY_WINDOW_SECONDS if timeout_seconds is None else timeout_seconds
-        return (timezone.now() - self.last_session_time).total_seconds() < timeout
+
+        time_diff = timezone.now() - self.last_session_time
+        return time_diff.total_seconds() < (timeout_minutes * 60)
 
     def update_session(self, thread_id: str = None):
         """

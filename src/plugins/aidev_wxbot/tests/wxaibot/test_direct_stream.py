@@ -391,6 +391,31 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
                         ],
                     }
                 ),
+                # 进度没变化的一轮：不应再向企微重发一模一样的内容
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "RUNNING",
+                                "nodes": {"n1": {"name": "查询日志", "state": "RUNNING"}},
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "RUNNING",
+                                "nodes": {"n1": {"name": "查询日志", "state": "FINISHED", "elapsed_time": 3}},
+                            }
+                        ],
+                    }
+                ),
                 _sse(
                     {
                         "type": "CUSTOM",
@@ -406,8 +431,10 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
 
     assert not frames[0].finish
     assert frames[0].content.startswith("<think>")
-    assert "查询日志" in frames[0].content
-    assert "🔄" not in frames[0].content
+    assert "- 🔄 查询日志: 执行中" in frames[0].content
+    # 三条 result 只产出两帧：中间那条内容未变化被去重
+    assert len(frames) == 3
+    assert "- 🟢 查询日志: 成功 (3s)" in frames[1].content
     assert frames[-1].finish
     assert "<think>" in frames[-1].content
     assert "result: ok" in frames[-1].content
@@ -417,7 +444,9 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
     mock_detail_url.assert_called_once_with("s1")
 
 
-@patch("aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1")
+@patch(
+    "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1"
+)
 def test_flow_failed_end_attaches_retry_skip_card_for_first_failed_node(mock_detail_url):
     from aidev_wxbot.wxaibot.flow_cards import decode_flow_event_key
 
@@ -482,7 +511,9 @@ def test_flow_failed_end_attaches_retry_skip_card_for_first_failed_node(mock_det
     mock_detail_url.assert_called()
 
 
-@patch("aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1")
+@patch(
+    "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1"
+)
 def test_flow_resume_failed_end_still_attaches_retry_skip_card(mock_detail_url):
     stream = AgentStream(
         kind="flow",

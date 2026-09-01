@@ -89,7 +89,6 @@ class LlmChunkMsg(BaseModel):
     # Pydantic 私有属性，不参与序列化
     _cached_think_content: str = PrivateAttr(default="")
     _flow_task_id: str = PrivateAttr(default="")
-    _flow_nodes_initialized: bool = PrivateAttr(default=False)
     # wxbot formatters 缓存：轮询过程中的最新节点快照和任务状态，供 _on_flow_end 使用
     _flow_nodes_cache: dict = PrivateAttr(default_factory=dict)
     _flow_last_task_state: str = PrivateAttr(default="")

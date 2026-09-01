@@ -13,7 +13,6 @@ from urllib.parse import urlsplit
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from django.core import signing
 
-from .constants import CARD_SIGNATURE_MAX_AGE
 from .context import _normalize_url
 
 _PREFIX = "flow_node:"
@@ -62,10 +61,8 @@ def pick_first_actionable_failed_node(nodes) -> tuple[str, dict, bool, bool] | N
 
 
 def flow_card_task_id(action: FlowNodeAction) -> str:
-    """企微卡片 task_id。未带 card_id 的旧卡保持原哈希，避免回调对不上。"""
-    parts = [action.session_code, action.task_id, action.node_id]
-    if action.card_id:
-        parts.append(action.card_id)
+    """企微卡片 task_id。带上 card_id，让同一节点的每次失败各自对应一张卡。"""
+    parts = [action.session_code, action.task_id, action.node_id, action.card_id]
     digest = hashlib.sha256("\0".join(parts).encode()).hexdigest()[:24]
     return f"flow_{digest}"
 
@@ -78,7 +75,7 @@ def decode_flow_event_key(key: str) -> FlowNodeAction | None:
     if not isinstance(key, str) or not key.startswith(_PREFIX) or len(key) > 2048:
         return None
     try:
-        data = signing.loads(key[len(_PREFIX) :], salt=_SALT, max_age=CARD_SIGNATURE_MAX_AGE)
+        data = signing.loads(key[len(_PREFIX) :], salt=_SALT)
         action = FlowNodeAction(**data)
     except (signing.BadSignature, ValueError, TypeError):
         return None
@@ -104,7 +101,7 @@ def bind_flow_target(card: dict, target: str) -> dict:
 
 def build_flow_action_card(*, session_code: str, task_id: str, nodes) -> dict[str, Any] | None:
     """任务失败后，为第一个可操作失败节点生成重试/跳过卡片。"""
-    if not session_code or not task_id or task_id == "未知":
+    if not session_code or not task_id:
         return None
     picked = pick_first_actionable_failed_node(nodes)
     if picked is None:
@@ -161,10 +158,7 @@ def build_flow_action_result_card(action: FlowNodeAction, task_id: str, *, ok: b
     """点击后把操作区换成不可点的结果文案。"""
     if task_id != flow_card_task_id(action):
         return None
-    if ok:
-        label = "已重试" if action.operation == "retry" else "已跳过"
-    else:
-        label = "操作失败"
+    label = ("已重试" if action.operation == "retry" else "已跳过") if ok else "操作失败"
     session_url = _safe_url(AgentHelper.build_session_detail_url(action.session_code))
     node_name = _plain_text(action.node_name or action.node_id, 64)
     card: dict[str, Any] = {

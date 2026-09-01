@@ -9,17 +9,16 @@ from aidev_wxbot.wxaibot.approval_poll import (
 from aidev_wxbot.wxaibot.constants import (
     APPROVAL_POLL_MAX_INTERVAL_SECONDS,
     APPROVAL_POLL_MAX_SECONDS,
-    WECOM_REPLY_WINDOW_SECONDS,
 )
 
 
-def test_approval_poll_intervals_double_then_cap_across_wecom_window():
+def test_approval_poll_intervals_double_then_cap_within_budget():
     waits = approval_poll_intervals()
     assert waits[:8] == [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
     assert all(wait <= APPROVAL_POLL_MAX_INTERVAL_SECONDS for wait in waits)
     assert waits[8] == APPROVAL_POLL_MAX_INTERVAL_SECONDS
     assert waits[-1] == APPROVAL_POLL_MAX_SECONDS - sum(waits[:-1])
-    assert sum(waits) == APPROVAL_POLL_MAX_SECONDS == WECOM_REPLY_WINDOW_SECONDS
+    assert sum(waits) == APPROVAL_POLL_MAX_SECONDS
 
 
 def test_approval_poll_intervals_truncate_last_slice():
@@ -87,6 +86,27 @@ async def test_wait_for_approval_result_uses_backoff_until_final():
     info = await wait_for_approval_result(query, sleep=sleep, intervals=[2, 4, 8])
     assert info == {"approve_result": "rejected"}
     assert slept == [2, 4]
+
+
+async def test_wait_for_approval_result_abandons_a_dead_session():
+    """/new 之后会话已换 thread：立刻收手，不把剩下的退避表跑完。"""
+    queried = []
+
+    async def query():
+        queried.append(1)
+        return None
+
+    async def is_live():
+        return False
+
+    slept = []
+
+    async def sleep(wait):
+        slept.append(wait)
+
+    assert await wait_for_approval_result(query, sleep=sleep, intervals=[2, 4, 8], is_live=is_live) is None
+    assert len(queried) == 1
+    assert slept == [2]
 
 
 async def test_wait_for_approval_result_times_out():

@@ -116,7 +116,9 @@ def test_signed_key_cannot_change_target():
     assert decode_flow_event_key(f"{head}:{'x' if signature[0] != 'x' else 'y'}{signature[1:]}") is None
 
 
-@pytest.mark.parametrize(("ok", "operation", "label"), [(True, "retry", "已重试"), (True, "skip", "已跳过"), (False, "retry", "操作失败")])
+@pytest.mark.parametrize(
+    ("ok", "operation", "label"), [(True, "retry", "已重试"), (True, "skip", "已跳过"), (False, "retry", "操作失败")]
+)
 def test_result_card_replaces_buttons(ok, operation, label, monkeypatch):
     monkeypatch.setattr(
         "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
@@ -134,10 +136,9 @@ def test_result_card_rejects_mismatched_task_id():
     assert build_flow_action_result_card(action, "other-task", ok=True) is None
 
 
-def test_legacy_card_without_card_id_keeps_stable_wecom_task_id():
-    action = FlowNodeAction("session-1", "42", "n1", "retry")
-    assert action.card_id == ""
-    assert flow_card_task_id(action) == "flow_" + hashlib.sha256(b"session-1\x0042\x00n1").hexdigest()[:24]
+def test_wecom_task_id_binds_session_task_node_and_card():
+    action = FlowNodeAction("session-1", "42", "n1", "retry", card_id="c1")
+    assert flow_card_task_id(action) == "flow_" + hashlib.sha256(b"session-1\x0042\x00n1\x00c1").hexdigest()[:24]
 
 
 def test_each_issued_card_gets_unique_wecom_task_id(monkeypatch):

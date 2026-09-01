@@ -251,14 +251,12 @@ class FlowAgentStrategy:
                 thread_id,
                 channel_type=ChannelType.RTX.value,
             )
-        # 节点重试/跳过已由 user_operation 作用在同一会话上，续流不再写假 user 消息。
-        if content and not (task_id or resume_from_node):
+        # 节点重试/跳过已由 user_operation 作用在同一会话上，续跑传空 content，不写假 user 消息。
+        if content:
             session_manager.save_content(session_code=session_code, role="user", content=content, turn_id=turn_id)
         if task_id:
-            try:
-                session_manager.set_flow_resume_pending(session_code, False)
-            except Exception:
-                logger.exception("[FlowAgentStrategy] 清除 resume_pending 失败: session_code=%s", session_code)
+            # 清不掉 resume_pending 就直接失败：否则 Web 端会一直停在「待恢复」，与实际状态不符。
+            session_manager.set_flow_resume_pending(session_code, False)
 
         agent_instance = AgentInstanceFactory.build_agent(
             agent_type=AgentType.FLOW,

@@ -1,19 +1,14 @@
 """wxbot 视图层的后台执行、内置命令与会话终态测试。"""
 
-from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
-from django.utils import timezone
 from aidev_wxbot.wxaibot.constants import (
-    CARD_SIGNATURE_MAX_AGE,
     HELP_REPLY,
     STOP_NO_ACTIVE_REPLY,
-    WECOM_REPLY_WINDOW_SECONDS,
 )
-from aidev_wxbot.wxaibot.models import AgentSession
 from aidev_wxbot.wxaibot.views import WxAiBotViewSet, WxBotAgentRequest
 
 
@@ -158,35 +153,25 @@ class TestBuiltinCommands:
         assert content == ""
 
 
-def test_session_ttl_aligns_with_wecom_reply_window():
-    assert CARD_SIGNATURE_MAX_AGE == int(WECOM_REPLY_WINDOW_SECONDS)
-    live = AgentSession(last_session_time=timezone.now() - timedelta(seconds=WECOM_REPLY_WINDOW_SECONDS - 1))
-    expired = AgentSession(last_session_time=timezone.now() - timedelta(seconds=WECOM_REPLY_WINDOW_SECONDS + 1))
-    assert live.is_session_valid()
-    assert not expired.is_session_valid()
-
-
 @pytest.mark.parametrize(
-    ("exists", "valid", "session_code", "expected"),
+    ("valid", "expected_thread", "update_kwargs"),
     [
-        (True, True, "session-1", True),
-        (True, True, "other-session", False),
-        (True, False, "session-1", False),
-        (False, True, "session-1", False),
-        (True, True, "", False),
+        (True, "thread-1", {}),
+        (False, "scope-1_100", {"thread_id": "scope-1_100"}),
     ],
 )
-def test_is_live_session_code_requires_current_thread(exists, valid, session_code, expected):
+def test_get_or_create_thread_id_reuses_or_rotates_after_idle(valid, expected_thread, update_kwargs):
+    """空闲未满 30 分钟沿用 thread；超时则换新 thread，与 develop 原逻辑一致。"""
     view = WxAiBotViewSet()
-    record = SimpleNamespace(thread_id="thread-1", is_session_valid=lambda: valid)
-
-    def _get(**_):
-        if not exists:
-            raise AgentSession.DoesNotExist
-        return record
+    record = SimpleNamespace(thread_id="thread-1")
+    record.is_session_valid = MagicMock(return_value=valid)
+    record.update_session = MagicMock()
 
     with (
-        patch("aidev_wxbot.wxaibot.views.AgentSession.objects.get", side_effect=_get),
-        patch("aidev_wxbot.wxaibot.views.SessionManager.generate_session_code", return_value="session-1"),
+        patch("aidev_wxbot.wxaibot.views.AgentSession.objects.get", return_value=record),
+        patch("aidev_wxbot.wxaibot.views.time.time", return_value=100),
     ):
-        assert view.is_live_session_code("group-1", "alice", session_code) is expected
+        assert view._get_or_create_thread_id("scope-1") == expected_thread
+
+    record.is_session_valid.assert_called_once_with(timeout_minutes=30)
+    record.update_session.assert_called_once_with(**update_kwargs)

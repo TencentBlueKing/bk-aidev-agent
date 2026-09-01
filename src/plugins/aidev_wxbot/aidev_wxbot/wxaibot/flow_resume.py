@@ -67,7 +67,7 @@ def _resume_worker(action: FlowNodeAction, username: str, delivery=None) -> None
 def _resume_flow_node(action: FlowNodeAction, username: str, delivery=None) -> None:
     manager = SessionManager(username=username)
     session = manager.retrieve_session(action.session_code)
-    flow_info = (session.get("session_property") or {}).get("flow_info") or {}
+    flow_info = ((session or {}).get("session_property") or {}).get("flow_info") or {}
     if not session or str(flow_info.get("task_id") or "") != str(action.task_id):
         logger.info(
             "event=wxbot_flow_resume_skipped reason=session_or_task_mismatch trace_id=%s",
