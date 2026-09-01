@@ -769,6 +769,17 @@ class TestPaasSandboxBackendHTTPMethods:
         assert span.attributes["sandbox.operation.name"] == "execute"
         assert "echo hello" not in str(span.attributes)
 
+    def test_exec_command_propagates_current_trace_context(self, http_backend, monkeypatch):
+        traceparent = "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"
+        monkeypatch.setattr(f"{_PAAS_BACKEND_MOD}.trace_headers", lambda: {"traceparent": traceparent})
+        http_backend.client.exec_command.request.return_value = _make_http_response(
+            json_data={"stdout": "ok", "stderr": "", "exit_code": 0}
+        )
+
+        http_backend.exec_command("sb-123", "echo hello")
+
+        assert http_backend.client.exec_command.request.call_args.kwargs["headers"] == {"traceparent": traceparent}
+
     @pytest.fixture()
     def http_backend(self):
         b = _make_backend()

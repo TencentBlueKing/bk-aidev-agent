@@ -41,7 +41,7 @@ from langchain_core.runnables import RunnableConfig
 from requests.exceptions import HTTPError
 
 from aidev_agent.config import settings
-from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
 from .types import (
     EditResult,
@@ -177,6 +177,13 @@ def _trace_sandbox_operation(operation: str):
         return wrapper
 
     return decorator
+
+
+def _trace_request_kwargs() -> dict[str, dict[str, str]]:
+    """Build optional W3C trace headers for one sandbox HTTP request."""
+
+    headers = trace_headers()
+    return {"headers": headers} if headers else {}
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +356,11 @@ class PaasSandboxBackend(RuntimeBackend):
         # volume_mounts: 无实例默认值，仅使用方法参数
         if volume_mounts is not None:
             payload["volume_mounts"] = volume_mounts
-        response = self.client.create_sandbox.request(json=payload, path_params={"app_code": self._app_code})
+        response = self.client.create_sandbox.request(
+            json=payload,
+            path_params={"app_code": self._app_code},
+            **_trace_request_kwargs(),
+        )
         response.raise_for_status()
         data = response.json()
         if isinstance(data, dict) and data.get("uuid"):
@@ -365,7 +376,11 @@ class PaasSandboxBackend(RuntimeBackend):
             sandbox_id: 沙箱 UUID。
             timeout: HTTP 请求超时秒数，默认 10 秒。防止进程退出时 HTTP 调用无限期挂起。
         """
-        response = self.client.delete_sandbox.request(path_params={"sandbox_id": sandbox_id}, timeout=timeout)
+        response = self.client.delete_sandbox.request(
+            path_params={"sandbox_id": sandbox_id},
+            timeout=timeout,
+            **_trace_request_kwargs(),
+        )
         response.raise_for_status()
 
     @_trace_sandbox_operation("execute")
@@ -393,6 +408,7 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.exec_command.request(
             json={"cmd": cmd},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
         data = response.json()
@@ -424,6 +440,7 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.upload_file.request(
             files={"file": (filename, content), "path": (None, path)},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
 
@@ -442,6 +459,7 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.download_file.request(
             params={"path": path},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
         return response.content
