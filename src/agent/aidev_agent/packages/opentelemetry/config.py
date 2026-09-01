@@ -18,6 +18,8 @@ to the current version of the project delivered to anyone in the future.
 
 import os
 
+from aidev_agent.config import settings as agent_settings
+
 from .utils import get_env_bool
 
 
@@ -36,7 +38,7 @@ class OTelConfig:
 
         # ===== 功能开关 =====
         self.enable_traces: bool = get_env_bool("BKAI_AGENT_ENABLE_TRACES", True)
-        self.enable_metrics: bool = get_env_bool("BKAI_AGENT_ENABLE_METRICS", False)
+        self.enable_metrics: bool = bool(agent_settings.BKAI_AGENT_ENABLE_METRICS)
         # bkplugin may install a BKM-specific MeterProvider while the Agent SDK keeps metric instrumentation enabled.
         self.metric_provider_managed_externally: bool = False
         self.metric_export_interval_millis: int = max(1000, int(os.getenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")))

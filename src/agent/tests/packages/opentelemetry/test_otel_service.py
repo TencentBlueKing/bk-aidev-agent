@@ -11,6 +11,12 @@ from aidev_agent.packages.opentelemetry.otel_service import BkAgentOTelService
 from opentelemetry.sdk.resources import Resource
 
 
+def test_otel_config_uses_central_metric_toggle(monkeypatch):
+    monkeypatch.setattr("aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_ENABLE_METRICS", True)
+
+    assert OTelConfig(otel_endpoints=[]).enable_metrics is True
+
+
 def test_metric_toggle_does_not_change_trace_service_setup(mocker):
     config = OTelConfig(otel_endpoints=[])
     config.enabled = True

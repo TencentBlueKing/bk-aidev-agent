@@ -15,6 +15,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 import requests
+from aidev_agent.config import settings as agent_settings
 from aidev_agent.packages.opentelemetry.metrics import (
     AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
     DURATION_HISTOGRAM_BOUNDARIES,
@@ -45,7 +46,6 @@ from .metric_runtime import RetryableMetricPushError
 logger = logging.getLogger(__name__)
 
 DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 10_000
-DEFAULT_METRIC_TASK_TTL_SECONDS = 3600
 
 
 def _as_bool(value: Any) -> bool:
@@ -81,7 +81,7 @@ class MetricExportSettings:
     bkm_access_token: str = ""
     bkm_push_url: str = ""
     bkm_target: str = ""
-    task_ttl_seconds: int = DEFAULT_METRIC_TASK_TTL_SECONDS
+    task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS
 
     @classmethod
     def from_agent_info(cls, agent_info: dict[str, Any] | None, *, default_enabled: bool) -> "MetricExportSettings":
@@ -97,23 +97,21 @@ class MetricExportSettings:
         )
         task_ttl_seconds = metrics_info.get(
             "task_ttl_seconds",
-            os.getenv("BKAI_AGENT_METRICS_TASK_TTL_SECONDS", DEFAULT_METRIC_TASK_TTL_SECONDS),
+            agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
         )
         export_via_celery = metrics_info.get(
             "export_via_celery",
             otel_info.get("metric_export_via_celery"),
         )
-        data_id = metrics_info.get("agent_data_id", os.getenv("BKAI_AGENT_METRICS_DATA_ID"))
-        access_token = metrics_info.get("agent_access_token", os.getenv("BKAI_AGENT_METRICS_TOKEN", ""))
-        push_url = metrics_info.get("agent_push_url", os.getenv("BKAI_AGENT_METRICS_HOST", ""))
-        if not push_url and os.getenv("PROXY_IP"):
-            push_url = os.environ["PROXY_IP"]
+        data_id = metrics_info.get("agent_data_id", agent_settings.BKAI_AGENT_METRICS_DATA_ID)
+        access_token = metrics_info.get("agent_access_token", agent_settings.BKAI_AGENT_METRICS_TOKEN)
+        push_url = metrics_info.get("agent_push_url", agent_settings.BKAI_AGENT_METRICS_HOST)
         push_url = _normalize_bkm_push_url(push_url)
-        target = metrics_info.get("agent_target", os.getenv("BKAI_AGENT_METRICS_TARGET", ""))
+        target = metrics_info.get("agent_target", agent_settings.BKAI_AGENT_METRICS_TARGET)
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
         if export_via_celery is None:
             export_via_celery = has_bkm_config
-        environment_enabled = os.getenv("BKAI_AGENT_ENABLE_METRICS")
+        environment_enabled = agent_settings.BKAI_AGENT_ENABLE_METRICS
         enabled = (
             environment_enabled
             if environment_enabled is not None
@@ -270,7 +268,7 @@ class CeleryMetricExporter(MetricExporter):
         endpoint_key: str,
         target: str,
         enqueue: Callable[[str, str, int, int], Any],
-        task_ttl_seconds: int = DEFAULT_METRIC_TASK_TTL_SECONDS,
+        task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
     ) -> None:
         super().__init__()
         self.endpoint_key = endpoint_key

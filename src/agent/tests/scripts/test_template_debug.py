@@ -32,8 +32,8 @@ def test_template_debug_targets_builtin_project():
     )
 
 
-def test_template_celery_worker_listens_to_agent_task_queue():
+def test_template_celery_worker_listens_to_plugin_and_agent_task_queues():
     repo_root = Path(__file__).resolve().parents[4]
     app_desc = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}" / "app_desc.yml"
 
-    assert "-Q BKAI_AGENT_TASK" in app_desc.read_text(encoding="utf-8")
+    assert "-Q plugin_schedule,bkai_agent_task" in app_desc.read_text(encoding="utf-8")

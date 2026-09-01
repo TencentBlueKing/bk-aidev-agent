@@ -41,6 +41,22 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 
 
+@pytest.fixture(autouse=True)
+def isolate_agent_metric_settings(monkeypatch):
+    from aidev_bkplugin.services import otel_metrics
+
+    defaults = {
+        "BKAI_AGENT_ENABLE_METRICS": None,
+        "BKAI_AGENT_METRICS_DATA_ID": "",
+        "BKAI_AGENT_METRICS_TOKEN": "",
+        "BKAI_AGENT_METRICS_HOST": "",
+        "BKAI_AGENT_METRICS_TARGET": "",
+        "BKAI_AGENT_METRICS_TASK_TTL_SECONDS": 3600,
+    }
+    for name, value in defaults.items():
+        monkeypatch.setattr(otel_metrics.agent_settings, name, value)
+
+
 def _import_tasks_with_celery_stub(mocker):
     """Load task functions without requiring the template-only Celery dependency."""
     celery = ModuleType("celery")
@@ -148,11 +164,13 @@ def test_metric_settings_parse_nested_otel_info():
 
 
 def test_metric_settings_use_local_environment_fallback(monkeypatch):
-    monkeypatch.setenv("BKAI_AGENT_METRICS_DATA_ID", "1002")
-    monkeypatch.setenv("BKAI_AGENT_METRICS_TOKEN", "local-secret")
-    monkeypatch.setenv("BKAI_AGENT_METRICS_HOST", "local-proxy")
-    monkeypatch.setenv("BKAI_AGENT_METRICS_TARGET", "local-target")
-    monkeypatch.setenv("BKAI_AGENT_METRICS_TASK_TTL_SECONDS", "1800")
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_DATA_ID", "1002")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TOKEN", "local-secret")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_HOST", "local-proxy")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TARGET", "local-target")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TASK_TTL_SECONDS", 1800)
 
     settings = MetricExportSettings.from_agent_info({}, default_enabled=False)
 
@@ -166,10 +184,7 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.task_ttl_seconds == 1800
 
 
-def test_metric_settings_keep_direct_otlp_transport_without_bkm_config(monkeypatch):
-    for name in ("BKAI_AGENT_METRICS_DATA_ID", "BKAI_AGENT_METRICS_TOKEN", "BKAI_AGENT_METRICS_HOST", "PROXY_IP"):
-        monkeypatch.delenv(name, raising=False)
-
+def test_metric_settings_keep_direct_otlp_transport_without_bkm_config():
     settings = MetricExportSettings.from_agent_info({}, default_enabled=True)
 
     assert settings.enabled is True
@@ -231,7 +246,9 @@ def test_metric_settings_parse_false_string_safely():
 
 
 def test_metric_settings_explicit_environment_disable_overrides_agent_info(monkeypatch):
-    monkeypatch.setenv("BKAI_AGENT_ENABLE_METRICS", "false")
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_ENABLE_METRICS", False)
 
     settings = MetricExportSettings.from_agent_info(
         {
@@ -453,8 +470,9 @@ def test_celery_task_exports_through_process_local_metric_service(mocker):
     service.push_bkm.assert_called_once_with("endpoint-fingerprint", "payload")
     assert tasks.push_bkm_metrics_task.shared_task_options["autoretry_for"] == (RetryableMetricPushError,)
     assert tasks.push_bkm_metrics_task.shared_task_options["max_retries"] == 3
-    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "BKAI_AGENT_TASK"
-    assert tasks.run_bkplugin_background_agent_task.shared_task_options["queue"] == "BKAI_AGENT_TASK"
+    assert tasks.agent_settings.BKAI_AGENT_TASK == "bkai_agent_task"
+    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "bkai_agent_task"
+    assert tasks.run_bkplugin_background_agent_task.shared_task_options["queue"] == "bkai_agent_task"
 
 
 def test_celery_task_discards_expired_metric_snapshot(mocker, caplog):

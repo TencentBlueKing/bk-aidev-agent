@@ -7,13 +7,11 @@ import logging
 import time
 from typing import Any
 
+from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentType
 from celery import shared_task
 
 from .services.metric_runtime import RetryableMetricPushError, get_metric_service
-
-# 与模板 app_desc.yml 中 celery worker 的 -Q 保持一致，否则任务会进默认 celery 队列而无人消费
-BKAI_AGENT_TASK_QUEUE = "BKAI_AGENT_TASK"
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +19,7 @@ logger = logging.getLogger(__name__)
 @shared_task(
     name="aidev_bkplugin.push_bkm_metrics",
     ignore_result=True,
-    queue=BKAI_AGENT_TASK_QUEUE,
+    queue=agent_settings.BKAI_AGENT_TASK,
     autoretry_for=(RetryableMetricPushError,),
     retry_backoff=True,
     retry_jitter=True,
@@ -65,7 +63,7 @@ def enqueue_bkm_metrics_task(
 @shared_task(
     name="aidev_bkplugin.run_background_agent",
     ignore_result=True,
-    queue=BKAI_AGENT_TASK_QUEUE,
+    queue=agent_settings.BKAI_AGENT_TASK,
 )
 def run_bkplugin_background_agent_task(
     session_code: str,

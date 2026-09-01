@@ -64,7 +64,7 @@ EXIT_PROBE = dedent("""
         patch.object(apps, "get_otel_endpoint_by_env", return_value=[]),
         patch("aidev_bkplugin.services.agent_config.AgentConfigFetcher.get_info", return_value=agent_info),
         patch.object(apps, "BkAidevAgentInstrumentor", side_effect=instrumentor),
-        patch.object(apps, "push_bkm_metrics_task", SimpleNamespace(delay=lambda *args: None)),
+        patch.object(apps, "enqueue_bkm_metrics_task", lambda *args: None),
         patch.object(BkAgentOTelService, "_create_metric_exporter", side_effect=lambda *args: SlowExporter()),
         patch.object(BkAgentOTelService, "_create_trace_exporter", side_effect=lambda *args: SlowSpanExporter()),
         patch.object(BkPluginMetricService, "_create_celery_exporter", side_effect=lambda: SlowExporter()),
