@@ -33,9 +33,11 @@ class AidevWxbotTestConfig(AppConfig):
 def configure_database(path):
     os.environ["MESSAGE_HANDLER_TYPE"] = "inmemory"
     import django
+    from aidev_agent.config import settings as agent_settings
     from aidev_wxbot import settings as wxbot_settings
     from django.conf import settings
 
+    agent_settings.set("BKAI_DATABASE_EVENTS_ENABLED", True)
     app_config_module = "aidev_wxbot_test_app_configs"
     sys.modules.setdefault(app_config_module, sys.modules[__name__])
     values = {key: getattr(wxbot_settings, key) for key in dir(wxbot_settings) if key.isupper()}
@@ -51,7 +53,6 @@ def configure_database(path):
         MIDDLEWARE=[],
         ROOT_URLCONF="aidev_bkplugin.urls",
         APP_CODE="app",
-        AIDEV_DATABASE_EVENTS_ENABLED=True,
     )
     values.update(
         BK_APIGW_MANAGER_URL_TMPL="https://{api_name}.example.invalid",

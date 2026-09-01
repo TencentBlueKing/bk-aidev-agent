@@ -21,6 +21,7 @@ from tempfile import gettempdir
 from typing import Any
 
 from aibot import WSClient, WSClientOptions
+from aidev_agent.config import settings as agent_settings
 from aidev_agent.utils.tracing import get_current_trace_id
 from aidev_bkplugin.services.execution import (
     get_agent_cleanup_executor,
@@ -576,7 +577,7 @@ class WxAiBotLongConnectionService:
 
     @staticmethod
     def _database_events_enabled() -> bool:
-        return getattr(settings, "AIDEV_DATABASE_EVENTS_ENABLED", False) is True
+        return agent_settings.BKAI_DATABASE_EVENTS_ENABLED is True
 
     def _bind_resume_route(self, session_code: str, username: str, target: str) -> None:
         from .database_delivery import bind_resume_subscription

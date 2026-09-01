@@ -33,8 +33,10 @@ sys.modules.setdefault(TEST_APP_CONFIG_MODULE, sys.modules[__name__])
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure():
     """Configure Django before pytest-django initializes the app registry."""
+    from aidev_agent.config import settings as agent_settings
     from django.conf import settings
 
+    agent_settings.set("BKAI_DATABASE_EVENTS_ENABLED", False)
     if settings.configured:
         return
     from aidev_wxbot import settings as wxbot_settings
@@ -67,7 +69,6 @@ def pytest_configure():
         USER_TOKEN_KEY_NAME="access_token",
         ENABLE_OTEL_TRACE=False,
         AIDEV_AGENT="aidev_agent.services.common_agent.CommonQAAgent",
-        AIDEV_DATABASE_EVENTS_ENABLED=False,
     )
     settings.configure(**values)
 

@@ -1,6 +1,7 @@
 """Per-agent publishing adapter; never replaces the global resource registry."""
 
 from ag_ui.core import BaseEvent
+from aidev_agent.config import settings as agent_settings
 from django.db import close_old_connections
 
 
@@ -25,9 +26,7 @@ class EventResourceManager:
 
 
 def with_database_events(resource_manager, app_code: str):
-    from django.conf import settings
-
-    if getattr(settings, "AIDEV_DATABASE_EVENTS_ENABLED", False) is not True:
+    if agent_settings.BKAI_DATABASE_EVENTS_ENABLED is not True:
         return resource_manager
     if isinstance(resource_manager, EventResourceManager):
         return resource_manager
