@@ -46,6 +46,7 @@ from .metric_runtime import RetryableMetricPushError
 logger = logging.getLogger(__name__)
 
 DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 10_000
+DEFAULT_METRIC_TASK_TTL_SECONDS = 3600
 BKM_PUSH_MODE_CELERY = "celery"
 BKM_PUSH_MODE_DIRECT = "direct"
 BKM_PUSH_MODES = frozenset({BKM_PUSH_MODE_CELERY, BKM_PUSH_MODE_DIRECT})
@@ -85,7 +86,7 @@ class MetricExportSettings:
     bkm_access_token: str = ""
     bkm_push_url: str = ""
     bkm_target: str = ""
-    task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS
+    task_ttl_seconds: int = DEFAULT_METRIC_TASK_TTL_SECONDS
 
     @classmethod
     def from_agent_info(cls, agent_info: dict[str, Any] | None, *, default_enabled: bool) -> "MetricExportSettings":
@@ -101,33 +102,29 @@ class MetricExportSettings:
             "export_timeout_millis",
             otel_info.get("metric_export_timeout_millis", 30000),
         )
-        task_ttl_seconds = metrics_info.get(
-            "task_ttl_seconds",
-            agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
-        )
+        task_ttl_seconds = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS
+        if task_ttl_seconds is None:
+            task_ttl_seconds = metrics_info.get("task_ttl_seconds", DEFAULT_METRIC_TASK_TTL_SECONDS)
         export_via_celery = metrics_info.get(
             "export_via_celery",
             otel_info.get("metric_export_via_celery"),
         )
-        bkm_push_mode = (
-            str(
-                metrics_info.get(
-                    "push_mode",
-                    otel_info.get("metric_push_mode", agent_settings.BKAI_AGENT_METRICS_PUSH_MODE),
-                )
+        bkm_push_mode = agent_settings.BKAI_AGENT_METRICS_PUSH_MODE
+        if bkm_push_mode is None:
+            bkm_push_mode = metrics_info.get(
+                "push_mode",
+                otel_info.get("metric_push_mode", BKM_PUSH_MODE_CELERY),
             )
-            .strip()
-            .lower()
-        )
+        bkm_push_mode = str(bkm_push_mode).strip().lower()
         if bkm_push_mode not in BKM_PUSH_MODES:
             raise ValueError(
                 f"Unsupported metric push mode: {bkm_push_mode!r}; expected one of {sorted(BKM_PUSH_MODES)}"
             )
-        data_id = metrics_info.get("agent_data_id", agent_settings.BKAI_AGENT_METRICS_DATA_ID)
-        access_token = metrics_info.get("agent_access_token", agent_settings.BKAI_AGENT_METRICS_TOKEN)
-        push_url = metrics_info.get("agent_push_url", agent_settings.BKAI_AGENT_METRICS_HOST)
+        data_id = agent_settings.BKAI_AGENT_METRICS_DATA_ID or metrics_info.get("agent_data_id")
+        access_token = agent_settings.BKAI_AGENT_METRICS_TOKEN or metrics_info.get("agent_access_token", "")
+        push_url = agent_settings.BKAI_AGENT_METRICS_HOST or metrics_info.get("agent_push_url", "")
         push_url = _normalize_bkm_push_url(push_url)
-        target = metrics_info.get("agent_target", agent_settings.BKAI_AGENT_METRICS_TARGET)
+        target = agent_settings.BKAI_AGENT_METRICS_TARGET or metrics_info.get("agent_target", "")
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
         if export_via_celery is None:
             export_via_celery = has_bkm_config
@@ -327,7 +324,7 @@ class CeleryMetricExporter(BkmMetricExporter):
         endpoint_key: str,
         target: str,
         enqueue: Callable[[str, str, int, int], Any],
-        task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
+        task_ttl_seconds: int = DEFAULT_METRIC_TASK_TTL_SECONDS,
     ) -> None:
         super().__init__(endpoint_key, target)
         self.task_ttl_seconds = task_ttl_seconds

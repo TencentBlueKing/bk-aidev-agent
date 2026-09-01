@@ -51,12 +51,12 @@ def isolate_agent_metric_settings(monkeypatch):
     defaults = {
         "BKAI_AGENT_ENABLE_METRICS": None,
         "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS": None,
-        "BKAI_AGENT_METRICS_PUSH_MODE": BKM_PUSH_MODE_CELERY,
+        "BKAI_AGENT_METRICS_PUSH_MODE": None,
         "BKAI_AGENT_METRICS_DATA_ID": "",
         "BKAI_AGENT_METRICS_TOKEN": "",
         "BKAI_AGENT_METRICS_HOST": "",
         "BKAI_AGENT_METRICS_TARGET": "",
-        "BKAI_AGENT_METRICS_TASK_TTL_SECONDS": 3600,
+        "BKAI_AGENT_METRICS_TASK_TTL_SECONDS": None,
     }
     for name, value in defaults.items():
         monkeypatch.setattr(otel_metrics.agent_settings, name, value)
@@ -179,7 +179,7 @@ def test_metric_settings_prefer_agent_interval_over_platform_setting(monkeypatch
     assert settings.export_interval_millis == 25_000
 
 
-def test_metric_settings_prefer_platform_push_mode_over_agent_setting(monkeypatch):
+def test_metric_settings_prefer_agent_push_mode_over_platform_setting(monkeypatch):
     from aidev_bkplugin.services import otel_metrics
 
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_PUSH_MODE", BKM_PUSH_MODE_DIRECT)
@@ -187,7 +187,18 @@ def test_metric_settings_prefer_platform_push_mode_over_agent_setting(monkeypatc
 
     settings = MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
 
-    assert settings.bkm_push_mode == BKM_PUSH_MODE_CELERY
+    assert settings.bkm_push_mode == BKM_PUSH_MODE_DIRECT
+
+
+def test_metric_settings_prefer_agent_task_ttl_over_platform_setting(monkeypatch):
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TASK_TTL_SECONDS", 1800)
+    agent_info = {"otel_info": {"metrics": {"task_ttl_seconds": 120}}}
+
+    settings = MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
+
+    assert settings.task_ttl_seconds == 1800
 
 
 def test_metric_settings_reject_unknown_push_mode():
@@ -226,6 +237,8 @@ def test_metric_settings_keep_direct_otlp_transport_without_bkm_config():
 
     assert settings.enabled is True
     assert settings.export_interval_millis == 10_000
+    assert settings.bkm_push_mode == BKM_PUSH_MODE_CELERY
+    assert settings.task_ttl_seconds == 3600
     assert settings.export_via_celery is False
 
 
@@ -252,7 +265,7 @@ def test_normalize_bkm_push_url(configured, expected):
     assert _normalize_bkm_push_url(configured) == expected
 
 
-def test_metric_settings_prefer_agent_info_over_local_setting(monkeypatch):
+def test_metric_settings_prefer_local_bkm_setting_over_agent_info(monkeypatch):
     from aidev_bkplugin.services import otel_metrics
 
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_DATA_ID", "1002")
@@ -274,10 +287,10 @@ def test_metric_settings_prefer_agent_info_over_local_setting(monkeypatch):
         default_enabled=False,
     )
 
-    assert settings.bkm_data_id == 1003
-    assert settings.bkm_access_token == "platform-secret"
-    assert settings.bkm_push_url == "http://platform-proxy:10205/v2/push/"
-    assert settings.bkm_target == "platform-target"
+    assert settings.bkm_data_id == 1002
+    assert settings.bkm_access_token == "local-secret"
+    assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
+    assert settings.bkm_target == "local-target"
 
 
 def test_metric_settings_parse_false_string_safely():

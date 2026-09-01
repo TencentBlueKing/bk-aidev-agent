@@ -45,10 +45,24 @@ def test_metrics_export_interval_environment_override_and_minimum(monkeypatch, v
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [(None, "celery"), (" Direct ", "direct")],
+    [(None, None), (" Direct ", "direct")],
 )
-def test_metrics_push_mode_environment_default_and_override(monkeypatch, value, expected):
+def test_metrics_push_mode_environment_override(monkeypatch, value, expected):
     name = "BKAI_AGENT_METRICS_PUSH_MODE"
+    monkeypatch.delenv(name, raising=False)
+    if value is not None:
+        monkeypatch.setenv(name, value)
+
+    module = runpy.run_path(config.__file__)
+    assert module[name] == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, None), ("1800", 1800), ("0", 1)],
+)
+def test_metrics_task_ttl_environment_override_and_minimum(monkeypatch, value, expected):
+    name = "BKAI_AGENT_METRICS_TASK_TTL_SECONDS"
     monkeypatch.delenv(name, raising=False)
     if value is not None:
         monkeypatch.setenv(name, value)

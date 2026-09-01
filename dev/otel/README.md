@@ -211,9 +211,9 @@ make test
 | --- | --- |
 | 是否启用 | 本地显式 `BKAI_AGENT_ENABLE_METRICS` > 平台 `enabled` > 运行时默认值 |
 | 上报周期 | 本地显式 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` > 平台 `export_interval_millis` > 10000 毫秒 |
-| 推送方式 | 平台 `push_mode` > 本地 `BKAI_AGENT_METRICS_PUSH_MODE` > `celery` |
-| BKM 连接参数 | 平台 `agent_*` > 本地 `BKAI_AGENT_METRICS_*` |
-| Celery 快照 TTL | 平台 `task_ttl_seconds` > 本地 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 3600 秒 |
+| 推送方式 | 本地显式 `BKAI_AGENT_METRICS_PUSH_MODE` > 平台 `push_mode` > `celery` |
+| BKM 连接参数 | 本地非空 `BKAI_AGENT_METRICS_*` > 平台 `agent_*` > 空值 |
+| Celery 快照 TTL | 本地显式 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 平台 `task_ttl_seconds` > 3600 秒 |
 | 导出超时及旧版传输开关 | 平台 `export_timeout_millis` / `export_via_celery` > 内置默认值 |
 
 `otel_url/otel_token` 继续用于 Trace；指标使用 Agent 命名空间下的
@@ -249,8 +249,8 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 且周期最小为 10 秒。本地 mock 为了缩短仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
-高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；平台下发的
-`otel_info.metrics.agent_*` 仍优先于同名连接参数环境变量：
+高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；本地非空
+连接参数环境变量优先于平台下发的 `otel_info.metrics.agent_*`：
 
 ```bash
 BKAI_AGENT_ENABLE_METRICS=true
