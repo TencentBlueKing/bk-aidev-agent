@@ -66,7 +66,8 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
         Args:
             config: 必须显式提供 ``OTelConfig``。本插桩器内部读取
                 ``config.enabled`` / ``config.enable_traces`` / ``config.debug`` /
-                ``config.max_attribute_length`` 等字段；若放任为 ``None`` 会在
+                ``config.max_input_attribute_length`` / ``config.max_output_attribute_length`` 等字段；若放任为
+                ``None`` 会在
                 ``_get_agent`` wrap 中触发 ``AttributeError``，因此在构造期强制要求。
         """
         if config is None:
@@ -315,7 +316,8 @@ class ChatCompletionAgentGetAgentWrapper:
             enable_traces=self.config.enable_traces,
             enable_metrics=self.config.enable_metrics,
             debug=self.config.debug,
-            max_attribute_length=self.config.max_attribute_length,
+            max_input_attribute_length=self.config.max_input_attribute_length,
+            max_output_attribute_length=self.config.max_output_attribute_length,
             agent_id=agent_info.get("agent_id"),
             agent_code=agent_info.get("agent_code"),
             agent_name=agent_info.get("agent_name"),

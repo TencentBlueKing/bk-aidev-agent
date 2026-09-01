@@ -34,7 +34,7 @@ from opentelemetry.sdk.metrics import Histogram, MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import ProcessResourceDetector, Resource, ResourceDetector, get_aggregated_resources
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     SimpleSpanProcessor,
@@ -155,7 +155,14 @@ class BkAgentOTelService:
             resource: Resource 实例
         """
         # 创建 TracerProvider
-        self.tracer_provider = TracerProvider(resource=resource)
+        # Enforce the configured limit in the SDK itself so every retained
+        # attribute is bounded, including legacy LLM/tool/root attributes and
+        # exception event attributes. Per-field truncation remains useful for
+        # recording original lengths, but it must not be the memory boundary.
+        self.tracer_provider = TracerProvider(
+            resource=resource,
+            span_limits=SpanLimits(max_attribute_length=self.config.max_attribute_length),
+        )
 
         if self.config.trace_exporter == "logging":
             self.tracer_provider.add_span_processor(SimpleSpanProcessor(LoggingSpanExporter()))

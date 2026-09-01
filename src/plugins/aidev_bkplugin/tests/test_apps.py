@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import aidev_agent.packages as aidev_agent_packages
 import pytest
+from aidev_agent.packages.opentelemetry.utils import ExporterType
 from aidev_bkplugin import apps
 
 
@@ -63,6 +64,40 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
     metric_export_settings.from_agent_info.return_value = metric_settings
     instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor").return_value
     return otel_config, instrumentor, get_agent_info
+
+
+def test_deduplicate_otel_endpoints_keeps_first_effective_destination():
+    preferred = {"url": "https://collector.example/api", "token": "token", "exporter_type": ExporterType.GRPC}
+    duplicate = {"url": "https://collector.example/api/", "token": "token", "exporter_type": ExporterType.GRPC}
+    different_token = {"url": preferred["url"], "token": "other-token", "exporter_type": ExporterType.GRPC}
+    different_protocol = {"url": preferred["url"], "token": "token", "exporter_type": ExporterType.HTTP}
+
+    assert apps._deduplicate_otel_endpoints([preferred, duplicate, different_token, different_protocol]) == [
+        preferred,
+        different_token,
+        different_protocol,
+    ]
+
+
+def test_init_otel_deduplicates_endpoint_sources_before_instrumenting(mocker):
+    endpoint = {"url": "https://collector.example/api", "token": "token", "exporter_type": ExporterType.GRPC}
+    metric_settings = SimpleNamespace(
+        enabled=False,
+        export_via_celery=False,
+        export_interval_millis=1500,
+        export_timeout_millis=7000,
+    )
+    otel_config, instrumentor, _ = _mock_otel_inputs(mocker, {}, metric_settings)
+    apps.get_otel_endpoint_by_json_str.return_value = [endpoint]
+    apps.get_otel_endpoint_by_agent_info.return_value = [{**endpoint}]
+    apps.get_otel_endpoint_by_env.return_value = [{**endpoint}]
+    mocker.patch.object(apps, "configure_metric_identity")
+    mocker.patch.object(apps, "set_metric_service")
+
+    apps.init_bk_aidev_agent_otel()
+
+    assert otel_config.otel_endpoints == [endpoint]
+    instrumentor.instrument.assert_called_once_with()
 
 
 @pytest.mark.parametrize(

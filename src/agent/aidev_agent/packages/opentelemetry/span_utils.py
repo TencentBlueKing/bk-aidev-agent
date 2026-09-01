@@ -18,7 +18,13 @@ from langchain_core.outputs import (
 from opentelemetry.context.context import Context
 from opentelemetry.trace.span import Span
 
+from .config import DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH, DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 from .utils import CallbackFilteredJSONEncoder, _set_span_attribute
+
+
+def truncate_span_attribute(value: str, max_length: int) -> str:
+    """按 Gateway 口径从尾部保留指定长度的属性值。"""
+    return value if len(value) <= max_length else value[-max_length:]
 
 
 @dataclass
@@ -45,7 +51,7 @@ def _set_content_attributes(
 ) -> None:
     original_length = len(value)
     truncated = original_length > max_attribute_length
-    _set_span_attribute(span, content_key, value[:max_attribute_length] if truncated else value)
+    _set_span_attribute(span, content_key, truncate_span_attribute(value, max_attribute_length))
     _set_span_attribute(span, original_length_key, original_length)
     _set_span_attribute(span, truncated_key, truncated)
 
@@ -100,11 +106,16 @@ def set_llm_request(
     prompts: list[str],
     kwargs: Any,
     span_holder: SpanHolder,
-    max_attribute_length: int = 10000,
+    max_attribute_length: int = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
 ) -> None:
     set_request_params(span, kwargs, span_holder)
     for i, msg in enumerate(prompts):
-        _set_span_attribute(span, "llm.input" if i == 0 else f"llm.input{i}", json.dumps(msg))
+        value = json.dumps(msg)
+        _set_span_attribute(
+            span,
+            "llm.input" if i == 0 else f"llm.input{i}",
+            truncate_span_attribute(value, max_attribute_length),
+        )
     _set_content_attributes(
         span,
         content_key="gen_ai.input.messages",
@@ -121,14 +132,19 @@ def set_chat_request(
     messages: list[list[BaseMessage]],
     kwargs: Any,
     span_holder: SpanHolder,
-    max_attribute_length: int = 10000,
+    max_attribute_length: int = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
 ) -> None:
     # 本部分由于做训练数据收集
     # 收集模型基本的配置：名称/核心参数/工具
     set_request_params(span, kwargs, span_holder)
     # 收集 prompt
     for i, message in enumerate(messages):
-        _set_span_attribute(span, "llm.input" if i == 0 else f"llm.output{i}", json.dumps(messages_to_dict(message)))
+        value = json.dumps(messages_to_dict(message))
+        _set_span_attribute(
+            span,
+            "llm.input" if i == 0 else f"llm.output{i}",
+            truncate_span_attribute(value, max_attribute_length),
+        )
     _set_content_attributes(
         span,
         content_key="gen_ai.input.messages",
@@ -188,15 +204,20 @@ def generation_to_dict(generation: Union[Generation, ChatGeneration, GenerationC
     return ret
 
 
-def set_chat_response(span: Span, response: LLMResult, max_attribute_length: int = 10000) -> None:
+def set_chat_response(
+    span: Span,
+    response: LLMResult,
+    max_attribute_length: int = DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
+) -> None:
     output_groups = [
         [generation_to_dict(generation) for generation in generations] for generations in response.generations
     ]
     for i, generations in enumerate(response.generations):
+        value = json.dumps([generation_to_dict(generation) for generation in generations])
         _set_span_attribute(
             span,
             "llm.output" if i == 0 else f"llm.output{i}",
-            json.dumps([generation_to_dict(generation) for generation in generations]),
+            truncate_span_attribute(value, max_attribute_length),
         )
     _set_content_attributes(
         span,

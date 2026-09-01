@@ -489,6 +489,25 @@ class TestBkAidevAgentCallbackHandler:
         assert "llm.input" in span.attributes
         assert "llm.output" in span.attributes
 
+    def test_llm_content_uses_separate_input_and_output_limits(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            max_input_attribute_length=8,
+            max_output_attribute_length=4,
+        )
+        run_id = uuid4()
+
+        asyncio.run(handler.on_llm_start(serialized={}, prompts=["0123456789"], run_id=run_id))
+        response = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="abcdefghij"))]])
+        asyncio.run(handler.on_llm_end(response=response, run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert len(span.attributes["llm.input"]) == 8
+        assert len(span.attributes["gen_ai.input.messages"]) == 8
+        assert len(span.attributes["llm.output"]) == 4
+        assert len(span.attributes["gen_ai.output.messages"]) == 4
+
     def test_tool_execution_span_attributes(self, tracer_and_exporter):
         """测试 tool.* span 包含 tool.input 和 tool.output 属性"""
         tracer, exporter = tracer_and_exporter
@@ -532,6 +551,22 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["tool.input"] == "1+1"
         assert span.attributes["tool.output"] == "2"
         assert span.attributes["tool.name"] == "calculator"
+
+    def test_tool_content_uses_separate_input_and_output_limits(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            max_input_attribute_length=8,
+            max_output_attribute_length=4,
+        )
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "bounded"}, input_str="0123456789", run_id=run_id))
+        asyncio.run(handler.on_tool_end(output="abcdefghij", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.input"] == "23456789"
+        assert span.attributes["tool.output"] == "ghij"
 
     def test_tool_execution_with_dict_output(self, tracer_and_exporter):
         """测试 tool.execution span 当 output 为字典时，tool.output 正确转换为字符串"""

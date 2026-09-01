@@ -22,6 +22,10 @@ from aidev_agent.config import settings as agent_settings
 
 from .utils import get_env_bool
 
+# 与 LLM Gateway 的 LLM 输入、输出属性上限保持一致。
+DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH = 80 * 1024
+DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH = 20 * 1024
+
 
 class OTelConfig:
     """OTel 上报配置"""
@@ -49,8 +53,17 @@ class OTelConfig:
         self.trace_exporter: str = os.getenv("BKAI_AGENT_TRACE_EXPORTER", "otlp").strip().lower()
 
         # ===== 性能优化配置 =====
-        # 最大字符串长度限制
-        self.max_attribute_length: int = int(os.getenv("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", "10000"))
+        # 显式配置沿用原有统一上限语义；默认按 LLM Gateway 区分输入和输出。
+        configured_max_attribute_length = os.getenv("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH")
+        if configured_max_attribute_length is not None:
+            common_attribute_length = max(1, int(configured_max_attribute_length))
+            self.max_input_attribute_length = common_attribute_length
+            self.max_output_attribute_length = common_attribute_length
+        else:
+            self.max_input_attribute_length = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH
+            self.max_output_attribute_length = DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH
+        # OpenTelemetry SDK 只支持全局上限；具体输出属性在写入前使用更严格的输出上限。
+        self.max_attribute_length = max(self.max_input_attribute_length, self.max_output_attribute_length)
 
     def __repr__(self) -> str:
         endpoints_summary = f"{len(self.otel_endpoints)} endpoint(s)"
