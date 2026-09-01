@@ -22,9 +22,10 @@ from aidev_agent.config import settings as agent_settings
 
 from .utils import get_env_bool
 
-# 与 LLM Gateway 的 LLM 输入、输出属性上限保持一致。
-DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH = 80 * 1024
-DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH = 20 * 1024
+# 兼容既有导入；配置值统一由 aidev_agent.config 管理。
+DEFAULT_MAX_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_ATTRIBUTE_LENGTH
+DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH
+DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 
 
 class OTelConfig:
@@ -53,17 +54,19 @@ class OTelConfig:
         self.trace_exporter: str = os.getenv("BKAI_AGENT_TRACE_EXPORTER", "otlp").strip().lower()
 
         # ===== 性能优化配置 =====
-        # 显式配置沿用原有统一上限语义；默认按 LLM Gateway 区分输入和输出。
-        configured_max_attribute_length = os.getenv("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH")
-        if configured_max_attribute_length is not None:
-            common_attribute_length = max(1, int(configured_max_attribute_length))
-            self.max_input_attribute_length = common_attribute_length
-            self.max_output_attribute_length = common_attribute_length
-        else:
-            self.max_input_attribute_length = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH
-            self.max_output_attribute_length = DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH
-        # OpenTelemetry SDK 只支持全局上限；具体输出属性在写入前使用更严格的输出上限。
-        self.max_attribute_length = max(self.max_input_attribute_length, self.max_output_attribute_length)
+        # 通用、输入、输出上限均由 aidev_agent.config 统一读取和覆盖。
+        self.max_attribute_length = max(1, int(agent_settings.BKAI_AGENT_MAX_ATTRIBUTE_LENGTH))
+        self.max_input_attribute_length = max(1, int(agent_settings.BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH))
+        self.max_output_attribute_length = max(1, int(agent_settings.BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH))
+
+    @property
+    def span_attribute_length_limit(self) -> int:
+        """返回 SDK 全局安全边界，分类属性仍由写入逻辑按各自配置收紧。"""
+        return max(
+            self.max_attribute_length,
+            self.max_input_attribute_length,
+            self.max_output_attribute_length,
+        )
 
     def __repr__(self) -> str:
         endpoints_summary = f"{len(self.otel_endpoints)} endpoint(s)"

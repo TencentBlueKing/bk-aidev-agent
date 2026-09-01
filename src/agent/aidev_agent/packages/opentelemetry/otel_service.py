@@ -161,7 +161,7 @@ class BkAgentOTelService:
         # recording original lengths, but it must not be the memory boundary.
         self.tracer_provider = TracerProvider(
             resource=resource,
-            span_limits=SpanLimits(max_attribute_length=self.config.max_attribute_length),
+            span_limits=SpanLimits(max_attribute_length=self.config.span_attribute_length_limit),
         )
 
         if self.config.trace_exporter == "logging":

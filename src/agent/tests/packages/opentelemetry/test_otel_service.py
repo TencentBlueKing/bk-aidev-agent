@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from aidev_agent.packages.opentelemetry.config import (
+    DEFAULT_MAX_ATTRIBUTE_LENGTH,
     DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
     DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
     OTelConfig,
@@ -22,24 +23,30 @@ def test_otel_config_uses_central_metric_toggle(monkeypatch):
     assert OTelConfig(otel_endpoints=[]).enable_metrics is True
 
 
-def test_otel_config_uses_gateway_llm_limits_by_default(monkeypatch):
-    monkeypatch.delenv("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", raising=False)
-
+def test_otel_config_uses_central_attribute_limits_by_default():
     config = OTelConfig(otel_endpoints=[])
 
+    assert DEFAULT_MAX_ATTRIBUTE_LENGTH == config.max_attribute_length == 10000
     assert DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH == config.max_input_attribute_length == 80 * 1024
     assert DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH == config.max_output_attribute_length == 20 * 1024
-    assert config.max_attribute_length == DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH
+    assert config.span_attribute_length_limit == DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH
 
 
-def test_otel_config_common_limit_overrides_gateway_defaults(monkeypatch):
-    monkeypatch.setenv("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", "123")
+def test_otel_config_uses_independent_central_attribute_limits(monkeypatch):
+    monkeypatch.setattr("aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", 123)
+    monkeypatch.setattr(
+        "aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH", 456
+    )
+    monkeypatch.setattr(
+        "aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH", 234
+    )
 
     config = OTelConfig(otel_endpoints=[])
 
-    assert config.max_input_attribute_length == 123
-    assert config.max_output_attribute_length == 123
     assert config.max_attribute_length == 123
+    assert config.max_input_attribute_length == 456
+    assert config.max_output_attribute_length == 234
+    assert config.span_attribute_length_limit == 456
 
 
 def test_metric_toggle_does_not_change_trace_service_setup(mocker):
@@ -127,6 +134,8 @@ def test_logging_trace_exporter_writes_span_without_remote_export(mocker, caplog
 def test_trace_provider_bounds_all_span_and_event_attributes(attribute_name):
     config = OTelConfig(otel_endpoints=[])
     config.max_attribute_length = 16
+    config.max_input_attribute_length = 16
+    config.max_output_attribute_length = 16
     service = BkAgentOTelService(config)
 
     service._setup_traces(Resource.create({}))
