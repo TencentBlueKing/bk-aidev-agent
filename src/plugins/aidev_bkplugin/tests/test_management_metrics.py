@@ -67,7 +67,7 @@ EXIT_PROBE = dedent("""
         patch.object(apps, "enqueue_bkm_metrics_task", lambda *args: None),
         patch.object(BkAgentOTelService, "_create_metric_exporter", side_effect=lambda *args: SlowExporter()),
         patch.object(BkAgentOTelService, "_create_trace_exporter", side_effect=lambda *args: SlowSpanExporter()),
-        patch.object(BkPluginMetricService, "_create_celery_exporter", side_effect=lambda: SlowExporter()),
+        patch.object(BkPluginMetricService, "_create_bkm_exporter", side_effect=lambda: SlowExporter()),
     ):
         apps.init_bk_aidev_agent_otel()
         metrics.get_meter("exit-probe").create_counter("probe.count").add(1)
