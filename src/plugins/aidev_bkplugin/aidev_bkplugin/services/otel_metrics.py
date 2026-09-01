@@ -46,6 +46,9 @@ from .metric_runtime import RetryableMetricPushError
 logger = logging.getLogger(__name__)
 
 DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 10_000
+BKM_PUSH_MODE_CELERY = "celery"
+BKM_PUSH_MODE_DIRECT = "direct"
+BKM_PUSH_MODES = frozenset({BKM_PUSH_MODE_CELERY, BKM_PUSH_MODE_DIRECT})
 
 
 def _as_bool(value: Any) -> bool:
@@ -77,6 +80,7 @@ class MetricExportSettings:
     export_interval_millis: int = DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS
     export_timeout_millis: int = 30000
     export_via_celery: bool = True
+    bkm_push_mode: str = BKM_PUSH_MODE_CELERY
     bkm_data_id: int | None = None
     bkm_access_token: str = ""
     bkm_push_url: str = ""
@@ -106,6 +110,20 @@ class MetricExportSettings:
             "export_via_celery",
             otel_info.get("metric_export_via_celery"),
         )
+        bkm_push_mode = (
+            str(
+                metrics_info.get(
+                    "push_mode",
+                    otel_info.get("metric_push_mode", agent_settings.BKAI_AGENT_METRICS_PUSH_MODE),
+                )
+            )
+            .strip()
+            .lower()
+        )
+        if bkm_push_mode not in BKM_PUSH_MODES:
+            raise ValueError(
+                f"Unsupported metric push mode: {bkm_push_mode!r}; expected one of {sorted(BKM_PUSH_MODES)}"
+            )
         data_id = metrics_info.get("agent_data_id", agent_settings.BKAI_AGENT_METRICS_DATA_ID)
         access_token = metrics_info.get("agent_access_token", agent_settings.BKAI_AGENT_METRICS_TOKEN)
         push_url = metrics_info.get("agent_push_url", agent_settings.BKAI_AGENT_METRICS_HOST)
@@ -126,6 +144,7 @@ class MetricExportSettings:
             export_timeout_millis=max(1000, int(timeout)),
             task_ttl_seconds=max(1, int(task_ttl_seconds)),
             export_via_celery=_as_bool(export_via_celery),
+            bkm_push_mode=bkm_push_mode,
             bkm_data_id=int(data_id) if data_id not in (None, "") else None,
             bkm_access_token=str(access_token or ""),
             bkm_push_url=str(push_url or ""),
@@ -263,21 +282,13 @@ def _bkm_records(metrics_data: MetricsData, target: str) -> list[dict[str, Any]]
     return records
 
 
-class CeleryMetricExporter(MetricExporter):
-    """Convert one periodic OTel snapshot and delegate its BKM push to Celery."""
+class BkmMetricExporter(MetricExporter):
+    """Convert one periodic OTel snapshot and publish it through a selected transport."""
 
-    def __init__(
-        self,
-        endpoint_key: str,
-        target: str,
-        enqueue: Callable[[str, str, int, int], Any],
-        task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
-    ) -> None:
+    def __init__(self, endpoint_key: str, target: str) -> None:
         super().__init__()
         self.endpoint_key = endpoint_key
         self.target = target
-        self.task_ttl_seconds = task_ttl_seconds
-        self.enqueue = enqueue
 
     def export(
         self,
@@ -290,21 +301,53 @@ class CeleryMetricExporter(MetricExporter):
             if not records:
                 return MetricExportResult.SUCCESS
             payload = json.dumps(records, ensure_ascii=False, separators=(",", ":"))
-            created_at_millis = time.time_ns() // 1_000_000
-            self.enqueue(self.endpoint_key, payload, created_at_millis, self.task_ttl_seconds)
+            self._publish(payload)
         except Exception:  # noqa: BLE001
             logger.exception(
-                "[aidev_bkplugin] failed to enqueue metric snapshot for endpoint %s",
+                "[aidev_bkplugin] failed to publish metric snapshot for endpoint %s",
                 self.endpoint_key,
             )
             return MetricExportResult.FAILURE
         return MetricExportResult.SUCCESS
+
+    def _publish(self, payload: str) -> None:
+        raise NotImplementedError
 
     def force_flush(self, timeout_millis: float = 10000) -> bool:
         return True
 
     def shutdown(self, timeout_millis: float = 30000, **kwargs: Any) -> None:
         return None
+
+
+class CeleryMetricExporter(BkmMetricExporter):
+    """Delegate one periodic BKM snapshot to Celery."""
+
+    def __init__(
+        self,
+        endpoint_key: str,
+        target: str,
+        enqueue: Callable[[str, str, int, int], Any],
+        task_ttl_seconds: int = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS,
+    ) -> None:
+        super().__init__(endpoint_key, target)
+        self.task_ttl_seconds = task_ttl_seconds
+        self.enqueue = enqueue
+
+    def _publish(self, payload: str) -> None:
+        created_at_millis = time.time_ns() // 1_000_000
+        self.enqueue(self.endpoint_key, payload, created_at_millis, self.task_ttl_seconds)
+
+
+class DirectBkmMetricExporter(BkmMetricExporter):
+    """Push one periodic BKM snapshot directly from the metric reader thread."""
+
+    def __init__(self, endpoint_key: str, target: str, push: Callable[[str, str], Any]) -> None:
+        super().__init__(endpoint_key, target)
+        self.push = push
+
+    def _publish(self, payload: str) -> None:
+        self.push(self.endpoint_key, payload)
 
 
 class BkPluginMetricService:
@@ -332,7 +375,7 @@ class BkPluginMetricService:
             return False
         readers = []
         if self.settings.export_via_celery:
-            if self.enqueue_bkm_metrics is None:
+            if self.settings.bkm_push_mode == BKM_PUSH_MODE_CELERY and self.enqueue_bkm_metrics is None:
                 logger.warning("[aidev_bkplugin] BKM metric export enabled but Celery enqueue is unavailable")
                 return False
             if not self.settings.bkm_data_id or not self.settings.bkm_access_token or not self.settings.bkm_push_url:
@@ -340,7 +383,7 @@ class BkPluginMetricService:
                 return False
             readers.append(
                 PeriodicExportingMetricReader(
-                    self._create_celery_exporter(),
+                    self._create_bkm_exporter(),
                     export_interval_millis=self.settings.export_interval_millis,
                     export_timeout_millis=self.settings.export_timeout_millis,
                 )
@@ -367,7 +410,7 @@ class BkPluginMetricService:
             self.provider.shutdown()
             self.provider = None
             return False
-        transport = "celery" if self.settings.export_via_celery else "direct"
+        transport = f"bkm_{self.settings.bkm_push_mode}" if self.settings.export_via_celery else "otlp_direct"
         logger.info(
             "[aidev_bkplugin] metric export started with %d reader(s), transport=%s",
             len(readers),
@@ -375,12 +418,15 @@ class BkPluginMetricService:
         )
         return True
 
-    def _create_celery_exporter(self) -> CeleryMetricExporter:
+    def _create_bkm_exporter(self) -> BkmMetricExporter:
+        target = self.settings.bkm_target or socket.gethostname()
+        endpoint_key = _bkm_endpoint_key(self.settings)
+        if self.settings.bkm_push_mode == BKM_PUSH_MODE_DIRECT:
+            return DirectBkmMetricExporter(endpoint_key, target, self.push_bkm)
         if self.enqueue_bkm_metrics is None:
             raise RuntimeError("Celery metric enqueue is unavailable")
-        target = self.settings.bkm_target or socket.gethostname()
         return CeleryMetricExporter(
-            endpoint_key=_bkm_endpoint_key(self.settings),
+            endpoint_key=endpoint_key,
             target=target,
             enqueue=self.enqueue_bkm_metrics,
             task_ttl_seconds=self.settings.task_ttl_seconds,

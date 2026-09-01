@@ -41,3 +41,17 @@ def test_metrics_export_interval_environment_default_and_minimum(monkeypatch, va
 
     module = runpy.run_path(config.__file__)
     assert module[name] == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, "celery"), (" Direct ", "direct")],
+)
+def test_metrics_push_mode_environment_default_and_override(monkeypatch, value, expected):
+    name = "BKAI_AGENT_METRICS_PUSH_MODE"
+    monkeypatch.delenv(name, raising=False)
+    if value is not None:
+        monkeypatch.setenv(name, value)
+
+    module = runpy.run_path(config.__file__)
+    assert module[name] == expected
