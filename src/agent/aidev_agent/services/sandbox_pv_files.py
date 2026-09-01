@@ -150,13 +150,13 @@ PV_PAAS_SANDBOX_GONE_CODES = frozenset({"AGENT_SANDBOX_NOT_FOUND", "SANDBOX_NOT_
 # 凭证（client）每次请求新建，只复用 PaaS 侧的 sandbox 容器，避免缓存过期凭证。
 _UPLOAD_SANDBOX_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
 _UPLOAD_SANDBOX_CACHE_LOCK = threading.Lock()
-# 会话级操作锁：串行化同会话的 sandbox exec/upload，避免单容器并发冲突
+# 进程内会话锁：串行化同一进程内的 sandbox exec/upload，避免单容器并发冲突
 _UPLOAD_SESSION_LOCKS: dict[str, threading.Lock] = {}
 _UPLOAD_SESSION_LOCKS_LOCK = threading.Lock()
 
 
 def _get_session_op_lock(session_code: str) -> threading.Lock:
-    """获取会话级操作锁（懒创建）。"""
+    """获取进程内会话操作锁（懒创建）。"""
     with _UPLOAD_SESSION_LOCKS_LOCK:
         lock = _UPLOAD_SESSION_LOCKS.get(session_code)
         if lock is None:
@@ -590,11 +590,11 @@ class SandboxPvFileService:
         session_code: str,
         files: list[SandboxUploadFile],
     ) -> dict:
-        """通过会话级复用的临时 sandbox 将一批文件写入会话 PV。
+        """通过进程内会话复用的临时 sandbox 将一批文件写入会话 PV。
 
         sandbox 容器按 app_code、session_code 和 volume_id 缓存复用（ttl=TEMP_UPLOAD_SANDBOX_TTL_SECONDS），
-        复用期内不再 create/destroy，到期由 PaaS 自动回收；复用失败（容器已被回收）
-        时 fallback 重建一次。同会话操作加锁串行化，避免单容器并发冲突。
+        同一进程的复用期内不再 create/destroy，到期由 PaaS 自动回收；复用失败（容器已被回收）
+        时 fallback 重建一次。同一进程内的会话操作加锁串行化，避免单容器并发冲突。
         """
         validate_session_upload_files(files)
 
@@ -612,7 +612,7 @@ class SandboxPvFileService:
         files_dir = SESSION_FILES_DIR
         absolute_files_dir = posixpath.join(TEMP_UPLOAD_VOLUME_MOUNT_PATH, files_dir)
 
-        # 会话级操作锁：串行化同会话的 sandbox exec/upload，避免单容器并发冲突
+        # 进程内会话锁：串行化同一进程内的 sandbox exec/upload，避免单容器并发冲突
         with _get_session_op_lock(session_code):
             app_code = self._executor_info.get("app_code") or ""
             sandbox_id = _get_cached_upload_sandbox(app_code, session_code, volume_id)

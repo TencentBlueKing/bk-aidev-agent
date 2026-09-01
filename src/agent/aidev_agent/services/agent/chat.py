@@ -1435,6 +1435,13 @@ class ChatCompletionAgent(BaseModel):
                 return item
         return None
 
+    @staticmethod
+    def _build_file_reference_context(paths: list[str]) -> str:
+        """构造当前用户精确引用的会话文件路径说明。"""
+        return "用户本轮引用了以下会话文件，请优先基于这些精确路径处理：\n" + "\n".join(
+            f"- {SESSION_VOLUME_PATH}/{path}" for path in paths
+        )
+
     def _build_llm_history(self) -> list[ChatPrompt]:
         """构造仅供本轮模型调用使用的历史副本。"""
         chat_history = [prompt.model_copy(deep=True) for prompt in self.chat_history or []]
@@ -1449,11 +1456,17 @@ class ChatCompletionAgent(BaseModel):
             return chat_history
 
         image_paths = []
+        referenced_paths = []
+        seen_paths = set()
         for resource in self.file_resources:
             path = self._normalize_file_resource_path(resource)
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            referenced_paths.append(path)
             if self._is_image_resource(resource, path):
                 image_paths.append(path)
-        if not image_paths:
+        if not referenced_paths:
             return chat_history
 
         if isinstance(last_user_prompt.content, str):
@@ -1463,24 +1476,32 @@ class ChatCompletionAgent(BaseModel):
         else:
             return chat_history
 
-        file_service = SandboxPvFileService(
-            resource_manager=self.resource_manager,
-            executor_info=self.executor_info or {},
+        content.append(
+            {
+                "type": "text",
+                "text": self._build_file_reference_context(referenced_paths),
+            }
         )
-        for path in dict.fromkeys(image_paths):
-            url_data = file_service.get_download_url(
-                session_code=self.thread_id,
-                path=path,
-                expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+
+        if image_paths:
+            file_service = SandboxPvFileService(
+                resource_manager=self.resource_manager,
+                executor_info=self.executor_info or {},
             )
-            image_url = url_data.get("download_url")
-            if not image_url:
-                raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
-            existing = self._find_binary_by_path(content, path)
-            if existing is not None:
-                existing["url"] = image_url
-            else:
-                content.append({"type": "image_url", "image_url": {"url": image_url}})
+            for path in image_paths:
+                url_data = file_service.get_download_url(
+                    session_code=self.thread_id,
+                    path=path,
+                    expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+                )
+                image_url = url_data.get("download_url")
+                if not image_url:
+                    raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
+                existing = self._find_binary_by_path(content, path)
+                if existing is not None:
+                    existing["url"] = image_url
+                else:
+                    content.append({"type": "image_url", "image_url": {"url": image_url}})
         last_user_prompt.content = content
         return chat_history
 
