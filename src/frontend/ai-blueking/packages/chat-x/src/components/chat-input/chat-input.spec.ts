@@ -57,7 +57,7 @@ vi.mock('../../common', async importOriginal => {
     ...actual,
     CHAT_Z_INDEX: 1000,
     isEn: false,
-    MAX_UPLOAD_FILES: 3,
+    MAX_UPLOAD_FILES: 9,
     MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
     commonSVGProps: {
       class: 'mock-svg-icon',
