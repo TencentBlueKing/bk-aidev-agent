@@ -196,6 +196,7 @@ make test
     "export_timeout_millis": 30000,
     "export_via_celery": true,
     "push_mode": "celery",
+    "task_ttl_seconds": 3600,
     "agent_data_id": 1001,
     "agent_access_token": "<由平台下发>",
     "agent_push_url": "http://proxy.example:10205/v2/push/",
@@ -203,6 +204,17 @@ make test
   }
 }
 ```
+
+指标配置优先级如下：
+
+| 配置 | 优先级 |
+| --- | --- |
+| 是否启用 | 本地显式 `BKAI_AGENT_ENABLE_METRICS` > 平台 `enabled` > 运行时默认值 |
+| 上报周期 | 本地显式 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` > 平台 `export_interval_millis` > 10000 毫秒 |
+| 推送方式 | 平台 `push_mode` > 本地 `BKAI_AGENT_METRICS_PUSH_MODE` > `celery` |
+| BKM 连接参数 | 平台 `agent_*` > 本地 `BKAI_AGENT_METRICS_*` |
+| Celery 快照 TTL | 平台 `task_ttl_seconds` > 本地 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 3600 秒 |
+| 导出超时及旧版传输开关 | 平台 `export_timeout_millis` / `export_via_celery` > 内置默认值 |
 
 `otel_url/otel_token` 继续用于 Trace；指标使用 Agent 命名空间下的
 `agent_data_id/agent_access_token/agent_push_url` 独立配置，不能复用 Trace token。
@@ -232,9 +244,9 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 将快照交给 Celery Worker 隔离实际网络请求；`push_mode=direct` 则由周期导出线程直接请求 BKM，
 但不改变快照周期。两种模式都不要求 Worker 读取其他进程内存中的 OTel 聚合器。
 `direct` 模式不经过 Celery 的 TTL 和退避重试，失败后由下一次周期快照继续上报累计值。
-生产默认周期为 10 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，平台显式
-下发的 `export_interval_millis` 优先于智能体环境变量，且周期最小为 1 秒。本地 mock 为了缩短
-仪表盘验证等待时间，继续使用 1 秒周期。
+生产默认周期为 10 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，智能体
+环境变量优先，未配置时使用平台下发的 `export_interval_millis`，平台也未下发时回退为 10 秒，
+且周期最小为 10 秒。本地 mock 为了缩短仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
 高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；平台下发的
