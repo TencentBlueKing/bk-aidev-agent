@@ -2,6 +2,7 @@ import contextlib
 import json
 import os
 import pickle
+import queue
 import threading
 import time
 import uuid
@@ -56,9 +57,9 @@ class _RabbitMQConsumerMixin:
     WAIT_POLL_INTERVAL = QueueTTLConfig.WAIT_POLL_INTERVAL
 
     @contextlib.contextmanager
-    def _with_channel(self, *, reuse: bool = False):
+    def _with_channel(self):
         """获取临时 RabbitMQ channel，并确保用完后关闭。"""
-        with self._with_connection(reuse=reuse) as connection:
+        with self._with_connection() as connection:
             channel = connection.channel()
             try:
                 yield channel
@@ -792,15 +793,15 @@ class _RabbitMQConsumerMixin:
 
 
 class RabbitMQConnectionPool:
-    """RabbitMQ 连接生命周期管理器。
+    """RabbitMQ 连接池
 
-    保留历史类名和配置接口，但不再跨线程复用 ``BlockingConnection``。
-    Pika 只允许在创建连接的线程中操作连接；共享空闲队列会把连接交给
-    任意 Gunicorn 线程，连接在校验阶段卡住后还会永久占用池容量。
+    管理 RabbitMQ 连接的创建、复用和销毁，避免频繁创建和关闭连接。
 
-    调用方可显式要求在当前长生命周期线程缓存一条连接；缓存只允许创建它的
-    线程再次借用。普通请求默认用完即关，后台批量发布线程显式复用。``pool_size``
-    仅作为兼容配置和活跃连接告警阈值，不再阻止其他线程建立连接。
+    特点：
+    - 连接池大小可配置
+    - 自动检测并移除失效连接
+    - 线程安全
+    - 支持上下文管理器方式获取连接
     """
 
     def __init__(self, rabbitmq_url: str, pool_size: int = 5, connection_timeout: float = 10.0):
@@ -814,37 +815,67 @@ class RabbitMQConnectionPool:
         self._pool_size = pool_size
         self._connection_timeout = connection_timeout
 
+        # 使用 queue.Queue 作为连接池，线程安全
+        self._pool: queue.Queue[pika.BlockingConnection] = queue.Queue(maxsize=pool_size)
+        self._lock = threading.Lock()
+
+        # 跟踪已创建的连接数量
+        self._created_count = 0
+        self._created_lock = threading.Lock()
+
+        # 连接池按 Gunicorn worker 进程隔离。耗尽时切换 generation，旧连接
+        # 在原调用完成后关闭，不再归还到新池。
+        self._pid = os.getpid()
+        self._generation = 0
+        self._rotation_in_flight = False
+        self._connection_generations: dict[int, int] = {}
         self._leases: dict[int, dict[str, Any]] = {}
-        self._leases_lock = threading.Lock()
-        self._thread_local = threading.local()
+
+        # 连接池是否已关闭
         self._closed = False
 
     def _create_connection(self) -> pika.BlockingConnection:
         """创建新的 RabbitMQ 连接"""
         params = pika.URLParameters(self._rabbitmq_url)
         params.heartbeat = 60  # 心跳间隔
-        # broker blocked 时必须在单次获取超时内退出，避免连接长期占用 worker。
+        # broker blocked 不应比连接池获取等待更久，否则少量阻塞调用会长期封死池容量。
         params.blocked_connection_timeout = self._connection_timeout
         return pika.BlockingConnection(params)
 
-    @staticmethod
-    def _is_connection_valid(connection: pika.BlockingConnection) -> bool:
-        """仅在连接所属线程中执行轻量 I/O 校验。"""
-        try:
-            if not connection.is_open:
-                return False
-            connection.process_data_events(time_limit=0)
-            return connection.is_open
-        except Exception:
-            return False
+    def _ensure_process(self) -> None:
+        """Gunicorn fork 后在子 worker 中惰性重建进程级连接池状态。"""
+        current_pid = os.getpid()
+        if current_pid == self._pid:
+            return
+        with self._created_lock:
+            if current_pid == self._pid:
+                return
+            self._pid = current_pid
+            self._pool = queue.Queue(maxsize=self._pool_size)
+            self._created_count = 0
+            self._generation = 0
+            self._rotation_in_flight = False
+            self._connection_generations = {}
+            self._leases = {}
+            self._closed = False
+        logger.info("RabbitMQ connection pool reset after process fork: pid=%d", current_pid)
+
+    def _register_lease(self, connection: pika.BlockingConnection) -> None:
+        with self._created_lock:
+            self._leases[id(connection)] = {
+                "generation": self._connection_generations[id(connection)],
+                "thread_id": threading.get_ident(),
+                "thread_name": threading.current_thread().name,
+                "started_at": time.monotonic(),
+            }
 
     def _lease_snapshot(self) -> list[dict[str, Any]]:
-        """返回不包含连接对象的活跃借用快照，供错误日志和测试使用。"""
         now = time.monotonic()
-        with self._leases_lock:
+        with self._created_lock:
             return [
                 {
                     "connection_id": connection_id,
+                    "generation": lease["generation"],
                     "thread_id": lease["thread_id"],
                     "thread_name": lease["thread_name"],
                     "held_seconds": round(now - lease["started_at"], 3),
@@ -852,94 +883,194 @@ class RabbitMQConnectionPool:
                 for connection_id, lease in self._leases.items()
             ]
 
-    def _register_connection(self, connection: pika.BlockingConnection, *, reuse: bool) -> None:
-        manager_closed = False
-        with self._leases_lock:
+    def _discard_connection(self, connection: pika.BlockingConnection) -> None:
+        """关闭连接并按 generation 安全更新当前池计数。"""
+        self._close_connection(connection)
+        with self._created_lock:
+            connection_generation = self._connection_generations.pop(id(connection), None)
+            self._leases.pop(id(connection), None)
+            if connection_generation == self._generation:
+                self._created_count = max(0, self._created_count - 1)
+            elif connection_generation is not None and not any(
+                generation < self._generation for generation in self._connection_generations.values()
+            ):
+                self._rotation_in_flight = False
+
+    def _rotate_exhausted_generation(self, waited_generation: int) -> bool:
+        """池耗尽时隔离旧代并开放同容量新代；并发等待者只旋转一次。"""
+        with self._created_lock:
             if self._closed:
-                manager_closed = True
-                active_count = len(self._leases)
-            else:
-                self._leases[id(connection)] = {
-                    "thread_id": threading.get_ident(),
-                    "thread_name": threading.current_thread().name,
-                    "started_at": time.monotonic(),
-                    "reuse": reuse,
+                raise RuntimeError("Connection pool is closed")
+            if waited_generation != self._generation:
+                return True
+
+            # 上一代尚未全部退出时不再扩容，避免 broker 整体异常导致连接代次无限增长。
+            if self._rotation_in_flight:
+                logger.error(
+                    "RabbitMQ connection pool remains exhausted while previous generation is draining: "
+                    "generation=%d leases=%s",
+                    self._generation,
+                    self._lease_snapshot_unlocked(),
+                )
+                return False
+
+            # 超时边界恰好有连接归还时无需旋转，直接让调用方重新获取。
+            if not self._pool.empty():
+                return True
+
+            old_generation = self._generation
+            old_created_count = self._created_count
+            leases = [
+                {
+                    "connection_id": connection_id,
+                    "thread_id": lease["thread_id"],
+                    "thread_name": lease["thread_name"],
+                    "held_seconds": round(time.monotonic() - lease["started_at"], 3),
                 }
-                active_count = len(self._leases)
+                for connection_id, lease in self._leases.items()
+                if lease["generation"] == old_generation
+            ]
+            self._generation += 1
+            self._rotation_in_flight = True
+            self._pool = queue.Queue(maxsize=self._pool_size)
+            self._created_count = 0
 
-        if manager_closed:
-            self._close_connection(connection)
-            raise RuntimeError("Connection pool is closed")
+        logger.error(
+            "Rotated exhausted RabbitMQ connection pool: old_generation=%d new_generation=%d old_created=%d leases=%s",
+            old_generation,
+            old_generation + 1,
+            old_created_count,
+            leases,
+        )
+        return True
 
-        if active_count == self._pool_size + 1:
-            logger.warning(
-                "RabbitMQ active connections exceeded configured pool size: active=%d configured=%d leases=%s",
-                active_count,
-                self._pool_size,
-                self._lease_snapshot(),
-            )
+    def _lease_snapshot_unlocked(self) -> list[dict[str, Any]]:
+        """调用方已持有 _created_lock 时生成借用快照。"""
+        now = time.monotonic()
+        return [
+            {
+                "connection_id": connection_id,
+                "generation": lease["generation"],
+                "thread_id": lease["thread_id"],
+                "thread_name": lease["thread_name"],
+                "held_seconds": round(now - lease["started_at"], 3),
+            }
+            for connection_id, lease in self._leases.items()
+        ]
 
-    def get_connection(self, *, reuse: bool = False) -> pika.BlockingConnection:
-        """获取当前线程的空闲连接，或在当前线程创建新连接。
+    def _is_connection_valid(self, connection: pika.BlockingConnection) -> bool:
+        """检查连接是否有效
+        除了检查 is_open 状态外，还尝试执行一个轻量级操作来验证连接真正可用。
+        """
+        try:
+            if not connection.is_open:
+                return False
+            # 尝试处理一下 I/O 事件，可以帮助检测连接是否真正有效
+            # 如果连接已断开，这里可能会触发异常
+            connection.process_data_events(time_limit=0)
+            return connection.is_open
+        except Exception:
+            return False
+
+    def get_connection(self) -> pika.BlockingConnection:
+        """从连接池获取连接
+
+        如果池中有可用连接，则返回；否则创建新连接（如果未达到上限）。
 
         Returns:
             RabbitMQ 连接
 
         Raises:
             RuntimeError: 连接池已关闭
-            pika.exceptions.AMQPConnectionError: 创建连接失败
+            queue.Empty: 获取连接超时
         """
-        with self._leases_lock:
+        self._ensure_process()
+        with self._created_lock:
             if self._closed:
                 raise RuntimeError("Connection pool is closed")
+            waited_generation = self._generation
 
-        connection = None
-        if reuse:
-            connection = getattr(self._thread_local, "idle_connection", None)
-            if connection is not None:
-                del self._thread_local.idle_connection
-                if not self._is_connection_valid(connection):
-                    self._close_connection(connection)
-                    connection = None
+        # 尝试从池中获取连接
+        try:
+            connection = self._pool.get_nowait()
+            # 检查连接是否有效
+            if self._is_connection_valid(connection):
+                self._register_lease(connection)
+                return connection
+            else:
+                self._discard_connection(connection)
+                logger.debug("Closed invalid connection from pool")
+        except queue.Empty:
+            pass
 
-        if connection is None:
-            connection = self._create_connection()
-        self._register_connection(connection, reuse=reuse)
-        logger.debug("Borrowed thread-affine RabbitMQ connection: active=%d", self.created_count)
-        return connection
+        # 池中没有可用连接，尝试创建新连接
+        with self._created_lock:
+            if self._created_count < self._pool_size:
+                self._created_count += 1
+                connection_generation = self._generation
+                try:
+                    connection = self._create_connection()
+                    self._connection_generations[id(connection)] = connection_generation
+                    self._leases[id(connection)] = {
+                        "generation": connection_generation,
+                        "thread_id": threading.get_ident(),
+                        "thread_name": threading.current_thread().name,
+                        "started_at": time.monotonic(),
+                    }
+                    logger.debug(
+                        "Created RabbitMQ connection: generation=%d total=%d",
+                        connection_generation,
+                        self._created_count,
+                    )
+                    return connection
+                except Exception:
+                    self._created_count -= 1
+                    raise
+
+        # 已达到连接上限，等待池中连接释放
+        try:
+            connection = self._pool.get(timeout=self._connection_timeout)
+            if self._is_connection_valid(connection):
+                self._register_lease(connection)
+                return connection
+            else:
+                self._discard_connection(connection)
+                return self.get_connection()
+        except queue.Empty:
+            # 正常态仍严格维持 pool_size；仅在整池超时后隔离旧代并建立同容量新代。
+            if self._rotate_exhausted_generation(waited_generation):
+                return self.get_connection()
+            raise TimeoutError(f"Failed to get connection within {self._connection_timeout} seconds")
 
     def release_connection(self, connection: pika.BlockingConnection) -> None:
-        """在调用线程关闭连接并移除借用记录。
+        """将连接归还到连接池
+
+        如果连接有效且池未满，则放回池中；否则关闭连接。
 
         Args:
             connection: 要归还的连接
         """
-        with self._leases_lock:
-            lease = self._leases.get(id(connection))
-        if lease is not None and lease["thread_id"] != threading.get_ident():
-            raise RuntimeError(
-                "RabbitMQ connection must be released by its owner thread: "
-                f"owner={lease['thread_id']} current={threading.get_ident()}"
-            )
+        with self._created_lock:
+            connection_generation = self._connection_generations.get(id(connection))
+            current_generation = self._generation
+            closed = self._closed
 
-        should_cache = False
-        with self._leases_lock:
-            self._leases.pop(id(connection), None)
-            should_cache = not self._closed and bool(lease and lease["reuse"])
+        if closed or connection_generation != current_generation:
+            self._discard_connection(connection)
+            return
 
-        if should_cache and self._is_connection_valid(connection):
-            idle_connection = getattr(self._thread_local, "idle_connection", None)
-            if idle_connection is None:
-                self._thread_local.idle_connection = connection
-                return
+        if self._is_connection_valid(connection):
+            with self._created_lock:
+                self._leases.pop(id(connection), None)
+                if not self._closed and connection_generation == self._generation:
+                    try:
+                        self._pool.put_nowait(connection)
+                        return
+                    except queue.Full:
+                        pass
 
-        self._close_connection(connection)
-
-    def _discard_connection(self, connection: pika.BlockingConnection) -> None:
-        """异常退出时关闭连接，不进入当前线程缓存。"""
-        self._close_connection(connection)
-        with self._leases_lock:
-            self._leases.pop(id(connection), None)
+        # 连接失效或池已满，关闭连接
+        self._discard_connection(connection)
 
     def _close_connection(self, connection: pika.BlockingConnection) -> None:
         """安全关闭连接"""
@@ -950,7 +1081,7 @@ class RabbitMQConnectionPool:
             logger.debug(f"Error closing connection: {e}")
 
     @contextmanager
-    def connection(self, *, reuse: bool = False):
+    def connection(self):
         """上下文管理器方式获取连接
 
         使用示例：
@@ -968,7 +1099,7 @@ class RabbitMQConnectionPool:
         conn = None
         for attempt in range(max_retries + 1):
             try:
-                conn = self.get_connection(reuse=reuse)
+                conn = self.get_connection()
             except (
                 pika.exceptions.StreamLostError,
                 pika.exceptions.AMQPConnectionError,
@@ -979,19 +1110,22 @@ class RabbitMQConnectionPool:
             ) as e:
                 if attempt >= max_retries:
                     logger.error(
-                        "RabbitMQ connection error after %d attempts: %s active=%d leases=%s",
+                        "RabbitMQ connection error after %d attempts: %s generation=%d created=%d "
+                        "available=%d leases=%s",
                         max_retries + 1,
                         e,
+                        self._generation,
                         self.created_count,
+                        self.available_count,
                         self._lease_snapshot(),
                     )
                     raise
                 logger.warning(
-                    "RabbitMQ connection error (attempt %d/%d): %s, retrying; active=%d leases=%s",
+                    "RabbitMQ connection error (attempt %d/%d): %s, retrying; generation=%d leases=%s",
                     attempt + 1,
                     max_retries + 1,
                     e,
-                    self.created_count,
+                    self._generation,
                     self._lease_snapshot(),
                 )
                 continue
@@ -1000,6 +1134,8 @@ class RabbitMQConnectionPool:
         try:
             yield conn
         except Exception:
+            # contextmanager 在 yield 后不能重新进入重试循环，否则会二次 yield 并触发
+            # RuntimeError("generator didn't stop after throw()")。连接内操作由调用方整体重试。
             self._discard_connection(conn)
             conn = None
             raise
@@ -1009,19 +1145,27 @@ class RabbitMQConnectionPool:
 
     def close(self) -> None:
         """关闭连接池，释放所有连接"""
-        with self._leases_lock:
+        with self._created_lock:
             self._closed = True
+            pool = self._pool
+            self._generation += 1
+            self._created_count = 0
 
-        idle_connection = getattr(self._thread_local, "idle_connection", None)
-        if idle_connection is not None:
-            self._close_connection(idle_connection)
-            del self._thread_local.idle_connection
+        # 关闭池中所有连接
+        while True:
+            try:
+                connection = pool.get_nowait()
+                self._close_connection(connection)
+                with self._created_lock:
+                    self._connection_generations.pop(id(connection), None)
+                    self._leases.pop(id(connection), None)
+            except queue.Empty:
+                break
 
         leases = self._lease_snapshot()
         if leases:
-            # 活跃连接必须由创建它的线程在上下文退出时关闭，不能跨线程强制操作 Pika。
-            logger.warning("RabbitMQ connection manager closed with active leases: %s", leases)
-        logger.info("RabbitMQ connection manager closed")
+            logger.warning("RabbitMQ connection pool closed with active leases: %s", leases)
+        logger.info("RabbitMQ connection pool closed")
 
     @property
     def pool_size(self) -> int:
@@ -1030,14 +1174,14 @@ class RabbitMQConnectionPool:
 
     @property
     def available_count(self) -> int:
-        """当前线程可复用的空闲连接数量。"""
-        return int(getattr(self._thread_local, "idle_connection", None) is not None)
+        """获取池中可用连接数量"""
+        return self._pool.qsize()
 
     @property
     def created_count(self) -> int:
-        """获取当前活跃借用连接数量。"""
-        with self._leases_lock:
-            return len(self._leases)
+        """获取已创建的连接数量"""
+        with self._created_lock:
+            return self._created_count
 
 
 class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMessageQueueHandler):
@@ -1098,7 +1242,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
             pool_size=pool_size,
             connection_timeout=connection_timeout,
         )
-        logger.info("RabbitMQ connection manager initialized with active warning threshold=%d", pool_size)
+        logger.info(f"RabbitMQ connection pool initialized with size={pool_size}")
 
         # 消息缓冲队列：用于批量推送
         self._message_buffer: dict[str, list[Any]] = {}
@@ -1141,9 +1285,9 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         return f"amqp://{user}:{password}@{host}:{port}/{vhost_enc}"
 
     @contextmanager
-    def _with_connection(self, *, reuse: bool = False):
+    def _with_connection(self):
         """上下文管理器方式获取连接"""
-        with self._connection_pool.connection(reuse=reuse) as conn:
+        with self._connection_pool.connection() as conn:
             yield conn
 
     def _get_queue_name(self, thread_id: str) -> str:
@@ -1673,7 +1817,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     publish_started_at = time.monotonic()
 
                     # 在同一个 flush_peek_lock 内 publish 到 RabbitMQ
-                    with self._with_channel(reuse=True) as channel:
+                    with self._with_channel() as channel:
                         queue_name = self._ensure_queue(channel, thread_id)
                         for message in messages_to_publish:
                             body = pickle.dumps(message)
