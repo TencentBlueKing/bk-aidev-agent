@@ -63,7 +63,7 @@ vi.mock('../../../common', async importOriginal => {
     ...actual,
     isEn: false,
     MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
-    MAX_UPLOAD_FILES: 3,
+    MAX_UPLOAD_FILES: 9,
   };
 });
 
