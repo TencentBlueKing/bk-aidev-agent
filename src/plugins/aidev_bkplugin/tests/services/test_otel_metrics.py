@@ -47,6 +47,7 @@ def isolate_agent_metric_settings(monkeypatch):
 
     defaults = {
         "BKAI_AGENT_ENABLE_METRICS": None,
+        "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS": 10_000,
         "BKAI_AGENT_METRICS_DATA_ID": "",
         "BKAI_AGENT_METRICS_TOKEN": "",
         "BKAI_AGENT_METRICS_HOST": "",
@@ -163,6 +164,17 @@ def test_metric_settings_parse_nested_otel_info():
     assert settings.bkm_target == "127.0.0.1"
 
 
+def test_metric_settings_prefer_platform_interval_over_agent_setting(monkeypatch):
+    from aidev_bkplugin.services import otel_metrics
+
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS", 2500)
+    agent_info = {"otel_info": {"metrics": {"export_interval_millis": 1500}}}
+
+    settings = MetricExportSettings.from_agent_info(agent_info, default_enabled=False)
+
+    assert settings.export_interval_millis == 1500
+
+
 def test_metric_settings_use_local_environment_fallback(monkeypatch):
     from aidev_bkplugin.services import otel_metrics
 
@@ -170,6 +182,7 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TOKEN", "local-secret")
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_HOST", "local-proxy")
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TARGET", "local-target")
+    monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS", 2500)
     monkeypatch.setattr(otel_metrics.agent_settings, "BKAI_AGENT_METRICS_TASK_TTL_SECONDS", 1800)
 
     settings = MetricExportSettings.from_agent_info({}, default_enabled=False)
@@ -180,7 +193,7 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
     assert settings.bkm_target == "local-target"
     assert settings.export_via_celery is True
-    assert settings.export_interval_millis == 10_000
+    assert settings.export_interval_millis == 2500
     assert settings.task_ttl_seconds == 1800
 
 

@@ -89,7 +89,10 @@ class MetricExportSettings:
         metrics_info = otel_info.get("metrics") or {}
         interval = metrics_info.get(
             "export_interval_millis",
-            otel_info.get("metric_export_interval_millis", DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS),
+            otel_info.get(
+                "metric_export_interval_millis",
+                agent_settings.BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS,
+            ),
         )
         timeout = metrics_info.get(
             "export_timeout_millis",

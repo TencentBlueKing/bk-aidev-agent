@@ -27,3 +27,17 @@ def test_database_events_environment_default_and_override(monkeypatch, value, ex
 
     module = runpy.run_path(config.__file__)
     assert module[name] is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, 10_000), ("2500", 2500), ("999", 1000)],
+)
+def test_metrics_export_interval_environment_default_and_minimum(monkeypatch, value, expected):
+    name = "BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS"
+    monkeypatch.delenv(name, raising=False)
+    if value is not None:
+        monkeypatch.setenv(name, value)
+
+    module = runpy.run_path(config.__file__)
+    assert module[name] == expected
