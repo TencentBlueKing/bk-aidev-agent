@@ -53,17 +53,23 @@ export const getFileExtension = (file?: File): string => {
 };
 
 /**
+ * 格式化字节数及单位展示
+ * @param size 字节数
+ * @returns 1024B -> 1KB 1024KB -> 1M 1024M -> 1GB；大小未知时返回空串
+ */
+export const formatBytes = (size?: number): string => {
+  if (!size || size <= 0) return '';
+  const units = ['B', 'KB', 'M', 'GB'];
+  const index = Math.min(Math.floor(Math.log2(size) / 10), units.length - 1);
+  return `${(size / 1024 ** index).toFixed(2)}${units[index]}`;
+};
+
+/**
  * 格式化文件大小 及 单位展示
  * @param file 文件
- * @returns 1024B -> 1KB 1024KB -> 1MB 1024MB -> 1GB
+ * @returns 1024B -> 1KB 1024KB -> 1M 1024M -> 1GB
  */
-export const formatFileSize = (file?: File): string => {
-  if (!file) return '';
-  const size = file.size;
-  const units = ['B', 'KB', 'M', 'GB'];
-  const index = Math.floor(Math.log2(size) / 10);
-  return `${(size / 1024 ** index).toFixed(2)} ${units[index]}`;
-};
+export const formatFileSize = (file?: File): string => formatBytes(file?.size);
 
 /**
  * 未成功添加的文件统一提示（中文在数量为 1 时不带「n个」前缀）

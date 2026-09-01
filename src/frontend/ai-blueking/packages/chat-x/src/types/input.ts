@@ -57,3 +57,10 @@ export type UploadFile = BinaryInputContent & {
   file?: File;
   status?: UploadStatus;
 };
+
+/**
+ * 附件展示形态。图片均为定高 48px、宽度按原图比例（48~120px），差异只在圆角与描边：
+ * - input：输入框内待发送态（圆角 8px、浅灰描边）
+ * - message：消息内已发送态（圆角 4px、线条中描边，整体右对齐）
+ */
+export type UploadFileVariant = 'input' | 'message';

@@ -159,7 +159,7 @@ export const lang = {
   在对话中定位: 'Locate in Chat',
   全选: 'Select All',
   确定: 'Confirm',
-  '上传图片, 最多支持上传 3 个, 最大支持 2.4MB': 'Upload Image, up to 3 images supported, max 2.4MB each',
+  '上传文件，最多支持 {count} 个，单个最大 {size}MB': 'Upload file, up to {count} files, max {size}MB each',
   '你好，我是小鲸': 'Hello, I am BlueKing AI Bot',
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',
