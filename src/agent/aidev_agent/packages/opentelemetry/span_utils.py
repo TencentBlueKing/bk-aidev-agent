@@ -18,7 +18,8 @@ from langchain_core.outputs import (
 from opentelemetry.context.context import Context
 from opentelemetry.trace.span import Span
 
-from .config import DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH, DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH
+from aidev_agent.config import BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH, BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
+
 from .utils import CallbackFilteredJSONEncoder, _set_span_attribute
 
 
@@ -106,7 +107,7 @@ def set_llm_request(
     prompts: list[str],
     kwargs: Any,
     span_holder: SpanHolder,
-    max_attribute_length: int = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
+    max_attribute_length: int = BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
 ) -> None:
     set_request_params(span, kwargs, span_holder)
     for i, msg in enumerate(prompts):
@@ -132,7 +133,7 @@ def set_chat_request(
     messages: list[list[BaseMessage]],
     kwargs: Any,
     span_holder: SpanHolder,
-    max_attribute_length: int = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
+    max_attribute_length: int = BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
 ) -> None:
     # 本部分由于做训练数据收集
     # 收集模型基本的配置：名称/核心参数/工具
@@ -207,7 +208,7 @@ def generation_to_dict(generation: Union[Generation, ChatGeneration, GenerationC
 def set_chat_response(
     span: Span,
     response: LLMResult,
-    max_attribute_length: int = DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
+    max_attribute_length: int = BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
 ) -> None:
     output_groups = [
         [generation_to_dict(generation) for generation in generations] for generations in response.generations

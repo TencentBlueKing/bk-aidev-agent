@@ -2,12 +2,12 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from aidev_agent.packages.opentelemetry.config import (
-    DEFAULT_MAX_ATTRIBUTE_LENGTH,
-    DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
-    DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
-    OTelConfig,
+from aidev_agent.config import (
+    BKAI_AGENT_MAX_ATTRIBUTE_LENGTH,
+    BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
+    BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
 )
+from aidev_agent.packages.opentelemetry.config import OTelConfig
 from aidev_agent.packages.opentelemetry.metrics import (
     AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
     DURATION_HISTOGRAM_BOUNDARIES,
@@ -26,10 +26,10 @@ def test_otel_config_uses_central_metric_toggle(monkeypatch):
 def test_otel_config_uses_central_attribute_limits_by_default():
     config = OTelConfig(otel_endpoints=[])
 
-    assert DEFAULT_MAX_ATTRIBUTE_LENGTH == config.max_attribute_length == 10000
-    assert DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH == config.max_input_attribute_length == 80 * 1024
-    assert DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH == config.max_output_attribute_length == 20 * 1024
-    assert config.span_attribute_length_limit == DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH
+    assert BKAI_AGENT_MAX_ATTRIBUTE_LENGTH == config.max_attribute_length == 10000
+    assert BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH == config.max_input_attribute_length == 80 * 1024
+    assert BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH == config.max_output_attribute_length == 20 * 1024
+    assert config.span_attribute_length_limit == BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH
 
 
 def test_otel_config_uses_independent_central_attribute_limits(monkeypatch):

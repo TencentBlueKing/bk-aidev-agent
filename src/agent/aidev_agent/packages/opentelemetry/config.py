@@ -22,11 +22,6 @@ from aidev_agent.config import settings as agent_settings
 
 from .utils import get_env_bool
 
-# 兼容既有导入；配置值统一由 aidev_agent.config 管理。
-DEFAULT_MAX_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_ATTRIBUTE_LENGTH
-DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH
-DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH = agent_settings.BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
-
 
 class OTelConfig:
     """OTel 上报配置"""

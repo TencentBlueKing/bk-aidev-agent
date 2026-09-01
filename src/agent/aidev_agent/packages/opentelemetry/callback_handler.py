@@ -37,9 +37,9 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, set_span_in_context
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from aidev_agent.config import BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH, BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 from aidev_agent.pydantic_models import ExecuteKwargs
 
-from .config import DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH, DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 from .metrics import AgentMetrics, get_agent_metrics
 from .metrics import extract_token_usage as extract_metric_token_usage
 from .resilience import (
@@ -249,8 +249,8 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         enable_metrics: bool = False,
         debug: bool = False,
         max_attribute_length: Optional[int] = None,
-        max_input_attribute_length: int = DEFAULT_MAX_INPUT_ATTRIBUTE_LENGTH,
-        max_output_attribute_length: int = DEFAULT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
+        max_input_attribute_length: int = BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
+        max_output_attribute_length: int = BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
         agent_id: Optional[str] = None,
         agent_code: Optional[str] = None,
         agent_name: Optional[str] = None,
