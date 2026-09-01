@@ -94,9 +94,10 @@ def test_by_thread_id_skips_save_when_save_content_false():
     sm.save_content.assert_not_called()
 
 
-def test_by_session_code_passes_user_resource_manager():
+def test_by_session_code_wraps_user_resource_manager_for_events():
     from aidev_agent.packages.resource_manager.agent import AgentResourceManager
     from aidev_bkplugin.services.agent_builder import AgentBuilder
+    from aidev_bkplugin.services.event_resource_manager import EventResourceManager
 
     build_p, factory_p, client_p, checkpointer_p = _patch_factories()
     with build_p as mock_build, factory_p as mock_factory, client_p, checkpointer_p:
@@ -105,7 +106,8 @@ def test_by_session_code_passes_user_resource_manager():
         AgentBuilder(username="alice").by_session_code("sc-1")
 
     rm = mock_build.call_args.kwargs["resource_manager"]
-    assert isinstance(rm, AgentResourceManager)
+    assert isinstance(rm, EventResourceManager)
+    assert isinstance(rm._resource_manager, AgentResourceManager)
     assert rm.username == "alice"
 
 
