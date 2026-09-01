@@ -4,7 +4,6 @@
 import json
 
 import pytest
-
 from aidev_agent.packages.craw import (
     CrawSyncer,
     OpenClawBackend,
