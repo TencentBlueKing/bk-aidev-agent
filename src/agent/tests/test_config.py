@@ -10,7 +10,7 @@ def test_database_events_setting_is_registered_in_agent_config():
 
 
 def test_metric_queue_name_is_registered_in_agent_config():
-    assert BKAI_AGENT_QUEUE_METRIC == "BKAI_AGENT_QUEUE_METRIC"
+    assert BKAI_AGENT_QUEUE_METRIC == "bkai_agent_metric"
     assert settings.BKAI_AGENT_QUEUE_METRIC is BKAI_AGENT_QUEUE_METRIC
 
 

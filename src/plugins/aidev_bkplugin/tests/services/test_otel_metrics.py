@@ -582,8 +582,8 @@ def test_celery_task_exports_through_process_local_metric_service(mocker):
     service.push_bkm.assert_called_once_with("endpoint-fingerprint", "payload")
     assert tasks.push_bkm_metrics_task.shared_task_options["autoretry_for"] == (RetryableMetricPushError,)
     assert tasks.push_bkm_metrics_task.shared_task_options["max_retries"] == 3
-    assert tasks.agent_settings.BKAI_AGENT_QUEUE_METRIC == "BKAI_AGENT_QUEUE_METRIC"
-    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "BKAI_AGENT_QUEUE_METRIC"
+    assert tasks.agent_settings.BKAI_AGENT_QUEUE_METRIC == "bkai_agent_metric"
+    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "bkai_agent_metric"
     assert tasks.run_bkplugin_background_agent_task.shared_task_options["queue"] == "bkai_agent_task"
 
 
