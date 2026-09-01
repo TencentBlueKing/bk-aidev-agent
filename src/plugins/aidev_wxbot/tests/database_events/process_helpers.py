@@ -15,17 +15,44 @@ import traceback
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from django.apps import AppConfig
+
+
+class AidevBkpluginTestConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "aidev_bkplugin"
+    label = "aidev_bkplugin"
+
+
+class AidevWxbotTestConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "aidev_wxbot"
+    label = "aidev_wxbot"
+
 
 def configure_database(path):
     os.environ["MESSAGE_HANDLER_TYPE"] = "inmemory"
     import django
+    from aidev_wxbot import settings as wxbot_settings
     from django.conf import settings
 
-    from tests import settings as test_settings
-
-    values = {key: getattr(test_settings, key) for key in dir(test_settings) if key.isupper()}
-    values.update(APP_CODE="app", AIDEV_DATABASE_EVENTS_ENABLED=True)
-    values["INSTALLED_APPS"] = [*values["INSTALLED_APPS"], "tests.apps.WxAiBotTestConfig"]
+    app_config_module = "aidev_wxbot_test_app_configs"
+    sys.modules.setdefault(app_config_module, sys.modules[__name__])
+    values = {key: getattr(wxbot_settings, key) for key in dir(wxbot_settings) if key.isupper()}
+    values.update(
+        SECRET_KEY="aidev-wxbot-test-secret",
+        USE_TZ=True,
+        INSTALLED_APPS=[
+            "django.contrib.contenttypes",
+            "django.contrib.auth",
+            f"{app_config_module}.AidevBkpluginTestConfig",
+            f"{app_config_module}.AidevWxbotTestConfig",
+        ],
+        MIDDLEWARE=[],
+        ROOT_URLCONF="aidev_bkplugin.urls",
+        APP_CODE="app",
+        AIDEV_DATABASE_EVENTS_ENABLED=True,
+    )
     values.update(
         BK_APIGW_MANAGER_URL_TMPL="https://{api_name}.example.invalid",
         AIDEV_GATEWAY_NAME="test",

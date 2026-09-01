@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import aidev_agent.packages as aidev_agent_packages
 import pytest
 from aidev_bkplugin import apps
-from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
 
 def test_init_otel_disabled_skips_remote_initialization(mocker):
@@ -49,7 +48,7 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
     mocker.patch.object(apps, "get_otel_endpoint_by_json_str", return_value=[])
     mocker.patch.object(apps, "get_otel_endpoint_by_agent_info", return_value=[])
     mocker.patch.object(apps, "get_otel_endpoint_by_env", return_value=[])
-    mocker.patch(
+    get_agent_info = mocker.patch(
         "aidev_bkplugin.services.agent_config.AgentConfigFetcher.get_info",
         return_value=agent_info,
     )
@@ -63,7 +62,7 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
     metric_export_settings = mocker.patch.object(apps, "MetricExportSettings")
     metric_export_settings.from_agent_info.return_value = metric_settings
     instrumentor = mocker.patch.object(apps, "BkAidevAgentInstrumentor").return_value
-    return otel_config, instrumentor
+    return otel_config, instrumentor, get_agent_info
 
 
 @pytest.mark.parametrize(
@@ -82,7 +81,7 @@ def _mock_otel_inputs(mocker, agent_info, metric_settings):
 @pytest.mark.parametrize("trace_exporter", ["otlp", "logging"])
 def test_management_commands_disable_metrics_and_traces_before_remote_config(mocker, monkeypatch, argv, trace_exporter):
     monkeypatch.setattr(apps.sys, "argv", argv)
-    config, instrumentor = _mock_otel_inputs(mocker, {"otel_info": {"enable_metrics": True}}, None)
+    config, instrumentor, get_agent_info = _mock_otel_inputs(mocker, {"otel_info": {"enable_metrics": True}}, None)
     config.enable_traces = True
     config.trace_exporter = trace_exporter
     metric_service = mocker.patch.object(apps, "BkPluginMetricService")
@@ -92,7 +91,7 @@ def test_management_commands_disable_metrics_and_traces_before_remote_config(moc
 
     assert config.enable_metrics is False
     assert config.enable_traces is False
-    AgentConfigFetcher.get_info.assert_not_called()
+    get_agent_info.assert_not_called()
     apps.get_otel_endpoint_by_json_str.assert_not_called()
     apps.get_otel_endpoint_by_env.assert_not_called()
     apps.MetricExportSettings.from_agent_info.assert_not_called()
@@ -120,7 +119,7 @@ def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv
     metric_settings = SimpleNamespace(
         enabled=enabled, export_via_celery=via_celery, export_interval_millis=1500, export_timeout_millis=7000
     )
-    config, instrumentor = _mock_otel_inputs(mocker, {}, metric_settings)
+    config, instrumentor, _ = _mock_otel_inputs(mocker, {}, metric_settings)
     config.enable_traces = not enabled
     metric_service = mocker.patch.object(apps, "BkPluginMetricService")
     metric_service.return_value.start.return_value = enabled
@@ -147,7 +146,7 @@ def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
         export_interval_millis=1500,
         export_timeout_millis=7000,
     )
-    otel_config, instrumentor = _mock_otel_inputs(
+    otel_config, instrumentor, _ = _mock_otel_inputs(
         mocker,
         {"code": "legacy-code", "name": "legacy-name"},
         settings,
@@ -175,7 +174,7 @@ def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
         export_interval_millis=1500,
         export_timeout_millis=7000,
     )
-    otel_config, instrumentor = _mock_otel_inputs(
+    otel_config, instrumentor, _ = _mock_otel_inputs(
         mocker,
         {
             "agent_code": "ai-demo",
