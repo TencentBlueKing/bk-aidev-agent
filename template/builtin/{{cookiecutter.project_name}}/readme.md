@@ -31,6 +31,11 @@ cp ./support-files/env.template .env
 
 模板默认设置 `BKAI_AGENT_ENABLE_METRICS=false`，本地运行时会强制关闭指标，即使平台下发的
 `agent_info.otel_info.metrics` 为启用状态也不会上报；需要联调指标时再显式改为 `true`。
+指标默认每 10000 毫秒上报一次，可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，最小值为
+1000；平台下发的 `agent_info.otel_info.metrics.export_interval_millis` 优先于智能体环境变量。
+周期快照默认通过 Celery 异步上报；可将 `BKAI_AGENT_METRICS_PUSH_MODE` 设置为 `direct`，由周期
+导出线程直接请求 BKM。平台下发的 `agent_info.otel_info.metrics.push_mode` 优先于智能体环境变量。
+`direct` 模式不经过 Celery 的 TTL 和退避重试，上报失败后由下一周期继续上报累计值。
 经 Celery 上报的指标快照默认 TTL 为 3600 秒，可通过 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS`
 调整；超过 TTL 的快照会直接丢弃，不再请求监控上报接口。Celery Worker 固定监听
 `plugin_schedule` 和 `bkai_agent_task` 队列；Agent SDK 中对应的队列配置常量为 `BKAI_AGENT_TASK`。
