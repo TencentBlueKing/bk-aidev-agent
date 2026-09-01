@@ -195,4 +195,5 @@ def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
     configure_identity.assert_called_once_with("ai-demo", "Demo Agent", "2.2.3")
     assert otel_config.enable_metrics is True
     assert otel_config.metric_provider_managed_externally is True
+    assert apps.BkPluginMetricService.call_args.kwargs["enqueue_bkm_metrics"] is apps.enqueue_bkm_metrics_task
     instrumentor.instrument.assert_called_once_with()

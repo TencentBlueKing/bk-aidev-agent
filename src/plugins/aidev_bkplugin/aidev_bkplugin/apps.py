@@ -45,9 +45,9 @@ except ImportError:
     MetricExportSettings = None
 
 try:
-    from aidev_bkplugin.tasks import push_bkm_metrics_task
+    from aidev_bkplugin.tasks import enqueue_bkm_metrics_task
 except ImportError:
-    push_bkm_metrics_task = None
+    enqueue_bkm_metrics_task = None
 
 try:
     from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
@@ -155,7 +155,7 @@ def init_bk_aidev_agent_otel() -> None:
                 endpoints=endpoints,
                 agent_info=agent_info,
                 settings=metric_settings,
-                enqueue_bkm_metrics=push_bkm_metrics_task.delay if push_bkm_metrics_task is not None else None,
+                enqueue_bkm_metrics=enqueue_bkm_metrics_task,
             )
             set_metric_service(metric_service)
             otel_config.enable_metrics = metric_service.start()

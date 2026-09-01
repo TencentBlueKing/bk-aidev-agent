@@ -2,7 +2,7 @@
 
 该环境验证完整路径：Agent 指标 API 埋点 → bkplugin OTLP/HTTP 直连（仅本地）→
 OpenTelemetry Collector → Prometheus → Grafana 预置仪表盘。生产环境默认由源进程的
-OpenTelemetry Reader 定期生成累计快照，经 `plugin_schedule` 队列交给 Celery Worker，
+OpenTelemetry Reader 定期生成累计快照，经 `AIDEV_AGENT_TASK` 队列交给 Celery Worker，
 再按 BKM 自定义指标协议推送到 `${PROXY_IP}:10205/v2/push/`。
 
 ## 启动
