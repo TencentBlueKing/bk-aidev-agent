@@ -1283,7 +1283,7 @@ print(json.dumps(json.loads(payload)))
                 ws_log_handle = ws_log_path.open("w", encoding="utf-8")
                 ws_call, started = start_ws_exchange("aibot_subscribe")
                 ws_process = subprocess.Popen(
-                    [str(project / ".venv/bin/python"), "bin/manage.py", "run_wxaibot_ws"],
+                    [str(project / ".venv/bin/python"), "-m", "e2e.wxbot_runner"],
                     cwd=project,
                     env=env,
                     stdout=ws_log_handle,

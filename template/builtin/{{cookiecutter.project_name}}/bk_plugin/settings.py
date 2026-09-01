@@ -160,14 +160,3 @@ def _enable_console_log_for_local_debug():
 
 
 _enable_console_log_for_local_debug()
-
-
-# Local E2E uses a real, isolated SQLite file by default. Production and normal
-# template development remain on the runtime-provided database configuration.
-if os.getenv("BKPAAS_ENVIRONMENT", "dev").lower() in {"dev", "development"} and os.getenv("E2E_SQLITE_PATH"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": os.environ["E2E_SQLITE_PATH"],
-        }
-    }

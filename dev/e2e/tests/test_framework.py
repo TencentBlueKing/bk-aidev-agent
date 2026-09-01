@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from e2e.checks import assistant_text, parse_sse_events, run_finished
 from e2e.config import (
@@ -15,6 +15,7 @@ from e2e.config import (
     configured_identity,
     load_env_file,
 )
+from e2e.http import request
 from e2e.report import CaseResult, RunReport, redact, write_report
 from e2e.trace import ApiTraceRecorder
 
@@ -64,6 +65,18 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("message", DEFAULT_MODULES)
         self.assertIn("wxbot", DEFAULT_MODULES)
         self.assertIn("wxbot", SUPPORTED_MODULES)
+
+
+class HttpTests(unittest.TestCase):
+    def test_request_closes_response(self):
+        response = MagicMock(status=200, headers={"Content-Type": "application/json"})
+        response.read.return_value = b'{"ok": true}'
+
+        with patch("e2e.http.urllib.request.urlopen", return_value=response):
+            result = request("GET", "http://example.test")
+
+        self.assertEqual(result.body, {"ok": True})
+        response.close.assert_called_once_with()
 
 
 class ReportTests(unittest.TestCase):

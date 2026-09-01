@@ -10,8 +10,6 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 
-import os
-
 from aidev_ai_blueking.views import IndexView
 from aidev_wxbot.wxaibot.views import WxAiBotViewSet
 from blueapps.account.decorators import login_exempt
@@ -32,11 +30,6 @@ schema_view = get_schema_view(
     permission_classes=(permissions.AllowAny,),
 )
 WxAiBotViewSetWithoutLogin = method_decorator(login_exempt, name="dispatch")(WxAiBotViewSet)
-IndexViewForLocalE2E = (
-    method_decorator(login_exempt, name="dispatch")(IndexView)
-    if settings.ENVIRONMENT == "dev" and os.getenv("E2E_AUTH_MOCK_ENABLED", "").lower() in {"1", "true", "yes", "on"}
-    else IndexView
-)
 urlpatterns = [
     re_path(r"^admin/", admin.site.urls),
     re_path(r"^account/", include("blueapps.account.urls")),
@@ -53,7 +46,7 @@ urlpatterns = [
         name="wxbot_callback",
     ),
     re_path(r"^bk_plugin/", include("bk_plugin_framework.services.bpf_service.urls")),
-    re_path(r"^chat-window/?$", IndexViewForLocalE2E.as_view(), name="chat-window"),
+    re_path(r"^chat-window/?$", IndexView.as_view(), name="chat-window"),
     re_path(r"", include("aidev_ai_blueking.urls")),
 ]
 

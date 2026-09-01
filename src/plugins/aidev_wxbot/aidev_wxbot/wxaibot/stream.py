@@ -140,22 +140,14 @@ def consume_chat_stream(
                         docs.append(doc_info["metadata"])
 
             elif event_type == EventType.RUN_ERROR:
-                error_message = str(chunk_json.get("message", chunk_json))
-                content = "生成已停止" if "取消" in error_message else f"处理请求时发生错误: {error_message}"
                 LlmChunkMsg(
-                    content=content,
+                    content=f"处理请求时发生错误: {chunk_json.get('message', chunk_json)}",
                     is_finish=True,
                     stream_id=stream_id,
                 ).append_to_cache(rabbitmq_client)
                 return
 
-            elif event_type == EventType.RUN_FINISHED:
-                outcome = chunk_json.get("outcome") or {}
-                outcome_type = outcome.get("type") if isinstance(outcome, dict) else ""
-                if chunk_json.get("runId") == "cancelled" or outcome_type == "cancelled":
-                    added_content = added_content or "生成已停止"
-
-            elif event_type not in (EventType.RAW, EventType.RUN_STARTED):
+            elif event_type not in (EventType.RAW, EventType.RUN_STARTED, EventType.RUN_FINISHED):
                 logger.debug(f"stream_id:{stream_id} chat 忽略事件: {event_type}")
 
     except RuntimeError as e:

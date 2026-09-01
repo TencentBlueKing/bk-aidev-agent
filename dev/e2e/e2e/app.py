@@ -23,7 +23,7 @@ class ManagedApp:
             {
                 "PYTHONPATH": f"{self.project}:{self.config.root / 'dev/e2e'}",
                 "BK_APP_CONFIG_PATH": "bk_plugin_runtime.config",
-                "DJANGO_SETTINGS_MODULE": "bk_plugin.patch.plugin",
+                "DJANGO_SETTINGS_MODULE": "e2e.django_settings",
                 "BKPAAS_APP_ID": "aidev_agent_e2e" if self.config.database == "mysql" else "e2e-agent",
                 "BKPAAS_APP_SECRET": "local-e2e-app-secret",
                 "BKPAAS_ENGINE_REGION": "ieod",
@@ -50,7 +50,6 @@ class ManagedApp:
                     '[{"url":"http://127.0.0.1:4318","exporter_type":"http"}]',
                 ),
                 "AIDEV_STDOUT_LOG_ENABLED": "true",
-                "E2E_AUTH_MOCK_ENABLED": "true",
                 "E2E_USERNAME": self.identity.username,
                 "BKAPP_WXAIBOT_TOKEN": os.getenv("BKAPP_WXAIBOT_TOKEN", "e2e-wxbot-token"),
                 "BKAPP_WXAIBOT_ENCODING_AES_KEY": os.getenv(

@@ -118,24 +118,27 @@ def request(
         elapsed = round((time.monotonic() - started) * 1000)
         API_TRACE.finish_call(trace_call, duration_ms=elapsed, error=str(error))
         raise
-    raw = response.read()
-    elapsed = round((time.monotonic() - started) * 1000)
-    status = response.status
-    response_headers = dict(response.headers.items())
-    text = raw.decode("utf-8", errors="replace")
-    content_type = response.headers.get("Content-Type", "")
     try:
-        body = json.loads(text) if "json" in content_type or text[:1] in "[{" else text
-    except json.JSONDecodeError:
-        body = text
-    API_TRACE.finish_call(
-        trace_call,
-        status=status,
-        response_headers=response_headers,
-        response_body=body,
-        duration_ms=elapsed,
-    )
-    return HttpResult(status, response_headers, body, elapsed)
+        raw = response.read()
+        elapsed = round((time.monotonic() - started) * 1000)
+        status = response.status
+        response_headers = dict(response.headers.items())
+        text = raw.decode("utf-8", errors="replace")
+        content_type = response.headers.get("Content-Type", "")
+        try:
+            body = json.loads(text) if "json" in content_type or text[:1] in "[{" else text
+        except json.JSONDecodeError:
+            body = text
+        API_TRACE.finish_call(
+            trace_call,
+            status=status,
+            response_headers=response_headers,
+            response_body=body,
+            duration_ms=elapsed,
+        )
+        return HttpResult(status, response_headers, body, elapsed)
+    finally:
+        response.close()
 
 
 def with_query(url: str, **params: Any) -> str:
