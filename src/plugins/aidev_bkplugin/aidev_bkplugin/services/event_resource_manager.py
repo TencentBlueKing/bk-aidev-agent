@@ -26,7 +26,7 @@ class EventResourceManager:
 
 
 def with_database_events(resource_manager, app_code: str):
-    if agent_settings.BKAI_DATABASE_EVENTS_ENABLED is not True:
+    if agent_settings.BKAI_EVENT_DATABASE_ENABLED is not True:
         return resource_manager
     if isinstance(resource_manager, EventResourceManager):
         return resource_manager

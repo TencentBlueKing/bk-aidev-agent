@@ -1,34 +1,29 @@
+import runpy
+
 import pytest
-from aidev_agent.config import BKAI_DATABASE_EVENTS_ENABLED, _read_bool_env, settings
+from aidev_agent import config
+from aidev_agent.config import BKAI_EVENT_DATABASE_ENABLED, settings
 
 
 def test_database_events_setting_is_registered_in_agent_config():
-    assert settings.BKAI_DATABASE_EVENTS_ENABLED is BKAI_DATABASE_EVENTS_ENABLED
+    assert settings.BKAI_EVENT_DATABASE_ENABLED is BKAI_EVENT_DATABASE_ENABLED
 
 
 @pytest.mark.parametrize(
-    "canonical, legacy, expected",
+    "value, expected",
     [
-        (None, None, True),
-        ("1", None, True),
-        ("0", None, False),
-        ("true", None, True),
-        (None, "1", True),
-        (None, "0", False),
-        (None, "true", False),
-        (None, "", False),
-        ("1", "0", True),
-        ("0", "1", False),
+        (None, True),
+        ("1", True),
+        ("0", False),
+        ("true", True),
+        ("false", False),
     ],
 )
-def test_read_bool_env_prefers_canonical_name(monkeypatch, canonical, legacy, expected):
-    canonical_name = "BKAI_DATABASE_EVENTS_ENABLED"
-    legacy_name = "BKAPP_AIDEV_DATABASE_EVENTS_ENABLED"
-    monkeypatch.delenv(canonical_name, raising=False)
-    monkeypatch.delenv(legacy_name, raising=False)
-    if canonical is not None:
-        monkeypatch.setenv(canonical_name, canonical)
-    if legacy is not None:
-        monkeypatch.setenv(legacy_name, legacy)
+def test_database_events_environment_default_and_override(monkeypatch, value, expected):
+    name = "BKAI_EVENT_DATABASE_ENABLED"
+    monkeypatch.delenv(name, raising=False)
+    if value is not None:
+        monkeypatch.setenv(name, value)
 
-    assert _read_bool_env(canonical_name, legacy_name, True) is expected
+    module = runpy.run_path(config.__file__)
+    assert module[name] is expected

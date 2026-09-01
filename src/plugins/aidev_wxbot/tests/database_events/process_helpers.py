@@ -37,7 +37,7 @@ def configure_database(path):
     from aidev_wxbot import settings as wxbot_settings
     from django.conf import settings
 
-    agent_settings.set("BKAI_DATABASE_EVENTS_ENABLED", True)
+    agent_settings.set("BKAI_EVENT_DATABASE_ENABLED", True)
     app_config_module = "aidev_wxbot_test_app_configs"
     sys.modules.setdefault(app_config_module, sys.modules[__name__])
     values = {key: getattr(wxbot_settings, key) for key in dir(wxbot_settings) if key.isupper()}

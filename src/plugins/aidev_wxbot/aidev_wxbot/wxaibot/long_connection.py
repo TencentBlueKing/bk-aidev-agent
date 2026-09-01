@@ -577,7 +577,7 @@ class WxAiBotLongConnectionService:
 
     @staticmethod
     def _database_events_enabled() -> bool:
-        return agent_settings.BKAI_DATABASE_EVENTS_ENABLED is True
+        return agent_settings.BKAI_EVENT_DATABASE_ENABLED is True
 
     def _bind_resume_route(self, session_code: str, username: str, target: str) -> None:
         from .database_delivery import bind_resume_subscription

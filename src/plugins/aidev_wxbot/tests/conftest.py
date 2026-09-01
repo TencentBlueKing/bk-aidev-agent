@@ -36,7 +36,7 @@ def pytest_configure():
     from aidev_agent.config import settings as agent_settings
     from django.conf import settings
 
-    agent_settings.set("BKAI_DATABASE_EVENTS_ENABLED", False)
+    agent_settings.set("BKAI_EVENT_DATABASE_ENABLED", False)
     if settings.configured:
         return
     from aidev_wxbot import settings as wxbot_settings

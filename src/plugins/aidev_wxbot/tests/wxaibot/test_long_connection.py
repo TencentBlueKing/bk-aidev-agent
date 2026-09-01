@@ -297,7 +297,7 @@ async def test_expired_card_callback_is_not_retried():
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_database_events_use_agent_config(monkeypatch, enabled):
-    monkeypatch.setattr(long_connection_module.agent_settings, "BKAI_DATABASE_EVENTS_ENABLED", enabled, raising=False)
+    monkeypatch.setattr(long_connection_module.agent_settings, "BKAI_EVENT_DATABASE_ENABLED", enabled, raising=False)
     assert WxAiBotLongConnectionService._database_events_enabled() is enabled
 
 

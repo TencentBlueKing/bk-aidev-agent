@@ -110,15 +110,6 @@ env = environs.Env()
 env.read_env()
 
 
-def _read_bool_env(name: str, legacy_name: str, default: bool) -> bool:
-    """Read a boolean setting while preserving the legacy ``1`` semantics."""
-    if name in os.environ:
-        return env.bool(name)
-    if legacy_name in os.environ:
-        return os.environ[legacy_name] == "1"
-    return default
-
-
 existed_keys = list(locals().keys())
 existed_keys.append("existed_keys")
 
@@ -173,10 +164,7 @@ BKAI_FAST_LLM = env.str("BKAI_FAST_LLM", None)
 BKAI_ENABLE_JUDGE_RESPONSE = env.bool("BKAI_ENABLE_JUDGE_RESPONSE", None)
 
 # Agent 事件配置
-# BKAPP_AIDEV_DATABASE_EVENTS_ENABLED 仅作为迁移期兼容项；新配置优先。
-BKAI_DATABASE_EVENTS_ENABLED = _read_bool_env(
-    "BKAI_DATABASE_EVENTS_ENABLED", "BKAPP_AIDEV_DATABASE_EVENTS_ENABLED", True
-)
+BKAI_EVENT_DATABASE_ENABLED = env.bool("BKAI_EVENT_DATABASE_ENABLED", True)
 
 # Agent 指标与异步任务配置
 # None 表示未通过环境变量显式覆盖，允许平台下发的 otel_info.metrics.enabled 生效。

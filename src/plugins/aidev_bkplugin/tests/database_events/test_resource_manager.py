@@ -8,7 +8,7 @@ from aidev_bkplugin.services.event_resource_manager import EventResourceManager,
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_injection_respects_setting_and_preserves_original_resource_manager(monkeypatch, enabled):
-    monkeypatch.setattr(agent_settings, "BKAI_DATABASE_EVENTS_ENABLED", enabled, raising=False)
+    monkeypatch.setattr(agent_settings, "BKAI_EVENT_DATABASE_ENABLED", enabled, raising=False)
     original = SimpleNamespace(username="author", get_agent_config=lambda: "custom-config")
     wrapped = with_database_events(original, "app")
     assert wrapped.get_agent_config() == "custom-config" and wrapped.username == "author"
