@@ -83,7 +83,7 @@ def test_init_otel_deduplicates_endpoint_sources_before_instrumenting(mocker):
     endpoint = {"url": "https://collector.example/api", "token": "token", "exporter_type": ExporterType.GRPC}
     metric_settings = SimpleNamespace(
         enabled=False,
-        export_via_celery=False,
+        has_bkm_config=False,
         export_interval_millis=1500,
         export_timeout_millis=7000,
     )
@@ -148,11 +148,14 @@ def test_management_commands_disable_metrics_and_traces_before_remote_config(moc
     ],
 )
 @pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("via_celery", [False, True])
-def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv, enabled, via_celery):
+@pytest.mark.parametrize("has_bkm_config", [False, True])
+def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv, enabled, has_bkm_config):
     monkeypatch.setattr(apps.sys, "argv", argv)
     metric_settings = SimpleNamespace(
-        enabled=enabled, export_via_celery=via_celery, export_interval_millis=1500, export_timeout_millis=7000
+        enabled=enabled,
+        has_bkm_config=has_bkm_config,
+        export_interval_millis=1500,
+        export_timeout_millis=7000,
     )
     config, instrumentor, _ = _mock_otel_inputs(mocker, {}, metric_settings)
     config.enable_traces = not enabled
@@ -165,8 +168,8 @@ def test_service_entries_preserve_metric_configuration(mocker, monkeypatch, argv
 
     assert config.enable_metrics is enabled
     assert config.enable_traces is (not enabled)
-    assert config.metric_provider_managed_externally is (enabled and via_celery)
-    assert metric_service.called is via_celery
+    assert config.metric_provider_managed_externally is (enabled and has_bkm_config)
+    assert metric_service.called is has_bkm_config
     apps.MetricExportSettings.from_agent_info.assert_called_once()
     instrumentor.instrument.assert_called_once_with()
 
@@ -177,7 +180,7 @@ def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
     monkeypatch.delattr(aidev_agent_packages, "opentelemetry", raising=False)
     settings = SimpleNamespace(
         enabled=True,
-        export_via_celery=False,
+        has_bkm_config=False,
         export_interval_millis=1500,
         export_timeout_millis=7000,
     )
@@ -202,10 +205,10 @@ def test_init_otel_keeps_direct_metric_export_in_agent_sdk(mocker, monkeypatch):
     instrumentor.instrument.assert_called_once_with()
 
 
-def test_init_otel_uses_bkplugin_metric_provider_for_celery_export(mocker):
+def test_init_otel_uses_bkplugin_metric_provider_for_bkm_export(mocker):
     settings = SimpleNamespace(
         enabled=True,
-        export_via_celery=True,
+        has_bkm_config=True,
         export_interval_millis=1500,
         export_timeout_millis=7000,
     )

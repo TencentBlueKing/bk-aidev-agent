@@ -2,11 +2,16 @@ import runpy
 
 import pytest
 from aidev_agent import config
-from aidev_agent.config import BKAI_EVENT_DATABASE_ENABLED, settings
+from aidev_agent.config import BKAI_AGENT_QUEUE_METRIC, BKAI_EVENT_DATABASE_ENABLED, settings
 
 
 def test_database_events_setting_is_registered_in_agent_config():
     assert settings.BKAI_EVENT_DATABASE_ENABLED is BKAI_EVENT_DATABASE_ENABLED
+
+
+def test_metric_queue_name_is_registered_in_agent_config():
+    assert BKAI_AGENT_QUEUE_METRIC == "BKAI_AGENT_QUEUE_METRIC"
+    assert settings.BKAI_AGENT_QUEUE_METRIC is BKAI_AGENT_QUEUE_METRIC
 
 
 @pytest.mark.parametrize(

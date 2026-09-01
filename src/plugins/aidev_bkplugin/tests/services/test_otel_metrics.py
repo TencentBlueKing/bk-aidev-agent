@@ -161,7 +161,7 @@ def test_metric_settings_parse_nested_otel_info():
     assert settings.export_interval_millis == 10_000
     assert settings.export_timeout_millis == 7000
     assert settings.task_ttl_seconds == 120
-    assert settings.export_via_celery is True
+    assert settings.has_bkm_config is True
     assert settings.bkm_data_id == 1001
     assert settings.bkm_access_token == "metric-secret"
     assert settings.bkm_push_url == "http://proxy:10205/v2/push/"
@@ -226,7 +226,7 @@ def test_metric_settings_use_local_environment_fallback(monkeypatch):
     assert settings.bkm_access_token == "local-secret"
     assert settings.bkm_push_url == "http://local-proxy:10205/v2/push/"
     assert settings.bkm_target == "local-target"
-    assert settings.export_via_celery is True
+    assert settings.has_bkm_config is True
     assert settings.export_interval_millis == 25_000
     assert settings.bkm_push_mode == BKM_PUSH_MODE_DIRECT
     assert settings.task_ttl_seconds == 1800
@@ -239,7 +239,7 @@ def test_metric_settings_keep_direct_otlp_transport_without_bkm_config():
     assert settings.export_interval_millis == 10_000
     assert settings.bkm_push_mode == BKM_PUSH_MODE_CELERY
     assert settings.task_ttl_seconds == 3600
-    assert settings.export_via_celery is False
+    assert settings.has_bkm_config is False
 
 
 def test_metric_settings_do_not_reuse_trace_credentials(monkeypatch):
@@ -582,8 +582,8 @@ def test_celery_task_exports_through_process_local_metric_service(mocker):
     service.push_bkm.assert_called_once_with("endpoint-fingerprint", "payload")
     assert tasks.push_bkm_metrics_task.shared_task_options["autoretry_for"] == (RetryableMetricPushError,)
     assert tasks.push_bkm_metrics_task.shared_task_options["max_retries"] == 3
-    assert tasks.agent_settings.BKAI_AGENT_TASK == "bkai_agent_task"
-    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "bkai_agent_task"
+    assert tasks.agent_settings.BKAI_AGENT_QUEUE_METRIC == "BKAI_AGENT_QUEUE_METRIC"
+    assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "BKAI_AGENT_QUEUE_METRIC"
     assert tasks.run_bkplugin_background_agent_task.shared_task_options["queue"] == "bkai_agent_task"
 
 

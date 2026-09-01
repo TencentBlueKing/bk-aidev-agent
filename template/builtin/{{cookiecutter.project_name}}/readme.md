@@ -43,8 +43,8 @@ cp ./support-files/env.template .env
 经 Celery 上报的指标快照默认 TTL 为 3600 秒，可通过 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS`
 调整，智能体环境变量优先，未配置时使用平台下发的
 `agent_info.otel_info.metrics.task_ttl_seconds`；超过 TTL 的快照会直接丢弃，不再请求监控上报接口。
-Celery Worker 固定监听
-`plugin_schedule` 和 `bkai_agent_task` 队列；Agent SDK 中对应的队列配置常量为 `BKAI_AGENT_TASK`。
+Celery Worker 固定监听 `plugin_schedule`、`bkai_agent_task` 和 `BKAI_AGENT_QUEUE_METRIC` 队列；
+指标快照使用独立的 `BKAI_AGENT_QUEUE_METRIC` 队列，后台 Agent 任务继续使用 `bkai_agent_task`。
 
 ### 1.4 启动服务并测试
 

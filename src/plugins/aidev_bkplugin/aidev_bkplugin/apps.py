@@ -175,7 +175,7 @@ def init_bk_aidev_agent_otel() -> None:
             agent_info.get("agent_name"),
             agent_info.get("agent_sdk_version"),
         )
-        if metric_settings.export_via_celery:
+        if metric_settings.has_bkm_config:
             metric_service = BkPluginMetricService(
                 service_name=otel_config.service_name,
                 endpoints=endpoints,

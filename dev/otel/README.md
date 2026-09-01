@@ -2,7 +2,7 @@
 
 该环境验证完整路径：Agent 指标 API 埋点 → bkplugin OTLP/HTTP 直连（仅本地）→
 OpenTelemetry Collector → Prometheus → Grafana 预置仪表盘。生产环境默认由源进程的
-OpenTelemetry Reader 定期生成累计快照，经 `bkai_agent_task` 队列交给 Celery Worker，
+OpenTelemetry Reader 定期生成累计快照，经 `BKAI_AGENT_QUEUE_METRIC` 队列交给 Celery Worker，
 再按 BKM 自定义指标协议推送到 `${PROXY_IP}:10205/v2/push/`。
 
 ## 启动
@@ -194,7 +194,6 @@ make test
     "enabled": true,
     "export_interval_millis": 10000,
     "export_timeout_millis": 30000,
-    "export_via_celery": true,
     "push_mode": "celery",
     "task_ttl_seconds": 3600,
     "agent_data_id": 1001,
@@ -214,7 +213,7 @@ make test
 | 推送方式 | 本地显式 `BKAI_AGENT_METRICS_PUSH_MODE` > 平台 `push_mode` > `celery` |
 | BKM 连接参数 | 本地非空 `BKAI_AGENT_METRICS_*` > 平台 `agent_*` > 空值 |
 | Celery 快照 TTL | 本地显式 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 平台 `task_ttl_seconds` > 3600 秒 |
-| 导出超时及旧版传输开关 | 平台 `export_timeout_millis` / `export_via_celery` > 内置默认值 |
+| 导出超时 | 平台 `export_timeout_millis` > 30000 毫秒 |
 
 `otel_url/otel_token` 继续用于 Trace；指标使用 Agent 命名空间下的
 `agent_data_id/agent_access_token/agent_push_url` 独立配置，不能复用 Trace token。
@@ -266,8 +265,8 @@ BKAI_AGENT_METRICS_TARGET=127.0.0.1
 `http://host.docker.internal:4318`，或改为同一 Compose 网络内的
 `http://otel-collector:4318`。
 
-本地 Collector 场景必须关闭 Celery/BKM 转发，由 mock 自动设置
-`export_via_celery=false`；真实 bkplugin 如需直连本地 Collector，也可临时使用相同配置。
+本地 Collector 场景不配置 BKM 的 Data ID、Token 和推送地址时，会自动使用 OTLP 直连；
+真实 bkplugin 如需直连本地 Collector，也使用相同方式。
 
 环境变量仍可覆盖本地配置：
 

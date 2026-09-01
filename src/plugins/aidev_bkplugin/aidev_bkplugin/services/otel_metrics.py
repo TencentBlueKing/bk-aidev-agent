@@ -80,13 +80,17 @@ class MetricExportSettings:
     enabled: bool
     export_interval_millis: int = DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS
     export_timeout_millis: int = 30000
-    export_via_celery: bool = True
     bkm_push_mode: str = BKM_PUSH_MODE_CELERY
     bkm_data_id: int | None = None
     bkm_access_token: str = ""
     bkm_push_url: str = ""
     bkm_target: str = ""
     task_ttl_seconds: int = DEFAULT_METRIC_TASK_TTL_SECONDS
+
+    @property
+    def has_bkm_config(self) -> bool:
+        """Whether all credentials required for BKM export are configured."""
+        return self.bkm_data_id is not None and bool(self.bkm_access_token and self.bkm_push_url)
 
     @classmethod
     def from_agent_info(cls, agent_info: dict[str, Any] | None, *, default_enabled: bool) -> "MetricExportSettings":
@@ -105,10 +109,6 @@ class MetricExportSettings:
         task_ttl_seconds = agent_settings.BKAI_AGENT_METRICS_TASK_TTL_SECONDS
         if task_ttl_seconds is None:
             task_ttl_seconds = metrics_info.get("task_ttl_seconds", DEFAULT_METRIC_TASK_TTL_SECONDS)
-        export_via_celery = metrics_info.get(
-            "export_via_celery",
-            otel_info.get("metric_export_via_celery"),
-        )
         bkm_push_mode = agent_settings.BKAI_AGENT_METRICS_PUSH_MODE
         if bkm_push_mode is None:
             bkm_push_mode = metrics_info.get(
@@ -126,8 +126,6 @@ class MetricExportSettings:
         push_url = _normalize_bkm_push_url(push_url)
         target = agent_settings.BKAI_AGENT_METRICS_TARGET or metrics_info.get("agent_target", "")
         has_bkm_config = data_id not in (None, "") and bool(access_token and push_url)
-        if export_via_celery is None:
-            export_via_celery = has_bkm_config
         environment_enabled = agent_settings.BKAI_AGENT_ENABLE_METRICS
         enabled = (
             environment_enabled
@@ -139,7 +137,6 @@ class MetricExportSettings:
             export_interval_millis=max(10_000, int(interval)),
             export_timeout_millis=max(1000, int(timeout)),
             task_ttl_seconds=max(1, int(task_ttl_seconds)),
-            export_via_celery=_as_bool(export_via_celery),
             bkm_push_mode=bkm_push_mode,
             bkm_data_id=int(data_id) if data_id not in (None, "") else None,
             bkm_access_token=str(access_token or ""),
@@ -370,7 +367,7 @@ class BkPluginMetricService:
             logger.info("[aidev_bkplugin] metric export disabled")
             return False
         readers = []
-        if self.settings.export_via_celery:
+        if self.settings.has_bkm_config:
             if self.settings.bkm_push_mode == BKM_PUSH_MODE_CELERY and self.enqueue_bkm_metrics is None:
                 logger.warning("[aidev_bkplugin] BKM metric export enabled but Celery enqueue is unavailable")
                 return False
@@ -406,7 +403,7 @@ class BkPluginMetricService:
             self.provider.shutdown()
             self.provider = None
             return False
-        transport = f"bkm_{self.settings.bkm_push_mode}" if self.settings.export_via_celery else "otlp_direct"
+        transport = f"bkm_{self.settings.bkm_push_mode}" if self.settings.has_bkm_config else "otlp_direct"
         logger.info(
             "[aidev_bkplugin] metric export started with %d reader(s), transport=%s",
             len(readers),
