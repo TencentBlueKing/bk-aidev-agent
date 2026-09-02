@@ -970,10 +970,15 @@
 
   // playground 走本地 mock，不依赖后端网关与 access_token；
   // 真实接入示例见 ./upload-file 的 uploadFileToSession
-  const handleUpload = async (file: File) => {
-    const response = await mockUploadFileToSession(file);
-    console.log('upload response:', file.name, file.type, response);
-    return response;
+  const handleUpload = async (files: File[]) => {
+    const responses = await Promise.all(
+      files.map(async file => {
+        const response = await mockUploadFileToSession(file);
+        console.log('upload response:', file.name, file.type, response);
+        return response;
+      }),
+    );
+    return responses;
   };
 
   const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], docSchema: TagSchema) => {

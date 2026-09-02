@@ -72,17 +72,14 @@ const compareSdkVersion = (left: ParsedSdkVersion, right: ParsedSdkVersion): num
 };
 
 /**
- * agent_sdk_version ≥ 2.2.2rc25 才支持 pv_files/upload。
- * 缺省或无法解析时走旧接口，避免旧后端被打到不存在的新路径。
+ * 仅当能解析出版本且低于 2.2.2rc25 时走旧 upload/{fileName}/。
+ * 空字符串、缺省或无法解析一律走 pv_files/upload。
  */
 export const isPvFileUploadSupported = (version?: null | string): boolean => {
-  if (!version) {
-    return false;
-  }
-  const parsed = parseSdkVersion(version);
+  const parsed = version ? parseSdkVersion(version) : null;
   const min = parseSdkVersion(PV_FILE_UPLOAD_MIN_SDK_VERSION);
   if (!parsed || !min) {
-    return false;
+    return true;
   }
   return compareSdkVersion(parsed, min) >= 0;
 };

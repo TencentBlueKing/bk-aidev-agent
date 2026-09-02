@@ -12,9 +12,6 @@ import { isPvFileUploadSupported } from './pv-file-upload';
 
 describe('isPvFileUploadSupported', () => {
   it.each([
-    [undefined, false],
-    ['', false],
-    ['not-a-version', false],
     ['2.2.2rc17', false],
     ['2.2.2rc24', false],
     ['2.2.1', false],
@@ -25,6 +22,9 @@ describe('isPvFileUploadSupported', () => {
   });
 
   it.each([
+    [undefined, true],
+    ['', true],
+    ['not-a-version', true],
     ['2.2.2rc25', true],
     ['2.2.2-rc.25', true],
     ['2.2.2-rc25', true],

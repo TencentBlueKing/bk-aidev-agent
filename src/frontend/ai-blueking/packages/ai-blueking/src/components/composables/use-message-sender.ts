@@ -51,7 +51,7 @@ export interface UseMessageSenderReturn {
   handleArtifactClick: OnArtifactClick;
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => void;
-  handleUpload: (file: File) => Promise<IUploadFileResult>;
+  handleUpload: (files: File[]) => Promise<IUploadFileResult[]>;
   stopGeneration: () => Promise<void>;
 }
 
@@ -121,27 +121,21 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
   };
 
   /**
-   * 处理文件上传
+   * 处理文件上传。一次选择多个文件时走 session.uploadFiles，由底层决定批量或逐个请求。
+   * 单条失败不抛错，交给 ChatInput 按项标记 Error。
    */
-  const handleUpload = async (file: File): Promise<IUploadFileResult> => {
+  const handleUpload = async (files: File[]): Promise<IUploadFileResult[]> => {
     const sessionCode = chatHelper.value?.session.current?.value?.sessionCode;
     if (!sessionCode) {
       throw new Error('[ChatBot] Cannot upload: no active session');
     }
 
-    const result = await chatHelper.value!.session.uploadFile(sessionCode, file);
-    if (!result) {
+    const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
+    if (!results?.length) {
       throw new Error('[ChatBot] Upload failed: empty response');
     }
-    if ('status' in result && result.status === 'failed') {
-      throw new Error(result.error || '[ChatBot] Upload failed');
-    }
-    const hasId = 'id' in result && !!result.id;
-    if (!hasId && !result.download_url) {
-      throw new Error('[ChatBot] Upload failed: no file identity returned');
-    }
 
-    return result;
+    return results;
   };
 
   const handleArtifactClick: OnArtifactClick = async file => {

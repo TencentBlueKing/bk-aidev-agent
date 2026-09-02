@@ -1202,6 +1202,26 @@ describe('ChatInput', () => {
       await aiSlashInput.vm.$emit('upload', [sameFile]);
 
       expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(mockBkMessage).not.toHaveBeenCalled();
+    });
+
+    it('仅因重复未加入时不应提示超过大小或个数', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/file.txt' });
+      const sameFile = new File(['test'], 'test.txt', { type: 'text/plain', lastModified: 1000 });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [sameFile]);
+      mockBkMessage.mockClear();
+      await aiSlashInput.vm.$emit('upload', [sameFile]);
+
+      expect(mockBkMessage).not.toHaveBeenCalled();
     });
 
     it('同名但不同大小的文件不应被去重', async () => {
@@ -1238,6 +1258,59 @@ describe('ChatInput', () => {
       await aiSlashInput.vm.$emit('upload', [file, file]);
 
       expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(mockBkMessage).not.toHaveBeenCalled();
+    });
+
+    it('一次选择多个文件时只调用一次 onUpload 并传入全部文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue([
+        { id: 'files/a.pdf', status: 'success' },
+        { id: 'files/b.pdf', status: 'success' },
+      ]);
+      const fileA = new File(['a'], 'a.pdf', { type: 'application/pdf', lastModified: 1 });
+      const fileB = new File(['b'], 'b.pdf', { type: 'application/pdf', lastModified: 2 });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [fileA, fileB]);
+
+      expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(onUpload).toHaveBeenCalledWith([fileA, fileB]);
+    });
+
+    it('批量结果按顺序回填，部分失败只标记对应文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue([
+        { id: 'files/ok.pdf', status: 'success' },
+        { status: 'failed', error: 'too large' },
+      ]);
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          onSendMessage,
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [
+        new File(['ok'], 'ok.pdf', { type: 'application/pdf', lastModified: 1 }),
+        new File(['bad'], 'bad.pdf', { type: 'application/pdf', lastModified: 2 }),
+      ]);
+      await vi.waitFor(() => {
+        expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe(
+          '存在上传失败的文件，请删除后重试',
+        );
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).not.toHaveBeenCalled();
     });
 
     it('文件加入列表后应自动聚焦输入区', async () => {
@@ -1473,16 +1546,13 @@ describe('ChatInput', () => {
     });
 
     it('多文件中任一 Pending 或 Error 都阻塞发送', async () => {
-      let resolveFirst: (value: { download_url: string }) => void = () => {};
-      const onUpload = vi
-        .fn()
-        .mockImplementationOnce(
-          () =>
-            new Promise<{ download_url: string }>(resolve => {
-              resolveFirst = resolve;
-            }),
-        )
-        .mockResolvedValueOnce({ status: 'failed' });
+      let resolveBatch: (value: Array<{ download_url?: string; status?: 'failed' | 'success' }>) => void = () => {};
+      const onUpload = vi.fn(
+        () =>
+          new Promise<Array<{ download_url?: string; status?: 'failed' | 'success' }>>(resolve => {
+            resolveBatch = resolve;
+          }),
+      );
       const onSendMessage = vi.fn();
 
       wrapper = mount(ChatInput, {
@@ -1498,7 +1568,7 @@ describe('ChatInput', () => {
 
       expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe('文件上传中，请稍候');
 
-      resolveFirst({ download_url: 'http://example.com/a.pdf' });
+      resolveBatch([{ download_url: 'http://example.com/a.pdf' }, { status: 'failed' }]);
       await vi.waitFor(() => {
         expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe(
           '存在上传失败的文件，请删除后重试',
@@ -1643,7 +1713,7 @@ describe('ChatInput', () => {
       await dropZone.trigger('dragenter', { dataTransfer: createFileDataTransfer([file]) });
       await dropZone.trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
 
-      expect(onUpload).toHaveBeenCalledWith(file);
+      expect(onUpload).toHaveBeenCalledWith([file]);
       expect(dropZone.classes()).not.toContain('is-dragover');
     });
   });

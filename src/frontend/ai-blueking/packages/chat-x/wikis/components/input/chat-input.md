@@ -61,8 +61,8 @@ sinceVersion: 1.0.0
     console.log('停止发送');
   };
 
-  const handleUploadDemo = async (file) => {
-    return { download_url: URL.createObjectURL(file) };
+  const handleUploadDemo = async (files) => {
+    return files.map(file => ({ download_url: URL.createObjectURL(file) }));
   };
 
   const prompts = [
@@ -483,7 +483,7 @@ const handleSendMessage = async (
 
 - 底部工具栏出现文件上传按钮（在快捷指令左侧）
 - 支持**点击选择**、**拖拽上传**、**粘贴上传**（Ctrl+V）
-- `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
+- `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
 - **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 发送成功后，`uploadFiles` 自动清空
@@ -491,7 +491,7 @@ const handleSendMessage = async (
 **个数与大小校验（与 `FileUploadBtn` 分工）**：
 
 - 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
-- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）**、或与已有文件重复的项会被跳过；若本轮有任意文件因此未加入列表，会在处理结束后弹出**同一条文案风格**的错误提示，汇总未成功添加的数量。
+- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
 - `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限与重复校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
 
 **发送内容格式**（有文件时）：
@@ -541,12 +541,12 @@ const handleSendMessage = async (
     messageStatus.value = MessageStatus.Stop;
   };
 
-  // 每次传入单个 File，需返回 { download_url: string }
-  const handleUpload = async (file: File) => {
+  // 一次选择多个文件只回调一次，按文件顺序返回结果
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json(); // ChatInputUploadResult[]
   };
 </script>
 ```
@@ -818,7 +818,7 @@ const handleSendMessage = async (
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |
-| onUpload           | `(file: File) => Promise<{ download_url?: string; error?: string; id?: string; status?: 'failed' \| 'success' }>` | -        | -    | 文件上传回调（每次单文件）；上传中/失败附件会阻塞发送 |
+| onUpload           | `(files: File[]) => Promise<ChatInputUploadResult \| ChatInputUploadResult[]>` | -        | -    | 文件上传回调（一次选择批量传入）；上传中/失败附件会阻塞发送 |
 
 ### 默认占位符
 
@@ -971,11 +971,11 @@ type OnSendMessage = (
     abortAICall();
   };
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json();
   };
 </script>
 ```

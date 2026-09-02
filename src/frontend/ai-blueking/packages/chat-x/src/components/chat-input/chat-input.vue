@@ -154,6 +154,12 @@
     required: false,
   });
   const maxHeight = shallowRef(280);
+  export type ChatInputUploadResult = {
+    download_url?: string;
+    error?: string;
+    id?: string;
+    status?: 'failed' | 'success';
+  };
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
@@ -172,12 +178,7 @@
       options?: { interrupt?: Interrupt; payload?: InterruptResume },
     ) => Promise<void>;
     onStopSending?: () => Promise<void>;
-    onUpload?: (files: File) => Promise<{
-      download_url?: string;
-      error?: string;
-      id?: string;
-      status?: 'failed' | 'success';
-    }>;
+    onUpload?: (files: File[]) => Promise<ChatInputUploadResult | ChatInputUploadResult[]>;
     placeholder?: string;
     prompts?: string[];
     resources?: IAiSlashMenuItem[];
@@ -332,35 +333,36 @@
     emit('modelChange', model);
   };
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
+  const applyUploadResult = (fileItem: Partial<UploadFile>, res?: ChatInputUploadResult) => {
+    const failed = res?.status === 'failed';
+    const succeeded = !failed && (!!res?.id || !!res?.download_url || res?.status === 'success');
+    if (succeeded) {
+      fileItem.id = res.id;
+      fileItem.url = res.download_url;
+      fileItem.status = UploadStatus.Success;
+      return;
+    }
+    fileItem.status = UploadStatus.Error;
+  };
   const handleUpload = async (files: File[]) => {
     if (!props.supportUpload) {
       return;
     }
-    if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
-      if (files.length > 0) {
-        Message({
-          message: formatUploadNotAddedMessage(files.length, maxUploadMb, isEn),
-          theme: 'error',
-        });
-      }
-      return;
-    }
     const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? getFileIdentity(item.file) : '')));
-    let notUploadedCount = 0;
-    let addedCount = 0;
+    const acceptedItems: Partial<UploadFile>[] = [];
+    let rejectedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
-        notUploadedCount += files.length - i;
-        break;
-      }
       const key = getFileIdentity(file);
       if (existingKeys.has(key)) {
-        notUploadedCount += 1;
         continue;
       }
+      if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
+        rejectedCount += files.length - i;
+        break;
+      }
       if (file.size <= 0 || file.size >= MAX_UPLOAD_FILE_SIZE) {
-        notUploadedCount += 1;
+        rejectedCount += 1;
         continue;
       }
       existingKeys.add(key);
@@ -370,33 +372,34 @@
         status: UploadStatus.Pending,
       });
       uploadFiles.value.push(fileItem);
-      addedCount += 1;
-      props
-        .onUpload?.(file)
-        .then(res => {
-          const failed = res?.status === 'failed';
-          const succeeded = !failed && (!!res?.id || !!res?.download_url || res?.status === 'success');
-          if (succeeded) {
-            fileItem.id = res.id;
-            fileItem.url = res.download_url;
-            fileItem.status = UploadStatus.Success;
-            return;
-          }
-          fileItem.status = UploadStatus.Error;
-        })
-        .catch(() => {
-          fileItem.status = UploadStatus.Error;
-        });
+      acceptedItems.push(fileItem);
     }
-    if (notUploadedCount > 0) {
+    if (rejectedCount > 0) {
       Message({
-        message: formatUploadNotAddedMessage(notUploadedCount, maxUploadMb, isEn),
+        message: formatUploadNotAddedMessage(rejectedCount, maxUploadMb, isEn),
         theme: 'error',
       });
     }
     // 设计稿标注：文件加入列表后光标自动回到输入区，便于继续输入
-    if (addedCount > 0) {
+    if (acceptedItems.length > 0) {
       focus();
+      const acceptedFiles = acceptedItems.map(item => item.file).filter((file): file is File => !!file);
+      const request = props.onUpload?.(acceptedFiles);
+      if (!request) {
+        return;
+      }
+      request
+        .then(res => {
+          const results = Array.isArray(res) ? res : [res];
+          acceptedItems.forEach((fileItem, index) => {
+            applyUploadResult(fileItem, results[index]);
+          });
+        })
+        .catch(() => {
+          acceptedItems.forEach(fileItem => {
+            fileItem.status = UploadStatus.Error;
+          });
+        });
     }
   };
 

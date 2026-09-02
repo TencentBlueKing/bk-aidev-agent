@@ -539,8 +539,8 @@ await session.postSessionFeedback({
 
 上传文件。按 `agent.info.agentSdkVersion` 自动分流：
 
-- **`< 2.2.2rc25` 或缺失**：`POST session/{code}/upload/{fileName}/`，返回 `{ download_url? }`
-- **`≥ 2.2.2rc25`**：`POST session/{code}/pv_files/upload/`（multipart 字段 `files`），返回单条 `{ id, path, status, download_url?, ... }`
+- **能解析且 `< 2.2.2rc25`**：`POST session/{code}/upload/{fileName}/`，返回 `{ download_url? }`
+- **`≥ 2.2.2rc25`、空字符串、缺省或无法解析**：`POST session/{code}/pv_files/upload/`（multipart 字段 `files`），返回单条 `{ id, path, status, download_url?, ... }`
   - `id` / `path` 为永久身份（`files/<filename>`）
   - `download_url` 仅成功图片有，约 1 小时有效
 
@@ -550,7 +550,7 @@ const result = await session.uploadFile(sessionCode, file);
 // 新：{ id, path, name, mime_type, size, status, download_url?, error? }
 ```
 
-`session.uploadFiles(sessionCode, files)` 为批量入口，分流规则相同。
+`session.uploadFiles(sessionCode, files)` 为批量入口，分流规则相同：新接口一次 multipart 请求，旧接口仍逐个。ChatInput 一次选择多个文件时走此入口。
 
 #### isResumeSession（HITL 审批轮询端点）
 

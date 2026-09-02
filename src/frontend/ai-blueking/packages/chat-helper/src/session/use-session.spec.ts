@@ -35,7 +35,7 @@ const createMediator = (sdkVersion?: string): IMediatorModule => {
 
   return {
     agent: {
-      info: ref(sdkVersion ? { agentSdkVersion: sdkVersion } : {}),
+      info: ref(sdkVersion === undefined ? {} : { agentSdkVersion: sdkVersion }),
     },
     http: {
       session: {
@@ -60,14 +60,24 @@ describe('useSession.uploadFile', () => {
     expect(result).toEqual({ download_url: 'https://legacy.example/file.png' });
   });
 
-  it('uses legacy upload when agent_sdk_version is missing', async () => {
+  it('uses pv_files upload when agent_sdk_version is missing', async () => {
     const mediator = createMediator();
     const session = useSession(mediator);
 
     await session.uploadFile('s1', file);
 
-    expect(mediator.http?.session.uploadFile).toHaveBeenCalled();
-    expect(mediator.http?.session.uploadPvFiles).not.toHaveBeenCalled();
+    expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledWith('s1', [file]);
+    expect(mediator.http?.session.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('uses pv_files upload when agent_sdk_version is empty', async () => {
+    const mediator = createMediator('');
+    const session = useSession(mediator);
+
+    await session.uploadFile('s1', file);
+
+    expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledWith('s1', [file]);
+    expect(mediator.http?.session.uploadFile).not.toHaveBeenCalled();
   });
 
   it('uses pv_files upload when agent_sdk_version is 2.2.2rc25 or later', async () => {
@@ -79,5 +89,46 @@ describe('useSession.uploadFile', () => {
     expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledWith('s1', [file]);
     expect(mediator.http?.session.uploadFile).not.toHaveBeenCalled();
     expect(result).toMatchObject({ id: 'files/photo.png', status: 'success' });
+  });
+});
+
+describe('useSession.uploadFiles', () => {
+  it('sends all files in one pv_files request', async () => {
+    const mediator = createMediator('2.2.2rc25');
+    const session = useSession(mediator);
+    const fileA = new File(['a'], 'a.png', { type: 'image/png' });
+    const fileB = new File(['b'], 'b.png', { type: 'image/png' });
+    (mediator.http?.session.uploadPvFiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [
+        {
+          type: 'file',
+          id: 'files/a.png',
+          path: 'files/a.png',
+          name: 'a.png',
+          mime_type: 'image/png',
+          size: 1,
+          status: 'success',
+        },
+        {
+          type: 'file',
+          id: 'files/b.png',
+          path: 'files/b.png',
+          name: 'b.png',
+          mime_type: 'image/png',
+          size: 1,
+          status: 'success',
+        },
+      ],
+    });
+
+    const results = await session.uploadFiles('s1', [fileA, fileB]);
+
+    expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledTimes(1);
+    expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledWith('s1', [fileA, fileB]);
+    expect(mediator.http?.session.uploadFile).not.toHaveBeenCalled();
+    expect(results).toHaveLength(2);
   });
 });

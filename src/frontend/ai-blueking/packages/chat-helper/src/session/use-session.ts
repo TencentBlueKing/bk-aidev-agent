@@ -289,7 +289,7 @@ export const useSession = (mediator: IMediatorModule) => {
 
   /**
    * 上传文件到会话。
-   * agent_sdk_version ≥ 2.2.2rc25 走 pv_files/upload；更早或缺失版本走旧 upload/{fileName}/。
+   * 能解析且 agent_sdk_version < 2.2.2rc25 走旧 upload/{fileName}/；否则（含空字符串 / 缺省）走 pv_files/upload。
    */
   const uploadFile = (sessionCode: string, file: File): Promise<IUploadFileResult | undefined> => {
     const sdkVersion = mediator.agent?.info.value?.agentSdkVersion;
