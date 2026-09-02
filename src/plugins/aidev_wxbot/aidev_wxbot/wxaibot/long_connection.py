@@ -74,7 +74,7 @@ from .once import BoundedOnceRegistry
 from .question_cards import bind_question_target, decode_question_key, question_task_id, submitted_question_card
 from .question_resume import prepare_question_submission, submit_question_resume
 from .resume_delivery import ResumeDelivery
-from .strategies import WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
+from .strategies import ChatAgentStrategy, WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
 from .stream_registry import stream_registry
 from .tracing import (
     CLIENT,
@@ -917,7 +917,14 @@ class WxAiBotLongConnectionService:
             await self._send_stream_reply(frame, request.stream_id, notice, True)
             return
 
+        send_placeholder = isinstance(resolve_strategy(request.username), ChatAgentStrategy)
+        if send_placeholder:
+            # Chat 首包前先占位，避免用户发完消息后长时间看不到气泡。
+            await self._send_stream_reply(frame, request.stream_id, PREPARING_REPLY, False)
+
         self._launch_direct_stream(frame, request)
+        if send_placeholder and (active := self._active_streams.get(request.stream_id)):
+            active.last_content = PREPARING_REPLY
 
     def _launch_direct_stream(self, frame: dict[str, Any], request: WxBotAgentRequest) -> None:
         cancel_event = threading.Event()

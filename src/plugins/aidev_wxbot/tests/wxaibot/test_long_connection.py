@@ -73,6 +73,7 @@ pytestmark = pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_w
 
 if _wxbot_available:
     from aidev_wxbot.wxaibot.direct_stream import AgentStream
+    from aidev_wxbot.wxaibot.strategies import ChatAgentStrategy, FlowAgentStrategy
 
 
 class FakeClient:
@@ -729,6 +730,63 @@ class TestLongConnectionConfig:
 
 @pytest.mark.asyncio
 class TestLongConnectionStreaming:
+    async def test_chat_sends_preparing_placeholder_before_first_agent_frame(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        started = threading.Event()
+        release = threading.Event()
+
+        def generator():
+            started.set()
+            release.wait(timeout=2)
+            yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{"a" * 50}"}}\n'
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy = ChatAgentStrategy()
+        strategy.open_stream = MagicMock(
+            return_value=AgentStream("chat", generator(), "session-1")
+        )
+        request = SimpleNamespace(content="q", stream_id="chat-placeholder", username="u", group_id="g1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            assert service._client.reply_stream_calls == [(PREPARING_REPLY, False)]
+            assert service._active_streams[request.stream_id].last_content == PREPARING_REPLY
+            for _ in range(200):
+                if started.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert started.is_set()
+            release.set()
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls == [
+            (PREPARING_REPLY, False),
+            ("a" * 50, False),
+            ("a" * 50, True),
+        ]
+
+    async def test_flow_does_not_send_preparing_placeholder(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = FlowAgentStrategy()
+        strategy.open_stream = MagicMock(
+            return_value=AgentStream("flow", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+        )
+        request = SimpleNamespace(content="q", stream_id="flow-no-placeholder", username="u", group_id="g1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams[request.stream_id].task
+
+        assert all(content != PREPARING_REPLY for content, _finish in service._client.reply_stream_calls)
+
     async def test_stream_timeout_gets_explicit_terminal_reply(self, monkeypatch):
         service = _service()
         request = SimpleNamespace(content="q", stream_id="stream-timeout", username="u", group_id="g")
@@ -741,6 +799,7 @@ class TestLongConnectionStreaming:
         monkeypatch.setattr(settings, "WXAIBOT_WS_STREAM_TIMEOUT_SEC", 1)
 
         with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=MagicMock()),
             patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
             patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
         ):
