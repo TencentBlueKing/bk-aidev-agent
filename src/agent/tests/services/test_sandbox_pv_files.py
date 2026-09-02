@@ -365,9 +365,14 @@ class TestUploadFiles:
         backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
         backend.upload_file.side_effect = _mock_http_error(413, "AGENT_SANDBOX_FILE_TOO_LARGE")
 
-        with pytest.raises(SandboxFileInvalidRequestError):
-            service.upload_files("s1", [{"name": "huge.txt", "content": b"x"}])
+        # 单文件超限不再中断整批：该文件标记失败并附带原因，其余文件不受影响
+        result = service.upload_files("s1", [{"name": "huge.txt", "content": b"x"}])
 
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+        assert result["results"][0]["status"] == "failed"
+        assert "AGENT_SANDBOX_FILE_TOO_LARGE" in result["results"][0]["error"]
+        # 非 sandbox-gone 业务错误不触发重建
         assert backend.create_sandbox.call_count == 1
 
     def test_rejects_unsupported_extension_before_sandbox(self, service, mock_client):

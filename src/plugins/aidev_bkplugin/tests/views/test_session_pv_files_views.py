@@ -5,7 +5,7 @@
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
 - 5 个 action 参数透传（GET list / stat / preview / download_url / upload）
 - 上传会话归属校验与沙箱文件异常映射
-- 沙箱文件异常 → HTTP 状态码映射（404 / 400 / 500）
+- 沙箱文件异常 → blueapps 异常映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
 - path/max_bytes/expires_in 缺失或默认值回退
 """
@@ -206,10 +206,13 @@ class TestPvFilesGet:
         instance.list_files.assert_called_once_with(session_code="s1", path="sub/", since=None, until=None)
 
     def test_list_translates_not_found(self, view, mock_svc):
+        from blueapps.core.exceptions import ResourceNotFound
+
         instance, _ = mock_svc
         instance.list_files.side_effect = SandboxFileNotFoundError("nf")
-        response = view.pv_files(_request(), pk="s1")
-        assert response.status_code == 404
+        with pytest.raises(ResourceNotFound) as excinfo:
+            view.pv_files(_request(), pk="s1")
+        assert excinfo.value.STATUS_CODE == 404
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +302,13 @@ class TestPvFilesStat:
             view.pv_files_stat(_request({}), pk="s1")
 
     def test_stat_translates_invalid_arg(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
         instance, _ = mock_svc
         instance.stat_file.side_effect = SandboxFileInvalidArgumentError("ia")
-        response = view.pv_files_stat(_request({"path": "x.txt"}), pk="s1")
-        assert response.status_code == 400
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_stat(_request({"path": "x.txt"}), pk="s1")
+        assert excinfo.value.STATUS_CODE == 400
 
 
 # ---------------------------------------------------------------------------
@@ -340,10 +346,13 @@ class TestPvFilesPreview:
         assert instance.preview_file.call_args.kwargs["max_bytes"] == 65536
 
     def test_preview_translates_415(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
         instance, _ = mock_svc
         instance.preview_file.side_effect = SandboxFileInvalidRequestError("415")
-        response = view.pv_files_preview(_request({"path": "x.bin"}), pk="s1")
-        assert response.status_code == 400
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_preview(_request({"path": "x.bin"}), pk="s1")
+        assert excinfo.value.STATUS_CODE == 400
 
     def test_preview_requires_path(self, view, mock_svc):
         from blueapps.core.exceptions import ClientBlueException
@@ -372,10 +381,13 @@ class TestPvFilesDownloadUrl:
         assert instance.get_download_url.call_args.kwargs["expires_in"] == 600
 
     def test_download_url_translates_server_error(self, view, mock_svc):
+        from blueapps.core.exceptions import ServerBlueException
+
         instance, _ = mock_svc
         instance.get_download_url.side_effect = SandboxFileServerError("boom")
-        response = view.pv_files_download_url(_request({"path": "x.txt"}), pk="s1")
-        assert response.status_code == 500
+        with pytest.raises(ServerBlueException) as excinfo:
+            view.pv_files_download_url(_request({"path": "x.txt"}), pk="s1")
+        assert excinfo.value.STATUS_CODE == 500
 
     def test_download_url_requires_path(self, view, mock_svc):
         from blueapps.core.exceptions import ClientBlueException
@@ -405,37 +417,52 @@ class TestPvFilesUpload:
         )
 
     def test_upload_rejects_invalid_files_before_resolving_snapshot(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
         instance, _ = mock_svc
 
-        response = view.pv_files_upload(
-            _request(method="POST", files=[SimpleUploadedFile("payload.exe", b"binary")]),
-            pk="s1",
-        )
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_upload(
+                _request(method="POST", files=[SimpleUploadedFile("payload.exe", b"binary")]),
+                pk="s1",
+            )
 
-        assert response.status_code == 400
-        assert response.data == {"message": "文件类型 .exe 不支持"}
+        assert excinfo.value.message == "文件类型 .exe 不支持"
+        assert excinfo.value.STATUS_CODE == 400
         instance.upload_files.assert_not_called()
         session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# 异常映射：SandboxFileError 基类兜底为 500
+# 异常映射：SandboxFileError 基类兜底为 ServerBlueException
 # ---------------------------------------------------------------------------
 
 
 class TestExceptionMapping:
     def test_base_error_fallback_to_500(self):
-        response = session_mod.ChatSessionViewSet._pv_exc_to_response(SandboxFileError("unknown"))
-        assert response.status_code == 500
+        from blueapps.core.exceptions import ServerBlueException
+
+        with pytest.raises(ServerBlueException) as excinfo:
+            session_mod.ChatSessionViewSet._raise_pv_exc(SandboxFileError("unknown"))
+        assert excinfo.value.STATUS_CODE == 500
 
     def test_not_found_error_maps_to_404(self):
-        response = session_mod.ChatSessionViewSet._pv_exc_to_response(SandboxFileNotFoundError("nf"))
-        assert response.status_code == 404
+        from blueapps.core.exceptions import ResourceNotFound
+
+        with pytest.raises(ResourceNotFound) as excinfo:
+            session_mod.ChatSessionViewSet._raise_pv_exc(SandboxFileNotFoundError("nf"))
+        assert excinfo.value.STATUS_CODE == 404
 
     def test_invalid_argument_maps_to_400(self):
-        response = session_mod.ChatSessionViewSet._pv_exc_to_response(SandboxFileInvalidArgumentError("ia"))
-        assert response.status_code == 400
+        from blueapps.core.exceptions import ClientBlueException
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            session_mod.ChatSessionViewSet._raise_pv_exc(SandboxFileInvalidArgumentError("ia"))
+        assert excinfo.value.STATUS_CODE == 400
 
     def test_invalid_request_maps_to_400(self):
-        response = session_mod.ChatSessionViewSet._pv_exc_to_response(SandboxFileInvalidRequestError("ir"))
-        assert response.status_code == 400
+        from blueapps.core.exceptions import ClientBlueException
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            session_mod.ChatSessionViewSet._raise_pv_exc(SandboxFileInvalidRequestError("ir"))
+        assert excinfo.value.STATUS_CODE == 400

@@ -16,7 +16,7 @@ from aidev_agent.services.sandbox_pv_files import (
     validate_session_upload_files,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
-from blueapps.core.exceptions import ClientBlueException
+from blueapps.core.exceptions import ClientBlueException, ResourceNotFound, ServerBlueException
 from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import action
@@ -140,15 +140,13 @@ class ChatSessionViewSet(PluginViewSet):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _pv_exc_to_response(exc: SandboxFileError) -> Response:
-        """沙箱文件异常 → HTTP 响应。"""
+    def _raise_pv_exc(exc: SandboxFileError) -> None:
+        """沙箱文件异常 → blueapps 异常，与 path is required 等入口同一套信封。"""
         if isinstance(exc, SandboxFileNotFoundError):
-            status_code = 404
-        elif isinstance(exc, (SandboxFileInvalidArgumentError, SandboxFileInvalidRequestError)):
-            status_code = 400
-        else:
-            status_code = 500
-        return Response(data={"message": str(exc)}, status=status_code)
+            raise ResourceNotFound(message=str(exc)) from exc
+        if isinstance(exc, (SandboxFileInvalidArgumentError, SandboxFileInvalidRequestError)):
+            raise ClientBlueException(message=str(exc)) from exc
+        raise ServerBlueException(message=str(exc)) from exc
 
     def _check_session_owner(self, request, session_code: str, require_access: bool = False) -> None:
         """校验 session 归属
@@ -247,7 +245,7 @@ class ChatSessionViewSet(PluginViewSet):
                 until=None,
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
     @action(["GET"], url_path="pv_files/stat", detail=True)
@@ -259,7 +257,7 @@ class ChatSessionViewSet(PluginViewSet):
         try:
             data = self._make_pv_file_service(request).stat_file(session_code=pk, path=path)
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
     @action(["GET"], url_path="pv_files/preview", detail=True)
@@ -274,7 +272,7 @@ class ChatSessionViewSet(PluginViewSet):
                 session_code=pk, path=path, max_bytes=max_bytes
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         response = HttpResponse(content, content_type="text/plain; charset=utf-8")
         response["X-Truncated"] = "true" if truncated else "false"
         return response
@@ -291,7 +289,7 @@ class ChatSessionViewSet(PluginViewSet):
                 session_code=pk, path=path, expires_in=expires_in
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
     @action(
@@ -315,7 +313,7 @@ class ChatSessionViewSet(PluginViewSet):
         try:
             validate_session_upload_files(files)
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
 
         svc = self._make_pv_file_service(request)
         snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
@@ -324,7 +322,7 @@ class ChatSessionViewSet(PluginViewSet):
         try:
             data = svc.upload_files(session_code=pk, files=files)
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
 

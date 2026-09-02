@@ -148,9 +148,14 @@ PV_PAAS_SANDBOX_GONE_CODES = frozenset({"AGENT_SANDBOX_NOT_FOUND", "SANDBOX_NOT_
 # ---------------------------------------------------------------------------
 # sandbox 容器按 app_code + session_code + volume_id 缓存 sandbox_id，复用期内不再 create/destroy。
 # 凭证（client）每次请求新建，只复用 PaaS 侧的 sandbox 容器，避免缓存过期凭证。
+#
+# 仅做「进程内」复用：Agent SaaS 不假设存在 Redis 等跨进程共享协调组件，多 worker / 多 pod 下
+# 无法保证复用，跨进程复用需引入平台数据库原子注册等额外复杂度、收益有限，故不做。
 _UPLOAD_SANDBOX_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
 _UPLOAD_SANDBOX_CACHE_LOCK = threading.Lock()
-# 进程内会话锁：串行化同一进程内的 sandbox exec/upload，避免单容器并发冲突
+# 进程内会话锁：串行化同一进程内的 sandbox exec/upload，避免单容器并发冲突。
+# 锁随缓存条目失效一并清理（见 _get_cached_upload_sandbox / _invalidate_cached_upload_sandbox），
+# 避免长生命周期进程下随会话数持续累积。
 _UPLOAD_SESSION_LOCKS: dict[str, threading.Lock] = {}
 _UPLOAD_SESSION_LOCKS_LOCK = threading.Lock()
 
@@ -175,6 +180,9 @@ def _get_cached_upload_sandbox(app_code: str, session_code: str, volume_id: str)
         sandbox_id, created_at = entry
         if time.monotonic() - created_at >= TEMP_UPLOAD_SANDBOX_TTL_SECONDS:
             _UPLOAD_SANDBOX_CACHE.pop(cache_key, None)
+            # 缓存已过期，对应会话锁一并清理，避免锁对象持续累积
+            with _UPLOAD_SESSION_LOCKS_LOCK:
+                _UPLOAD_SESSION_LOCKS.pop(session_code, None)
             return ""
         return sandbox_id
 
@@ -200,6 +208,9 @@ def _invalidate_cached_upload_sandbox(app_code: str, session_code: str, volume_i
     cache_key = (app_code, session_code, volume_id)
     with _UPLOAD_SANDBOX_CACHE_LOCK:
         _UPLOAD_SANDBOX_CACHE.pop(cache_key, None)
+    # 显式失效时一并清理会话锁，避免锁对象持续累积
+    with _UPLOAD_SESSION_LOCKS_LOCK:
+        _UPLOAD_SESSION_LOCKS.pop(session_code, None)
 
 
 class SandboxUploadFile(TypedDict):
@@ -538,6 +549,7 @@ class SandboxPvFileService:
         files_dir: str,
         absolute_files_dir: str,
         files: list[SandboxUploadFile],
+        sandbox_gone: dict[str, bool] | None = None,
     ) -> list[dict]:
         """在指定 sandbox 的统一 files 目录内上传文件，返回每文件结果。
 
@@ -572,8 +584,15 @@ class SandboxPvFileService:
             try:
                 backend.upload_file(sandbox_id, absolute_path, upload_file["content"])
                 result["status"] = "success"
-            except HTTPResponseError:
-                raise
+            except HTTPResponseError as exc:
+                # 单文件失败不阻断同批：标记失败原因并继续，整批返回部分成功结果。
+                # gone 信号供 upload_files 判断是否需重建 sandbox。
+                if sandbox_gone is not None and self._is_sandbox_gone(exc):
+                    sandbox_gone["flag"] = True
+                result.update(
+                    status="failed",
+                    error=f"上传失败[{self._parse_paas_code(exc)}]: {self._map_paas_error(exc)}",
+                )
             except Exception as exc:  # noqa: BLE001 单文件失败不阻断同批其他文件
                 logger.warning(
                     "上传文件到会话 PV 失败: session_code=%s, file=%s",
@@ -595,6 +614,10 @@ class SandboxPvFileService:
         sandbox 容器按 app_code、session_code 和 volume_id 缓存复用（ttl=TEMP_UPLOAD_SANDBOX_TTL_SECONDS），
         同一进程的复用期内不再 create/destroy，到期由 PaaS 自动回收；复用失败（容器已被回收）
         时 fallback 重建一次。同一进程内的会话操作加锁串行化，避免单容器并发冲突。
+
+        同名文件直接覆盖会话 PV 中已有文件的内容，路径（``files/<filename>``）保持不变；
+        同一请求内若出现多个同名文件，后者追加短 hash 后缀（``files/<stem>-<hash><suffix>``）
+        以避免互相覆盖，跨请求的同名文件不做去重、按原路径覆盖。
         """
         validate_session_upload_files(files)
 
@@ -620,22 +643,17 @@ class SandboxPvFileService:
             if not sandbox_id:
                 sandbox_id, sandbox_created_at = self._create_upload_sandbox(session_code, volume_id, snapshot, backend)
 
+            gone_signal: dict[str, bool] = {}
             try:
                 results = self._write_files_to_sandbox(
-                    session_code, sandbox_id, backend, files_dir, absolute_files_dir, files
-                )
-                _set_cached_upload_sandbox(
-                    app_code,
-                    session_code,
-                    volume_id,
-                    sandbox_id,
-                    created_at=sandbox_created_at,
+                    session_code, sandbox_id, backend, files_dir, absolute_files_dir, files, sandbox_gone=gone_signal
                 )
             except HTTPResponseError as exc:
+                # exec_command(mkdir) 等整批级别失败：sandbox 可能已被 PaaS 回收，
+                # 失效缓存并重建一次后重试；单文件 upload 失败已在内部标记为失败、不冒泡。
                 if self._is_sandbox_gone(exc):
-                    # 缓存的 sandbox 已被 PaaS 回收，清缓存重建一次后重试
                     logger.warning(
-                        "[pv_files] reuse sandbox gone, fallback rebuild session=%s sandbox_id=%s",
+                        "[pv_files] sandbox 疑似已回收，重建重试 session=%s sandbox_id=%s",
                         session_code,
                         sandbox_id,
                     )
@@ -643,22 +661,41 @@ class SandboxPvFileService:
                     sandbox_id, sandbox_created_at = self._create_upload_sandbox(
                         session_code, volume_id, snapshot, backend
                     )
-                    results = self._write_files_to_sandbox(
-                        session_code, sandbox_id, backend, files_dir, absolute_files_dir, files
-                    )
-                    _set_cached_upload_sandbox(
-                        app_code,
-                        session_code,
-                        volume_id,
-                        sandbox_id,
-                        created_at=sandbox_created_at,
-                    )
+                    try:
+                        results = self._write_files_to_sandbox(
+                            session_code, sandbox_id, backend, files_dir, absolute_files_dir, files, sandbox_gone=gone_signal
+                        )
+                    except HTTPResponseError as exc2:
+                        self._raise_mapped_paas_error("upload_files", exc2)
                 else:
                     self._raise_mapped_paas_error("upload_files", exc)
             except SandboxFileError:
                 raise
             except Exception as exc:
                 raise SandboxFileServerError(f"临时 sandbox 上传失败: {exc}") from exc
+
+            # sandbox 已被 PaaS 回收时整批会全部失败：失效缓存并重建一次后重试，
+            # 重试结果同样可能部分成功（逐个文件标记失败原因），不保证原子性。
+            if not any(item["status"] == "success" for item in results) and gone_signal.get("flag"):
+                logger.warning(
+                    "[pv_files] sandbox 疑似已回收，重建重试 session=%s sandbox_id=%s",
+                    session_code,
+                    sandbox_id,
+                )
+                _invalidate_cached_upload_sandbox(app_code, session_code, volume_id)
+                sandbox_id, sandbox_created_at = self._create_upload_sandbox(
+                    session_code, volume_id, snapshot, backend
+                )
+                results = self._write_files_to_sandbox(
+                    session_code, sandbox_id, backend, files_dir, absolute_files_dir, files
+                )
+            _set_cached_upload_sandbox(
+                app_code,
+                session_code,
+                volume_id,
+                sandbox_id,
+                created_at=sandbox_created_at,
+            )
 
         succeeded = sum(item["status"] == "success" for item in results)
         self._attach_image_download_urls(session_code, results)
