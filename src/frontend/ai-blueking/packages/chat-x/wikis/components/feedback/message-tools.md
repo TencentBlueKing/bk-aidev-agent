@@ -77,7 +77,7 @@ AI 消息的操作工具栏组件，由**左侧消息工具区**和**右侧更�
 │  .ai-message-tools-container（display: flex，gap: 4px）                 │
 │  ┌────────┐  ┌─────────────────────┐  │  ┌───────────────┐  ┌───────┐ │
 │  │#prepend│  │  messageTools        │  │  │  updateTools  │  │#append│ │
-│  │        │  │  copy cite rebuild…  │  │  │ like unlike…  │  │       │ │
+│  │        │  │  copy rebuild share  │  │  │ like unlike…  │  │       │ │
 │  └────────┘  └─────────────────────┘  │  └───────────────┘  └───────┘ │
 │    插槽区          左侧区域         分隔线    右侧区域          插槽区   │
 └───────────────────────────────────────────────────────────────────────┘
@@ -165,11 +165,22 @@ onAction 返回 string[]（反馈选项列表）
 ```typescript
 const CONST_MESSAGE_TOOLS = [
   { id: 'copy', name: '复制', description: '复制' },
-  { id: 'cite', name: '引用', description: '引用' },
-  { id: 'rebuild', name: '重新生成', description: '重新生成' },
+  { id: 'rebuild', name: '重新生成', description: '重新生成将清空下文内容' },
   { id: 'share', name: '分享', description: '分享' },
 ];
 ```
+
+用户消息的内置列表（`CONST_USER_MESSAGE_TOOLS`，由 [UserMessage](/components/message/user-message) 使用）：
+
+```typescript
+const CONST_USER_MESSAGE_TOOLS = [
+  { id: 'copy', name: '复制', description: '复制' },
+  { id: 'edit', name: '编辑', description: '编辑' },
+  { id: 'delete', name: '删除', description: '删除' },
+];
+```
+
+> `cite`（引用）已从两份内置列表中移除，后续不再支持；`ToolBtn` 仍保留该 id 的图标，业务侧可自行把它作为自定义按钮传入。
 
 ### updateTools（右侧）
 
@@ -190,7 +201,7 @@ const CONST_UPDATE_TOOLS = [
 | ID             | 图标说明                             |
 | -------------- | ------------------------------------ |
 | `copy`         | 复制                                 |
-| `cite`         | 引用                                 |
+| `cite`         | 引用（不再属于内置列表，可用于自定义按钮） |
 | `rebuild`      | 重新生成                             |
 | `share`        | 分享                                 |
 | `like`         | 点赞（空心）                         |

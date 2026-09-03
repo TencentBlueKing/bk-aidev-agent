@@ -114,9 +114,9 @@ const assistantMessage: Message = {
     <ChatContainer
       :messages="messages"
       :on-agent-action="handleAgentAction"
+      :menu-sources="menuSources"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
-      :prompts="prompts"
       :shortcuts="shortcuts"
       @update:model-value="handleUpdateInput"
     />
@@ -129,6 +129,7 @@ const assistantMessage: Message = {
     ChatContainer,
     MessageRole,
     MessageStatus,
+    type IInputMenuItem,
     type IToolBtn,
     type Message,
     type Shortcut,
@@ -138,7 +139,11 @@ const assistantMessage: Message = {
 
   const messages = deepRef<Message[]>([]);
 
-  const prompts = shallowRef(['帮我写一段代码', '解释这段报错', '总结这篇文档']);
+  // 输入框菜单统一数据源：按 type 分发到 "/"、"@"、"\" 与左下角 + 号
+  const menuSources = shallowRef<IInputMenuItem[]>([
+    { id: 'prompt-code', name: '写代码', type: 'prompt', content: '帮我写一段代码' },
+    { id: 'kb-ops', name: '运维知识库', type: 'knowledgebase' },
+  ]);
 
   const shortcuts = shallowRef<Shortcut[]>([
     { id: 'ask', name: '问问小鲸', description: '向 AI 助手提问' },
@@ -226,10 +231,10 @@ const assistantMessage: Message = {
       :on-agent-action="handleAgentAction"
     />
     <ChatInput
+      :menu-sources="menuSources"
       :model-value="userInput"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
-      :prompts="['帮我写一段代码', '解释这段报错']"
       @update:model-value="val => (userInput = val)"
     />
   </div>
@@ -243,6 +248,7 @@ const assistantMessage: Message = {
     MessageRole,
     MessageStatus,
     useMessageGroup,
+    type IInputMenuItem,
     type Message,
     type TagSchema,
     type UserMessage,
@@ -250,6 +256,12 @@ const assistantMessage: Message = {
 
   const messages = deepRef<Message[]>([]);
   const userInput = shallowRef<string | TagSchema>('');
+
+  // 自行组合时，会话产物不会被自动收集，需要自己维护完整的 menuSources
+  const menuSources = shallowRef<IInputMenuItem[]>([
+    { id: 'prompt-code', name: '写代码', type: 'prompt', content: '帮我写一段代码' },
+    { id: 'prompt-error', name: '解释报错', type: 'prompt', content: '解释这段报错' },
+  ]);
 
   // useMessageGroup 将 Message[] 转为 MessageGroup[]
   const { messageGroups } = useMessageGroup({
@@ -375,9 +387,10 @@ import type {
   ImageItem,
   ImagePreviewConfig,
 
-  // 编辑器菜单
-  IAiSlashMenuItem,
-  IAiSlashGroupItem,
+  // 输入框菜单
+  IInputMenuItem,
+  MenuItemType,
+  MenuTrigger,
 } from '@blueking/chat-x';
 ```
 
@@ -391,8 +404,8 @@ import {
   MessageContentType,
 
   // 预置工具按钮
-  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、引用、重新生成、分享
-  CONST_USER_MESSAGE_TOOLS, // 用户消息默认工具：复制、引用、编辑、删除
+  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、重新生成、分享
+  CONST_USER_MESSAGE_TOOLS, // 用户消息默认工具：复制、编辑、删除
   CONST_UPDATE_TOOLS, // 更新工具：点赞、不满意、删除
 } from '@blueking/chat-x';
 ```
@@ -410,10 +423,9 @@ import {
       :messages="messages"
       :model-value="userInput"
       :on-agent-action="handleAgentAction"
+      :menu-sources="menuSources"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
-      :prompts="prompts"
-      :resources="resources"
       :shortcuts="shortcuts"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleShortcutClose"
@@ -431,7 +443,7 @@ import {
     MessageRole,
     MessageStatus,
     type AssistantMessage,
-    type IAiSlashMenuItem,
+    type IInputMenuItem,
     type IToolBtn,
     type Message,
     type Shortcut,
@@ -449,13 +461,13 @@ import {
 
   // ==================== 配置数据 ====================
 
-  // 输入 "/" 弹出的 Prompt 列表
-  const prompts = shallowRef(['帮我写一段代码', '解释这段报错', '总结这篇文档']);
-
-  // 输入 "@" 弹出的资源列表
-  const resources = shallowRef<IAiSlashMenuItem[]>([
-    { id: 'search', name: '知识库搜索', type: 'tool', icon: '' },
-    { id: 'log-query', name: '日志查询', type: 'mcp', icon: '' },
+  // 输入框菜单统一数据源：按 type 分发到 "/"、"@"、"\" 与左下角 + 号
+  // 会话产物（type: 'artifact'）由 ChatContainer 从 messages 自动收集，无需自行提供
+  const menuSources = shallowRef<IInputMenuItem[]>([
+    { id: 'search', name: '知识库搜索', type: 'tool' },
+    { id: 'log-query', name: '日志查询', type: 'mcp' },
+    { id: 'kb-ops', name: '运维知识库', type: 'knowledgebase' },
+    { id: 'prompt-code', name: '写代码', type: 'prompt', content: '帮我写一段代码' },
   ]);
 
   // 空对话时展示的快捷指令
@@ -525,7 +537,7 @@ import {
     userInput.value = '';
   };
 
-  const handleUpdateInput = (value: string | TagSchema, selectedResourceList?: IAiSlashMenuItem[]) => {
+  const handleUpdateInput = (value: string | TagSchema, selectedResourceList?: IInputMenuItem[]) => {
     userInput.value = value;
   };
 

@@ -31,15 +31,13 @@
         :title="model.description"
         @click="handleSelect(model)"
       >
-        <span
+        <ResourceIcon
           v-if="model.icon"
           class="ai-model-selector-panel-option-icon"
-        >
-          <img
-            alt=""
-            :src="model.icon"
-          />
-        </span>
+          :icon="model.icon"
+          :name="model.llm_name"
+          type="model"
+        />
         <span
           class="ai-model-selector-panel-option-name"
           :title="model.llm_name"
@@ -82,6 +80,7 @@
 
   import { useMenuKeydown } from '../../../composables/use-menu-keydown';
   import { SearchIcon } from '../../../icons';
+  import { ResourceIcon } from '../../resource-icon';
   import { t } from '../../../lang/lang';
   import { resolveModelCapabilities } from './capabilities';
 
@@ -231,20 +230,9 @@
         background: transparent;
       }
 
+      // 尺寸与圆角由 ResourceIcon 自带，此处只做定位约束
       &-icon {
-        display: flex;
         flex: 0 0 16px;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        font-size: 16px;
-
-        img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-        }
       }
 
       &-name {

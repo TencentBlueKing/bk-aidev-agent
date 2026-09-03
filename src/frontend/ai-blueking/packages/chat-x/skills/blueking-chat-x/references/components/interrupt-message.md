@@ -1,6 +1,6 @@
 # InterruptMessage 中断消息
 
-> 能力域：Agent 能力 ｜ 导入：`import { InterruptMessage } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 导入：`import { InterruptMessageRender } from '@blueking/chat-x'` ｜ since 1.0.0
 
 渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果（审批单 / 用户回答）。 源码位置：src/components/chat-message/interrupt-message/interrupt-message.vue。
 

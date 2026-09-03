@@ -62,11 +62,12 @@ export const CONST_MESSAGE_TOOLS = [
     id: 'copy',
     name: t('复制'),
   },
-  {
-    description: t('引用'),
-    id: 'cite',
-    name: t('引用'),
-  },
+  // 引用功能隐藏，后续不再支持
+  // {
+  //   description: t('引用'),
+  //   id: 'cite',
+  //   name: t('引用'),
+  // },
   {
     description: t('重新生成将清空下文内容'),
     id: 'rebuild',
@@ -79,17 +80,21 @@ export const CONST_MESSAGE_TOOLS = [
   },
 ] as IToolBtn[];
 
+/** 设计稿标注：用户消息正文最高显示 200px，超出后折叠并展示「显示更多」 */
+export const CONST_USER_MESSAGE_MAX_HEIGHT = 200;
+
 export const CONST_USER_MESSAGE_TOOLS = [
   {
     description: t('复制'),
     id: 'copy',
     name: t('复制'),
   },
-  {
-    description: t('引用'),
-    id: 'cite',
-    name: t('引用'),
-  },
+  // 引用功能隐藏，后续不再支持
+  // {
+  //   description: t('引用'),
+  //   id: 'cite',
+  //   name: t('引用'),
+  // },
   {
     description: t('编辑'),
     id: 'edit',

@@ -26,11 +26,15 @@
 
 import { type ComputedRef, inject, provide } from 'vue';
 
+import type { IInputMenuItem } from '../types/input-menu';
+
 export const GLOBAL_CONFIG_TOKEN = Symbol('GLOBAL_CONFIG_TOKEN');
 
 export type AiSizeMode = 'normal' | 'small';
 
 export type GlobalConfig = {
+  /** 输入框菜单数据源；消息编辑态的内嵌输入框据此渲染 @ / \ 与 + 号菜单 */
+  menuSources?: ComputedRef<IInputMenuItem[]>;
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
   /** IANA 时区名，用于消息时间展示；未配置时按浏览器时区展示 */
@@ -40,6 +44,7 @@ export type GlobalConfig = {
 export const useGlobalConfig = (options: GlobalConfig) => {
   provide(GLOBAL_CONFIG_TOKEN, options);
   return {
+    menuSources: options.menuSources,
     size: options.size,
     supportUpload: options.supportUpload,
     timezone: options.timezone,

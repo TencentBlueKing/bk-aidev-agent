@@ -23,37 +23,4 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-export interface IAiSlashGroupItem {
-  isExpand: boolean;
-  items: IAiSlashMenuItem[];
-  name: string;
-  type: keyof typeof resourceTypeMap;
-}
-export interface IAiSlashMenuItem {
-  [key: string]: unknown;
-  code?: string;
-  icon: null | string;
-  id?: number | string;
-  name: string;
-  type: keyof typeof resourceTypeMap;
-}
-
-export const resourceTypeMap = {
-  tool: '工具',
-  skill: 'Skill',
-  mcp: 'MCP',
-  doc: '知识库',
-  knowledgebase: '知识库',
-  shortcut: '快捷指令',
-} as const;
-
-export type ResourceType = keyof typeof resourceTypeMap;
-
 export const noop = () => {};
-
-export interface ISkillListItem {
-  description: string;
-  icon: string;
-  skill_code: string;
-  skill_name: string;
-}

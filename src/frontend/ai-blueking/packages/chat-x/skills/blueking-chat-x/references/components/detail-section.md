@@ -1,6 +1,6 @@
 # DetailSection 详情分段
 
-> 能力域：Agent 能力 ｜ 导入：`import { DetailSection } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 FlowAgent 节点详情中的标题/内容分段容器。 源码位置：src/components/chat-content/flow-agent-content/detail-section.vue。
 

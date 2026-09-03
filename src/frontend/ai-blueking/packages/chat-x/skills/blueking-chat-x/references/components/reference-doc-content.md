@@ -1,6 +1,6 @@
 # ReferenceDocContent 引用文档活动
 
-> 能力域：Agent 能力 ｜ 导入：`import { ReferenceDocContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染引用文档类活动内容，复用 ActivityLayout 与 ReferenceContent。 源码位置：src/components/chat-content/reference-doc-content/reference-doc-content.vue。
 

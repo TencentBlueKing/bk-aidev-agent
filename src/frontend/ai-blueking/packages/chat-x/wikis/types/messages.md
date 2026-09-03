@@ -82,6 +82,9 @@ interface BaseMessage<T extends MessageType, C = string> {
       shortcut?: Shortcut;
       // 暂停标记：为 true 时该消息所在消息组不显示 MessageTools 工具栏
       pause?: boolean;
+      // 发送时输入框的富文本文档；content 仍是纯文本（不改后端契约），
+      // 有这份文档时用户消息会把 @ 选中的资源原样还原成标签，编辑回填也不会丢标签
+      docSchema?: TagSchema;
     };
   };
 }

@@ -1,6 +1,6 @@
 # ToolBtn 工具按钮
 
-> 能力域：工具与反馈 ｜ 导入：`import { ToolBtn } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：工具与反馈 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 工具栏图标按钮。 源码位置：src/components/ai-buttons/tool-btn/tool-btn.vue。
 

@@ -1,6 +1,6 @@
 {
   "name": "@blueking/chat-x",
-  "version": "0.0.51-beta.4",
+  "version": "0.0.52-beta.1",
   "description": "蓝鲸智云 AI Chat 组件库 —— 遵循 AG-UI，为 AI Agent 和人类开发者共同设计的对话 UI 组件库。",
   "main": "index.js",
   "scripts": {
@@ -38,7 +38,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "skills"
   ],
   "keywords": [],
   "author": "Tencent BlueKing",

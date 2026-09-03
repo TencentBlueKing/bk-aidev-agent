@@ -8,6 +8,8 @@ aiSummary: >
   文件选择按钮，封装 input[type=file] 并输出选择事件。
   源码位置：src/components/ai-buttons/file-upload-btn/file-upload-btn.vue。
 relatedComponents:
+  - slug: add-menu-btn
+    relation: ChatInput 内部已改用 + 号聚合菜单承载上传入口
   - slug: chat-input
     relation: 输入区附件上传按钮常见挂载位置
   - slug: file-content
@@ -34,7 +36,11 @@ sinceVersion: 1.0.0
 
 > **能力域**：输入交互
 
-聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；**不限制文件类型**，在按钮层只对**单文件**做大小与空文件过滤，**已选文件个数上限**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
+::: warning ChatInput 已不再使用本按钮
+输入区重构后，`ChatInput` 的上传入口改为左下角 [AddMenuBtn](/components/input/add-menu-btn) 聚合菜单里的「文件」项（内部走自持的隐藏 `input[type=file]`）。本组件仍保留在源码中并可用于自建输入区，但**不会**出现在 `ChatInput` 的默认布局里，也**未从包入口导出**——文档站示例经相对路径引入。
+:::
+
+文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；**不限制文件类型**，在按钮层只对**单文件**做大小与空文件过滤，**已选文件个数上限**由上层统一校验并提示，避免按钮与输入区各弹一条错误提示。
 
 ## 组件结构
 
@@ -69,7 +75,7 @@ sinceVersion: 1.0.0
 
 | 场景                                                         | 结果                                                                 |
 | ------------------------------------------------------------ | -------------------------------------------------------------------- |
-| 一次多选超过上层允许个数（如 `ChatInput` 内已达 3 个）       | 由 **ChatInput** 侧 toast 并丢弃/不计入，不在本按钮内按个数提前拦截 |
+| 一次多选超过上层允许个数                                     | 由**上层**（如输入区）toast 并丢弃 / 不计入，不在本按钮内按个数提前拦截 |
 | 部分文件因空文件或单文件超大被过滤                           | 弹出错误 toast；若仍有合法文件，**仍触发** `upload`（payload 为合法子集） |
 | 全部被过滤（均为空或超大）                                   | 仅 toast，**不触发** `upload`                                        |
 | `file.size === 0`                                          | 计入未添加提示，不进入 `upload` payload                              |
@@ -78,7 +84,7 @@ sinceVersion: 1.0.0
 
 > `multiple` prop 声明存在但当前模板中 `input` 的 `multiple` 属性为**硬编码**（非 `:multiple="multiple"` 绑定），始终允许多选，该 prop 暂时无实际效果。
 
-> **文件类型不做限制**：组件不再默认 `accept="image/*"`，任意类型文件都可选择。若业务需要收窄，显式传入 `accept`。个数上限由上层（如 `ChatInput` 的 `MAX_UPLOAD_FILES`）控制，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
+> **文件类型不做限制**：组件不再默认 `accept="image/*"`，任意类型文件都可选择。若业务需要收窄，显式传入 `accept`。个数上限由上层控制（`MAX_UPLOAD_FILES`），详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
 
 ## 基础用法
 
@@ -88,8 +94,6 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import { FileUploadBtn } from '@blueking/chat-x';
-
   const handleUpload = (files: File[]) => {
     console.log(
       '选中文件:',
@@ -176,7 +180,7 @@ sinceVersion: 1.0.0
 
 ## 使用场景
 
-`FileUploadBtn` 由 `ChatInput` 组件内置，当 `ChatInput` 的 `supportUpload` prop 为 `true`（默认值）时自动渲染。一般不需要单独引入，除非构建完全自定义的输入区域。
+仅在**自建输入区**时使用。若使用 `ChatInput`，上传能力由 `supportUpload`（默认 `true`）开启，入口是 + 号菜单里的「文件」项、拖拽与粘贴，无需再挂本按钮。
 
 ## 类型定义
 
@@ -188,5 +192,6 @@ type AITippyProps = Partial<Pick<TippyOptions, 'appendTo' | 'placement' | 'zInde
 
 ## 关联组件
 
-- [ChatInput](/components/input/chat-input) — 默认内置上传入口
+- [AddMenuBtn](/components/input/add-menu-btn) — `ChatInput` 现行的上传 / 资源入口
+- [ChatInput](/components/input/chat-input) — 上传能力与校验规则
 - [FileContent](/components/medias/file-content) — 选中文件列表展示

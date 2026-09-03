@@ -23,7 +23,6 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-
 import { defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
@@ -31,16 +30,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AiSlashInput from './ai-slash-input.vue';
 
-import type { IAiSlashMenuItem } from '../../../types/editor';
+import type { IInputMenuItem, TagSchema } from '../../../types';
 
 /** 与 edix Editor.command 行为对齐：执行命令函数并传入伪造的 doc / selection，供 GetDocSnapshot 等逻辑使用 */
 const { editorCommand, editorOptions } = vi.hoisted(() => {
   const fakeDoc = [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[];
-  const options: { onKeyDown?: (event: { key: string; preventDefault?: () => void }) => unknown } = {};
+  const options: { onKeyDown?: (event: { key: string; preventDefault?: () => void; shiftKey?: boolean }) => unknown } =
+    {};
   return {
-    editorCommand: vi.fn((fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
+    editorCommand: vi.fn((fn: unknown, ...args: unknown[]) => {
       if (typeof fn === 'function') {
-        fn(fakeDoc, [], ...args);
+        (fn as (...params: unknown[]) => unknown)(fakeDoc, [], ...args);
       }
     }),
     editorOptions: options,
@@ -49,42 +49,14 @@ const { editorCommand, editorOptions } = vi.hoisted(() => {
 
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
-// Mock common
+// MentionTag 通过 v-tippy 挂描述气泡，这里只需保证指令可用
+vi.mock('vue-tippy', () => ({ directive: {} }));
+
 vi.mock('../../../common', () => ({
-  EDITOR_MENU_Z_INDEX: 1000,
+  EDITOR_MENU_Z_INDEX: 10001,
   isEn: false,
 }));
 
-// Mock vue-tippy
-vi.mock('vue-tippy', () => ({
-  Tippy: defineComponent({
-    name: 'Tippy',
-    props: {
-      appendTo: { default: null },
-      arrow: { type: Boolean, default: false },
-      hideOnClick: { type: Boolean, default: true },
-      interactive: { type: Boolean, default: false },
-      offset: { type: Array, default: () => [0, 0] },
-      placement: { type: String, default: 'right-start' },
-      theme: { type: String, default: '' },
-      trigger: { type: String, default: 'click' },
-      triggerTarget: { default: null },
-      zIndex: { type: Number, default: 1000 },
-    },
-    emits: ['hidden', 'show'],
-    setup(_, { slots, expose }) {
-      expose({
-        show: vi.fn(),
-        hide: vi.fn(),
-        setProps: vi.fn(),
-      });
-      return () => h('div', { class: 'mock-tippy' }, slots.content?.());
-    },
-  }),
-  useTippy: vi.fn(),
-}));
-
-// Mock composables（与 use-command-selection 返回值对齐，供 modelValue 同步逻辑使用）
 vi.mock('../../../composables', () => {
   const docSnapshot = { value: [] as unknown[] };
   return {
@@ -99,9 +71,8 @@ vi.mock('../../../composables', () => {
   };
 });
 
-// Mock edix（command 需执行 EditorCommand，否则 GetDocSnapshot 无法写入 docSnapshot）
 vi.mock('../../../edix', () => ({
-  createEditor: (options: { onKeyDown?: (event: { key: string; preventDefault?: () => void }) => unknown }) => {
+  createEditor: (options: { onKeyDown?: (event: { key: string }) => unknown }) => {
     editorOptions.onKeyDown = options.onKeyDown;
     return {
       command: editorCommand,
@@ -118,72 +89,38 @@ vi.mock('../../../edix', () => ({
   },
 }));
 
-// Mock icons
+const { stubIcon } = vi.hoisted(() => {
+  const stubIcon = (name: string, className: string) =>
+    defineComponent({
+      name,
+      setup() {
+        return () => h('span', { class: className });
+      },
+    });
+  return { stubIcon };
+});
+
 vi.mock('../../../icons', () => ({
-  RemoveIcon: defineComponent({
-    name: 'RemoveIcon',
-    setup() {
-      return () => h('span', { class: 'mock-remove-icon' });
-    },
-  }),
+  FileUploadIcon: stubIcon('FileUploadIcon', 'mock-file-upload-icon'),
+  KnowledgeBaseIcon: stubIcon('KnowledgeBaseIcon', 'mock-knowledge-base-icon'),
+  McpIcon: stubIcon('McpIcon', 'mock-mcp-icon'),
+  ModuleIcon: stubIcon('ModuleIcon', 'mock-module-icon'),
+  ToolIcon: stubIcon('ToolIcon', 'mock-tool-icon'),
 }));
 
-// Mock child components
-vi.mock('./ai-prompt-list/ai-prompt-list.vue', () => ({
+vi.mock('../../file-icon/file-icon.vue', () => ({
   default: defineComponent({
-    name: 'AiPromptList',
-    props: {
-      onSelect: { type: Function, default: null },
-      prompts: { type: Array, default: () => [] },
-    },
+    name: 'FileIcon',
+    props: { fileName: { type: String, default: '' } },
     setup() {
-      return () => h('div', { class: 'mock-ai-prompt-list' });
+      return () => h('span', { class: 'mock-file-icon' });
     },
   }),
 }));
 
-vi.mock('./ai-slash-menu/ai-slash-menu.vue', () => ({
-  default: defineComponent({
-    name: 'AiSlashMenu',
-    props: {
-      onSelect: { type: Function, default: null },
-      resourceList: { type: Array, default: () => [] },
-    },
-    setup() {
-      return () => h('div', { class: 'mock-ai-slash-menu' });
-    },
-  }),
-}));
-
-vi.mock('./ai-skill-list/ai-skill-list.vue', () => ({
-  default: defineComponent({
-    name: 'AiSkillList',
-    props: {
-      onSelect: { type: Function, default: null },
-      skills: { type: Array, default: () => [] },
-    },
-    setup(props) {
-      return () =>
-        h('div', {
-          class: 'mock-ai-skill-list',
-          'data-skills-count': String(props.skills?.length ?? 0),
-          onClick: () =>
-            props.onSelect?.({
-              skill_code: 'test_skill',
-              skill_name: 'Test Skill',
-              description: '',
-              icon: '',
-            }),
-        });
-    },
-  }),
-}));
-
-// Mock commands and constants
 vi.mock('./command', () => ({
   DeleteTag: 'DeleteTag',
-  InsertSkillTag: 'InsertSkillTag',
-  InsertTag: 'InsertTag',
+  InsertMenuTag: 'InsertMenuTag',
   InsertText: 'InsertText',
 }));
 
@@ -191,7 +128,14 @@ vi.mock('./constants', () => ({
   tagSchema: {},
 }));
 
-// style-note: chat-x PR4 — wrapper min-height:0 配合父级 max-height 内部滚动
+const buildDoc = (icon = ''): TagSchema =>
+  [
+    [
+      { type: 'text', text: 'hi ' },
+      { type: 'tag', data: { label: '知识库01', value: 'k1', type: 'knowledgebase', icon } },
+    ],
+  ] as unknown as TagSchema;
+
 describe('AiSlashInput', () => {
   let wrapper: VueWrapper;
 
@@ -203,310 +147,125 @@ describe('AiSlashInput', () => {
     wrapper?.unmount();
   });
 
-  describe('渲染测试', () => {
-    it('应该正确渲染组件', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
+  describe('渲染', () => {
+    it('渲染编辑器容器与 placeholder', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '', placeholder: '请输入' } });
       expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
+      expect(wrapper.find('.ai-slash-input').attributes('aria-placeholder')).toBe('请输入');
     });
 
-    it('应该渲染编辑器区域', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input').exists()).toBe(true);
-    });
-
-    it('应该渲染 Tippy 组件', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect(wrapper.find('.mock-tippy').exists()).toBe(true);
-    });
-  });
-
-  describe('Props 测试', () => {
-    it('应该正确设置 placeholder', () => {
-      const placeholder = '请输入内容';
-
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          placeholder,
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input').attributes('aria-placeholder')).toBe(placeholder);
-    });
-
-    it('应该接收 prompts 属性', () => {
-      const prompts = ['prompt1', 'prompt2'];
-
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          prompts,
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('应该接收 resources 属性', () => {
-      const resources = [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[];
-
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          resources,
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('应该接收 skills 属性', () => {
-      const skills = [
-        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
-      ];
-
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          skills,
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-  });
-
-  describe('暴露方法测试', () => {
-    it('应该暴露 cleanup 方法', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect((wrapper.vm as { cleanup?: () => void }).cleanup).toBeDefined();
-    });
-  });
-
-  describe('边界情况测试', () => {
-    it('应该处理空的 modelValue', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('应该处理字符串 modelValue', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: 'test content',
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('应该处理空的 prompts 数组', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          prompts: [],
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('应该处理空的 resources 数组', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          resources: [],
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-  });
-
-  describe('样式测试', () => {
-    // tippy light 主题背景色由 SCSS 控制（&[data-theme~='light'] { background-color: white }），不在 JSDOM 中验证
-
-    it('应该具有正确的类名结构', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-      expect(wrapper.find('.ai-slash-input').exists()).toBe(true);
-    });
-
-    it('编辑器应该禁用拼写检查', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      expect(wrapper.find('.ai-slash-input').attributes('spellcheck')).toBe('false');
-    });
-
-    it('skill 标签应渲染 data-tag-value 属性', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: [
-            [
-              {
-                type: 'tag',
-                data: { label: 'Test Skill', value: 'test_skill', type: 'skill' },
-              },
-            ],
-          ],
-        },
-      });
-
-      const tag = wrapper.find('[data-tag-type="skill"]');
+    it('标签按设计稿渲染为图标 + 名称，且不再有删除按钮', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: buildDoc() } });
+      const tag = wrapper.find('.ai-mention-tag');
       expect(tag.exists()).toBe(true);
-      expect(tag.attributes('data-tag-value')).toBe('test_skill');
+      expect(tag.attributes('data-tag-type')).toBe('knowledgebase');
+      expect(tag.attributes('data-tag-value')).toBe('k1');
+      expect(tag.attributes('data-tag-label')).toBe('知识库01');
+      expect(tag.find('.ai-mention-tag-name').text()).toBe('知识库01');
+      expect(wrapper.find('.mention-tag-remove-icon').exists()).toBe(false);
+    });
+
+    it('标签节点自带 icon 时直接使用，不依赖外部数据源', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: buildDoc('https://example.com/kb.png') } });
+      expect(wrapper.find('.ai-resource-icon img').attributes('src')).toBe('https://example.com/kb.png');
+    });
+
+    it('标签节点缺失 icon 时按类型回退到知识库图标', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: buildDoc() } });
+      expect(wrapper.find('.mock-knowledge-base-icon').exists()).toBe(true);
     });
   });
 
-  describe('Skill 过滤与插入', () => {
-    const openSkillMenu = async () => {
-      editorOptions.onKeyDown?.({ key: '/', preventDefault: vi.fn() });
+  describe('菜单触发', () => {
+    it.each(['@', '/', '\\'])('输入 %s 上报对应触发方式', async key => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      editorOptions.onKeyDown?.({ key });
       await nextTick();
-    };
-
-    it('已插入的 skill 不应出现在 AiSkillList 的 skills 列表中', async () => {
-      const skills = [
-        { skill_code: 'skill1', skill_name: 'Skill 1', description: '', icon: '' },
-        { skill_code: 'skill2', skill_name: 'Skill 2', description: '', icon: '' },
-      ];
-
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: [
-            [
-              {
-                type: 'tag',
-                data: { label: 'Skill 1', value: 'skill1', type: 'skill' },
-              },
-            ],
-          ],
-          skills,
-        },
-      });
-      await nextTick();
-      await openSkillMenu();
-
-      const skillList = wrapper.findComponent({ name: 'AiSkillList' });
-      expect(skillList.exists()).toBe(true);
-      expect(skillList.props('skills')).toHaveLength(1);
-      expect(skillList.props('skills')[0].skill_code).toBe('skill2');
+      expect(wrapper.emitted('menuChange')?.[0]).toEqual([{ trigger: key, keyword: '' }]);
     });
 
-    it('选择 skill 时应调用 InsertSkillTag 命令', async () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-          skills: [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: '', icon: '' }],
-        },
-      });
+    it('openPlusMenu 上报 plus 触发', async () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' }, attachTo: document.body });
+      (wrapper.vm as unknown as { openPlusMenu: () => void }).openPlusMenu();
       await nextTick();
-      await openSkillMenu();
+      expect(wrapper.emitted('menuChange')?.[0]).toEqual([{ trigger: 'plus', keyword: '' }]);
+    });
+
+    it('closeMenu 上报触发方式为空', async () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      const vm = wrapper.vm as unknown as { closeMenu: () => void };
+      editorOptions.onKeyDown?.({ key: '@' });
+      await nextTick();
+      vm.closeMenu();
+      await nextTick();
+      const emitted = wrapper.emitted('menuChange') ?? [];
+      expect(emitted[emitted.length - 1]).toEqual([{ trigger: null, keyword: '' }]);
+    });
+  });
+
+  describe('选中条目', () => {
+    it('insertMenuItem 先删除触发文本再插入标签与空格', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      const vm = wrapper.vm as unknown as { insertMenuItem: (item: IInputMenuItem) => void };
+      editorOptions.onKeyDown?.({ key: '@' });
       editorCommand.mockClear();
+      vm.insertMenuItem({ id: 'k1', type: 'knowledgebase', name: '知识库01' });
 
-      await wrapper.find('.mock-ai-skill-list').trigger('click');
-      await nextTick();
-
-      const insertSkillCalls = editorCommand.mock.calls.filter(
-        call => (call[0] as unknown) === 'InsertSkillTag',
-      );
-      expect(insertSkillCalls.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('modelValue 同步', () => {
-    it('外部更新 modelValue 时应完成渲染且不抛错', async () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '初始',
-        },
-      });
-      await nextTick();
-      await wrapper.setProps({ modelValue: '更新后' });
-      await nextTick();
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
+      const commands = editorCommand.mock.calls.map(call => call[0]);
+      expect(commands).toEqual(['GetCursorPosition', 'DeleteTag', 'InsertMenuTag', 'InsertText']);
+      // 光标在第 5 列，触发符「@」占 1 列，过滤词为空 → 从第 4 列开始替换
+      expect(editorCommand.mock.calls[1].slice(1)).toEqual([
+        [0, 4],
+        [0, 5],
+      ]);
+      expect(editorCommand.mock.calls[3].slice(1)).toEqual([[0, 5], ' ']);
     });
 
-    it('外部更新 modelValue 且与编辑器快照不一致时应调用 ReplaceAll 同步为最新字符串', async () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: 'A',
-        },
-      });
-      await nextTick();
+    it('replaceAll 整体替换输入框内容', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      const vm = wrapper.vm as unknown as { replaceAll: (value: string) => void };
       editorCommand.mockClear();
-      await wrapper.setProps({ modelValue: 'B' });
-      await nextTick();
-      const replaceCalls = editorCommand.mock.calls.filter(
-        call => (call[0] as unknown) === 'ReplaceAll',
-      );
-      expect(replaceCalls.some(([, text]) => text === 'B')).toBe(true);
+      vm.replaceAll('深圳旅游攻略？');
+      expect(editorCommand).toHaveBeenCalledWith('ReplaceAll', '深圳旅游攻略？');
+    });
+
+    it('appendMention 按文档末尾插入标签，不依赖当前光标', () => {
+      wrapper = mount(AiSlashInput, {
+        props: { modelValue: [[{ type: 'text', text: 'hi' }]] as unknown as TagSchema },
+      });
+      const vm = wrapper.vm as unknown as { appendMention: (item: IInputMenuItem) => void };
+      editorCommand.mockClear();
+      vm.appendMention({ id: 'k1', type: 'knowledgebase', name: '知识库01' });
+
+      const commands = editorCommand.mock.calls.map(call => call[0]);
+      expect(commands).toEqual(['InsertMenuTag', 'InsertText']);
+      expect(editorCommand.mock.calls[0].slice(1)).toEqual([
+        [0, 2],
+        { id: 'k1', type: 'knowledgebase', name: '知识库01' },
+      ]);
+      expect(editorCommand.mock.calls[1].slice(1)).toEqual([[0, 3], ' ']);
     });
   });
 
-  describe('事件测试', () => {
-    it('应该定义 upload 事件', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      // 验证组件可以正常渲染，upload 事件在 emits 中定义
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
+  describe('键盘与粘贴', () => {
+    it('Enter 阻止默认换行，Shift + Enter 放行', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      const preventDefault = vi.fn();
+      expect(editorOptions.onKeyDown?.({ key: 'Enter', preventDefault })).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(editorOptions.onKeyDown?.({ key: 'Enter', shiftKey: true, preventDefault })).toBeUndefined();
     });
 
-    it('应该定义 update:modelValue 事件', () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
+    it('粘贴文件时抛出 upload 事件', async () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' }, attachTo: document.body });
+      const file = new File(['x'], 'a.txt', { type: 'text/plain' });
+      const event = new Event('paste') as ClipboardEvent;
+      Object.defineProperty(event, 'clipboardData', {
+        value: { items: [{ kind: 'file', getAsFile: () => file }] },
       });
-
-      expect(wrapper.find('.ai-slash-input-wrapper').exists()).toBe(true);
-    });
-
-    it('粘贴文件时应该触发 upload 事件', async () => {
-      wrapper = mount(AiSlashInput, {
-        props: {
-          modelValue: '',
-        },
-      });
-
-      // 由于 editor 是 mock 的，我们验证组件结构正确
-      expect(wrapper.find('.ai-slash-input').exists()).toBe(true);
+      wrapper.find('.ai-slash-input').element.dispatchEvent(event);
+      await nextTick();
+      expect(wrapper.emitted('upload')?.[0]).toEqual([[file]]);
     });
   });
 });

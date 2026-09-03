@@ -33,6 +33,8 @@ export interface IModelCapability {
 }
 
 /** 模型选项（贴合后端模型接口结构） */
+import type { Component } from 'vue';
+
 export interface IModelOption {
   /** 基础模型标识，如 deepseek */
   base_model?: string;
@@ -40,8 +42,8 @@ export interface IModelOption {
   description?: string;
   /** 是否禁用（前端扩展字段，后端无此字段时默认不禁用） */
   disabled?: boolean;
-  /** 模型图标地址 */
-  icon?: string;
+  /** 模型图标：URL 字符串或 Vue 组件 */
+  icon?: Component | string;
   /** 模型主键 id */
   id: number;
   /** 模型编码 */

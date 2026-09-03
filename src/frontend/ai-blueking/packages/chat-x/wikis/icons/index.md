@@ -1,6 +1,6 @@
 # 图标
 
-`@blueking/chat-x` 内置了 52 个 SVG 图标，通过 Vue `h()` 函数预创建为 VNode 对象，可直接用于模板渲染。
+`@blueking/chat-x` 内置了 74 个 SVG 图标：其中 69 个通过 Vue `h()` 预创建为 VNode 对象，可直接用于模板渲染；`ai.ts` 与 `menu-item.ts` 下的 5 个是 `defineComponent` 组件（需要按实例生成唯一渐变 id 或保留多色品牌配色）。
 
 <script setup lang="ts">
 import { ref, defineComponent, cloneVNode } from 'vue';
@@ -13,7 +13,8 @@ import {
   ArrowRightIcon, LinkIcon, ImageErrorIcon,
   CloseIcon, MoreIcon, AgentIcon, MoreAgentIcon,
   AIBluekingIcon, AIBluekingBannerIcon,
-  CloseCircleIcon, DocLinkIcon, DeleteCircleIcon, FileUploadIcon,
+  CloseCircleIcon, DocLinkIcon, DeleteCircleIcon, FileUploadIcon, AddIcon, ModuleIcon,
+  ToolIcon, KnowledgeBaseIcon, McpIcon,
   ZoomInIcon, ZoomOutIcon, RotateIcon, FitScreenIcon, DownloadIcon,
   PreviewCloseIcon, ArrowLeftIcon, ArrowRightPreviewIcon, ReloadIcon,
   ImageBrokenIcon, ImageSizeIcon,
@@ -112,6 +113,17 @@ const groups = [
       { name: 'DocLinkIcon', icon: w(DocLinkIcon) },
       { name: 'DeleteCircleIcon', icon: w(DeleteCircleIcon) },
       { name: 'FileUploadIcon', icon: w(FileUploadIcon) },
+      { name: 'AddIcon', icon: w(AddIcon) },
+      { name: 'ModuleIcon', icon: w(ModuleIcon) },
+    ],
+  },
+  {
+    title: '菜单条目图标',
+    source: 'menu-item.ts',
+    items: [
+      { name: 'ToolIcon', icon: ToolIcon, fixed: true },
+      { name: 'KnowledgeBaseIcon', icon: KnowledgeBaseIcon, fixed: true },
+      { name: 'McpIcon', icon: McpIcon, fixed: true },
     ],
   },
   {
@@ -305,7 +317,24 @@ type Key = ToolIcons;
 | `CloseCircleIcon`  | `ai-close-circle-icon`  | 圆形关闭 |
 | `DocLinkIcon`      | `ai-doc-link-icon`      | 文档链接 |
 | `DeleteCircleIcon` | `ai-delete-circle-icon` | 圆形删除 |
-| `FileUploadIcon`   | `ai-delete-circle-icon` | 文件上传 |
+| `FileUploadIcon`   | `ai-delete-circle-icon` | 文件上传（与上一项共用 class，源码如此） |
+| `AddIcon`          | `ai-add-icon`           | 加号，[AddMenuBtn](/components/input/add-menu-btn) 唤起聚合菜单 |
+| `ModuleIcon`       | `ai-module-icon`        | 田字格，菜单条目未提供图标时的最终兜底 |
+
+### 菜单条目图标 `menu-item.ts`
+
+菜单与资源标签的类型默认图标，由 [ResourceIcon](/components/helper/resource-icon) 按 `type` 选用。与其余图标不同，这三个是**设计给定的多色品牌图标**：
+
+- 以 `defineComponent` 导出（不是 VNode），模板中直接 `<McpIcon />` 使用
+- **不套用** `fill: currentColor`，各自配色原样保留，用 `color` 无法改色
+- 尺寸统一 `1em`，跟随外层 `font-size`
+- `McpIcon` 含两组 `linearGradient` 与一个 `clipPath`，每个实例用 `useId()` 生成独立 id 前缀，避免多实例共用 id 时渐变失效
+
+| 导出名              | class                      | 说明   |
+| ------------------- | -------------------------- | ------ |
+| `ToolIcon`          | `ai-tool-icon`             | 工具   |
+| `KnowledgeBaseIcon` | `ai-knowledge-base-icon`   | 知识库 |
+| `McpIcon`           | `ai-mcp-icon`              | MCP    |
 
 ### 执行图标 `execution.ts`
 

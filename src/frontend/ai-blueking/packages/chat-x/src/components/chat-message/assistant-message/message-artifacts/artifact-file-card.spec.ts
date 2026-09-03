@@ -30,6 +30,7 @@ import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ARTIFACT_PREVIEW_TOKEN } from '../../../../composables/use-artifact-preview';
+import { INPUT_MENTION_TOKEN } from '../../../../composables/use-input-mention';
 import ArtifactFileCard from './artifact-file-card.vue';
 
 import type { AIFileInfo } from '../../../../ag-ui/types/file';
@@ -214,6 +215,51 @@ describe('ArtifactFileCard', () => {
 
       expect(onPreview).not.toHaveBeenCalled();
       clickSpy.mockRestore();
+    });
+  });
+
+  describe('引用到输入框', () => {
+    it('无输入框上下文时不展示引用按钮', () => {
+      wrapper = mount(ArtifactFileCard, { props: { file: createFile() } });
+
+      expect(wrapper.find('.ai-artifact-file-card-cite').exists()).toBe(false);
+    });
+
+    it('有输入框上下文时展示引用按钮', () => {
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [INPUT_MENTION_TOKEN]: { insertMention: vi.fn() } } },
+        props: { file: createFile() },
+      });
+
+      expect(wrapper.find('.ai-artifact-file-card-cite').exists()).toBe(true);
+    });
+
+    it('点击引用把文件按 artifact 类型插入输入框', async () => {
+      const insertMention = vi.fn();
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [INPUT_MENTION_TOKEN]: { insertMention } } },
+        props: { file: createFile() },
+      });
+
+      await wrapper.find('.ai-artifact-file-card-cite').trigger('click');
+
+      expect(insertMention).toHaveBeenCalledWith({
+        id: 'output-1',
+        type: 'artifact',
+        name: '运维操作指引文档.doc',
+      });
+    });
+
+    it('点击引用不应该冒泡触发 onPreview', async () => {
+      const onPreview = vi.fn();
+      wrapper = mount(ArtifactFileCard, {
+        global: { provide: { [INPUT_MENTION_TOKEN]: { insertMention: vi.fn() } } },
+        props: { file: createFile(), onPreview },
+      });
+
+      await wrapper.find('.ai-artifact-file-card-cite').trigger('click');
+
+      expect(onPreview).not.toHaveBeenCalled();
     });
   });
 });

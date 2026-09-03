@@ -1,6 +1,6 @@
 # useFlowNodeActions
 
-> 导入：`import { useFlowNodeActions } from '@blueking/chat-x'` ｜ since 2.0.0
+> 未从包入口导出：内部实现 ｜ since 2.0.0
 
 useFlowNodeActions 接收 onInterruptResume 与 openNodeDetail，返回 getNodeActions 与 isNodePending。 失败节点按 retryable/skippable 展示重试/跳过，详情恒在末尾；点击后进入 pending 防重复提交， 以 task_id:node_id:retry 为键自动收敛；点击 resume 时不传 interrupt。
 

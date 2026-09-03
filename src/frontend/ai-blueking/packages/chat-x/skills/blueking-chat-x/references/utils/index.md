@@ -1,0 +1,178 @@
+# 工具函数
+
+`@blueking/chat-x` 提供了一些工具函数，用于处理 Markdown、Cookie 等常见操作。
+
+---
+
+# 工具函数
+
+`@blueking/chat-x` 提供了一些工具函数，用于处理 Markdown、Cookie 等常见操作。
+
+## 函数列表
+
+| 函数名                     | 说明                                              |
+| -------------------------- | ------------------------------------------------- |
+| `completeMarkdown`         | Markdown 语法补全                                 |
+| `completeMarkdownSyntax`   | 流式 Markdown 语法补全                            |
+| `getCookieByName`          | 获取 Cookie 值                                    |
+| `mergeToolsById`           | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏   |
+| `collectMessageArtifacts`  | 从会话消息里收集「会话产物」作为输入框菜单条目    |
+| `toArtifactMenuItem`       | 把单个文件产物转成输入框菜单条目                  |
+
+## Markdown 语法补全
+
+### completeMarkdownSyntax
+
+用于流式输入时自动补全未闭合的 Markdown 语法：
+
+````typescript
+import { completeMarkdownSyntax } from '@blueking/chat-x';
+
+// 补全未闭合的代码块
+const incomplete = '```javascript\nconst a = 1;';
+const completed = completeMarkdownSyntax(incomplete);
+// => '```javascript\nconst a = 1;\n```'
+
+// 补全未闭合的粗体
+const incomplete2 = '这是 **粗体';
+const completed2 = completeMarkdownSyntax(incomplete2);
+// => '这是 **粗体**'
+````
+
+### 支持补全的语法
+
+| 语法     | 示例            | 补全结果             |
+| -------- | --------------- | -------------------- |
+| 代码块   | ` ```js\ncode ` | ` ```js\ncode\n``` ` |
+| 行内代码 | `` `code ``     | `` `code` ``         |
+| 粗体     | `**bold`        | `**bold**`           |
+| 斜体     | `*italic`       | `*italic*`           |
+| 删除线   | `~~strike`      | `~~strike~~`         |
+| 链接     | `[text](`       | `[text](#)`          |
+| 图片     | `![alt](`       | `![alt](#)`          |
+
+## 消息工具栏合并
+
+### mergeToolsById
+
+按 `id` 将自定义工具按钮合并到内置列表：同 id 字段级覆盖，新 id 追加到末尾，`hidden: true` 的项会被过滤。
+
+```typescript
+import { mergeToolsById } from '@blueking/chat-x';
+
+const tools = mergeToolsById(
+  [
+    { id: 'copy', name: '复制' },
+    { id: 'edit', name: '编辑' },
+    { id: 'delete', name: '删除' },
+  ],
+  [
+    { id: 'edit', hidden: true },
+    { id: 'delete', hidden: true },
+  ],
+);
+```
+
+## 会话产物收集
+
+### collectMessageArtifacts
+
+从会话消息里收集「会话产物」，产出 `IInputMenuItem[]`，作为输入框 `@` 菜单的 `artifact` 选项。[ChatContainer](/components/setup/chat-container#输入框菜单与资源引用) 在业务方未自行提供 `artifact` 条目时自动调用它。
+
+收集两个来源：
+
+| 来源                            | id 取值                                          | 名称                   |
+| ------------------------------- | ------------------------------------------------ | ---------------------- |
+| 助手消息的 `property.artifacts` | `file.outputId \|\| file.name`                   | `file.name`            |
+| 用户消息里的二进制附件          | `content.id \|\| content.url \|\| content.filename` | `content.filename` 或 id |
+
+同一 id 多次出现时取最后一次的名称（文件可能被后续轮次更新），位置保持首次出现的顺序。
+
+```typescript
+import { collectMessageArtifacts } from '@blueking/chat-x';
+
+const artifactItems = collectMessageArtifacts(messages.value);
+// => [{ id: 'output-1', type: 'artifact', name: '巡检报告.pdf' }, ...]
+```
+
+### toArtifactMenuItem
+
+把单个 `AIFileInfo` 转成菜单条目。「消息里自动收集」与「点击引用按钮插入」必须共用这套映射——id 不一致会导致 `@` 菜单的去重与已插入标签的匹配同时失效。
+
+```typescript
+import { toArtifactMenuItem, useInputMentionConsumer } from '@blueking/chat-x';
+
+const inputMention = useInputMentionConsumer();
+inputMention?.insertMention(toArtifactMenuItem(file));
+```
+
+> 详见 [useInputMention](/composables/use-input-mention) 与 [ChatInput](/components/input/chat-input) 的统一菜单说明。
+
+## Cookie 工具
+
+### getCookieByName
+
+获取指定名称的 Cookie 值：
+
+```typescript
+import { getCookieByName } from '@blueking/chat-x';
+
+// 获取语言设置
+const lang = getCookieByName('blueking_language');
+console.log(lang); // 'zh-cn' 或 'en'
+
+// 获取不存在的 Cookie 返回 null
+const notExist = getCookieByName('not_exist');
+console.log(notExist); // null
+```
+
+## 使用示例
+
+### 流式渲染时补全 Markdown
+
+````vue
+<template>
+  <MarkdownContent
+    :content="completedContent"
+    :status="MessageStatus.Streaming"
+  />
+</template>
+
+<script setup lang="ts">
+  import { computed, ref } from 'vue';
+  import { MarkdownContent, MessageStatus, completeMarkdownSyntax } from '@blueking/chat-x';
+
+  const rawContent = ref('');
+
+  // 自动补全未闭合的语法
+  const completedContent = computed(() => {
+    return completeMarkdownSyntax(rawContent.value);
+  });
+
+  // 模拟流式输入
+  const simulateStreaming = async () => {
+    const text = '```javascript\nconst greeting = "Hello";\nconsole.log(greeting);\n```';
+    for (const char of text) {
+      await new Promise(r => setTimeout(r, 50));
+      rawContent.value += char;
+    }
+  };
+</script>
+````
+
+### 根据语言设置切换显示
+
+```typescript
+import { getCookieByName } from '@blueking/chat-x';
+
+const lang = getCookieByName('blueking_language');
+const isEnglish = lang === 'en';
+
+const greeting = isEnglish ? 'Hello' : '你好';
+```
+
+## 注意事项
+
+1. `completeMarkdownSyntax` 主要用于流式渲染场景
+2. 语法补全不会修改原始内容，只返回补全后的副本
+3. `getCookieByName` 在服务端渲染时需要注意 `document` 不可用

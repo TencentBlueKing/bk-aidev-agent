@@ -4,12 +4,14 @@
 
 ## 函数列表
 
-| 函数名                   | 说明                   |
-| ------------------------ | ---------------------- |
-| `completeMarkdown`       | Markdown 语法补全      |
-| `completeMarkdownSyntax` | 流式 Markdown 语法补全 |
-| `getCookieByName`        | 获取 Cookie 值         |
-| `mergeToolsById`         | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏 |
+| 函数名                     | 说明                                              |
+| -------------------------- | ------------------------------------------------- |
+| `completeMarkdown`         | Markdown 语法补全                                 |
+| `completeMarkdownSyntax`   | 流式 Markdown 语法补全                            |
+| `getCookieByName`          | 获取 Cookie 值                                    |
+| `mergeToolsById`           | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏   |
+| `collectMessageArtifacts`  | 从会话消息里收集「会话产物」作为输入框菜单条目    |
+| `toArtifactMenuItem`       | 把单个文件产物转成输入框菜单条目                  |
 
 ## Markdown 语法补全
 
@@ -64,6 +66,41 @@ const tools = mergeToolsById(
   ],
 );
 ```
+
+## 会话产物收集
+
+### collectMessageArtifacts
+
+从会话消息里收集「会话产物」，产出 `IInputMenuItem[]`，作为输入框 `@` 菜单的 `artifact` 选项。[ChatContainer](/components/setup/chat-container#输入框菜单与资源引用) 在业务方未自行提供 `artifact` 条目时自动调用它。
+
+收集两个来源：
+
+| 来源                            | id 取值                                          | 名称                   |
+| ------------------------------- | ------------------------------------------------ | ---------------------- |
+| 助手消息的 `property.artifacts` | `file.outputId \|\| file.name`                   | `file.name`            |
+| 用户消息里的二进制附件          | `content.id \|\| content.url \|\| content.filename` | `content.filename` 或 id |
+
+同一 id 多次出现时取最后一次的名称（文件可能被后续轮次更新），位置保持首次出现的顺序。
+
+```typescript
+import { collectMessageArtifacts } from '@blueking/chat-x';
+
+const artifactItems = collectMessageArtifacts(messages.value);
+// => [{ id: 'output-1', type: 'artifact', name: '巡检报告.pdf' }, ...]
+```
+
+### toArtifactMenuItem
+
+把单个 `AIFileInfo` 转成菜单条目。「消息里自动收集」与「点击引用按钮插入」必须共用这套映射——id 不一致会导致 `@` 菜单的去重与已插入标签的匹配同时失效。
+
+```typescript
+import { toArtifactMenuItem, useInputMentionConsumer } from '@blueking/chat-x';
+
+const inputMention = useInputMentionConsumer();
+inputMention?.insertMention(toArtifactMenuItem(file));
+```
+
+> 详见 [useInputMention](/composables/use-input-mention) 与 [ChatInput](/components/input/chat-input) 的统一菜单说明。
 
 ## Cookie 工具
 

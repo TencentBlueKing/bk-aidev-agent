@@ -1,6 +1,6 @@
 # CommonErrorContent 错误内容
 
-> 能力域：内容渲染 ｜ 导入：`import { CommonErrorContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 导入：`import { commonErrorContent } from '@blueking/chat-x'` ｜ since 1.0.0
 
 展示统一错误提示内容。 源码位置：src/components/chat-content/common-error-content/common-error-content.vue。
 

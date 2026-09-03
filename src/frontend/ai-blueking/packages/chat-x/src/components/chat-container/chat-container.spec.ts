@@ -1,3 +1,6 @@
+import { type Ref, defineComponent, h, nextTick } from 'vue';
+
+import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
@@ -26,10 +29,6 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { type Ref, defineComponent, h, nextTick } from 'vue';
-
-import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
@@ -410,10 +409,8 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       modelValue: [String, Array],
       messageStatus: String,
       placeholder: String,
-      prompts: Array,
-      resources: Array,
+      menuSources: Array,
       shortcuts: Array,
-      skills: Array,
       models: Array,
       selectedModel: String,
       supportUpload: Boolean,
@@ -859,15 +856,80 @@ describe('ChatContainer', () => {
       expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
     });
 
-    it('应该将 skills 属性透传给 ChatInput', () => {
-      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
+    it('应该将 menuSources 属性透传给 ChatInput', () => {
+      const menuSources = [{ id: 'test_skill', type: 'skill', name: 'Test Skill', description: 'A test skill' }];
 
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, skills },
+        props: { ...defaultProps, menuSources },
       });
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
-      expect(ci.props('skills')).toEqual(skills);
+      expect(ci.props('menuSources')).toEqual(menuSources);
+    });
+
+    it('未传入 artifact 时自动从消息里收集会话产物', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources: [] },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual([{ id: 'o1', type: 'artifact', name: '操作文档.docx' }]);
+    });
+
+    it('业务方传入 artifact 时不再自动收集', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+      const menuSources = [{ id: 'custom', type: 'artifact', name: '自定义产物' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual(menuSources);
+    });
+
+    it('menuSources 没有 artifact 时仍会把消息里收集到的产物拼在后面', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+      const menuSources = [{ id: 'test_skill', type: 'skill', name: 'Test Skill' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual([
+        { id: 'test_skill', type: 'skill', name: 'Test Skill' },
+        { id: 'o1', type: 'artifact', name: '操作文档.docx' },
+      ]);
     });
 
     it('应该将 models 与 selectedModel 透传给 ChatInput', () => {

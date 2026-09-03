@@ -129,7 +129,7 @@ interface IModelOption {
   base_model?: string;
   description?: string; // 选项 hover 的 title 提示
   disabled?: boolean; // 前端扩展字段，禁用项不可选中
-  icon?: string;
+  icon?: Component | string; // 图标 URL 或 Vue 组件，由 ResourceIcon 渲染
   id: number;
   llm_code: string;
   llm_name: string; // 展示名，同时作为选中值
@@ -148,8 +148,10 @@ interface IModelOption {
 2. 选中值为模型的 `llm_name`；能力标签由组件依据 `property` 的 `support_thinking` / `support_thinking_quick` / `support_vision` 派生，文案走内置 i18n。
 3. `description` 会作为选项 hover 的 `title` 提示展示。
 4. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
+5. 图标由 [ResourceIcon](/components/helper/resource-icon) 渲染（`type="model"`）：支持图片 URL 或 Vue 组件，URL 加载失败自动回退到内置兜底图标；未提供 `icon` 时不渲染图标位。
 
 ## 关联组件
 
 - [ChatInput](/components/input/chat-input)：传入 `models` 后默认在发送按钮左侧渲染本组件，也可通过 `#model-selector` 插槽完全自定义。
 - [ChatContainer](/components/setup/chat-container)：透传 `models` 与 `v-model:selected-model`，并向上 emit `modelChange`。
+- [ResourceIcon](/components/helper/resource-icon)：触发器与选项的图标渲染。

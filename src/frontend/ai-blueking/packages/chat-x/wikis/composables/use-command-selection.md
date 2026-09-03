@@ -99,7 +99,7 @@ import { watch } from 'vue';
 const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
 
 // 用户从 @xxx 菜单中选择资源时：
-const insertTagAtCursor = (tag: IAiSlashMenuItem) => {
+const insertTagAtCursor = (tag: IInputMenuItem) => {
   editor.command(GetCursorPosition);
   const { column, line } = commandSelection.value;
   editor.command(DeleteTag, [line, column - keyword.value.length - 1], [line, column]);

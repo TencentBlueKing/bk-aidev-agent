@@ -1,6 +1,6 @@
 # CiteContent 引用内容
 
-> 能力域：内容渲染 ｜ 导入：`import { CiteContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染输入或消息中的引用片段。 源码位置：src/components/chat-content/cite-content/cite-content.vue。
 

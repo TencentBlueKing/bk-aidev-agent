@@ -12,6 +12,8 @@ relatedComponents:
     relation: 需要富文本时的替代方案
   - slug: user-message
     relation: 用户消息中纯文本内容展示
+  - slug: mention-text
+    relation: 文档含资源标签时的替代渲染
 sinceVersion: 1.0.0
 ---
 
@@ -40,11 +42,12 @@ div.ai-text-content
   padding: 8px 12px; border-radius: 4px
   background-color: #e1ecff（浅蓝色气泡）
   word-break: break-all（无空格长文本按字符换行）
+  white-space: pre-wrap（保留 \n 换行与连续空格）
   │
   └── {{ content }}（文本插值，HTML 标签不被解析）
 ```
 
-> **换行说明**：组件无 `white-space: pre-wrap`，`\n` 不会渲染为视觉换行。如需保留换行，需在外层添加 `white-space: pre-wrap` 样式。
+> **换行说明**：内容来自输入框，多行文本以 `\n` 承载，因此组件带 `white-space: pre-wrap`——`\n` 会渲染为视觉换行，连续空格与空行也会保留，无需在外层额外加样式。
 
 ## 基础用法
 
@@ -62,12 +65,16 @@ div.ai-text-content
   <TextContent content="这是一条纯文本消息" />
 </div>
 
-## 长文本自动换行
+## 长文本与多行
 
-`word-break: break-all` 确保无空格的长字符串（如 URL、哈希值）也能在容器内正常换行：
+`word-break: break-all` 确保无空格的长字符串（如 URL、哈希值）也能在容器内正常换行；`white-space: pre-wrap` 让 `\n` 直接生效：
 
 <div class="demo" style="max-width: 300px;">
   <TextContent content="这是一段很长的文字内容，会在容器边界处自动换行显示，不会撑破父容器的宽度。" />
+</div>
+
+<div class="demo" style="max-width: 300px;">
+  <TextContent :content="'第一行\n第二行（由 \\n 换行）'" />
 </div>
 
 ## XSS 安全
@@ -93,10 +100,12 @@ div.ai-text-content
 | 场景                              | 推荐组件          |
 | --------------------------------- | ----------------- |
 | 纯文本气泡（用户消息、简单提示）  | `TextContent`     |
+| 含 `@` 资源标签的用户消息         | `MentionText`     |
 | 含 Markdown / 代码块 / 公式的内容 | `MarkdownContent` |
 | 工具调用结果描述                  | `DescPanel`       |
 
 ## 关联组件
 
 - [MarkdownContent](/components/rendering/markdown-content) — 富文本替代
+- [MentionText](/components/rendering/mention-text) — 含资源标签文档的渲染
 - [UserMessage](/components/message/user-message) — 用户消息气泡

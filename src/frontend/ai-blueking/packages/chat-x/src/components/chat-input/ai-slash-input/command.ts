@@ -28,25 +28,32 @@ import { Transaction } from '../../../edix/doc/edit';
 
 import type { EditorCommand } from '../../../edix';
 import type { Position } from '../../../edix/doc/types';
-import type { IAiSlashMenuItem, ISkillListItem } from '../../../types/editor';
+import type { IInputMenuItem } from '../../../types/input-menu';
 
 export const DeleteTag: EditorCommand<[Position, Position]> = (_doc, _selection, start: Position, end: Position) => {
   return new Transaction().delete(start, end);
 };
 
-export const InsertTag: EditorCommand<[Position, IAiSlashMenuItem]> = (
+/**
+ * 插入菜单选项对应的 void 标签节点。
+ * value 取 item.id：序列化给后端时 skill 走 `/${value}`，因此业务方需保证 skill 的 id 为后端可识别的编码。
+ */
+export const InsertMenuTag: EditorCommand<[Position, IInputMenuItem]> = (
   _doc,
   _selection,
   start: Position,
-  tag: IAiSlashMenuItem,
+  item: IInputMenuItem,
 ) => {
   return new Transaction().insert(start, [
     [
       {
         data: {
-          label: tag.name,
-          value: tag.name,
-          type: tag.type,
+          label: item.name,
+          value: item.id,
+          type: item.type,
+          // DOM 属性只能承载字符串，组件形式的图标存不下，标签内交由类型默认图标兜底
+          icon: typeof item.icon === 'string' ? item.icon : '',
+          description: item.description ?? '',
         },
       },
     ],
@@ -58,25 +65,6 @@ export const InsertText: EditorCommand<[Position, string]> = (_doc, _selection, 
     [
       {
         text: text,
-      },
-    ],
-  ]);
-};
-
-export const InsertSkillTag: EditorCommand<[Position, ISkillListItem]> = (
-  _doc,
-  _selection,
-  start: Position,
-  skill: ISkillListItem,
-) => {
-  return new Transaction().insert(start, [
-    [
-      {
-        data: {
-          label: skill.skill_name,
-          value: skill.skill_code,
-          type: 'skill',
-        },
       },
     ],
   ]);

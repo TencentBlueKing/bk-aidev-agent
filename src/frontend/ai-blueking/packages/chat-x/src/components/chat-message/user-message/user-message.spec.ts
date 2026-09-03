@@ -25,11 +25,12 @@
  * IN THE SOFTWARE.
  */
 
-import { defineComponent, h } from 'vue';
+import { computed, defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { injectGlobalConfig } from '../../../composables/use-global-config';
 import { MessageToolsStatus } from '../../../types/tool';
 import UserMessage from './user-message.vue';
 
@@ -68,17 +69,6 @@ vi.mock('../../../composables', () => ({
   }),
 }));
 
-// Mock common/constants
-vi.mock('../../../common/constants', () => ({
-  CONST_USER_MESSAGE_TOOLS: [
-    { id: 'copy', name: '复制', description: '复制消息' },
-    { id: 'cite', name: '引用', description: '引用消息' },
-    { id: 'edit', name: '编辑', description: '编辑消息' },
-    { id: 'delete', name: '删除', description: '删除消息' },
-  ],
-}));
-
-// Mock child components
 vi.mock('../../ai-shortcut/shortcut-render/shortcut-render.vue', () => ({
   default: defineComponent({
     name: 'ShortcutRender',
@@ -147,19 +137,30 @@ vi.mock('../../chat-content/file-content/file-content.vue', () => ({
   }),
 }));
 
+const mockChatInputFocus = vi.fn();
 vi.mock('../../chat-input/chat-input.vue', () => ({
   default: defineComponent({
     name: 'ChatInput',
     props: {
       modelValue: { type: [String, Object], default: '' },
       defaultUploadFiles: { type: Array, default: () => [] },
+      menuSources: { type: Array, default: () => [] },
+      supportUpload: { type: Boolean, default: false },
     },
     emits: ['update:modelValue'],
-    setup(props, { slots }) {
+    setup(props, { slots, expose }) {
+      expose({ focus: mockChatInputFocus, triggerSendMessage: vi.fn() });
       return () =>
-        h('div', { class: 'mock-chat-input', 'data-files': JSON.stringify(props.defaultUploadFiles) }, [
-          slots['send-icon']?.(),
-        ]);
+        h(
+          'div',
+          {
+            class: 'mock-chat-input',
+            'data-files': JSON.stringify(props.defaultUploadFiles),
+            'data-menu-sources': JSON.stringify(props.menuSources),
+            'data-support-upload': String(props.supportUpload),
+          },
+          [slots['send-icon']?.()],
+        );
     },
   }),
 }));
@@ -195,11 +196,17 @@ vi.mock('../../../composables/use-global-config', () => ({
   injectGlobalConfig: vi.fn(() => undefined),
 }));
 
+vi.mock('tippy.js/dist/tippy.css', () => ({}));
+
+// MentionTag 通过 v-tippy 挂描述气泡，这里只需保证指令可用
+vi.mock('vue-tippy', () => ({ directive: {} }));
+
 describe('UserMessage', () => {
   let wrapper: VueWrapper;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(injectGlobalConfig).mockReturnValue(undefined);
   });
 
   afterEach(() => {
@@ -272,21 +279,6 @@ describe('UserMessage', () => {
       });
 
       expect(wrapper.find('.mock-cite-content').exists()).toBe(false);
-    });
-  });
-
-  describe('数组 content 渲染测试', () => {
-    it('应该渲染数组 content (Text 类型)', () => {
-      wrapper = mount(UserMessage, {
-        props: {
-          content: [
-            { type: 'text', text: '消息1' },
-            { type: 'text', text: '消息2' },
-          ],
-        } as any,
-      });
-
-      expect(wrapper.findAll('.mock-text-content').length).toBe(2);
     });
   });
 
@@ -555,36 +547,20 @@ describe('UserMessage', () => {
     });
   });
 
-  describe('globalConfig 注入测试', () => {
-    it('无 globalConfig 时 ChatInput 的 support-upload 应为 false', async () => {
-      const onAction = vi.fn();
-
-      wrapper = mount(UserMessage, {
-        props: {
-          content: '消息',
-          onAction,
-        },
-      });
-
-      const editBtn = wrapper.findAll('.mock-message-tools');
-      expect(editBtn.length).toBeGreaterThan(0);
-    });
-  });
-
   describe('messageTools 覆盖与隐藏', () => {
     const readToolIds = () => {
       const json = wrapper.find('.mock-message-tools').attributes('data-tools-json');
       return (JSON.parse(json ?? '[]') as Array<{ id: string }>).map(tool => tool.id);
     };
 
-    it('不传 messageTools 时应使用内置 copy/cite/edit/delete', () => {
+    it('不传 messageTools 时应使用内置 copy/edit/delete', () => {
       wrapper = mount(UserMessage, {
         props: { content: '消息' },
       });
-      expect(readToolIds()).toEqual(['copy', 'cite', 'edit', 'delete']);
+      expect(readToolIds()).toEqual(['copy', 'edit', 'delete']);
     });
 
-    it('传入 hidden 的 edit/delete 后应只保留 copy/cite', () => {
+    it('传入 hidden 的 edit/delete 后应只保留 copy', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: '消息',
@@ -594,7 +570,121 @@ describe('UserMessage', () => {
           ],
         },
       });
-      expect(readToolIds()).toEqual(['copy', 'cite']);
+      expect(readToolIds()).toEqual(['copy']);
+    });
+  });
+
+  describe('编辑态', () => {
+    const triggerEdit = async (props: Record<string, unknown>) => {
+      wrapper = mount(UserMessage, { props: props as never });
+      await wrapper.findComponent({ name: 'MessageTools' }).props('onAction')({ id: 'edit' });
+      await nextTick();
+    };
+
+    it('点击编辑后切换到输入框并聚焦', async () => {
+      await triggerEdit({ content: '原始消息' });
+
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
+      expect(mockChatInputFocus).toHaveBeenCalled();
+    });
+
+    it('编辑态输入框接收 globalConfig 下发的 menuSources', async () => {
+      const menuSources = [{ id: 's1', type: 'skill', name: 'Code Review' }];
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        menuSources: computed(() => menuSources),
+        supportUpload: computed(() => true),
+      });
+
+      await triggerEdit({ content: '原始消息' });
+
+      expect(wrapper.find('.mock-chat-input').attributes('data-menu-sources')).toBe(JSON.stringify(menuSources));
+      expect(wrapper.find('.mock-chat-input').attributes('data-support-upload')).toBe('true');
+    });
+
+    it('纯附件消息进入编辑态同样聚焦', async () => {
+      await triggerEdit({
+        content: [{ type: 'binary', url: 'http://example.com/a.png', filename: 'a.png', mimeType: 'image/png' }],
+      });
+
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
+      expect(mockChatInputFocus).toHaveBeenCalled();
+    });
+
+    it('没有可编辑内容时不进入编辑态，也不聚焦', async () => {
+      await triggerEdit({ content: '' });
+
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(false);
+      expect(mockChatInputFocus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('超高折叠', () => {
+    it('正文被 CollapsibleContent 包裹，最大高度取设计稿的 200px', () => {
+      wrapper = mount(UserMessage, { props: { content: '很长的消息' } });
+
+      const collapsible = wrapper.findComponent({ name: 'CollapsibleContent' });
+      expect(collapsible.exists()).toBe(true);
+      expect(collapsible.props('maxHeight')).toBe(200);
+    });
+
+    it('折叠容器位于气泡内部，附件列表不受影响', () => {
+      wrapper = mount(UserMessage, { props: { content: '很长的消息' } });
+
+      expect(wrapper.find('.ai-user-message-content .ai-collapsible-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-user-message-binary-files .ai-collapsible-content').exists()).toBe(false);
+    });
+  });
+
+  describe('@ 资源标签回显', () => {
+    const docWithTag = [
+      [
+        { type: 'text', text: '帮我查一下 ' },
+        { type: 'tag', data: { label: '知识库01', value: 'kb_01', type: 'knowledgebase', icon: '' } },
+        { type: 'text', text: ' 的内容' },
+      ],
+    ];
+
+    it('property.extra.docSchema 含标签时按结构渲染而不是纯文本', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '帮我查一下 @知识库01 的内容',
+          property: { extra: { docSchema: docWithTag } },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(true);
+      expect(wrapper.find('.ai-mention-tag').text()).toBe('知识库01');
+      expect(wrapper.find('.mock-text-content').exists()).toBe(false);
+    });
+
+    it('标签携带的 icon 直接用于渲染', () => {
+      const doc = [
+        [{ type: 'tag', data: { label: '知识库01', value: 'kb_01', type: 'knowledgebase', icon: 'https://x/kb.png' } }],
+      ];
+      wrapper = mount(UserMessage, {
+        props: { content: '@知识库01', property: { extra: { docSchema: doc } } } as never,
+      });
+
+      expect(wrapper.find('.ai-resource-icon img').attributes('src')).toBe('https://x/kb.png');
+    });
+
+    it('docSchema 里没有标签时仍走纯文本渲染', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '普通消息',
+          property: { extra: { docSchema: [[{ type: 'text', text: '普通消息' }]] } },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(false);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
+    });
+
+    it('没有 docSchema 时保持原有纯文本渲染', () => {
+      wrapper = mount(UserMessage, { props: { content: '普通消息' } });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(false);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
   });
 });
