@@ -17,8 +17,8 @@ from django.db import close_old_connections
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from .constants import QUESTION_SUBMIT_CLAIM_TTL
 from .question_cards import (
-    MAX_AGE,
     QuestionAction,
     decode_answers,
     question_task_id,
@@ -100,7 +100,7 @@ def _claim_and_submit(submission: QuestionSubmission, delivery) -> str:
     key = f"wxbot:question-submit:{question_task_id(submission.action)}"
     # Use the configured shared cache. Keep the claim after failure: uncertain
     # submissions must be inspected in Web, never replayed automatically.
-    if not cache.add(key, "accepted", timeout=MAX_AGE):
+    if not cache.add(key, "accepted", timeout=QUESTION_SUBMIT_CLAIM_TTL):
         return "duplicate"
     submitted = False
     try:
@@ -159,7 +159,7 @@ def _question_worker(submission: QuestionSubmission, delivery, key: str) -> None
                 if delivery is not None
                 else None,
             )
-            cache.set(key, "completed", timeout=MAX_AGE)
+            cache.set(key, "completed", timeout=QUESTION_SUBMIT_CLAIM_TTL)
             logger.info("event=wxbot_question_resume_finished")
         except Exception as error:
             logger.error("event=wxbot_question_resume_failed error_type=%s", type(error).__name__)

@@ -379,13 +379,15 @@ class TestMessagesProcessingLocation:
             "prepare_stream 不应再读 preprocessed['state']（11.7：改读 input.state）"
         )
 
-        # agent.py.prepare_stream 中仍应包含 interrupt 事件构造和 stream 启动
-        assert "has_active_interrupts" in prepare_stream_source, (
-            "prepare_stream 应仍包含 has_active_interrupts（interrupt 事件构造保留在 agent.py）"
+        # D-08（48-03）：agent.py.prepare_stream 回归**纯拉图**（Command/正常 payload 直接
+        # astream_events 拉图），中断事件构造/下发编排已从 prepare_stream 移除（has_active_interrupts
+        # 孤儿方法删除，D-08/D-10）。
+        assert "has_active_interrupts" not in prepare_stream_source, (
+            "D-08：prepare_stream 回归纯拉图，不应再包含 has_active_interrupts（中断下发编排已删）"
         )
-        assert "astream_events" in prepare_stream_source, (
-            "prepare_stream 应仍包含 astream_events（stream 启动保留在 agent.py）"
-        )
+        # 47-02：stream 启动统一收敛（astream_events 启动点唯一，内联于 prepare_stream 尾部，仍在 agent.py 内）
+        assert "astream_events" in prepare_stream_source, "astream_events 启动应内联收敛于 prepare_stream"
+        assert agent_source.count("astream_events(") == 1, "astream_events 启动点应唯一（不得另立启动 helper/分支）"
 
         # chat.py 应包含 _merge_state 方法（langgraph_default_merge_state 整合）
         assert "def _merge_state(" in chat_source, "chat.py 应包含 _merge_state 方法定义"

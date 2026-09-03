@@ -146,3 +146,31 @@ export interface GetPvFileDownloadUrlOptions {
   /** 请求超时毫秒，默认 20000 */
   timeout?: number;
 }
+
+/** 旧版 session/{code}/upload/{fileName}/ 响应 */
+export interface ILegacyUploadFileResult {
+  download_url?: string;
+}
+
+/** pv_files/upload 单条结果（保持后端 snake_case） */
+export interface IPvFileUploadItem {
+  type: 'file';
+  id: string;
+  path: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  status: 'failed' | 'success';
+  error?: string;
+  download_url?: string;
+}
+
+export interface IPvFileUploadResult {
+  count: number;
+  succeeded: number;
+  failed: number;
+  results: IPvFileUploadItem[];
+}
+
+/** session.uploadFile 对外返回：新接口为单条 result，旧接口仅 download_url */
+export type IUploadFileResult = ILegacyUploadFileResult | IPvFileUploadItem;

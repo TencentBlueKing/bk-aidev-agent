@@ -37,6 +37,7 @@ from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, set_span_in_context
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from aidev_agent.config import BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH, BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 from aidev_agent.pydantic_models import ExecuteKwargs
 
 from .metrics import AgentMetrics, get_agent_metrics
@@ -52,6 +53,7 @@ from .span_utils import (
     set_chat_request,
     set_chat_response,
     set_llm_request,
+    truncate_span_attribute,
 )
 from .utils import (
     _safe_attach_context,
@@ -246,7 +248,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         enable_traces: bool = True,
         enable_metrics: bool = False,
         debug: bool = False,
-        max_attribute_length: int = 4096,
+        max_attribute_length: Optional[int] = None,
+        max_input_attribute_length: int = BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
+        max_output_attribute_length: int = BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
         agent_id: Optional[str] = None,
         agent_code: Optional[str] = None,
         agent_name: Optional[str] = None,
@@ -269,7 +273,9 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             enable_traces: 是否启用 traces，默认 True
             enable_metrics: 是否启用 metrics，默认 False
             debug: 是否为调试状态
-            max_attribute_length: 属性值最大长度，默认 4096
+            max_attribute_length: 兼容旧调用的统一属性上限；设置后覆盖输入、输出上限
+            max_input_attribute_length: 输入属性最大长度，默认 80 KiB
+            max_output_attribute_length: 输出属性最大长度，默认 20 KiB
             agent_id: agent.info.id
             agent_code: agent.info.code
             agent_name: agent.info.name
@@ -296,7 +302,12 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         self.enable_traces = enable_traces
         self.enable_metrics = enable_metrics
         self.debug = debug
-        self.max_attribute_length = max_attribute_length
+        if max_attribute_length is not None:
+            max_input_attribute_length = max_attribute_length
+            max_output_attribute_length = max_attribute_length
+        self.max_input_attribute_length = max(1, max_input_attribute_length)
+        self.max_output_attribute_length = max(1, max_output_attribute_length)
+        self.max_attribute_length = max(self.max_input_attribute_length, self.max_output_attribute_length)
 
         # Agent / Session 基础信息，会注入到所有 span 中
         self._agent_id = agent_id
@@ -920,7 +931,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             messages,
             kwargs,
             self.spans[run_id],
-            max_attribute_length=self.max_attribute_length,
+            max_attribute_length=self.max_input_attribute_length,
         )
         if self._metrics is not None:
             self.agent_iteration_counter += 1
@@ -959,7 +970,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             prompts,
             kwargs,
             self.spans[run_id],
-            max_attribute_length=self.max_attribute_length,
+            max_attribute_length=self.max_input_attribute_length,
         )
         if self._metrics is not None:
             self.agent_iteration_counter += 1
@@ -1035,7 +1046,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             self._total_total_tokens += usage["total_tokens"]
 
         # 提取响应内容
-        set_chat_response(span, response, max_attribute_length=self.max_attribute_length)
+        set_chat_response(span, response, max_attribute_length=self.max_output_attribute_length)
         metric_usage = extract_metric_token_usage(response)
         if metric_usage:
             _set_span_attribute(
@@ -1124,7 +1135,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         attributes = {
             "tool.name": tool_name,
             "tool.call_index": self.tool_call_counter,
-            "tool.input": input_str,
+            "tool.input": truncate_span_attribute(input_str, self.max_input_attribute_length),
         }
         metadata = metadata or {}
         if mcp_name := metadata.get("mcp_name"):
@@ -1173,7 +1184,11 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         span = self._get_span(run_id)
-        _set_span_attribute(span, "tool.output", output)
+        _set_span_attribute(
+            span,
+            "tool.output",
+            truncate_span_attribute(str(output), self.max_output_attribute_length),
+        )
         _set_span_attribute(span, "tool.execution_status", "success")
         started_at = self._tool_started_at.pop(run_id, None)
         metric_attributes = self._tool_metric_attributes.pop(run_id, None)

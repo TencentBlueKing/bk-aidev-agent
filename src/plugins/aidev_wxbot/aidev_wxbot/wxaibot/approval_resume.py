@@ -1,9 +1,9 @@
 """取消成功后在原会话续流，写回 Web，并可注入企微消息消费者。"""
 
-import threading
 from contextvars import copy_context
 from logging import getLogger
 
+from aidev_agent.core.ag_ui.approval import ApproveResult
 from aidev_agent.enums import ChannelType
 from aidev_agent.services.agent.approval import ApprovalStateHandler
 from aidev_agent.utils.tracing import get_current_trace_id
@@ -14,12 +14,15 @@ from aidev_bkplugin.services.execution import get_agent_executor
 from django.db import close_old_connections
 
 from .approval_cards import ApprovalCancelAction
+from .constants import ONCE_REGISTRY_MAX_ENTRIES
+from .once import BoundedOnceRegistry
 from .resume_context import original_interrupt_turn
 from .tracing import record_failure, wxbot_span
 
 logger = getLogger(__name__)
-_pending: set[ApprovalCancelAction] = set()
-_pending_lock = threading.Lock()
+# 取消按钮和审批轮询都能触发续流。登记簿在 worker 结束后不释放：中断一旦被认领就不再重放，
+# 否则「取消已续完 → 轮询晚几分钟才查到 cancelled」会让同一个 interrupt 跑第二遍。
+_claimed = BoundedOnceRegistry(ONCE_REGISTRY_MAX_ENTRIES)
 
 
 def submit_cancelled_approval_resume(
@@ -28,21 +31,27 @@ def submit_cancelled_approval_resume(
     """仅接受本次撤销成功的原会话指令；不信任回调携带的 URL 或执行参数。"""
     if not _can_resume(action, envelope):
         return False
-    with _pending_lock:
-        if action in _pending:
-            if delivery is not None:
-                delivery.finish()
-            return True
-        _pending.add(action)
+    return _submit_resume(action, username, delivery, _resume_worker, "wxbot_approval_resume_submitted")
+
+
+def submit_polled_approval_resume(action: ApprovalCancelAction, username: str, delivery=None) -> bool:
+    """轮询命中三态后续流；与取消按钮共用登记簿，保证每个中断只续流一次。"""
+    return _submit_resume(action, username, delivery, _poll_resume_worker, "wxbot_approval_poll_resume_submitted")
+
+
+def _submit_resume(action: ApprovalCancelAction, username: str, delivery, worker, event: str) -> bool:
+    if not _claimed.claim(action):
+        if delivery is not None:
+            delivery.finish()
+        return True
     submitted = False
     try:
-        submitted = get_agent_executor().submit(copy_context().run, _resume_worker, action, username, delivery)
-        logger.info("event=wxbot_approval_resume_submitted accepted=%s trace_id=%s", submitted, get_current_trace_id())
+        submitted = get_agent_executor().submit(copy_context().run, worker, action, username, delivery)
+        logger.info("event=%s accepted=%s trace_id=%s", event, submitted, get_current_trace_id())
         return submitted
     finally:
         if not submitted:
-            with _pending_lock:
-                _pending.discard(action)
+            _claimed.release(action)
 
 
 def _can_resume(action: ApprovalCancelAction, envelope: dict) -> bool:
@@ -63,10 +72,18 @@ def _can_resume(action: ApprovalCancelAction, envelope: dict) -> bool:
 
 
 def _resume_worker(action: ApprovalCancelAction, username: str, delivery=None) -> None:
+    _execute_resume_worker(action, username, delivery, _resume_cancelled_approval)
+
+
+def _poll_resume_worker(action: ApprovalCancelAction, username: str, delivery=None) -> None:
+    _execute_resume_worker(action, username, delivery, _resume_polled_approval)
+
+
+def _execute_resume_worker(action: ApprovalCancelAction, username: str, delivery, resume_fn) -> None:
     with wxbot_span("wxbot.approval.resume") as span:
         try:
             close_old_connections()
-            _resume_cancelled_approval(action, username, delivery)
+            resume_fn(action, username, delivery)
         except Exception as error:
             if delivery is not None:
                 delivery.failed()
@@ -80,8 +97,6 @@ def _resume_worker(action: ApprovalCancelAction, username: str, delivery=None) -
             try:
                 close_old_connections()
             finally:
-                with _pending_lock:
-                    _pending.discard(action)
                 if delivery is not None:
                     delivery.finish()
 
@@ -96,6 +111,14 @@ def _contains_interrupt(interrupts, interrupt_id: str) -> bool:
 
 
 def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, delivery=None) -> None:
+    _resume_approval(action, username, delivery, allowed_results=frozenset({ApproveResult.CANCELLED}))
+
+
+def _resume_polled_approval(action: ApprovalCancelAction, username: str, delivery=None) -> None:
+    _resume_approval(action, username, delivery, allowed_results=ApproveResult.ALL)
+
+
+def _resume_approval(action: ApprovalCancelAction, username: str, delivery=None, *, allowed_results: frozenset) -> None:
     handler = ApprovalStateHandler(username=username)
     pending = handler.get_pending_interrupt_context(action.session_code)
     info = handler.fetch_approve_result(action.session_code)
@@ -110,7 +133,7 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
     pending_matches = _contains_interrupt(pending.get("interrupts"), action.interrupt_id)
     result_matches = bool(
         info
-        and info.get("approve_result") == "cancelled"
+        and info.get("approve_result") in allowed_results
         and _contains_interrupt(info.get("interrupts"), action.interrupt_id)
     )
     thread_matches = not info or not info.get("graph_thread_id") or info["graph_thread_id"] == thread_id
@@ -128,7 +151,7 @@ def _resume_cancelled_approval(action: ApprovalCancelAction, username: str, deli
             delivery.failed()
         return
     resume = [{"interruptId": action.interrupt_id}]
-    handler.hydrate_resume_payload(resume, "cancelled")
+    handler.hydrate_resume_payload(resume, info["approve_result"])
     execute_kwargs = build_execute_kwargs(
         {
             "stream": True,

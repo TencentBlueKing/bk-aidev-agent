@@ -200,6 +200,142 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
     handler.mark_stopped.assert_not_called()
 
 
+def test_create_attaches_image_url_to_user_binary(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {
+        "data": {
+            "id": 34739,
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {
+                    "filename": "角色.png",
+                    "id": "files/角色.png",
+                    "mime_type": "image/png",
+                    "type": "binary",
+                    "url": "https://cdn/role.png",
+                },
+                {"type": "text", "text": "这个图片内容是啥？"},
+            ],
+        }
+    }
+    file_service = MagicMock()
+    file_service.get_download_url.return_value = {"download_url": "https://cdn/role.png"}
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [
+            {"filename": "角色.png", "id": "files/角色.png", "mime_type": "image/png", "type": "binary"},
+            {"type": "text", "text": "这个图片内容是啥？"},
+        ],
+    }
+    response = _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert sent["content"][0]["url"] == "https://cdn/role.png"
+    assert "url" not in sent["content"][1]
+    file_service.get_download_url.assert_called_once_with(
+        session_code="s1",
+        path="files/角色.png",
+        expires_in=session_mod.IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    )
+    assert response.data["content"][0]["url"] == "https://cdn/role.png"
+
+
+def test_create_skips_signing_for_text_only_message(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1, "content": "你好"}}
+    make_service = MagicMock()
+    monkeypatch.setattr(session_mod.ChatSessionViewSet, "_make_pv_file_service", make_service)
+
+    _view(session_mod.ChatSessionContentViewSet, api).create(
+        _request(data={"role": "user", "session_code": "s1", "content": "你好"})
+    )
+
+    make_service.assert_not_called()
+    api.create_chat_session_content.assert_called_once()
+
+
+def test_create_still_writes_when_image_url_sign_fails(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    file_service.get_download_url.side_effect = session_mod.SandboxFileError("boom")
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [{"type": "binary", "id": "files/角色.png", "mime_type": "image/png"}],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert "url" not in sent["content"][0]
+    api.create_chat_session_content.assert_called_once()
+
+
+def test_create_keeps_existing_image_url(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [
+            {
+                "type": "binary",
+                "id": "files/角色.png",
+                "mime_type": "image/png",
+                "url": "https://already/there",
+            }
+        ],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert sent["content"][0]["url"] == "https://already/there"
+    file_service.get_download_url.assert_not_called()
+
+
+def test_create_ignores_preview_url_when_download_url_missing(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    file_service.get_download_url.return_value = {"preview_url": "https://preview/html"}
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [{"type": "binary", "id": "files/角色.png", "mime_type": "image/png"}],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert "url" not in sent["content"][0]
+
+
 def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
     """broker 查询异常时保持旧协议，避免平台误判为无 producer。"""
     handler = MagicMock()

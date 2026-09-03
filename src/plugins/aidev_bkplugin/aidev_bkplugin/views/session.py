@@ -5,18 +5,22 @@ from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
+    IMAGE_DOWNLOAD_URL_EXPIRES_IN,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
     SandboxFileNotFoundError,
     SandboxPvFileService,
+    fill_user_image_urls,
+    iter_user_images_missing_url,
+    validate_session_upload_files,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
-from blueapps.core.exceptions import ClientBlueException
+from blueapps.core.exceptions import ClientBlueException, ResourceNotFound, ServerBlueException
 from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import action
-from rest_framework.parsers import FileUploadParser
+from rest_framework.parsers import FileUploadParser, MultiPartParser
 from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
@@ -136,15 +140,13 @@ class ChatSessionViewSet(PluginViewSet):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _pv_exc_to_response(exc: SandboxFileError) -> Response:
-        """沙箱文件异常 → HTTP 响应。"""
+    def _raise_pv_exc(exc: SandboxFileError) -> None:
+        """沙箱文件异常 → blueapps 异常，与 path is required 等入口同一套信封。"""
         if isinstance(exc, SandboxFileNotFoundError):
-            status_code = 404
-        elif isinstance(exc, (SandboxFileInvalidArgumentError, SandboxFileInvalidRequestError)):
-            status_code = 400
-        else:
-            status_code = 500
-        return Response(data={"message": str(exc)}, status=status_code)
+            raise ResourceNotFound(message=str(exc)) from exc
+        if isinstance(exc, (SandboxFileInvalidArgumentError, SandboxFileInvalidRequestError)):
+            raise ClientBlueException(message=str(exc)) from exc
+        raise ServerBlueException(message=str(exc)) from exc
 
     def _check_session_owner(self, request, session_code: str, require_access: bool = False) -> None:
         """校验 session 归属
@@ -215,6 +217,21 @@ class ChatSessionViewSet(PluginViewSet):
 
         return SandboxPvFileService(resource_manager=rm, executor_info=executor_info)
 
+    @staticmethod
+    def _resolve_upload_snapshot(rm) -> str:
+        """走平台 image 表查询：取 file-kit 已构建成功的最新镜像。"""
+        try:
+            result = rm.get_client().api.retrieve_latest_skill_version_image()
+        except Exception:
+            logger.exception("[pv_files] resolve_upload_snapshot 调平台失败")
+            raise
+        data = result.get("data") if isinstance(result, dict) else None
+        image = data.get("image") if isinstance(data, dict) else ""
+        image = image.strip() if isinstance(image, str) else ""
+        if not image:
+            logger.warning("[pv_files] resolve_upload_snapshot empty")
+        return image
+
     @action(["GET"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
@@ -228,7 +245,7 @@ class ChatSessionViewSet(PluginViewSet):
                 until=None,
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
     @action(["GET"], url_path="pv_files/stat", detail=True)
@@ -240,7 +257,7 @@ class ChatSessionViewSet(PluginViewSet):
         try:
             data = self._make_pv_file_service(request).stat_file(session_code=pk, path=path)
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
 
     @action(["GET"], url_path="pv_files/preview", detail=True)
@@ -255,7 +272,7 @@ class ChatSessionViewSet(PluginViewSet):
                 session_code=pk, path=path, max_bytes=max_bytes
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         response = HttpResponse(content, content_type="text/plain; charset=utf-8")
         response["X-Truncated"] = "true" if truncated else "false"
         return response
@@ -272,14 +289,61 @@ class ChatSessionViewSet(PluginViewSet):
                 session_code=pk, path=path, expires_in=expires_in
             )
         except SandboxFileError as exc:
-            return self._pv_exc_to_response(exc)
+            self._raise_pv_exc(exc)
         return Response(data=data)
+
+    @action(
+        ["POST"],
+        url_path="pv_files/upload",
+        detail=True,
+        parser_classes=[MultiPartParser],
+    )
+    def pv_files_upload(self, request, pk, **kwargs):
+        """批量上传文件到会话 PV。"""
+        self._check_session_owner(request, pk, require_access=True)
+        uploaded_files = request.FILES.getlist("files")
+        files = [
+            {
+                "name": upload_file.name,
+                "content": upload_file.read(),
+                "mime_type": upload_file.content_type or "application/octet-stream",
+            }
+            for upload_file in uploaded_files
+        ]
+        try:
+            validate_session_upload_files(files)
+        except SandboxFileError as exc:
+            self._raise_pv_exc(exc)
+
+        svc = self._make_pv_file_service(request)
+        snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
+        if snapshot:
+            svc._executor_info["snapshot"] = snapshot
+        try:
+            data = svc.upload_files(session_code=pk, files=files)
+        except SandboxFileError as exc:
+            self._raise_pv_exc(exc)
+        return Response(data=data)
+
+
+def _copy_session_content_payload(data):
+    """复制写消息 payload，避免改写原始 request.data。"""
+    if not isinstance(data, dict):
+        return data
+    payload = dict(data)
+    content = payload.get("content")
+    if isinstance(content, list):
+        payload["content"] = [dict(item) if isinstance(item, dict) else item for item in content]
+    return payload
 
 
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
         username = request.user.username
-        result = self.client.api.create_chat_session_content(json=request.data, headers={"X-BKAIDEV-USER": username})
+        payload = _copy_session_content_payload(request.data)
+        if isinstance(payload, dict) and any(iter_user_images_missing_url(payload)):
+            fill_user_image_urls(ChatSessionViewSet._make_pv_file_service(self, request), payload)
+        result = self.client.api.create_chat_session_content(json=payload, headers={"X-BKAIDEV-USER": username})
         return Response(data=result["data"])
 
     @action(["GET"], url_path="content", detail=False)

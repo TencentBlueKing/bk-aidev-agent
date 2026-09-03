@@ -79,7 +79,6 @@
             :get-side-tab-render-component="props.getSideTabRenderComponent"
             :hello-text="props.helloText"
             :message-tools="props.messageTools"
-            :message-tools-tippy-options="messageToolsTippyOptions"
             :model-selection-manager="modelSelection"
             :models="props.models"
             :on-custom-tab-change="props.onCustomTabChange"
@@ -229,7 +228,6 @@
     currentSession,
     isCompressed,
     isWelcomeState,
-    messageToolsTippyOptions,
     agentResources,
     agentPrompts,
     agentSkills,

@@ -25,10 +25,9 @@ from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
-from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
 
-from .approval_wrapper import approval_async_wrapper, approval_sync_wrapper
+from .approval_wrapper import itsm_approval_async_wrapper, itsm_approval_sync_wrapper
 from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .pydantic_models import ToolNodeSettings
 from .result_limit_wrapper import build_result_limit_async_wrapper, build_result_limit_sync_wrapper
@@ -217,11 +216,12 @@ def build_tool_node(
     node_options = node_options or ToolNodeSettings()
 
     # 组合包装器：内置包装器 + 用户自定义包装器
+    # ITSM 审批 wrapper（直插函数），ask_user 由工具本体直调 interrupt（D-12）
     sync_wrapper_list: list[ToolCallWrapper] = [
-        approval_sync_wrapper,
+        itsm_approval_sync_wrapper,
     ]
     async_wrapper_list: list[AsyncToolCallWrapper] = [
-        approval_async_wrapper,
+        itsm_approval_async_wrapper,
     ]
     # 是否启用参数校验失败时自动修复重试（响应式）
     if node_options.use_json_repair_on_error:

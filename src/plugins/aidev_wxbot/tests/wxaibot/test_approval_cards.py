@@ -6,12 +6,23 @@ from dataclasses import replace
 
 import pytest
 from aidev_wxbot.wxaibot.approval_cards import (
+    approval_action_from_card,
     bind_approval_target,
     build_cancel_result_card,
     build_pending_approval_card,
     decode_cancel_event_key,
     encode_cancel_event_key,
 )
+
+
+def test_approval_action_from_card_reads_bound_button(approval_card_case):
+    bound = bind_approval_target(approval_card_case.card, "group-original")
+    action = approval_action_from_card(bound)
+    assert action is not None
+    assert action.session_code == approval_card_case.action.session_code
+    assert action.interrupt_id == approval_card_case.action.interrupt_id
+    assert action.target == "group-original"
+    assert approval_action_from_card({"card_type": "text_notice"}) is None
 
 
 def test_sent_card_binds_signed_target_without_changing_original(approval_card_case):

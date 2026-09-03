@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
-from aidev_wxbot.wxaibot.constants import HELP_REPLY, STOP_NO_ACTIVE_REPLY
+from aidev_wxbot.wxaibot.constants import (
+    HELP_REPLY,
+    STOP_NO_ACTIVE_REPLY,
+)
 from aidev_wxbot.wxaibot.views import WxAiBotViewSet, WxBotAgentRequest
 
 
@@ -148,3 +151,27 @@ class TestBuiltinCommands:
         response, content = view._process_mention_fallback("@某机器人 /help", "s1", context)
         assert response["stream"]["content"] == HELP_REPLY
         assert content == ""
+
+
+@pytest.mark.parametrize(
+    ("valid", "expected_thread", "update_kwargs"),
+    [
+        (True, "thread-1", {}),
+        (False, "scope-1_100", {"thread_id": "scope-1_100"}),
+    ],
+)
+def test_get_or_create_thread_id_reuses_or_rotates_after_idle(valid, expected_thread, update_kwargs):
+    """空闲未满 30 分钟沿用 thread；超时则换新 thread，与 develop 原逻辑一致。"""
+    view = WxAiBotViewSet()
+    record = SimpleNamespace(thread_id="thread-1")
+    record.is_session_valid = MagicMock(return_value=valid)
+    record.update_session = MagicMock()
+
+    with (
+        patch("aidev_wxbot.wxaibot.views.AgentSession.objects.get", return_value=record),
+        patch("aidev_wxbot.wxaibot.views.time.time", return_value=100),
+    ):
+        assert view._get_or_create_thread_id("scope-1") == expected_thread
+
+    record.is_session_valid.assert_called_once_with(timeout_minutes=30)
+    record.update_session.assert_called_once_with(**update_kwargs)

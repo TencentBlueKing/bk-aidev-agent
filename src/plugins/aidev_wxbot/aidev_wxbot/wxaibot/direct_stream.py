@@ -13,7 +13,8 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 from .approval_cards import build_pending_approval_card
 from .constants import STREAM_ERROR_REPLY
 from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
-from .formatters import _node_display, _task_state_label, format_task_outputs
+from .flow_cards import build_flow_action_card
+from .formatters import _task_state_label, format_flow_progress, format_task_outputs
 from .question_cards import build_pending_question_card, pending_question, question_prompt
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
@@ -165,7 +166,6 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
 @dataclass(slots=True)
 class _FlowState:
     task_id: str = ""
-    nodes_initialized: bool = False
     nodes: dict = field(default_factory=dict)
     last_task_state: str = ""
     thinking: str = ""
@@ -175,6 +175,8 @@ class _FlowState:
 def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started) -> Generator[DirectStreamFrame]:
     state = _FlowState()
     finished = False
+    # BKFlow 默认 0.5s 轮询一次，进度没变化时不必再向企微重发一模一样的内容。
+    last_content = ""
 
     for event in iter_sse_lines(agent_stream.generator, stream_id):
         if finished:
@@ -184,7 +186,8 @@ def _iter_flow_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             on_run_started(_run_id_of(event))
         elif event_type == EventType.CUSTOM:
             frame = _format_flow_event(event.get("name", ""), event.get("value"), state, agent_stream.session_code)
-            if frame:
+            if frame and (frame.finish or frame.content != last_content):
+                last_content = frame.content
                 yield frame
                 if frame.finish:
                     finished = True
@@ -209,27 +212,24 @@ def _format_flow_event(event_name: str, raw_value, state: _FlowState, session_co
     if isinstance(value, list):
         value = value[0] if value else {}
 
-    if event_name == CustomMessageType.FLOW_AGENT_START.value:
-        state.task_id = value.get("task_id", "未知")
-        state.nodes_initialized = False
+    if event_name in {
+        CustomMessageType.FLOW_AGENT_START.value,
+        CustomMessageType.FLOW_AGENT_RESTART.value,
+    }:
+        # 不在这里塞「未知」占位：task_id 还要决定能否发重试/跳过卡片，展示兜底交给渲染层。
+        state.task_id = value.get("task_id") or state.task_id
         return None
 
-    if event_name == CustomMessageType.FLOW_AGENT_RESULT.value:
+    if event_name in {CustomMessageType.FLOW_AGENT_RESULT.value, CustomMessageType.FLOW_AGENT_UPDATE.value}:
         task_state = value.get("task_state", value.get("state", ""))
         nodes = value.get("nodes") or {}
         if nodes:
             state.nodes = nodes
         if task_state:
             state.last_task_state = task_state
-        if not state.nodes_initialized:
-            task_id = state.task_id or value.get("task_id", "未知")
-            lines = [f"流程任务已启动 (任务ID: {task_id})"]
-            names = [node.get("name", "") for node in nodes.values() if isinstance(node, dict) and node.get("name")]
-            if names:
-                lines.append(f"共包含{len(names)}个节点：")
-                lines.extend(f"- {name}" for name in names)
-            state.thinking = "\n".join(lines) + "\n\n"
-            state.nodes_initialized = True
+        if value.get("task_id"):
+            state.task_id = value["task_id"]
+        state.thinking = format_flow_progress(state.task_id, state.last_task_state, state.nodes)
         return DirectStreamFrame(content=_render_flow(state), finish=False)
 
     if event_name != CustomMessageType.FLOW_AGENT_END.value:
@@ -238,36 +238,24 @@ def _format_flow_event(event_name: str, raw_value, state: _FlowState, session_co
     task_id = value.get("task_id") or state.task_id
     task_state = value.get("state", "") or state.last_task_state
     task_state_cn = _task_state_label(task_state)
-    lines = [f"流程任务执行{task_state_cn} (任务ID: {task_id})"]
-    node_lines = []
-    for node in state.nodes.values() if isinstance(state.nodes, dict) else []:
-        if not isinstance(node, dict):
-            continue
-        name = node.get("name", "")
-        label, icon = _node_display(node.get("state", "PENDING"))
-        elapsed = node.get("elapsed_time", 0)
-        node_lines.append(f"- {icon} {name}: {label}{f' ({elapsed}s)' if elapsed else ''}")
-    if node_lines:
-        lines.append(f"\n共{len(node_lines)}个节点：")
-        lines.extend(node_lines)
-    state.thinking = "\n".join(lines) + "\n"
+    state.thinking = format_flow_progress(task_id, task_state, state.nodes)
 
-    if value.get("error", False):
-        state.content = f"流程任务执行{task_state_cn}\n任务ID: {task_id}"
+    is_error = bool(value.get("error", False))
+    if is_error:
+        state.content = f"流程任务执行{task_state_cn}\n任务ID: {task_id or '未知'}"
     else:
         outputs = format_task_outputs(value.get("task_outputs", {}))
-        state.content = f"流程任务执行完成\n任务ID: {task_id}"
+        state.content = f"流程任务执行完成\n任务ID: {task_id or '未知'}"
         if outputs:
             state.content += f"\n\n执行结果:\n{outputs}"
     if session_code:
         detail_url = AgentHelper.build_session_detail_url(session_code)
         if detail_url:
             state.content += f"\n\n[查看详情]({detail_url})"
-    return DirectStreamFrame(
-        content=_render_flow(state),
-        finish=True,
-        failed=bool(value.get("error", False)),
-    )
+    card = None
+    if is_error and session_code:
+        card = build_flow_action_card(session_code=session_code, task_id=task_id, nodes=state.nodes)
+    return DirectStreamFrame(content=_render_flow(state), finish=True, failed=is_error, template_card=card)
 
 
 def _render_chat(thinking: str, content: str) -> str:

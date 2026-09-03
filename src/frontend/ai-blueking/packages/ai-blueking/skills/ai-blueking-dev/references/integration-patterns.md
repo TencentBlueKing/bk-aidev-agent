@@ -476,10 +476,10 @@ const handleHistoryClick = (event: Event) => {
   };
 
   // ==================== 文件上传 ====================
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (files: File[]) => {
     const sessionCode = session.current.value?.sessionCode;
-    if (!sessionCode) return {};
-    return await session.uploadFile(sessionCode, file);
+    if (!sessionCode) return [];
+    return await session.uploadFiles(sessionCode, files);
   };
 
   // ==================== 工具操作 ====================

@@ -181,7 +181,7 @@ export class ComponentManager {
   }
 
   /**
-   * 折叠侧面板：左边缘不动，从右侧收窄
+   * 折叠侧面板：先从右侧缩宽，再移回展开前的位置
    *
    * 代理调用容器的 collapseSidePanel，与 toggleCompression 模式一致。
    */

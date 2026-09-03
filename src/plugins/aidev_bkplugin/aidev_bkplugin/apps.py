@@ -62,6 +62,25 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _deduplicate_otel_endpoints(endpoints: list[dict]) -> list[dict]:
+    """Keep the highest-priority config for each effective OTLP destination."""
+    deduplicated = []
+    seen = set()
+    for endpoint in endpoints:
+        exporter_type = endpoint.get("exporter_type")
+        exporter_type = getattr(exporter_type, "value", exporter_type)
+        identity = (
+            str(endpoint.get("url", "")).rstrip("/"),
+            str(exporter_type),
+            str(endpoint.get("token", "")),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduplicated.append(endpoint)
+    return deduplicated
+
+
 def _is_one_off_management_command() -> bool:
     if not sys.argv or Path(sys.argv[0]).name not in {"manage.py", "django-admin", "django-admin.py"}:
         return False
@@ -129,6 +148,13 @@ def init_bk_aidev_agent_otel() -> None:
     endpoints.extend(get_otel_endpoint_by_agent_info(agent_info=agent_info))
     # 3. 从 OTEL_GRPC_URL 和 OTEL_BK_DATA_TOKEN 获取单地址
     endpoints.extend(get_otel_endpoint_by_env())
+    deduplicated_endpoints = _deduplicate_otel_endpoints(endpoints)
+    if len(deduplicated_endpoints) != len(endpoints):
+        logger.info(
+            "[aidev_bkplugin] removed %d duplicate OpenTelemetry endpoint(s)",
+            len(endpoints) - len(deduplicated_endpoints),
+        )
+    endpoints = deduplicated_endpoints
 
     otel_config.otel_endpoints = endpoints
     if configure_metric_identity is None or BkPluginMetricService is None or MetricExportSettings is None:
@@ -149,7 +175,7 @@ def init_bk_aidev_agent_otel() -> None:
             agent_info.get("agent_name"),
             agent_info.get("agent_sdk_version"),
         )
-        if metric_settings.export_via_celery:
+        if metric_settings.has_bkm_config:
             metric_service = BkPluginMetricService(
                 service_name=otel_config.service_name,
                 endpoints=endpoints,

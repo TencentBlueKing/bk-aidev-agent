@@ -664,7 +664,6 @@ def main() -> None:
             enabled=True,
             export_interval_millis=1000,
             export_timeout_millis=5000,
-            export_via_celery=False,
         ),
     )
     service.start()

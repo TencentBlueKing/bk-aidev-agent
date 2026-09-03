@@ -298,6 +298,12 @@ class AgentInput(RunAgentInput):
     stream_input: Any = Field(
         default=None, description="stream 输入（chat.py 预处理，供 agent.py.prepare_stream 使用）"
     )
+    next_interrupt: Any = Field(
+        default=None,
+        description="lw4：resume 未就绪时的下一张 pending 卡（get_resume_input 的 next_interrupt）。"
+        "LangGraphAgent.prepare_stream 在 stream_input 为 None 时消费它构造 RUN_FINISHED(interrupt)"
+        " 结束事件（events_to_dispatch 快照-结束通道）；ready/普通路径该字段为 None 且不被消费。",
+    )
 
 
 class ActivityMessage(ChatMessage):

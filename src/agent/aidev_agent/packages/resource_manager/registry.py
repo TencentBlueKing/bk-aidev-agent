@@ -62,7 +62,15 @@ class ResourceManagerProtocol(Protocol):
         ...
 
     def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
-        """取回会话全部落库内容记录（业务返回结构 = 后端 ``data`` 字段，与前端历史接口同源）。"""
+        """取回会话全部落库内容记录（业务返回结构 = 后端 ``data`` 字段，与前端历史接口同源）"""
+        ...
+
+    def is_resume_session(self, session_code: str, **kwargs) -> bool:
+        """查询会话是否为续流（resume）会话（业务返回结构 = 后端 ``data`` 布尔值）"""
+        ...
+
+    def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
+        """创建工具调用审批单（业务返回结构 = 后端 ``data`` 字段）"""
         ...
 
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:

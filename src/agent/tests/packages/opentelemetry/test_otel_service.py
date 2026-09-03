@@ -1,6 +1,12 @@
 import logging
 from types import SimpleNamespace
 
+import pytest
+from aidev_agent.config import (
+    BKAI_AGENT_MAX_ATTRIBUTE_LENGTH,
+    BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
+    BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
+)
 from aidev_agent.packages.opentelemetry.config import OTelConfig
 from aidev_agent.packages.opentelemetry.metrics import (
     AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
@@ -15,6 +21,32 @@ def test_otel_config_uses_central_metric_toggle(monkeypatch):
     monkeypatch.setattr("aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_ENABLE_METRICS", True)
 
     assert OTelConfig(otel_endpoints=[]).enable_metrics is True
+
+
+def test_otel_config_uses_central_attribute_limits_by_default():
+    config = OTelConfig(otel_endpoints=[])
+
+    assert BKAI_AGENT_MAX_ATTRIBUTE_LENGTH == config.max_attribute_length == 10000
+    assert BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH == config.max_input_attribute_length == 80 * 1024
+    assert BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH == config.max_output_attribute_length == 20 * 1024
+    assert config.span_attribute_length_limit == BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH
+
+
+def test_otel_config_uses_independent_central_attribute_limits(monkeypatch):
+    monkeypatch.setattr("aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", 123)
+    monkeypatch.setattr(
+        "aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH", 456
+    )
+    monkeypatch.setattr(
+        "aidev_agent.packages.opentelemetry.config.agent_settings.BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH", 234
+    )
+
+    config = OTelConfig(otel_endpoints=[])
+
+    assert config.max_attribute_length == 123
+    assert config.max_input_attribute_length == 456
+    assert config.max_output_attribute_length == 234
+    assert config.span_attribute_length_limit == 456
 
 
 def test_metric_toggle_does_not_change_trace_service_setup(mocker):
@@ -85,4 +117,33 @@ def test_logging_trace_exporter_writes_span_without_remote_export(mocker, caplog
     create_remote_exporter.assert_not_called()
     assert "event=aidev_otel_span" in caplog.text
     assert "name=local-evaluation" in caplog.text
+    service.tracer_provider.shutdown()
+
+
+@pytest.mark.parametrize(
+    "attribute_name",
+    [
+        "agent.session.input",
+        "gen_ai.request.tools",
+        "llm.input",
+        "llm.output",
+        "tool.input",
+        "tool.output",
+    ],
+)
+def test_trace_provider_bounds_all_span_and_event_attributes(attribute_name):
+    config = OTelConfig(otel_endpoints=[])
+    config.max_attribute_length = 16
+    config.max_input_attribute_length = 16
+    config.max_output_attribute_length = 16
+    service = BkAgentOTelService(config)
+
+    service._setup_traces(Resource.create({}))
+    span = service.get_tracer(__name__).start_span("bounded-attributes")
+    span.set_attribute(attribute_name, "x" * 100)
+    span.add_event("failure", {"exception.stacktrace": "y" * 100})
+    span.end()
+
+    assert span.attributes[attribute_name] == "x" * 16
+    assert span.events[0].attributes["exception.stacktrace"] == "y" * 16
     service.tracer_provider.shutdown()

@@ -24,7 +24,6 @@ from aidev_wxbot.wxaibot.context import LlmChunkMsg
 from aidev_wxbot.wxaibot.formatters import handle_flow_custom_event
 from aidev_wxbot.wxaibot.strategies import (
     WECOM_AGENT_EXECUTION_POLICY,
-    WECOM_AGENT_TEMPERATURE,
     WECOM_LONG_CONNECTION_EXECUTION_POLICY,
     ChatAgentStrategy,
     FlowAgentStrategy,
@@ -168,6 +167,73 @@ class TestFlowAgentStrategyExecute:
         # start 仅缓存 task_id；result 和 end 各写入一次。
         assert mock_rabbitmq.publish_message.call_count == 2
 
+    @patch("aidev_wxbot.wxaibot.strategies.AgentHelper.get_client")
+    @patch("aidev_wxbot.wxaibot.strategies.WxFlowAgentClient")
+    @patch("aidev_wxbot.wxaibot.strategies.SessionManager")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentInstanceFactory")
+    @patch("aidev_wxbot.wxaibot.strategies.AGUISessionWriter")
+    def test_open_stream_resume_passes_task_id_and_clears_pending(
+        self,
+        mock_writer,
+        mock_factory,
+        mock_session_cls,
+        mock_flow_client,
+        mock_get_client,
+    ):
+        """卡片续流：把 task_id / resume_from_node 交给工厂，并消费 resume_pending。"""
+        session_manager = mock_session_cls.return_value
+        session_manager.get_or_create_by_thread_id.return_value = "sc_abc"
+        mock_factory.build_agent.return_value = MagicMock()
+
+        FlowAgentStrategy().open_stream(
+            content="",
+            username="wxid_123",
+            thread_id="t1",
+            group_id="g1",
+            task_id="42",
+            resume_from_node="retry",
+        )
+
+        factory_kwargs = mock_factory.build_agent.call_args.kwargs
+        assert factory_kwargs["task_id"] == "42"
+        assert factory_kwargs["resume_from_node"] == "retry"
+        session_manager.save_content.assert_not_called()
+        session_manager.set_flow_resume_pending.assert_called_once_with("sc_abc", False)
+        mock_writer.assert_called_once()
+        assert mock_writer.call_args.kwargs["task_id"] == "42"
+
+    @patch("aidev_wxbot.wxaibot.strategies.AgentHelper.get_client")
+    @patch("aidev_wxbot.wxaibot.strategies.WxFlowAgentClient")
+    @patch("aidev_wxbot.wxaibot.strategies.SessionManager")
+    @patch("aidev_wxbot.wxaibot.strategies.AgentInstanceFactory")
+    @patch("aidev_wxbot.wxaibot.strategies.AGUISessionWriter")
+    def test_open_stream_binds_existing_session_code(
+        self,
+        mock_writer,
+        mock_factory,
+        mock_session_cls,
+        mock_flow_client,
+        mock_get_client,
+    ):
+        """卡片续流按签名里的 session_code 绑定原会话，不按 thread_id 另开。"""
+        session_manager = mock_session_cls.return_value
+        mock_factory.build_agent.return_value = MagicMock()
+
+        FlowAgentStrategy().open_stream(
+            content="",
+            username="wxid_123",
+            thread_id="",
+            group_id="",
+            task_id="42",
+            resume_from_node="skip",
+            session_code="session-1",
+        )
+
+        session_manager.get_or_create_by_session_code.assert_called_once_with("session-1", channel_type="rtx")
+        session_manager.get_or_create_by_thread_id.assert_not_called()
+        session_manager.save_content.assert_not_called()
+        assert mock_factory.build_agent.call_args.kwargs["session_code"] == "session-1"
+
 
 # ---------------------------------------------------------------------------
 # 3. ChatAgentStrategy.execute
@@ -192,6 +258,7 @@ class TestChatAgentStrategyExecute:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["retry_strategy"] == "sdk"
         assert call_kwargs["transient_system_prompt"] == WECOM_LONG_CONNECTION_EXECUTION_POLICY
+        assert "temperature" not in call_kwargs
 
     @patch("aidev_wxbot.wxaibot.strategies.AgentExecutor.run_chat_completion_with_thread_id")
     @patch("aidev_wxbot.wxaibot.strategies.build_execute_kwargs")
@@ -221,7 +288,7 @@ class TestChatAgentStrategyExecute:
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["transient_system_prompt"] == WECOM_AGENT_EXECUTION_POLICY
         assert call_kwargs["enable_query_clarification"] is False
-        assert call_kwargs["temperature"] == WECOM_AGENT_TEMPERATURE
+        assert "temperature" not in call_kwargs
         assert call_kwargs["retry_strategy"] is None
         assert mock_rabbitmq.publish_message.call_count >= 1
 
@@ -285,6 +352,7 @@ class TestConsumeFlowStream:
         last_msg = last_call_data if isinstance(last_call_data, dict) else json.loads(last_call_data)
         assert last_msg["is_finish"] is True
         assert "完成" in last_msg["content"]
+        assert "out: ok" in last_msg["content"]
 
     def test_run_error_terminates_and_writes_error(self, mock_rabbitmq):
         """RUN_ERROR → 写入错误消息 + is_finish=True，后续事件不再处理"""
@@ -325,7 +393,7 @@ class TestConsumeFlowStream:
 
 
 class TestHandleFlowCustomEvent:
-    """验证三阶段展示策略：start→缓存task_id, result→think(节点名称列表)+缓存nodes, end→content(最终状态)"""
+    """验证三阶段展示策略：start→缓存task_id, result→think(重绘节点进度)+缓存nodes, end→content(最终状态)"""
 
     def test_start_saves_task_id(self, mock_rabbitmq):
         """flow_agent_start: 缓存 task_id，不写 think_content，content 为空"""
@@ -333,49 +401,41 @@ class TestHandleFlowCustomEvent:
         handle_flow_custom_event("flow_agent_start", {"value": [{"task_id": "42"}]}, chunk, mock_rabbitmq)
 
         assert chunk._flow_task_id == "42"
-        assert chunk._flow_nodes_initialized is False
         assert chunk.think_content == ""
         assert chunk.content == ""
         assert not chunk.is_finish
 
-    def test_result_shows_node_names_and_caches_data(self, mock_rabbitmq):
-        """flow_agent_result: 首次展示节点名称列表（无状态），缓存 nodes 和 task_state"""
+    def test_every_result_redraws_node_progress(self, mock_rabbitmq):
+        """flow_agent_result: 每轮都整体重绘节点进度，而不是只在首帧写一次"""
         chunk = LlmChunkMsg(stream_id="s_1_1000")
-        handle_flow_custom_event(
-            "flow_agent_result",
-            {
+
+        def _result(training_state, training_elapsed):
+            return {
                 "value": [
                     {
                         "task_state": "RUNNING",
                         "nodes": {
                             "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
-                            "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
+                            "n2": {"name": "模型训练", "state": training_state, "elapsed_time": training_elapsed},
                             "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
                         },
-                        "statistics": {"total": 3, "state_counts": {"FINISHED": 1, "RUNNING": 1, "PENDING": 1}},
                     }
                 ]
-            },
-            chunk,
-            mock_rabbitmq,
-        )
+            }
 
-        # 验证节点名称列表（无图标/状态/耗时）
-        # 提取节点名称列表（按行分割，提取 "- 名称" 格式）
-        think_lines = chunk.think_content.split("\n")
-        node_names = [line.strip()[2:] for line in think_lines if line.strip().startswith("- ")]
-        assert "数据清洗" in node_names
-        assert "模型训练" in node_names
-        assert "汇总" in node_names
-        assert "共包含3个节点" in chunk.think_content
-        # 验证缓存了 nodes 和 task_state
-        assert chunk._flow_nodes_cache == {
-            "n1": {"name": "数据清洗", "state": "FINISHED", "elapsed_time": 90},
-            "n2": {"name": "模型训练", "state": "RUNNING", "elapsed_time": 30},
-            "n3": {"name": "汇总", "state": "PENDING", "elapsed_time": 0},
-        }
+        handle_flow_custom_event("flow_agent_result", _result("RUNNING", 30), chunk, mock_rabbitmq)
+        assert "共3个节点" in chunk.think_content
+        assert "- 🟢 数据清洗: 成功 (90s)" in chunk.think_content
+        assert "- 🔄 模型训练: 执行中 (30s)" in chunk.think_content
+        assert "- ⚪ 汇总: 待执行" in chunk.think_content
+
+        handle_flow_custom_event("flow_agent_update", _result("FINISHED", 75), chunk, mock_rabbitmq)
+        assert "- 🟢 模型训练: 成功 (75s)" in chunk.think_content
+        assert "🔄" not in chunk.think_content
+        assert chunk.think_content.count("数据清洗") == 1
+
+        assert chunk._flow_nodes_cache["n2"] == {"name": "模型训练", "state": "FINISHED", "elapsed_time": 75}
         assert chunk._flow_last_task_state == "RUNNING"
-        # content 仍为空（中间状态）
         assert chunk.content == ""
 
     def test_end_success_uses_cached_state(self, mock_rabbitmq):
@@ -404,7 +464,6 @@ class TestHandleFlowCustomEvent:
 
         assert "完成" in chunk.content
         assert "result: done" in chunk.content
-        # think_content 使用缓存的 nodes 展示最终状态（有图标）
         assert "成功" in chunk.think_content
         assert "数据清洗" in chunk.think_content
         assert chunk.is_finish

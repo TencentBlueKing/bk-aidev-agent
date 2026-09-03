@@ -3,8 +3,29 @@ ROOT_DIR?=$(shell git rev-parse --show-toplevel)
 TEMPLATE_DIR := template/builtin
 TEMPLATE_PROJECT_DIR := $(TEMPLATE_DIR)/{{cookiecutter.project_name}}
 
-.PHONY: ALL
+.PHONY: ALL e2e-setup e2e-up e2e-down e2e e2e-browser e2e-api e2e-ai-blueking e2e-metrics e2e-wxbot
 ALL: init-project
+
+E2E_MAKE := $(MAKE) -C $(ROOT_DIR)/dev/e2e
+E2E_DEFAULT_MODULES := api,ai-blueking,metrics,wxbot
+
+e2e-setup:
+	$(E2E_MAKE) setup $(if $(env_file),ENV_FILE="$(env_file)",)
+
+e2e-up:
+	$(E2E_MAKE) up DB=$(if $(db),$(db),sqlite)
+
+e2e-down:
+	$(E2E_MAKE) down
+
+e2e:
+	$(E2E_MAKE) run MODULES=$(E2E_DEFAULT_MODULES) DB=$(if $(db),$(db),sqlite) HEADLESS=$(if $(headless),$(headless),true) $(if $(env_file),ENV_FILE="$(env_file)",)
+
+e2e-browser:
+	$(E2E_MAKE) browser MODULES=$(if $(modules),$(modules),ai-blueking) DB=$(if $(db),$(db),sqlite) $(if $(env_file),ENV_FILE="$(env_file)",)
+
+e2e-api e2e-ai-blueking e2e-metrics e2e-wxbot:
+	$(E2E_MAKE) $(patsubst e2e-%,%,$@) DB=$(if $(db),$(db),sqlite) HEADLESS=$(if $(headless),$(headless),true) $(if $(env_file),ENV_FILE="$(env_file)",)
 
 uv.lock: pyproject.toml
 	uv lock

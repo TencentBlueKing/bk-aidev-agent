@@ -26,6 +26,10 @@ STREAM_TIMEOUT_REPLY = "处理超过 10 分钟，已终止本次请求"
 BUSY_REPLY = "当前会话正在生成回复，请等待完成，或发送 /stop 结束后再提问"
 # 群里占用名额的是别人的提问时用这条：/stop 只能停自己的，让他等而不是让他去停别人的
 BUSY_BY_OTHERS_REPLY = "群里有其他成员的提问正在处理，请稍后再试"
+# 重试/跳过失败且卡片没能原地更新时的兜底提示。
+FLOW_NODE_ACTION_FAILED_REPLY = "节点操作失败，请返回原会话查看任务状态。"
+# 本地 thread 已因空闲 30 分钟或 /new 换过；旧卡仍绑着上一场 session_code。
+SESSION_SWITCHED_REPLY = "当前会话已切换，此卡片已失效。请在新对话中继续。"
 
 # 收尾时等待 Agent 统一流接口自然结束的上限（秒）。排空由 Bkplugin 有界收尾执行器执行；
 # 超时会取消 Agent run，因此既不继续占住生成 worker，也不会为每条流留下新线程。
@@ -72,3 +76,15 @@ TOOL_TARGET_LIMIT = 50
 # RabbitMQ 队列自动过期时间
 QUEUE_EXPIRES_MS = 360000
 WS_INSTANCE_LOCK_CACHE_KEY_PREFIX = "wxaibot:ws:instance:"
+
+# 间隔按 2s、4s、8s… 指数拉长，单次不超过 5 分钟。
+APPROVAL_POLL_INITIAL_SECONDS = 2.0
+APPROVAL_POLL_MAX_INTERVAL_SECONDS = 300.0
+# 单个 poller 的存活预算。卡片过期由企微判定，这里封顶纯粹是不让迟迟不落终态的审批常驻后台。
+APPROVAL_POLL_MAX_SECONDS = 86400.0
+# 同理，同时在跑的 poller 也要封顶，否则积压的审批会拖垮线程池。
+APPROVAL_POLL_MAX_CONCURRENT = 200
+# 已改过名的 session_code、已认领续流的中断，都用有界登记簿记录，避免常驻进程无界增长。
+ONCE_REGISTRY_MAX_ENTRIES = 4096
+# 提问卡重复提交的去重标记保留时长（秒）。与卡片过期无关，只是防止缓存无限堆积。
+QUESTION_SUBMIT_CLAIM_TTL = 86400

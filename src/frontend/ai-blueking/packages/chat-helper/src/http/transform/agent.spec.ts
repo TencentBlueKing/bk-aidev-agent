@@ -33,4 +33,12 @@ describe('transferAgentInfoApi2AgentInfo', () => {
     });
     expect(result.agentType).toBe('single');
   });
+
+  it('maps agent_sdk_version to agentSdkVersion', () => {
+    const result = transferAgentInfoApi2AgentInfo({
+      agent_name: 'AIDEV助手',
+      agent_sdk_version: '2.2.2rc17',
+    });
+    expect(result.agentSdkVersion).toBe('2.2.2rc17');
+  });
 });

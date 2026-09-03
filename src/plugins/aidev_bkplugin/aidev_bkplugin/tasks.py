@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @shared_task(
     name="aidev_bkplugin.push_bkm_metrics",
     ignore_result=True,
-    queue=agent_settings.BKAI_AGENT_TASK,
+    queue=agent_settings.BKAI_AGENT_QUEUE_METRIC,
     autoretry_for=(RetryableMetricPushError,),
     retry_backoff=True,
     retry_jitter=True,

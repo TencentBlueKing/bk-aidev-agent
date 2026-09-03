@@ -50,13 +50,15 @@ EXIT_PROBE = dedent("""
         # Keep the real SDK provider lifecycle; avoid unrelated agent wrappers.
         return SimpleNamespace(instrument=BkAgentOTelService(config).start)
 
-    via_celery = sys.argv[1] == "celery"
+    use_bkm = sys.argv[1] == "bkm"
     sys.argv = ["bin/manage.py", sys.argv[2]]
-    agent_info = {"otel_info": {"metrics": {
-        "enabled": True, "export_via_celery": via_celery,
-        "agent_data_id": 1, "agent_access_token": "test-token",
-        "agent_push_url": "http://collector.example.com/v2/push/",
-    }}}
+    metrics_config = {"enabled": True}
+    if use_bkm:
+        metrics_config.update({
+            "agent_data_id": 1, "agent_access_token": "test-token",
+            "agent_push_url": "http://collector.example.com/v2/push/",
+        })
+    agent_info = {"otel_info": {"metrics": metrics_config}}
     endpoint = {"url": "http://collector.example.com", "token": "", "exporter_type": ExporterType.HTTP}
     with (
         patch.object(apps, "get_otel_endpoint_by_json_str", return_value=[endpoint]),
@@ -67,7 +69,7 @@ EXIT_PROBE = dedent("""
         patch.object(apps, "enqueue_bkm_metrics_task", lambda *args: None),
         patch.object(BkAgentOTelService, "_create_metric_exporter", side_effect=lambda *args: SlowExporter()),
         patch.object(BkAgentOTelService, "_create_trace_exporter", side_effect=lambda *args: SlowSpanExporter()),
-        patch.object(BkPluginMetricService, "_create_celery_exporter", side_effect=lambda: SlowExporter()),
+        patch.object(BkPluginMetricService, "_create_bkm_exporter", side_effect=lambda: SlowExporter()),
     ):
         apps.init_bk_aidev_agent_otel()
         metrics.get_meter("exit-probe").create_counter("probe.count").add(1)
@@ -77,13 +79,13 @@ EXIT_PROBE = dedent("""
 """)
 
 
-@pytest.mark.parametrize("transport", ["direct", "celery"])
+@pytest.mark.parametrize("transport", ["otlp", "bkm"])
 @pytest.mark.parametrize("command", ["migrate", "upgrade_sessions"])
 def test_management_initialization_exits_without_metric_or_trace_export(transport, command):
     env = {
         **os.environ,
         "DJANGO_SETTINGS_MODULE": "tests.settings",
-        "PYTHONPATH": os.pathsep.join([str(PLUGIN_ROOT), str(AGENT_ROOT)]),
+        "PYTHONPATH": os.pathsep.join([str(PLUGIN_ROOT), str(AGENT_ROOT), os.environ.get("PYTHONPATH", "")]),
         "BKAI_AGENT_OTEL_ENABLED": "true",
         "BKAI_AGENT_ENABLE_METRICS": "true",
         "BKAI_AGENT_ENABLE_TRACES": "true",

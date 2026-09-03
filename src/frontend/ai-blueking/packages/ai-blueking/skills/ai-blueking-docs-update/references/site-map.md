@@ -22,7 +22,7 @@
 
 | 链接 | 文件 |
 | --- | --- |
-| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽（≥ v2.2.3） |
+| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3） |
 | `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` | 嵌入式 ChatBot；**业务 Header**（会话名 + `v-model:asideCollapsed`，侧栏固定右侧） |
 | `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
 | `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |

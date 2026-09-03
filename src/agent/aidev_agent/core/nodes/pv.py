@@ -69,20 +69,44 @@ def add_pv_info(existing: list[dict], new: list[dict]) -> list[dict]:
 def _try_writeback(resource_manager, session_code: str, pv: dict) -> dict:
     """尝试将 session PV ID 写回平台。
 
-    写回成功时返回 source="platform" 的 PV dict；
+    写回成功时返回平台最终持久化的 source="platform" PV dict；
     写回失败时返回原始 PV dict（source 不变），不阻断 PV 下发。
     """
     volume_id = pv.get("volume_id")
     if resource_manager is None or not volume_id:
         return pv
     try:
-        resource_manager.update_chat_session_sandbox_pv_id(session_code, volume_id)
+        session = resource_manager.update_chat_session_sandbox_pv_id(session_code, volume_id)
     except Exception:
         logger.warning("PV writeback failed: session_code=%s", session_code, exc_info=True)
         return pv
+
+    session_property = session.get("session_property") if isinstance(session, dict) else None
+    persisted_volume_id = ""
+    if isinstance(session_property, dict):
+        persisted_volume_id = str(session_property.get("sandbox_pv_id") or "").strip()
+    if not persisted_volume_id and isinstance(session, dict):
+        # 兼容旧平台直接返回 sandbox_pv_id 的响应格式。
+        persisted_volume_id = str(session.get("sandbox_pv_id") or "").strip()
+
     updated_pv = copy(pv)
+    if persisted_volume_id and persisted_volume_id != volume_id:
+        # 并发创建时平台采用先写入者的 PV，当前请求必须挂载最终持久化的卷。
+        updated_pv["volume_id"] = persisted_volume_id
+        updated_pv["volume_name"] = ""
     updated_pv["source"] = "platform"
     return updated_pv
+
+
+def _delete_unpersisted_volume(client: Client, app_code: str, volume_id: str) -> None:
+    """尽力清理并发竞争中未被会话持久化的 PV。"""
+    try:
+        response = client.delete_agent_sandbox_volume.request(
+            path_params={"app_code": app_code, "volume_id": volume_id}
+        )
+        response.raise_for_status()
+    except Exception:
+        logger.warning("PV cleanup failed: volume_id=%s", volume_id, exc_info=True)
 
 
 def make_pv_node(
@@ -153,6 +177,26 @@ def make_pv_node(
         if not should_create_pv:
             return {}
 
+        # 步骤 2.5：创建前读会话已绑定的卷，避免覆盖上传路径先写入的 PV
+        if session_code and resource_manager is not None:
+            session = resource_manager.retrieve_chat_session(session_code)
+            if isinstance(session, dict):
+                existing_volume_id = str(
+                    ((session.get("session_property") or {}).get("sandbox_pv_id") or "")
+                ).strip()
+                if existing_volume_id:
+                    return {
+                        "runtime_paas_sbx_pv": [
+                            {
+                                "type": "paas-sbx-pv",
+                                "volume_id": existing_volume_id,
+                                "volume_name": "",
+                                "mount_path": "session",
+                                "source": "platform",
+                            }
+                        ]
+                    }
+
         # 步骤 3：使用 thread_id 构造 volume_name（thread_id 始终存在，session_code 可选）
         volume_name = f"agent-pv-{thread_id}-{str(uuid.uuid4())[:8]}"
 
@@ -182,6 +226,8 @@ def make_pv_node(
             "source": "runtime",
         }
         pv = _try_writeback(resource_manager, session_code, runtime_pv) if session_code else runtime_pv
+        if pv.get("source") == "platform" and pv.get("volume_id") != volume_id:
+            _delete_unpersisted_volume(client, app_code, volume_id)
 
         # 步骤 6：返回 PV 信息写入 state
         return {"runtime_paas_sbx_pv": [pv]}

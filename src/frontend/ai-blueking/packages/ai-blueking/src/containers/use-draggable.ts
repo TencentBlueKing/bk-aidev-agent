@@ -11,6 +11,9 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import type { PositionAndSize, SidePanelGeometryHooks, UseDraggableOptions, UseDraggableReturn } from './types';
 
+/** 小于该像素的位移视为点击抖动，而非用户主动挪窗 */
+const USER_MOVE_EPSILON = 3;
+
 /**
  * 可拖拽容器的逻辑 Hook
  *
@@ -62,6 +65,10 @@ export function useDraggable(
   let expandedPosition: null | PositionAndSize = null;
   let lastExtraWidth = 0;
   let sequenceId = 0;
+  /** 本次展开是否因右侧空间不足而挪动了窗口 */
+  let shiftedForSidePanel = false;
+  /** 最近一次编程式布局的落点，用于识别「用户真的挪了窗」 */
+  let committedLayout: null | PositionAndSize = null;
   const isSidePanelExpanded = ref(false);
 
   /**
@@ -88,12 +95,31 @@ export function useDraggable(
   });
 
   /**
+   * 用户真的挪窗才让展开前快照失效。
+   *
+   * 侧栏开关画在 Header 上，而 Header 就是拖拽手柄：点开关时鼠标抖动几像素，
+   * vue-draggable-resizable 也会发出真实的 dragging / dragStop。用与上次编程式落点的
+   * 偏移量区分「抖动」和「真的挪窗」，否则收起时会误判成用户已选好位置而不再归位。
+   */
+  const noteUserAdjustment = (x: number, w: number): void => {
+    if (!isSidePanelExpanded.value) return;
+    const isJitter =
+      committedLayout !== null &&
+      Math.abs(x - committedLayout.x) <= USER_MOVE_EPSILON &&
+      Math.abs(w - committedLayout.width) <= USER_MOVE_EPSILON;
+    if (isJitter) return;
+    collapsedPosition = null;
+    shiftedForSidePanel = false;
+  };
+
+  /**
    * 处理拖拽中
    */
   const handleDragging = (x: number, y: number): void => {
     left.value = x;
     top.value = y;
     leftDiff.value = x - (window.innerWidth - width.value);
+    noteUserAdjustment(x, width.value);
 
     callbacks?.onDragging?.(getPositionAndSize());
   };
@@ -107,6 +133,7 @@ export function useDraggable(
     // 确保宽度不超过最大值
     width.value = Math.min(w, maxWidth.value);
     height.value = h;
+    noteUserAdjustment(x, width.value);
 
     callbacks?.onResizing?.(getPositionAndSize());
   };
@@ -118,9 +145,9 @@ export function useDraggable(
     left.value = x;
     top.value = y;
     leftDiff.value = x - (window.innerWidth - width.value);
+    noteUserAdjustment(x, width.value);
     if (isSidePanelExpanded.value) {
       expandedPosition = getPositionAndSize();
-      collapsedPosition = null;
     } else {
       expandedPosition = null;
     }
@@ -136,9 +163,9 @@ export function useDraggable(
     // 确保宽度不超过最大值
     width.value = Math.min(w, maxWidth.value);
     height.value = h;
+    noteUserAdjustment(x, width.value);
     if (isSidePanelExpanded.value) {
       expandedPosition = getPositionAndSize();
-      collapsedPosition = null;
     } else {
       expandedPosition = null;
     }
@@ -222,6 +249,10 @@ export function useDraggable(
     updateSize(w, h);
   };
 
+  const syncLeftDiff = (): void => {
+    leftDiff.value = left.value - (window.innerWidth - width.value);
+  };
+
   /**
    * vue-draggable-resizable 的 changeWidth 用当前 left 计算宽度。
    * 同帧改 x+w 时宽度会被钳在贴边旧位置上（窗口加不宽，侧栏叠在主栏上）。
@@ -249,16 +280,21 @@ export function useDraggable(
       await nextTick();
     };
 
-    if (order === 'expand') {
-      await applyX();
-      if (id !== sequenceId) return;
-      await applyWidth();
-      return;
-    }
+    try {
+      if (order === 'expand') {
+        await applyX();
+        if (id !== sequenceId) return;
+        await applyWidth();
+        return;
+      }
 
-    await applyWidth();
-    if (id !== sequenceId) return;
-    await applyX();
+      await applyWidth();
+      if (id !== sequenceId) return;
+      await applyX();
+    } finally {
+      syncLeftDiff();
+      committedLayout = getPositionAndSize();
+    }
   };
 
   /**
@@ -277,7 +313,9 @@ export function useDraggable(
 
     if (current.width >= minExpandedWidth) {
       lastExtraWidth = 0;
+      shiftedForSidePanel = false;
       expandedPosition = { ...current };
+      committedLayout = { ...current };
       hooks?.onBeforeSizeChange?.();
       return;
     }
@@ -299,6 +337,7 @@ export function useDraggable(
       width: targetWidth,
       height: current.height,
     });
+    shiftedForSidePanel = target.x !== current.x;
 
     await commitLayout(current, target, id, hooks, 'expand');
     if (id !== sequenceId) return;
@@ -306,8 +345,8 @@ export function useDraggable(
   };
 
   /**
-   * 折叠侧面板：左边缘不动，只从右侧收窄。不弹回贴边位置。
-   * 中止展开仍用 abortSidePanelSequence 恢复序列开始时的布局。
+   * 折叠侧面板：先从右侧缩宽；若展开时因右侧空间不足挪过窗，再移回挪窗前的位置。
+   * 展开态被用户拖动/缩放过（快照已失效）时保持左边缘不动，只缩宽。
    */
   const collapseSidePanel = async (hooks?: SidePanelGeometryHooks): Promise<void> => {
     if (!isSidePanelExpanded.value) return;
@@ -316,13 +355,16 @@ export function useDraggable(
     isSidePanelExpanded.value = false;
     const id = ++sequenceId;
 
-    const targetWidth = collapsedPosition?.width ?? Math.max(minWidth, current.width - lastExtraWidth);
+    const snapshot = collapsedPosition;
+    const shouldRestoreShift = shiftedForSidePanel && snapshot !== null;
+    const targetWidth = snapshot?.width ?? Math.max(minWidth, current.width - lastExtraWidth);
     const target = clampToViewport({
-      x: current.x,
+      x: shouldRestoreShift && snapshot ? snapshot.x : current.x,
       y: current.y,
       width: targetWidth,
       height: current.height,
     });
+    shiftedForSidePanel = false;
 
     await commitLayout(current, target, id, hooks, 'collapse');
     if (id !== sequenceId) return;
@@ -334,10 +376,13 @@ export function useDraggable(
   const abortSidePanelSequence = (): void => {
     sequenceId += 1;
     isSidePanelExpanded.value = false;
+    shiftedForSidePanel = false;
     if (collapsedPosition) {
       updatePosition(collapsedPosition.x, collapsedPosition.y);
       updateSize(collapsedPosition.width, collapsedPosition.height);
     }
+    syncLeftDiff();
+    committedLayout = getPositionAndSize();
   };
 
   // 生命周期

@@ -542,6 +542,58 @@ def test_make_mcp_tools_with_blueapps_auth(mock_mcp_client_class, sample_mcp_con
     assert len(result.tools) == 1
 
 
+@patch(
+    "aidev_agent.packages.resource_manager.base.trace_headers",
+    return_value={"traceparent": "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"},
+)
+@patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")
+def test_make_mcp_tools_propagates_trace_context_to_all_remote_servers(mock_mcp_client_class, _mock_trace_headers):
+    config = {
+        "apigw": {
+            "url": "https://example.com/apigw/mcp",
+            "transport": "streamable_http",
+            "credential_type": "blueapps",
+        },
+        "external": {"url": "https://example.net/mcp", "transport": "sse", "headers": {"X-Custom": "kept"}},
+        "local": {"transport": "stdio", "command": "python", "args": ["server.py"]},
+    }
+    mock_mcp_client_class.return_value.get_tools = AsyncMock(return_value=[])
+
+    make_mcp_tools(config)
+
+    client_config = mock_mcp_client_class.call_args_list[0].args[0]
+    assert client_config["apigw"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
+    assert client_config["external"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
+    assert client_config["external"]["headers"]["X-Custom"] == "kept"
+    assert "headers" not in client_config["local"]
+    assert callable(mock_mcp_client_class.call_args_list[0].kwargs["tool_interceptors"][0])
+
+
+@pytest.mark.asyncio
+@patch(
+    "aidev_agent.packages.resource_manager.base.trace_headers",
+    return_value={"traceparent": "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"},
+)
+async def test_mcp_tool_call_refreshes_trace_context(_mock_trace_headers):
+    from aidev_agent.packages.resource_manager.base import _mcp_trace_context_interceptor
+
+    request = MagicMock()
+    request.headers = {"X-Custom": "kept"}
+    updated_request = request.override.return_value
+    handler = AsyncMock(return_value="ok")
+
+    result = await _mcp_trace_context_interceptor(request, handler)
+
+    assert result == "ok"
+    request.override.assert_called_once_with(
+        headers={
+            "X-Custom": "kept",
+            "traceparent": "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01",
+        }
+    )
+    handler.assert_awaited_once_with(updated_request)
+
+
 @patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")
 def test_make_mcp_tools_error_handling(mock_mcp_client_class, sample_mcp_config, caplog):
     """测试 MCP 工具获取失败时跳过并记录 warning"""

@@ -96,7 +96,7 @@ def decode_cancel_event_key(event_key: str) -> ApprovalCancelAction | None:
 
 def _decode_bound_cancel(key: str) -> ApprovalCancelAction | None:
     try:
-        values = signing.loads(key[len(_BOUND_CANCEL_PREFIX) :], salt=_BOUND_CANCEL_SALT, max_age=86400)
+        values = signing.loads(key[len(_BOUND_CANCEL_PREFIX) :], salt=_BOUND_CANCEL_SALT)
     except (signing.BadSignature, ValueError, TypeError):
         return None
     if not isinstance(values, list) or len(values) != 3:
@@ -104,6 +104,17 @@ def _decode_bound_cancel(key: str) -> ApprovalCancelAction | None:
     if not all(isinstance(value, str) and 0 < len(value) <= _MAX_ACTION_FIELD_LENGTH for value in values):
         return None
     return ApprovalCancelAction(*values)
+
+
+def approval_action_from_card(card: dict) -> ApprovalCancelAction | None:
+    """从已发出的审批卡按钮还原续流所需的最小操作上下文。"""
+    for button in card.get("button_list") or []:
+        if not isinstance(button, dict):
+            continue
+        action = decode_cancel_event_key(button.get("key", ""))
+        if action is not None:
+            return action
+    return None
 
 
 def bind_approval_target(card: dict, target: str) -> dict:

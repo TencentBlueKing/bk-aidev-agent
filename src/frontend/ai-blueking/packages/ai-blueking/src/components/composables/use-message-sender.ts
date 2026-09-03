@@ -15,7 +15,7 @@ import type { ChatBusinessManager } from '../../manager/business/chat-business-m
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { ReportChatBotError } from './use-error-reporter';
-import type { IUserMessage } from '@blueking/chat-helper';
+import type { IUploadFileResult, IUserMessage } from '@blueking/chat-helper';
 import type {
   IAiSlashMenuItem,
   Interrupt,
@@ -51,7 +51,7 @@ export interface UseMessageSenderReturn {
   handleArtifactClick: OnArtifactClick;
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => void;
-  handleUpload: (file: File) => Promise<{ download_url?: string }>;
+  handleUpload: (files: File[]) => Promise<IUploadFileResult[]>;
   stopGeneration: () => Promise<void>;
 }
 
@@ -121,20 +121,21 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
   };
 
   /**
-   * 处理文件上传
+   * 处理文件上传。一次选择多个文件时走 session.uploadFiles，由底层决定批量或逐个请求。
+   * 单条失败不抛错，交给 ChatInput 按项标记 Error。
    */
-  const handleUpload = async (file: File): Promise<{ download_url?: string }> => {
+  const handleUpload = async (files: File[]): Promise<IUploadFileResult[]> => {
     const sessionCode = chatHelper.value?.session.current?.value?.sessionCode;
     if (!sessionCode) {
       throw new Error('[ChatBot] Cannot upload: no active session');
     }
 
-    const result = await chatHelper.value!.session.uploadFile(sessionCode, file);
-    if (!result?.download_url) {
-      throw new Error('[ChatBot] Upload failed: no download URL returned');
+    const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
+    if (!results?.length) {
+      throw new Error('[ChatBot] Upload failed: empty response');
     }
 
-    return result;
+    return results;
   };
 
   const handleArtifactClick: OnArtifactClick = async file => {

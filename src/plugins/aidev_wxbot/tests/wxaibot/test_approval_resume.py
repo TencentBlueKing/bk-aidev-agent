@@ -26,7 +26,7 @@ def test_cancel_resume_wires_delivery_without_creating_new_turn(approval_resume_
 def test_duplicate_cancel_closes_unused_delivery(approval_resume_case):
     case = approval_resume_case
     delivery = MagicMock()
-    case.module._pending.add(case.action)
+    case.module._claimed.claim(case.action)
     assert case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope, delivery)
     case.executor.submit.assert_not_called()
     delivery.finish.assert_called_once()
@@ -53,16 +53,21 @@ def test_only_successful_cancel_can_schedule(approval_resume_case, invalid):
     case.executor.submit.assert_not_called()
 
 
-def test_repeated_callback_is_deduplicated_until_worker_finishes(approval_resume_case):
+def test_an_interrupt_is_never_resumed_twice(approval_resume_case):
+    """worker 跑完后登记不释放：晚到的轮询不能把同一个中断再续一遍。"""
     case = approval_resume_case
-    for _ in range(2):
-        assert case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope)
-    case.executor.submit.assert_called_once()
+    assert case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope)
     callback, *args = case.executor.submit.call_args.args
     callback(*args)
     case.run.assert_called_once()
-    assert not case.module._pending
     assert case.cleanup.call_count == 2
+
+    case.executor.submit.reset_mock()
+    delivery = MagicMock()
+    assert case.module.submit_polled_approval_resume(case.action, "alice", delivery)
+    case.executor.submit.assert_not_called()
+    delivery.finish.assert_called_once()
+    case.run.assert_called_once()
 
 
 @pytest.mark.parametrize("raises", [False, True])
@@ -75,7 +80,37 @@ def test_failed_submission_releases_dedup_entry(approval_resume_case, raises):
             case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope)
     else:
         assert not case.module.submit_cancelled_approval_resume(case.action, "alice", case.envelope)
-    assert not case.module._pending
+    assert case.action not in case.module._claimed
+
+
+@pytest.mark.parametrize("status, approved", [("approved", True), ("rejected", False), ("cancelled", False)])
+def test_polled_resume_accepts_all_final_results(approval_resume_case, status, approved):
+    case = approval_resume_case
+    case.result["approve_result"] = status
+    case.module._poll_resume_worker(case.action, "alice")
+    resume = case.run.call_args.args[1].resume
+    assert resume[0]["interruptId"] == case.action.interrupt_id
+    assert resume[0]["payload"] == {"approved": approved}
+    assert resume[0]["status"] == ("resolved" if approved else "cancelled")
+
+
+def test_polled_resume_shares_dedup_with_cancel(approval_resume_case):
+    case = approval_resume_case
+    case.module._claimed.claim(case.action)
+    delivery = MagicMock()
+    assert case.module.submit_polled_approval_resume(case.action, "alice", delivery)
+    case.executor.submit.assert_not_called()
+    delivery.finish.assert_called_once()
+
+
+def test_submit_polled_approval_resume_schedules_poll_worker(approval_resume_case):
+    case = approval_resume_case
+    assert case.module.submit_polled_approval_resume(case.action, "alice")
+    _, worker, action, username, delivery = case.executor.submit.call_args.args
+    assert worker is case.module._poll_resume_worker
+    assert action == case.action
+    assert username == "alice"
+    assert delivery is None
 
 
 def test_resume_uses_original_session_and_denies_cancelled_tool(approval_resume_case):
@@ -126,14 +161,15 @@ def test_worker_does_not_replay_old_approval(approval_resume_case, changed):
     assert case.cleanup.call_count == 2
 
 
-def test_resume_failure_is_sanitized_and_releases_worker_state(approval_resume_case, caplog):
+def test_resume_failure_is_sanitized_and_keeps_the_claim(approval_resume_case, caplog):
+    """续流中途失败不释放登记：无法判断 Agent 跑到哪一步，重放比不重放更糟。"""
     case = approval_resume_case
     case.run.side_effect = RuntimeError("secret-in-upstream-error")
-    case.module._pending.add(case.action)
+    case.module._claimed.claim(case.action)
     case.module._resume_worker(case.action, "alice")
     assert "secret-in-upstream-error" not in caplog.text
     assert "wxbot_approval_resume_failed" in caplog.text
-    assert not case.module._pending
+    assert case.action in case.module._claimed
     assert case.cleanup.call_count == 2
 
 

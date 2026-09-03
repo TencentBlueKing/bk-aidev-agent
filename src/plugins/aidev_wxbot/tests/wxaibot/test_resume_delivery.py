@@ -131,6 +131,82 @@ async def test_old_interrupt_terminal_replay_does_not_end_new_reply(reason):
     assert "new answer" in send.call_args.args[0]["markdown"]["content"]
 
 
+async def test_flow_resume_sends_retry_card_when_node_fails_again(monkeypatch):
+    monkeypatch.setattr(
+        "aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url",
+        lambda _session: "https://agent.example.com/session-1",
+    )
+    monkeypatch.setattr(
+        "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+        lambda _session: "https://agent.example.com/session-1",
+    )
+    send = AsyncMock()
+    delivery = ResumeDelivery(send, resume_type="flow_node")
+    events = [
+        {"type": "RUN_STARTED", "runId": "r1"},
+        {"type": "CUSTOM", "name": "flow_agent_restart", "value": [{"task_id": "42", "action": "retry"}]},
+        {
+            "type": "CUSTOM",
+            "name": "flow_agent_update",
+            "value": [
+                {
+                    "task_id": "42",
+                    "task_state": "FAILED",
+                    "nodes": {
+                        "n1": {
+                            "id": "n1",
+                            "name": "HTTP请求",
+                            "state": "FAILED",
+                            "retryable": True,
+                            "skippable": True,
+                        }
+                    },
+                }
+            ],
+        },
+        {"type": "CUSTOM", "name": "flow_agent_end", "value": [{"task_id": "42", "error": True, "state": "FAILED"}]},
+    ]
+    await asyncio.to_thread(delivery.consume, sse(events), "s1", "n1", kind="flow")
+    delivery.finish()
+    await delivery.task
+    bodies = [call.args[0] for call in send.call_args_list]
+    assert [body["msgtype"] for body in bodies] == ["markdown", "template_card"]
+    assert "HTTP请求" in bodies[0]["markdown"]["content"]
+    assert [button["text"] for button in bodies[1]["template_card"]["button_list"]] == ["重试", "跳过"]
+
+
+async def test_flow_resume_sends_final_snapshot_as_markdown(monkeypatch):
+    monkeypatch.setattr(
+        "aidev_wxbot.wxaibot.direct_stream.AgentHelper.build_session_detail_url",
+        lambda _session: "https://agent.example.com/session-1",
+    )
+    send = AsyncMock()
+    delivery = ResumeDelivery(send, resume_type="flow_node")
+    events = [
+        {"type": "RUN_STARTED", "runId": "r1"},
+        {
+            "type": "CUSTOM",
+            "name": "flow_agent_result",
+            "value": [
+                {
+                    "task_id": "42",
+                    "task_state": "FINISHED",
+                    "nodes": {"n1": {"name": "HTTP请求", "state": "FINISHED"}},
+                }
+            ],
+        },
+        {"type": "CUSTOM", "name": "flow_agent_end", "value": [{"task_id": "42", "state": "FINISHED"}]},
+    ]
+    await asyncio.to_thread(delivery.consume, sse(events), "s1", "n1", kind="flow")
+    delivery.finish()
+    await delivery.task
+    bodies = [call.args[0] for call in send.call_args_list]
+    assert len(bodies) == 1
+    assert bodies[0]["msgtype"] == "markdown"
+    assert "HTTP请求" in bodies[0]["markdown"]["content"]
+    assert "42" in bodies[0]["markdown"]["content"]
+
+
 async def test_paused_delivery_waits_for_card_update():
     send = AsyncMock()
     delivery = ResumeDelivery(send, resume_type="ask_user_question", paused=True)

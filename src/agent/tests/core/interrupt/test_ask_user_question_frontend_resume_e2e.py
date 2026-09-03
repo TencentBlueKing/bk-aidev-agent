@@ -22,16 +22,30 @@
 """
 
 import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
-from ag_ui.core import EventType
+from ag_ui.core import EventType, RunFinishedEvent, RunStartedEvent
+from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON, ASK_USER_QUESTION_SKIPPED_CONTENT
-from aidev_agent.core.ag_ui.types import AgentInput
+from aidev_agent.core.ag_ui.types import (
+    AgentInput,
+    RunFinishedInterruptOutcome,
+    serialize_run_finished_outcome,
+)
 from aidev_agent.core.ag_ui.utils import get_schema_keys
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.nodes.model.chat_history_assembly import _filter_unmatched_tool_calls
 from aidev_agent.enums import PromptRole
+from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_REASON,
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+    TOOL_APPROVAL_REASON,
+)
+from aidev_agent.packages.interrupt_manager.ask_user_question import AskUserQuestionOutcomeBuilder
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
+from aidev_agent.packages.interrupt_manager.types import ResumeInputResult
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -126,6 +140,26 @@ class _MockApi:
 
     def retrieve_chat_session(self, path_params, headers):
         return {"data": {"session_property": {}}}
+
+
+def _simulate_ask_user_answer_persisted(mock_client, answers):
+    """模拟 chat.py resolve_resumes 的 ask_user DB 改写：把 interrupt content 升级为 resolved。
+
+    串行门禁（GATE-01）下 ask_user pending 走 ``query_answered_status`` 只读判已答，
+    读记录 ``content.outcome.type`` / ``result.payload.answers``（DB 权威源）。测试仅
+    模拟 SSE 层（不经 chat.py execute()），故只升级 content 为终态形态（供门禁判定），
+    **不改写记录顶层 status**（SSE 层不写 DB 终态——该断言保持 pending）。
+    """
+    interrupt_recs = [r for r in mock_client.api._contents if r.get("role") == PromptRole.INTERRUPT.value]
+    assert interrupt_recs, "无 interrupt 记录可升级"
+    rec = interrupt_recs[0]
+    upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
+        rec.get("content"), "resolved", resume_answers=answers
+    )
+    assert upgraded is not None, "interrupt content 升级为 resolved 失败"
+    rec["content"] = upgraded
+    # 注意：不改写 rec["status"]（保持 pending）——本测试仅模拟 SSE 层，SSE 层不写 DB 终态
+    return rec
 
 
 def _ask_user_question_tool_call() -> AIMessage:
@@ -274,6 +308,18 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
     )
     chunks1 = [chunk async for chunk in agui1.run(agent_input1)]  # noqa: F841
 
+    # SSE 单格式断言（D-04/D-16）：RUN_FINISHED.interrupts 顶层无 callbackToken /
+    # ticketSn / ticket_sn（ask_user_question 无审批字段），metadata 保留 questions。
+    run_finished_events = [json.loads(c[6:]) for c in chunks1 if '"type":"RUN_FINISHED"' in c]
+    assert run_finished_events, "首次中断后应发出 RUN_FINISHED 事件"
+    first_rf = run_finished_events[0]
+    assert first_rf["outcome"]["type"] == "interrupt", f"首次中断 outcome 应为 interrupt: {first_rf['outcome']}"
+    auq_interrupt = first_rf["outcome"]["interrupts"][0]
+    for sensitive in ("callbackToken", "ticketSn", "ticket_sn"):
+        assert sensitive not in auq_interrupt, f"interrupt 顶层不应含 {sensitive}（单格式 D-04/D-16）"
+    assert "questions" in auq_interrupt["metadata"], "ask_user_question metadata 应保留 questions 数组"
+    assert auq_interrupt["metadata"]["status"] == "pending"
+
     # 检查 DB 中 interrupt 记录
     db_after_interrupt = list(mock_client.api._contents)
     print(f"\n=== After interrupt — DB records: {len(db_after_interrupt)} ===")
@@ -284,6 +330,19 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
     assert interrupt_recs, "首次中断后 DB 应有 interrupt 记录"
     interrupt_id = interrupt_recs[0]["id"]  # noqa: F841
     assert interrupt_recs[0]["status"] == "pending", f"interrupt 应为 pending，实际: {interrupt_recs[0]['status']}"
+
+    # 串行门禁（GATE-01）下 ask_user pending 走 query_answered_status 只读判已答，
+    # DB 必须先含该已答记录（模拟生产 chat.py resolve_resumes 的 DB 改写前置）。
+    # 测试绕过 chat.py 直调 AidevAGUIAgent.run()，故在此模拟持久化。
+    _simulate_ask_user_answer_persisted(
+        mock_client,
+        [
+            {
+                "question": "您平时最喜欢做什么类型的运动？",
+                "answer": [{"label": "瑜伽", "description": "身心平衡的瑜伽练习"}],
+            }
+        ],
+    )
 
     # 第二次请求 — 前端续流（新 writer 实例，模拟新 API 请求）
     writer2 = AGUISessionWriter(
@@ -353,14 +412,25 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
         event_handler=writer2,
         config=merged_cfg2,
         tools={},
-        # 与 chat.py 主流程对称：从 graph state 查 ask_user_question interrupts，
-        # 使 _build_resume_ask_user_question_finished_event 能触发 ACTIVITY_SNAPSHOT 事件推前端。
+        # D-08/D-03：处理器经 handlers dict 注入（ready resume 走 prepare_stream 纯拉图，
+        # 不触发 dispatch；空 handlers 兜底原样放行）。ask_user 已答门禁由 chat.py
+        # get_resume_input 承担（本 e2e 绕过 chat.py 直调 run()，故此处空处理器即可）。
+        interrupt_processor=InterruptProcessor(),
+        # ask_user_question_interrupts 仅作 D-06 数据透传（replay 事件已移除：
+        # 处理前置改写 + MESSAGES_SNAPSHOT 完整携带 resolved 卡片，无需 replay；
+        # raw value 缺 reason 时 replay 反而使前端卡片消失——生产回归实证 2026-09-02）。
         ask_user_question_interrupts=_extract_ask_user_question_interrupts(graph, config),
     )
     chunks2 = [chunk async for chunk in agui2.run(agent_input2)]  # noqa: F841
 
-    # 验证续流事件流：不应出现重复的 TOOL_CALL_START/ARGS/END（中断前已发到前端），
-    # 只应出现 TOOL_CALL_RESULT（由 OnToolNodeFinish 路径独立产出）。
+    # ask_user 续流首帧回放已移除：不应出现 resume_replay 事件（resolved 卡片由
+    # MESSAGES_SNAPSHOT 覆盖式语义承载——chat.py 处理前置改写 interrupt 记录后快照完整）。
+    replay_events = [c for c in chunks2 if '"resume_replay":true' in c]
+    assert not replay_events, f"ask_user 续流不应推送 replay 事件，实际: {replay_events}"
+    # 验证续流事件流：ask_user 的 TOOL_CALL_START/ARGS/END 首跑与续流均被抑制——
+    # 其 tool_call 不在快照谓词过滤范围内（谓词仅审批），首跑 MESSAGES_SNAPSHOT 已
+    # 渲染一次，补发三元组放行会渲染第二次（UAT：单 ask_user 双样式回归）。
+    # 续流只应出现 TOOL_CALL_RESULT（由 OnToolNodeFinish 路径独立产出）。
     tool_call_starts = [c for c in chunks2 if '"type":"TOOL_CALL_START"' in c]
     tool_call_args = [c for c in chunks2 if '"type":"TOOL_CALL_ARGS"' in c]
     tool_call_ends = [c for c in chunks2 if '"type":"TOOL_CALL_END"' in c]
@@ -395,6 +465,188 @@ async def test_resume_with_frontend_dict_format_updates_interrupt():
     assert interrupt_after[0]["status"] == "pending", (
         f"SSE 层不应更新 interrupt 终态，status 应仍为 pending，实际: {interrupt_after[0]['status']}"
     )
+
+
+def _two_ask_user_question_tool_calls() -> AIMessage:
+    """同一轮两个 ask_user tool_call（不同 tool_call_id / 问题文本）。"""
+
+    def _tc(tool_call_id: str, question: str) -> dict:
+        return {
+            "name": "ask_user_question",
+            "args": {
+                "questions": [
+                    {
+                        "header": "调查",
+                        "multiSelect": False,
+                        "question": question,
+                        "options": [
+                            {"label": "选项一", "description": "选项一说明"},
+                            {"label": "选项二", "description": "选项二说明"},
+                        ],
+                    }
+                ]
+            },
+            "id": tool_call_id,
+            "type": "tool_call",
+        }
+
+    return AIMessage(
+        content="",
+        tool_calls=[
+            _tc("chatcmpl-tool-test001", "您平时最喜欢做什么类型的运动？"),
+            _tc("chatcmpl-tool-test002", "您常用的代码编辑器是？"),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_second_ask_user_card_gets_messages_snapshot():
+    """GATE-05：第二个 ask_user 卡经 prepare_stream events_to_dispatch 快照-结束通道下发（MESSAGES_SNAPSHOT + RUN_FINISHED）。
+
+    同一轮两个 ask_user（串行门禁）：答完第一张卡后，另一 ask_user pending 尚未就绪
+    （not_ready）→ ``get_resume_input`` 返回 ``ready=False`` + ``next_interrupt``（第二个
+    ask_user）。lw4 后：chat 层不再手搓 SSE（``_build_not_ready_sse`` 已删除），未就绪并入
+    ``AidevAGUIAgent.run`` 快照-结束分支——首帧 MESSAGES_SNAPSHOT 后 stream_input 为 None
+    → RUN_STARTED → RUN_FINISHED(interrupts=[第二张卡]) 即结束。核心语义（GATE-05）：
+    - 图**不拉起**（未就绪轮无新增 LLM 输出事件，消除「每答一张卡拉一次图」乒乓）；
+    - 快照源为 AidevAGUIAgent 首帧 input.messages（DB 账本，与 all-ready 同源，无第二套快照）；
+    - RUN_FINISHED 经 _dispatch_event 落库（DB writer + SSE 双分发），刷新可见。
+    """
+    responses = [
+        _two_ask_user_question_tool_calls(),
+        AIMessage(content="两问均已作答。"),
+    ]
+    graph, cfg = _build_graph(responses)
+    thread_id = "test-auq-second-card-snapshot"
+    config = _config_with_thread(cfg, thread_id)
+
+    mock_client = _MockBKAidevClient()
+    writer1 = AGUISessionWriter(session_code=thread_id, client=mock_client, username="test", tools=[])
+
+    # 第一跑：两个 ask_user 同时中断，一次一卡只推第一张
+    agent_input1 = AgentInput(
+        thread_id=thread_id,
+        run_id="run-1",
+        state={},
+        messages=[{"role": "user", "content": "问我两个问题", "id": "user-msg-1"}],
+    )
+    agent_state1 = await graph.aget_state(config)
+    schema_keys1 = get_schema_keys(graph, config, ["messages", "tools", "copilotkit"])
+    preprocessed1 = prepare_stream_data_for_agent(
+        graph,
+        config,
+        state=agent_input1.state or {},
+        forwarded_props=agent_input1.forwarded_props or {},
+        thread_id=agent_input1.thread_id,
+        messages=agent_input1.messages,
+        agent_state=agent_state1,
+        schema_keys=schema_keys1,
+    )
+    body1 = {
+        "thread_id": agent_input1.thread_id,
+        "run_id": agent_input1.run_id,
+        "state": preprocessed1["state"],
+        "messages": agent_input1.messages,
+        "stream_input": preprocessed1["stream_input"],
+    }
+    if agent_input1.forwarded_props:
+        body1["forwarded_props"] = agent_input1.forwarded_props
+    agent_input1 = AgentInput(**body1)
+    fork1 = preprocessed1["fork"]
+    merged_cfg1 = (
+        {**config, "configurable": {**config.get("configurable", {}), **fork1.get("configurable", {})}}
+        if fork1
+        else config
+    )
+    agui1 = AidevAGUIAgent(
+        name="test-agent",
+        graph=graph,
+        event_handler=writer1,
+        config=merged_cfg1,
+        tools={},
+    )
+    chunks1 = [chunk async for chunk in agui1.run(agent_input1)]
+
+    # 首跑一次一卡：interrupt outcome 只含第一个 ask_user
+    rf1 = [json.loads(c[6:]) for c in chunks1 if '"type":"RUN_FINISHED"' in c]
+    assert rf1, "首跑中断后应发出 RUN_FINISHED"
+    interrupt_rf1 = [e for e in rf1 if e["outcome"]["type"] == "interrupt"]
+    assert interrupt_rf1, "首跑应发出 interrupt outcome"
+    first_card = interrupt_rf1[-1]["outcome"]["interrupts"][0]
+    assert "运动" in first_card["metadata"]["questions"][0]["question"], "首跑只推第一张卡"
+
+    # 首跑 interrupt DB 记录（确认 interrupt 落库为 pending）
+    interrupt_recs = [r for r in mock_client.api._contents if r["role"] == PromptRole.INTERRUPT.value]
+    assert interrupt_recs, "首跑中断后 DB 应有 interrupt 记录"
+
+    # 续流（run-2）：答第一张卡后，第二个 ask_user 尚未就绪 → stream_input 为 None →
+    # AidevAGUIAgent.run 快照-结束分支（lw4，原 chat 层 `_build_not_ready_sse` 已删除）。
+    # GATE-05「答完一张再推下一张」由快照-结束分支承载；未就绪轮图不拉起（消除乒乓）。
+    writer2 = AGUISessionWriter(session_code=thread_id, client=mock_client, username="test", tools=[])
+    # 第二个 ask_user 卡（"编辑器"问题），作为 next_interrupt（get_resume_input 未就绪产出）
+    second_card_value = {
+        "questions": [
+            {"question": "您常用的代码编辑器是？", "header": "调查", "multiSelect": False},
+        ],
+        "interrupt_reason": ASK_USER_QUESTION_REASON,
+        "reason": None,
+        "message": "需要用户回答：您常用的代码编辑器是？",
+        "toolCallId": "chatcmpl-tool-test002",
+    }
+    resume_result = ResumeInputResult(
+        ready=False,
+        next_interrupt=SimpleNamespace(id="int-question-call_auq_002", value=second_card_value),
+    )
+    # 快照-结束路径以 AgentInput(stream_input=None) + next_interrupt 驱动 AidevAGUIAgent.run。
+    # input.messages 为空（未就绪轮不重放历史消息，MESSAGES_SNAPSHOT 仍为首帧事件占位）。
+    agent2 = AidevAGUIAgent(
+        name="test-agent",
+        graph=graph,
+        event_handler=writer2,
+        config=config,
+        tools={},
+    )
+    agent_input2 = AgentInput(
+        thread_id=thread_id,
+        run_id="run-2",
+        state={},
+        messages=[],
+        stream_input=None,
+        next_interrupt=resume_result.next_interrupt,
+    )
+    chunks2 = [chunk async for chunk in agent2.run(agent_input2)]
+
+    # 快照-结束 SSE 序列（协议完整，对齐 294ff5d55 好基线）：MESSAGES_SNAPSHOT 首帧 →
+    # RUN_STARTED → RUN_FINISHED(interrupts=[第二张卡])，随后生成器结束（图不拉起）。
+    events2 = [json.loads(c[6:]) for c in chunks2]
+    seq_types = [e["type"] for e in events2]
+    assert seq_types and seq_types[0] == EventType.MESSAGES_SNAPSHOT.value, "快照-结束首条应为 MESSAGES_SNAPSHOT"
+    assert seq_types.count(EventType.RUN_STARTED.value) == 1, f"不应重复 RUN_STARTED: {seq_types}"
+    assert seq_types[-1] == EventType.RUN_FINISHED.value, f"快照-结束末条应为 RUN_FINISHED: {seq_types}"
+
+    rf2 = [e for e in events2 if e["type"] == EventType.RUN_FINISHED.value]
+    assert rf2, "快照-结束应发 RUN_FINISHED"
+    # 已答卡终态回放已移除：RUN_FINISHED 仅剩下一张卡的 interrupt 事件（无 replay）
+    assert not [e for e in rf2 if e.get("resume_replay")], "不应推送 resume_replay 事件（快照已承载已答卡）"
+    interrupt_rf2 = [e for e in rf2 if e["outcome"]["type"] == "interrupt"]
+    assert interrupt_rf2, "续流以第二个 ask_user 未就绪结束，应发出 interrupt RUN_FINISHED"
+    second_card = interrupt_rf2[-1]["outcome"]["interrupts"][0]
+    assert "编辑器" in second_card["metadata"]["questions"][0]["question"], "应为第二个 ask_user 的卡片"
+
+    # GATE-05 核心语义：未就绪轮图**不拉起**（无新增 LLM 输出事件 / 无 TOOL_CALL）。
+    assert not [e for e in events2 if e["type"] == EventType.TEXT_MESSAGE_START.value], (
+        "未就绪轮图不应被拉起（无 TEXT_MESSAGE_START）"
+    )
+    assert not [e for e in events2 if e["type"] == EventType.TOOL_CALL_START.value], (
+        "未就绪轮图不应被拉起（无 TOOL_CALL_START）——不重新执行 _stream"
+    )
+
+    # 快照-结束 RUN_FINISHED 卡片经 _dispatch_event 落库（writer，刷新可见，resume 路由可命中）。
+    db_after_resume2 = list(mock_client.api._contents)
+    second_card_interrupt_recs = [
+        r for r in db_after_resume2 if r["role"] == PromptRole.INTERRUPT.value and "编辑器" in str(r.get("content", ""))
+    ]
+    assert second_card_interrupt_recs, "快照-结束卡片应经 _dispatch_event 落库（刷新可见）"
 
 
 def _seed_mock_record(mock_client, role, content, top_fields=None, property_=None) -> int:
@@ -737,3 +989,85 @@ def test_filter_unmatched_tool_calls_preserves_ask_user_question():
     tool_calls = assistant_msgs[0].builtin_property.get("tool_calls", [])
     assert len(tool_calls) == 1, f"tool_call 应保留，实际: {len(tool_calls)} 条"
     assert tool_calls[0]["id"] == "call_auq_001"
+
+
+# ---------------------------------------------------------------------- #
+# SSE 单格式断言（D-04/D-16）：approval interrupt 生产 _stream 输出
+# ---------------------------------------------------------------------- #
+
+
+def _approval_interrupt_with_ticket() -> dict:
+    """构造审批中断态 interrupt（含完整 snake_case metadata.ticket，对照
+    harness/ref-interrupt/tool_approval.md 的单一事实来源字段集）。"""
+    return {
+        "id": "int-approval-tool-001",
+        "reason": TOOL_APPROVAL_REASON,
+        "message": "调用 Jira API 需要审批",
+        "toolCallId": "tool-call-approval-001",
+        "metadata": {
+            "type": "tool_approval",
+            "status": "pending",
+            "callbackToken": "cb_secret",  # 敏感凭据：SSE 单格式应剥离
+            "ticketSn": "AP-20260601-0001",
+            "ticket": {
+                "approvers": ["zhangsan", "lisi"],
+                "sn": "AP-20260601-0001",
+                "status": "pending",
+                "submit_time": "2026-06-01T10:30:00+08:00",
+                "title": "审批：允许调用 Jira 创建任务",
+                "url": "https://approval.example.com/ticket/AP-20260601-0001",
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_approval_run_finished_single_format(monkeypatch):
+    """审批中断的 RUN_FINISHED 走生产 _stream 输出单格式（D-04/D-16）。
+
+    断言：
+    1. interrupt 顶层无 ``callbackToken`` / ``ticketSn`` / ``ticket_sn``
+       （敏感凭据不随 SSE 引用外泄，T-43-07-01 mitigate）；
+    2. ``metadata.ticket`` 为 snake_case 完整字段集（sn/submit_time/url/status/
+       title/approvers，对照 harness/ref-interrupt/tool_approval.md）。
+    """
+
+    async def _fake_parent_run_interrupt(self, input):  # noqa: ARG001
+        yield RunStartedEvent(type=EventType.RUN_STARTED, thread_id="t", run_id="r")
+        outcome = serialize_run_finished_outcome(
+            RunFinishedInterruptOutcome(interrupts=[_approval_interrupt_with_ticket()])
+        )
+        yield RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t", run_id="r", outcome=outcome)
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "run", _fake_parent_run_interrupt)
+
+    agent = AidevAGUIAgent(name="approval-single-format", graph=MagicMock())
+    # stream_input 非 None（普通/就绪轮语义）：避免命中 lw4 快照-结束短路分支（stream_input
+    # 为 None 时 run() 在首帧快照后即结束，不进入 super().run）。此处需走 monkeypatched
+    # super().run 以验证 approval RUN_FINISHED 的单格式 SSE。
+    chunks = [
+        chunk
+        async for chunk in agent.run(
+            AgentInput(thread_id="t", run_id="r", state={}, messages=[], stream_input={"state": {}})
+        )
+    ]
+    payloads = [json.loads(chunk[6:]) for chunk in chunks]
+
+    run_finished = next(p for p in payloads if p["type"] == EventType.RUN_FINISHED.value)
+    assert run_finished["outcome"]["type"] == "interrupt"
+    interrupt = run_finished["outcome"]["interrupts"][0]
+
+    # 1. 顶层无敏感凭据 / 审批双键
+    for sensitive in ("callbackToken", "ticketSn", "ticket_sn"):
+        assert sensitive not in interrupt, f"SSE 单格式：interrupt 顶层不应含 {sensitive}"
+
+    # 2. metadata 被 SSE 层裁剪为 ticket-only（AidevAGUIAgent._stream 截断），
+    #    ticket 为 snake_case 完整字段集
+    assert set(interrupt["metadata"].keys()) == {"ticket"}, (
+        f"approval metadata 应裁剪为 ticket-only: {interrupt['metadata']}"
+    )
+    ticket = interrupt["metadata"]["ticket"]
+    for field in ("sn", "submit_time", "url", "status", "title", "approvers"):
+        assert field in ticket, f"metadata.ticket 缺 snake_case 字段 {field}: {ticket}"
+    assert ticket["sn"] == "AP-20260601-0001"
+    assert ticket["approvers"] == ["zhangsan", "lisi"]

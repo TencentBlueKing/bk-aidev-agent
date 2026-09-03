@@ -206,8 +206,8 @@ sinceVersion: '1.0.0'
   import { ref as deepRef } from 'vue';
 
   const input = deepRef('');
-  async function onUpload(file: File) {
-    return { download_url: URL.createObjectURL(file) };
+  async function onUpload(files: File[]) {
+    return files.map(file => ({ download_url: URL.createObjectURL(file) }));
   }
 </script>
 

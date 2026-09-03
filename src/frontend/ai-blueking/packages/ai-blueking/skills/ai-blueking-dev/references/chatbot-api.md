@@ -29,7 +29,7 @@
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
 | requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；`headers` / `data` / `context` 支持对象、函数、ref、computed） |
-| messageToolsTippyOptions | `MessageToolsTippyOptions` | - | MessageTools tippy 弹窗配置（如 `appendTo`，控制弹窗挂载位置和层级） |
+| messageToolsTippyOptions | `MessageToolsTippyOptions` | `appendTo` 默认挂 ChatBot 根节点 | MessageTools tippy 弹窗配置（控制弹窗挂载位置和层级）。未传 `appendTo` 时浮层挂到 `.ai-chatbot` 根节点，避免挂 `body` 时被外层弹窗/抽屉遮挡；传入 `appendTo` 则以外部为准 |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement`。**嵌入模式须业务 Header 提供开关**，见下节 |

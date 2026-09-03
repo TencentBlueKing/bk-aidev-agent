@@ -123,7 +123,7 @@ export const CONST_UPDATE_TOOLS = [
   },
 ] as IToolBtn[];
 
-export const MAX_UPLOAD_FILES = 3; // 最大上传文件数量
+export const MAX_UPLOAD_FILES = 9; // 最大上传文件数量
 
 export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
 

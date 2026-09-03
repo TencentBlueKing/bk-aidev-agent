@@ -10,7 +10,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from aidev_agent.core.ag_ui.ask_user_question import (
+from aidev_agent.packages.interrupt_manager import (
     ASK_USER_QUESTION_REASON,
     ASK_USER_QUESTION_SKIPPED_CONTENT,
     AskUserQuestionMetadata,
@@ -286,3 +286,46 @@ def test_build_skipped_answers_question_missing():
     """question 缺失默认空串。"""
     result = build_skipped_answers([{"multiSelect": True}])
     assert result[0]["question"] == ""
+
+
+# ------------------------------------------------------------------ #
+# D-07：InterruptHandler Protocol 方法集定型
+# ------------------------------------------------------------------ #
+
+
+def test_stream_interrupt_handler_protocol_method_set():
+    """D-07/48-01：Protocol 方法集定型为 prepare / query_resume_status / on_resume / extract_builtin_property。
+
+    Phase 48（48-01）重定义 ``on_resume`` 为**必需写路径**（新签名
+    ``on_resume(resume, *, interrupt_messages, **ctx) -> None``，D-05/D-16），
+    ``on_resume`` 重入 Protocol 强制集；``consume_resume`` 已删（职责收编进
+    on_resume，D-16），不进 Protocol。
+    """
+    from aidev_agent.packages.interrupt_manager.types import InterruptHandler
+
+    required = {"prepare", "query_resume_status", "on_resume", "extract_builtin_property"}
+    members = {name for name in dir(InterruptHandler) if not name.startswith("_")}
+    assert required.issubset(members), f"Protocol 缺少必需方法: {required - members}"
+    assert "consume_resume" not in members, "consume_resume 已删（D-16），不进 Protocol"
+
+
+def test_ask_user_handler_implements_dual_capability():
+    """D-06/48-01：AskUserQuestionHandler 双能力——query_resume_status（门禁）+ on_resume（写）。"""
+    from aidev_agent.packages.interrupt_manager.ask_user_question import AskUserQuestionHandler
+
+    handler = AskUserQuestionHandler()
+    assert callable(getattr(handler, "query_resume_status", None)), "ask_user 必须实现 query_resume_status 只读门禁"
+    assert callable(getattr(handler, "on_resume", None)), "ask_user 必须实现 on_resume 写路径（D-05）"
+    assert not callable(getattr(handler, "consume_resume", None)), "consume_resume 已删，职责收编进 on_resume（D-16）"
+
+
+def test_approval_handler_implements_query_resume_status_gate():
+    """D-07/48-01：ApprovalHandler 实现 query_resume_status 只读门禁 + on_resume 空实现（无 consume_resume）。"""
+    from aidev_agent.packages.interrupt_manager.approval import ApprovalHandler
+
+    handler = ApprovalHandler()
+    assert callable(getattr(handler, "query_resume_status", None)), "approval 必须实现 query_resume_status 只读门禁"
+    assert callable(getattr(handler, "on_resume", None)), (
+        "approval 必须实现 on_resume 空实现（D-05，审批终态平台侧写，agent 侧纯读）"
+    )
+    assert not callable(getattr(handler, "consume_resume", None)), "approval 无 consume_resume（D-16 已删）"

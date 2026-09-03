@@ -24,5 +24,6 @@
  * IN THE SOFTWARE.
  */
 
+export * from './pv-file-upload';
 export * from './type';
 export * from './use-session';

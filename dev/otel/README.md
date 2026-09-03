@@ -2,7 +2,7 @@
 
 该环境验证完整路径：Agent 指标 API 埋点 → bkplugin OTLP/HTTP 直连（仅本地）→
 OpenTelemetry Collector → Prometheus → Grafana 预置仪表盘。生产环境默认由源进程的
-OpenTelemetry Reader 定期生成累计快照，经 `bkai_agent_task` 队列交给 Celery Worker，
+OpenTelemetry Reader 定期生成累计快照，经 `bkai_agent_metric` 队列交给 Celery Worker，
 再按 BKM 自定义指标协议推送到 `${PROXY_IP}:10205/v2/push/`。
 
 ## 启动
@@ -194,7 +194,8 @@ make test
     "enabled": true,
     "export_interval_millis": 10000,
     "export_timeout_millis": 30000,
-    "export_via_celery": true,
+    "push_mode": "celery",
+    "task_ttl_seconds": 3600,
     "agent_data_id": 1001,
     "agent_access_token": "<由平台下发>",
     "agent_push_url": "http://proxy.example:10205/v2/push/",
@@ -202,6 +203,17 @@ make test
   }
 }
 ```
+
+指标配置优先级如下：
+
+| 配置 | 优先级 |
+| --- | --- |
+| 是否启用 | 本地显式 `BKAI_AGENT_ENABLE_METRICS` > 平台 `enabled` > 运行时默认值 |
+| 上报周期 | 本地显式 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` > 平台 `export_interval_millis` > 10000 毫秒 |
+| 推送方式 | 本地显式 `BKAI_AGENT_METRICS_PUSH_MODE` > 平台 `push_mode` > `celery` |
+| BKM 连接参数 | 本地非空 `BKAI_AGENT_METRICS_*` > 平台 `agent_*` > 空值 |
+| Celery 快照 TTL | 本地显式 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 平台 `task_ttl_seconds` > 3600 秒 |
+| 导出超时 | 平台 `export_timeout_millis` > 30000 毫秒 |
 
 `otel_url/otel_token` 继续用于 Trace；指标使用 Agent 命名空间下的
 `agent_data_id/agent_access_token/agent_push_url` 独立配置，不能复用 Trace token。
@@ -227,17 +239,22 @@ make test
 
 OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le` 维度）、
 `*_sum` 和 `*_count`，因此现有速率与 P95 查询语义保持不变。这里不依赖 Celery Beat：
-各产生指标的进程负责按 `export_interval_millis` 截取自己的累计快照，Celery Worker 只负责
-可靠隔离实际网络请求，避免 Worker 无法读取其他进程内存中的 OTel 聚合器。
-生产默认周期为 10 秒；显式下发 `export_interval_millis` 时仍以配置值为准。本地 mock 为了缩短
-仪表盘验证等待时间，继续使用 1 秒周期。
+各产生指标的进程负责按 `export_interval_millis` 截取自己的累计快照。`push_mode=celery`（默认）
+将快照交给 Celery Worker 隔离实际网络请求；`push_mode=direct` 则由周期导出线程直接请求 BKM，
+但不改变快照周期。两种模式都不要求 Worker 读取其他进程内存中的 OTel 聚合器。
+`direct` 模式不经过 Celery 的 TTL 和退避重试，失败后由下一次周期快照继续上报累计值。
+生产默认周期为 10 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，智能体
+环境变量优先，未配置时使用平台下发的 `export_interval_millis`，平台也未下发时回退为 10 秒，
+且周期最小为 10 秒。本地 mock 为了缩短仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
-高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；平台下发的
-`otel_info.metrics.agent_*` 仍优先于同名连接参数环境变量：
+高于平台下发的 `otel_info.metrics.enabled`。需要联调 BKM 时改为 `true` 并配置以下参数；本地非空
+连接参数环境变量优先于平台下发的 `otel_info.metrics.agent_*`：
 
 ```bash
 BKAI_AGENT_ENABLE_METRICS=true
+BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS=10000
+BKAI_AGENT_METRICS_PUSH_MODE=celery
 BKAI_AGENT_METRICS_HOST=proxy.example
 BKAI_AGENT_METRICS_DATA_ID=1001
 BKAI_AGENT_METRICS_TOKEN=<本地密钥>
@@ -248,8 +265,8 @@ BKAI_AGENT_METRICS_TARGET=127.0.0.1
 `http://host.docker.internal:4318`，或改为同一 Compose 网络内的
 `http://otel-collector:4318`。
 
-本地 Collector 场景必须关闭 Celery/BKM 转发，由 mock 自动设置
-`export_via_celery=false`；真实 bkplugin 如需直连本地 Collector，也可临时使用相同配置。
+本地 Collector 场景不配置 BKM 的 Data ID、Token 和推送地址时，会自动使用 OTLP 直连；
+真实 bkplugin 如需直连本地 Collector，也使用相同方式。
 
 环境变量仍可覆盖本地配置：
 

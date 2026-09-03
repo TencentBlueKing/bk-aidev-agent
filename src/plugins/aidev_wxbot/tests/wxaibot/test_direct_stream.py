@@ -391,6 +391,31 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
                         ],
                     }
                 ),
+                # 进度没变化的一轮：不应再向企微重发一模一样的内容
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "RUNNING",
+                                "nodes": {"n1": {"name": "查询日志", "state": "RUNNING"}},
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "RUNNING",
+                                "nodes": {"n1": {"name": "查询日志", "state": "FINISHED", "elapsed_time": 3}},
+                            }
+                        ],
+                    }
+                ),
                 _sse(
                     {
                         "type": "CUSTOM",
@@ -405,8 +430,164 @@ def test_flow_sse_is_converted_to_direct_progress_and_terminal(mock_detail_url):
     frames = list(iter_direct_stream_frames(stream, "stream-flow"))
 
     assert not frames[0].finish
-    assert "查询日志" in frames[0].content
+    assert frames[0].content.startswith("<think>")
+    assert "- 🔄 查询日志: 执行中" in frames[0].content
+    # 三条 result 只产出两帧：中间那条内容未变化被去重
+    assert len(frames) == 3
+    assert "- 🟢 查询日志: 成功 (3s)" in frames[1].content
     assert frames[-1].finish
+    assert "<think>" in frames[-1].content
     assert "result: ok" in frames[-1].content
+    assert "查询日志" in frames[-1].content
     assert "[查看详情](/detail/s1)" in frames[-1].content
+    assert frames[-1].template_card is None
     mock_detail_url.assert_called_once_with("s1")
+
+
+@patch(
+    "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1"
+)
+def test_flow_failed_end_attaches_retry_skip_card_for_first_failed_node(mock_detail_url):
+    from aidev_wxbot.wxaibot.flow_cards import decode_flow_event_key
+
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "RUN_STARTED", "run_id": "flow-run"}),
+                _sse({"type": "CUSTOM", "name": "flow_agent_start", "value": [{"task_id": "42"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [
+                            {
+                                "task_state": "FAILED",
+                                "nodes": {
+                                    "n1": {"id": "n1", "name": "查询日志", "state": "FINISHED"},
+                                    "n2": {
+                                        "id": "n2",
+                                        "name": "HTTP请求",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    },
+                                    "n3": {
+                                        "id": "n3",
+                                        "name": "后一个失败",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "FAILED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-fail"))
+
+    assert frames[-1].finish
+    assert frames[-1].failed
+    assert "HTTP请求" in frames[-1].content
+    card = frames[-1].template_card
+    assert card is not None
+    assert [button["text"] for button in card["button_list"]] == ["重试", "跳过"]
+    action = decode_flow_event_key(card["button_list"][0]["key"])
+    assert action.node_id == "n2"
+    assert action.task_id == "42"
+    assert action.session_code == "s1"
+    mock_detail_url.assert_called()
+
+
+@patch(
+    "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url", return_value="https://agent.example.com/s1"
+)
+def test_flow_resume_failed_end_still_attaches_retry_skip_card(mock_detail_url):
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "RUN_STARTED", "run_id": "flow-run"}),
+                _sse({"type": "CUSTOM", "name": "flow_agent_restart", "value": [{"task_id": "42", "action": "retry"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_update",
+                        "value": [
+                            {
+                                "task_state": "FAILED",
+                                "nodes": {
+                                    "n2": {
+                                        "id": "n2",
+                                        "name": "HTTP请求",
+                                        "state": "FAILED",
+                                        "retryable": True,
+                                        "skippable": True,
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "FAILED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-resume-fail"))
+
+    assert frames[-1].finish
+    assert frames[-1].failed
+    assert frames[-1].template_card is not None
+    assert [button["text"] for button in frames[-1].template_card["button_list"]] == ["重试", "跳过"]
+    mock_detail_url.assert_called()
+
+
+def test_flow_failed_end_without_actionable_node_has_no_card():
+    stream = AgentStream(
+        kind="flow",
+        session_code="s1",
+        generator=iter(
+            [
+                _sse({"type": "CUSTOM", "name": "flow_agent_start", "value": [{"task_id": "42"}]}),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_result",
+                        "value": [{"task_state": "REVOKED", "nodes": {"n1": {"id": "n1", "state": "REVOKED"}}}],
+                    }
+                ),
+                _sse(
+                    {
+                        "type": "CUSTOM",
+                        "name": "flow_agent_end",
+                        "value": [{"task_id": "42", "error": True, "state": "REVOKED"}],
+                    }
+                ),
+            ]
+        ),
+    )
+
+    frames = list(iter_direct_stream_frames(stream, "stream-flow-revoked"))
+
+    assert frames[-1].failed
+    assert frames[-1].template_card is None

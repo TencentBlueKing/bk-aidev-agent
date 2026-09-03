@@ -1040,6 +1040,34 @@ describe('ChatContainer', () => {
     });
   });
 
+  describe('commonTippyOptions 测试', () => {
+    const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+    it('非全屏未传 commonTippyOptions 时不应向子组件注入 appendTo', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('messageToolsTippyOptions')).not.toHaveProperty(
+        'appendTo',
+      );
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('tippyOptions')).not.toHaveProperty('appendTo');
+    });
+
+    it('非全屏应透传外部 commonTippyOptions.appendTo', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, commonTippyOptions: { appendTo: 'parent' } },
+      });
+
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('messageToolsTippyOptions')).toMatchObject({
+        appendTo: 'parent',
+      });
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('tippyOptions')).toMatchObject({
+        appendTo: 'parent',
+      });
+    });
+  });
+
   describe('全屏测试', () => {
     it('侧栏展开时应渲染全屏按钮区域', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];

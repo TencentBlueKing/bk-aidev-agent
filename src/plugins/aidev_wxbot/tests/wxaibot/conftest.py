@@ -125,7 +125,7 @@ def approval_resume_case(approval_card_case, monkeypatch):
     monkeypatch.setattr(mod, "get_agent_executor", lambda: case.executor)
     case.cleanup = MagicMock()
     monkeypatch.setattr(mod, "close_old_connections", case.cleanup)
-    monkeypatch.setattr(mod, "_pending", set())
+    monkeypatch.setattr(mod, "_claimed", mod.BoundedOnceRegistry(16))
     case.module, case.handler = mod, handler
     return case
 

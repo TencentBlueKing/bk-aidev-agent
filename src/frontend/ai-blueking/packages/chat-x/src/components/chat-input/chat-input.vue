@@ -7,7 +7,12 @@
     <slot name="interrupt" />
     <div
       class="chat-input"
+      :class="{ 'is-dragover': isDragOver }"
       :style="{ maxHeight: maxHeight + 'px' }"
+      @dragenter="handleDragEnter"
+      @dragleave="handleDragLeave"
+      @dragover="handleDragOver"
+      @drop="handleDrop"
     >
       <slot name="input-header">
         <CiteContent
@@ -45,7 +50,7 @@
       />
       <InputAttachment
         :message-state="messageState"
-        :send-disabled-tip="sendDisabledTip"
+        :send-disabled-tip="effectiveSendDisabledTip"
         :tippy-options="tippyOptions"
         @send-message="handleSendMessage"
         @stop-sending="handleStopSending"
@@ -100,7 +105,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
+  import { computed, reactive, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -123,7 +128,8 @@
     type UploadFile,
     UploadStatus,
   } from '../../types';
-  import { formatUploadNotAddedMessage } from '../../utils';
+  import { t } from '../../lang/lang';
+  import { formatUploadNotAddedMessage, getFileIdentity, getUploadFileName, getUploadFileSize } from '../../utils';
   import FileUploadBtn from '../ai-buttons/file-upload-btn/file-upload-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
@@ -148,6 +154,12 @@
     required: false,
   });
   const maxHeight = shallowRef(280);
+  export type ChatInputUploadResult = {
+    download_url?: string;
+    error?: string;
+    id?: string;
+    status?: 'failed' | 'success';
+  };
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
@@ -166,9 +178,7 @@
       options?: { interrupt?: Interrupt; payload?: InterruptResume },
     ) => Promise<void>;
     onStopSending?: () => Promise<void>;
-    onUpload?: (files: File) => Promise<{
-      download_url?: string;
-    }>;
+    onUpload?: (files: File[]) => Promise<ChatInputUploadResult | ChatInputUploadResult[]>;
     placeholder?: string;
     prompts?: string[];
     resources?: IAiSlashMenuItem[];
@@ -202,6 +212,10 @@
   const selectedShortcut = computed(() => {
     return props.shortcuts?.find(shortcut => shortcut.id === props.shortcutId);
   });
+  // 输入框文本：modelValue 可能是普通字符串（如编辑态回填）或编辑器 TagSchema
+  const inputText = computed(() =>
+    typeof props.modelValue === 'string' ? props.modelValue : tagSchemaToMessageString(props.modelValue),
+  );
   const messageState = computed(() => {
     if (
       props.messageStatus &&
@@ -209,13 +223,28 @@
     ) {
       return props.messageStatus;
     }
-    if (props.modelValue?.length < 1) {
-      return MessageStatus.Disabled;
+    // 已有附件即可发送，纯附件消息无需再输入文字
+    if (uploadFiles.value.length > 0) {
+      return props.messageStatus;
     }
-    if (Array.isArray(props.modelValue) && !tagSchemaToMessageString(props.modelValue).trim()) {
+    if (!inputText.value.trim()) {
       return MessageStatus.Disabled;
     }
     return props.messageStatus;
+  });
+  const isUploading = computed(() => uploadFiles.value.some(file => file.status === UploadStatus.Pending));
+  const hasUploadError = computed(() => uploadFiles.value.some(file => file.status === UploadStatus.Error));
+  const effectiveSendDisabledTip = computed(() => {
+    if (props.sendDisabledTip) {
+      return props.sendDisabledTip;
+    }
+    if (isUploading.value) {
+      return t('文件上传中，请稍候');
+    }
+    if (hasUploadError.value) {
+      return t('存在上传失败的文件，请删除后重试');
+    }
+    return undefined;
   });
 
   watchPostEffect(() => {
@@ -229,7 +258,7 @@
   });
   const handleSendMessage = async () => {
     try {
-      if (props.sendDisabledTip) {
+      if (effectiveSendDisabledTip.value) {
         return;
       }
       aiSlashInputRef.value?.cleanup?.();
@@ -237,20 +266,23 @@
 
       // 如果没有上传文件，则使用输入框的值
       if (!uploadFiles.value?.length) {
-        content = typeof props.modelValue === 'string' ? props.modelValue : tagSchemaToMessageString(props.modelValue);
+        content = inputText.value;
       } else {
         // 如果上传了文件，则使用上传的文件
+        // 取值统一走 helper：编辑态回填的附件只有 BinaryInputContent（无 File），不能只读 file.*
         content = uploadFiles.value?.slice().map(file => ({
           type: MessageContentType.Binary,
+          id: file.id,
           url: file.url,
-          mimeType: file.file?.type || '',
-          filename: file.file?.name || '',
+          mimeType: file.mimeType || file.file?.type || '',
+          filename: getUploadFileName(file),
+          size: getUploadFileSize(file),
         }));
-        // 如果输入框有值，则将输入框的值作为内容
-        if (props.modelValue) {
+        // 输入框有实际文字时才追加文本内容，纯附件消息不带空文本段
+        if (inputText.value.trim()) {
           content.push({
             type: MessageContentType.Text,
-            text: tagSchemaToMessageString(props.modelValue as TagSchema),
+            text: inputText.value,
           });
         }
       }
@@ -268,7 +300,7 @@
       if (messageState.value === MessageStatus.Disabled) {
         return;
       }
-      if (props.sendDisabledTip) {
+      if (effectiveSendDisabledTip.value) {
         return;
       }
       if (
@@ -300,63 +332,111 @@
   const handleModelChange = (model: IModelOption) => {
     emit('modelChange', model);
   };
-  const fileKey = (f: File) => `${f.name}_${f.size}_${f.lastModified}`;
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
+  const applyUploadResult = (fileItem: Partial<UploadFile>, res?: ChatInputUploadResult) => {
+    const failed = res?.status === 'failed';
+    const succeeded = !failed && (!!res?.id || !!res?.download_url || res?.status === 'success');
+    if (succeeded) {
+      fileItem.id = res.id;
+      fileItem.url = res.download_url;
+      fileItem.status = UploadStatus.Success;
+      return;
+    }
+    fileItem.status = UploadStatus.Error;
+  };
   const handleUpload = async (files: File[]) => {
     if (!props.supportUpload) {
       return;
     }
-    if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
-      if (files.length > 0) {
-        Message({
-          message: formatUploadNotAddedMessage(files.length, maxUploadMb, isEn),
-          theme: 'error',
-        });
-      }
-      return;
-    }
-    const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? fileKey(item.file) : '')));
-    let notUploadedCount = 0;
+    const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? getFileIdentity(item.file) : '')));
+    const acceptedItems: Partial<UploadFile>[] = [];
+    let rejectedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
-        notUploadedCount += files.length - i;
-        break;
-      }
-      const key = fileKey(file);
+      const key = getFileIdentity(file);
       if (existingKeys.has(key)) {
-        notUploadedCount += 1;
         continue;
       }
+      if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
+        rejectedCount += files.length - i;
+        break;
+      }
       if (file.size <= 0 || file.size >= MAX_UPLOAD_FILE_SIZE) {
-        notUploadedCount += 1;
+        rejectedCount += 1;
         continue;
       }
       existingKeys.add(key);
-      const fileItem: Partial<UploadFile> = {
+      const fileItem = reactive<Partial<UploadFile>>({
         file,
+        mimeType: file.type,
         status: UploadStatus.Pending,
-      };
+      });
       uploadFiles.value.push(fileItem);
-      props
-        .onUpload?.(file)
-        .then((res: { download_url?: string }) => {
-          if (res && typeof res === 'object' && 'download_url' in res) {
-            fileItem.url = res.download_url;
-            fileItem.status = UploadStatus.Success;
-            return;
-          }
-          fileItem.status = UploadStatus.Error;
-        })
-        .catch(() => {
-          fileItem.status = UploadStatus.Error;
-        });
+      acceptedItems.push(fileItem);
     }
-    if (notUploadedCount > 0) {
+    if (rejectedCount > 0) {
       Message({
-        message: formatUploadNotAddedMessage(notUploadedCount, maxUploadMb, isEn),
+        message: formatUploadNotAddedMessage(rejectedCount, maxUploadMb, isEn),
         theme: 'error',
       });
+    }
+    // 设计稿标注：文件加入列表后光标自动回到输入区，便于继续输入
+    if (acceptedItems.length > 0) {
+      focus();
+      const acceptedFiles = acceptedItems.map(item => item.file).filter((file): file is File => !!file);
+      const request = props.onUpload?.(acceptedFiles);
+      if (!request) {
+        return;
+      }
+      request
+        .then(res => {
+          const results = Array.isArray(res) ? res : [res];
+          acceptedItems.forEach((fileItem, index) => {
+            applyUploadResult(fileItem, results[index]);
+          });
+        })
+        .catch(() => {
+          acceptedItems.forEach(fileItem => {
+            fileItem.status = UploadStatus.Error;
+          });
+        });
+    }
+  };
+
+  // 拖拽上传：仅响应从系统拖入的文件，避免编辑器内部 tag 拖拽误触发
+  const isDragOver = shallowRef(false);
+  // 子元素间移动会连续触发 enter/leave，用计数抵消，避免高亮闪烁
+  let dragDepth = 0;
+  const isFileDragEvent = (event: DragEvent) => !!event.dataTransfer?.types?.includes('Files');
+  const canAcceptDrag = (event: DragEvent) => props.supportUpload && isFileDragEvent(event);
+  const handleDragEnter = (event: DragEvent) => {
+    if (!canAcceptDrag(event)) return;
+    dragDepth += 1;
+    isDragOver.value = true;
+  };
+  const handleDragOver = (event: DragEvent) => {
+    if (!canAcceptDrag(event)) return;
+    // 不阻止默认行为浏览器会直接打开被拖入的文件
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
+  const handleDragLeave = (event: DragEvent) => {
+    if (!canAcceptDrag(event)) return;
+    dragDepth = Math.max(dragDepth - 1, 0);
+    if (dragDepth === 0) {
+      isDragOver.value = false;
+    }
+  };
+  const handleDrop = (event: DragEvent) => {
+    if (!canAcceptDrag(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    isDragOver.value = false;
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length) {
+      handleUpload(files);
     }
   };
   const handleDeleteFile = (file: Partial<UploadFile>) => {
@@ -421,13 +501,19 @@
         @include border.linear-gradient-border(180deg, #6cbaff, #3a84ff);
       }
 
-      // 激活（编辑区 / 内部控件聚焦）时切换为蓝色渐变描边
-      &:focus-within {
+      // 激活（编辑区 / 内部控件聚焦）与拖拽悬停时切换为蓝色渐变描边
+      &:focus-within,
+      &.is-dragover {
         border-color: transparent;
 
         &::before {
           opacity: 1;
         }
+      }
+
+      // 拖拽悬停额外叠加浅蓝底提示可释放（设计稿未给拖拽态，取背景蓝 #e1ecff 的更浅一档）
+      &.is-dragover {
+        background: #f0f5ff;
       }
 
       .chat-input-cite {

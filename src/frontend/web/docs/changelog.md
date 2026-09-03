@@ -8,9 +8,14 @@
 
 - **chat_completion `stream_mode`**：新开对话默认 `start`；刷新 / 切会话 / 静默重连走 `attach`，只接管已有流，避免误开新生产者。详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)
 
+### 修复
+
+- **浮窗侧栏收起位置**：右侧空间不足时展开仍先左移再扩宽；收起回到**挪窗前**的位置（贴右边回到贴右边），不再停在左移后的位置。右侧空间充足时仍只扩宽/缩宽。展开后若用户手动拖动或缩放浮窗，收起只缩宽、不自动挪窗。详见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)
+
 ### 文档
 
 - 更新 [chat-helper SDK](/api/chat-helper/sdk#stream-mode)、[类型定义 StreamMode](/api/chat-helper/types#streammode)、[聊天交互 · 刷新 / 切会话续流](/guide/core-features/chat-interaction#刷新--切会话续流)
+- 更新 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating) 侧栏收起回到展开前位置的说明
 
 ---
 

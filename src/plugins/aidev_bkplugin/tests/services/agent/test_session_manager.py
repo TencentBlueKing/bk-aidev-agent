@@ -68,6 +68,14 @@ def test_update_title_only_writes_name_with_user_identity(session_manager, mock_
     mock_plugin_rm_client.resource_manager_mock.get_or_create_session.assert_not_called()
 
 
+def test_ai_rename_calls_platform_with_user_identity(session_manager, mock_plugin_rm_client):
+    session_manager.ai_rename("sc-1")
+    mock_plugin_rm_client.api.rename_chat_session.assert_called_once_with(
+        path_params={"session_code": "sc-1"}, headers={"X-BKAIDEV-USER": "alice"}
+    )
+    mock_plugin_rm_client.api.retrieve_chat_session.assert_not_called()
+
+
 @pytest.mark.parametrize("result", [{}, {"data": None}, {"data": {"session_name": "old"}}])
 def test_update_title_requires_platform_confirmation(session_manager, mock_plugin_rm_client, result):
     mock_plugin_rm_client.api.update_chat_session.return_value = result

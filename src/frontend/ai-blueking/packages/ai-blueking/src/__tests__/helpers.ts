@@ -115,6 +115,7 @@ export function createMockChatHelper(): IChatHelper {
       renameSession: vi.fn().mockResolvedValue(undefined),
       updateSession: vi.fn().mockResolvedValue(undefined),
       uploadFile: vi.fn().mockResolvedValue({ download_url: 'https://example.com/file.png' }),
+      uploadFiles: vi.fn().mockResolvedValue([{ download_url: 'https://example.com/file.png' }]),
       getPvFileDownloadUrl: vi.fn().mockResolvedValue({
         download_url: 'https://example.com/download',
         preview_url: 'https://example.com/preview',

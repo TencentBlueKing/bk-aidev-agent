@@ -50,7 +50,7 @@ class ResumeDelivery:
     def _on_ready(self) -> None:
         # The updated approval card already confirms cancellation; READY still
         # remains available to other listeners without sending another notice.
-        if self._resume_type == "tool_approval":
+        if self._resume_type in {"tool_approval", "flow_node"}:
             return
         self._enqueue({"msgtype": "markdown", "markdown": {"content": "答案已接收，正在继续原会话。"}})
 
@@ -71,7 +71,16 @@ class ResumeDelivery:
             logger.error("event=wxbot_resume_delivery_failed reason=queue_full")
             self.close()
 
-    def consume(self, output, session_code: str, interrupt_id: str, turn_id: str = "", *, thread_id: str = "") -> None:
+    def consume(
+        self,
+        output,
+        session_code: str,
+        interrupt_id: str,
+        turn_id: str = "",
+        *,
+        thread_id: str = "",
+        kind: str = "chat",
+    ) -> None:
         ready = False
 
         def on_run_started(run_id: str) -> None:
@@ -84,7 +93,7 @@ class ResumeDelivery:
         last = None
         try:
             for frame in iter_direct_stream_frames(
-                AgentStream("chat", output, session_code, resume_interrupt_id=interrupt_id),
+                AgentStream(kind, output, session_code, resume_interrupt_id=interrupt_id),
                 interrupt_id,
                 on_run_started,
             ):

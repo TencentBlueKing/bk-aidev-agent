@@ -471,11 +471,30 @@ def _is_echo_home(cmd) -> bool:
 
 
 class TestResolvePath:
-    """验证 _resolve_path 将 ~ 展开为绝对路径，供 HTTP API 使用。"""
+    """验证 _resolve_path 将路径变量展开为绝对路径，供 HTTP API 使用。"""
 
     def test_absolute_path_unchanged(self, backend, mock_ops):
         """绝对路径原样返回，不触发 shell 调用。"""
         assert backend._resolve_path("/app/test.txt") == "/app/test.txt"
+
+    def test_storage_path_expanded_from_runtime_env(self, backend, mock_ops):
+        """会话文件路径按当前 runtime 的 STORAGE_PATH 展开。"""
+        backend._env_vars["STORAGE_PATH"] = "/app/.storage/"
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+        assert backend._resolve_path("${STORAGE_PATH}/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+
+    def test_storage_path_uses_default_when_runtime_env_missing(self, backend, mock_ops):
+        """runtime 未配置 STORAGE_PATH 时使用后端默认路径。"""
+        backend._env_vars.pop("STORAGE_PATH", None)
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/storage/session/files/report.txt"
+        )
 
     def test_tilde_only(self, backend, mock_ops):
         """单独 ~ 展开为 $HOME。"""
@@ -768,6 +787,17 @@ class TestPaasSandboxBackendHTTPMethods:
         assert span.kind.name == "CLIENT"
         assert span.attributes["sandbox.operation.name"] == "execute"
         assert "echo hello" not in str(span.attributes)
+
+    def test_exec_command_propagates_current_trace_context(self, http_backend, monkeypatch):
+        traceparent = "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"
+        monkeypatch.setattr(f"{_PAAS_BACKEND_MOD}.trace_headers", lambda: {"traceparent": traceparent})
+        http_backend.client.exec_command.request.return_value = _make_http_response(
+            json_data={"stdout": "ok", "stderr": "", "exit_code": 0}
+        )
+
+        http_backend.exec_command("sb-123", "echo hello")
+
+        assert http_backend.client.exec_command.request.call_args.kwargs["headers"] == {"traceparent": traceparent}
 
     @pytest.fixture()
     def http_backend(self):

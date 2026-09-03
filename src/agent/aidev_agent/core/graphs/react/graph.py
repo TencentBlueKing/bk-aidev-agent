@@ -19,14 +19,14 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
     AgentState,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.stores import ByteStore
 from langchain_core.tools import BaseTool
@@ -36,7 +36,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END, START
 from langgraph.graph import add_messages
 from langgraph.graph.state import StateGraph
+from langgraph.prebuilt.tool_node import ToolCallWithContext
 from langgraph.store.memory import InMemoryStore
+from langgraph.types import Send
 from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
@@ -47,11 +49,6 @@ from aidev_agent.core.graphs.react.skill_middleware import (
     _extract_paas_params,
 )
 from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware, ToolFilterMiddleware
-from aidev_agent.core.nodes.interrupt import (
-    ItsmApprovalStrategy,
-    UserQuestionStrategy,
-    make_interrupt_node,
-)
 from aidev_agent.core.nodes.knowledge import make_knowledge_node
 from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
@@ -122,15 +119,37 @@ class DefaultState(TypedDict):
     knowledge_qa_content: list
     with_qa_response: list
     runtime_paas_sbx_pv: Annotated[list[dict], add_pv_info]
-    # ask_user_question 中断策略写入的用户答案，无 reducer 直接覆盖。
-    # UserQuestionStrategy.interrupt 续流时写入 {tool_call_id: resolved_answer}，
-    # ask_user_question 工具函数通过 InjectedState 读取。
-    ask_user_question_answers: dict[str, Any]
 
 
 class KnowledgeInputState(TypedDict):
     input: str
     query: str
+
+
+def _send_dispatch_route(state: dict):
+    """Send 分派 route：把每个 pending tool_call 派发为独立 Send task。
+
+    过滤已产出 ToolMessage 的 tool_call（避免 resume 后重复执行），
+    每个 pending tool_call 返回一个 Send("tools", ToolCallWithContext(...))。
+    无 pending 时返回 END。
+    """
+    last = state["messages"][-1]
+    if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+        done_ids = {m.tool_call_id for m in state["messages"] if isinstance(m, ToolMessage)}
+        pending = [c for c in last.tool_calls if c["id"] not in done_ids]
+        if pending:
+            return [
+                Send(
+                    "tools",
+                    ToolCallWithContext(
+                        __type="tool_call_with_context",
+                        tool_call=c,
+                        state=state,
+                    ),
+                )
+                for c in pending
+            ]
+    return END
 
 
 class ReActAgentBuilder:
@@ -899,18 +918,20 @@ class ReActAgentBuilder:
         )
 
     def _prepare_agent_interrupt_node(self, *, tools: List[BaseTool]):
-        """构造中断检查节点 (approval_check)。
+        """构造中断检查节点 (approval_check)。【已废弃】
 
-        默认实现组合 ItsmApprovalStrategy + UserQuestionStrategy；
-        子类可重写以定制审批/中断策略，无需重写 _build_graph。
+        图拓扑已改为 Send 分派 + build_tool_node 内的 ITSM 审批 wrapper
+        （nodes/tool/approval_wrapper.py），本方法不再被调用，保留占位
+        以兼容子类重写扩展点。子类如仍需自定义中断策略，应改为在
+        build_tool_node 的 wrapper 链注入自定义 strategy。
 
         Args:
-            tools: 当前图绑定的工具列表，用于 ItsmApprovalStrategy 匹配 tool_call。
+            tools: 图绑定的工具列表（保留签名兼容子类重写）。
 
         Returns:
-            由 make_interrupt_node 构造的可调用节点。
+            None：本方法不再构造中断节点。
         """
-        return make_interrupt_node([ItsmApprovalStrategy(tools), UserQuestionStrategy()])
+        return None
 
     def _prepare_agent_tool_node(
         self,
@@ -992,18 +1013,18 @@ class ReActAgentBuilder:
         return _resolve_task_state_schema(schemas)
 
     @staticmethod
-    def _should_continue(state: dict) -> Literal["approval_check", "end"]:
+    def _should_continue(state: dict) -> Literal["pv_node", "end"]:
         """条件路由函数：决定 model 节点后的下一步。
 
         检查模型输出是否包含 tool_calls：
-        - 如果有 tool_calls，路由到 approval_check 节点（审批检查）
+        - 如果有 tool_calls，路由到 pv_node 节点（准备 Send 分派）
         - 否则路由到 end 结束对话
 
         Args:
             state: 当前状态字典
 
         Returns:
-            "approval_check" 或 "end"
+            "pv_node" 或 "end"
         """
         messages = state.get("messages", [])
         if not messages:
@@ -1012,7 +1033,7 @@ class ReActAgentBuilder:
         last_message = messages[-1]
 
         if isinstance(last_message, AIMessage) and last_message.tool_calls:
-            return "approval_check"
+            return "pv_node"
 
         return "end"
 
@@ -1032,7 +1053,6 @@ class ReActAgentBuilder:
         model_node,
         tool_node,
         pv_node=None,
-        interrupt_node=None,
         tools: "List[BaseTool] | None" = None,
     ) -> Tuple["Runnable", RunnableConfig]:
         """构建 LangGraph 图。
@@ -1040,7 +1060,7 @@ class ReActAgentBuilder:
         图结构：
         - 无知识库配置: START → model → tools/END
         - 有知识库配置: START → knowledge → model → tools/END
-        - 如果有工具: model → (条件) → pv_node / END, pv_node → tools → model
+        - 如果有工具: model → (条件) → pv_node / END, pv_node →(Send 分派)→ tools → model
 
         Args:
             state_schema: 状态模式
@@ -1056,7 +1076,7 @@ class ReActAgentBuilder:
             model_node: 模型节点
             tool_node: 工具节点
             pv_node: PV 节点 callable，由 _prepare_agent_pv_node 构造
-            interrupt_node: 中断检查节点 callable，由 _prepare_agent_interrupt_node 构造
+            tools: 绑定的工具列表
 
         Returns:
             (CompiledGraph, RunnableConfig) 元组
@@ -1083,19 +1103,17 @@ class ReActAgentBuilder:
         if tool_node:
             graph.add_node("pv_node", pv_node)
             graph.add_node("tools", tool_node)
-            graph.add_node("approval_check", interrupt_node)
-            # model → (should_continue) → approval_check / end
+            # model → (should_continue) → pv_node / end
             graph.add_conditional_edges(
                 "model",
                 self._should_continue,
                 {
-                    "approval_check": "approval_check",
+                    "pv_node": "pv_node",
                     "end": END,
                 },
             )
-            # approval_check 内部通过 Command(goto=...) 决定下一步
-            # pv_node → tools → model (形成 ReAct 循环)
-            graph.add_edge("pv_node", "tools")
+            # pv_node →(Send 分派)→ tools → model (形成 ReAct 循环)
+            graph.add_conditional_edges("pv_node", _send_dispatch_route)
             graph.add_edge("tools", "model")
         else:
             # 无工具时直接结束
@@ -1167,9 +1185,6 @@ class ReActAgentBuilder:
             tools=tools,
         )
 
-        # 中断检查节点 (approval_check)
-        interrupt_node = self._prepare_agent_interrupt_node(tools=tools)
-
         # 构造 PV Node
         pv_node = self._prepare_agent_pv_node()
 
@@ -1207,7 +1222,6 @@ class ReActAgentBuilder:
             model_node=model_node,
             tool_node=tool_node,
             pv_node=pv_node,
-            interrupt_node=interrupt_node,
             tools=tools if tools else None,
         )
 

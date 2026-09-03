@@ -27,8 +27,6 @@ from ag_ui.core.events import (
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
-    HumanMessage,
-    SystemMessage,
     ToolMessage,
 )
 from pydantic import ValidationError
@@ -68,14 +66,18 @@ from .types import (
     ExtendUserMessage as AGUIUserMessage,
 )
 from .types import (
-    InfoMessage,
-    InterruptMessage,
     LangGraphReasoning,
     ReasoningMessage,
     SchemaKeys,
     State,
 )
 from ...enums import PromptRole
+
+# 仅有 tool_calls、无文本输出的 assistant 消息使用的占位符 content。
+# 首帧 MESSAGES_SNAPSHOT（历史还原）与 interrupt 终态回放需将其归一化为 ""，
+# 与前端读接口（session_content / session）的展示语义保持一致。
+# 定义在 utils（低层模块）供 event_builders 复用，避免 event_builders ↔ utils 循环依赖。
+TOOL_CALLING_PLACEHOLDER = "正在调用工具..."
 
 DEFAULT_SCHEMA_KEYS = ["tools"]
 
@@ -110,7 +112,7 @@ def _read_builtin_property(record: dict) -> dict:
     return bp if isinstance(bp, dict) else {}
 
 
-def _read_extra(record: dict) -> Any:
+def _read_extra(record: dict) -> Any:  # nosemgrep: aidev-no-bare-any
     """读取 ChatPrompt 单账本的 extra 字段（property.extra，适配层透传）。"""
     extra = record.get("extra")
     if extra is not None:
@@ -119,7 +121,7 @@ def _read_extra(record: dict) -> Any:
     return (record.get("__pydantic_extra__") or {}).get("property")
 
 
-def _read_field(record: dict, key: str) -> Any:
+def _read_field(record: dict, key: str) -> Any:  # nosemgrep: aidev-no-bare-any
     """按 ChatPrompt 单账本形状读取字段：builtin_property 优先，回退 __pydantic_extra__/顶层。
 
     迁移函数（migration_chat_session_context_from_chat_session_contents_v1）把平铺顶层字段回嵌 builtin_property，
@@ -493,123 +495,6 @@ def contents_to_agui_messages(records: list[dict]) -> list[AGUIMessage]:
     return agui_messages
 
 
-def convert_agui_multimodal_to_langchain(
-    content: list[TextInputContent | BinaryInputContent],
-) -> list[dict[str, Any]]:
-    """Convert AG-UI multimodal content to LangChain's multimodal format."""
-    langchain_content = []
-    for item in content:
-        if isinstance(item, TextInputContent):
-            langchain_content.append({"type": "text", "text": item.text})
-        elif isinstance(item, BinaryInputContent):
-            # LangChain uses image_url format (OpenAI-style)
-            content_dict = {"type": "image_url"}
-
-            # Prioritize url, then data, then id
-            if item.url:
-                content_dict["image_url"] = {"url": item.url}
-            elif item.data:
-                # Construct data URL from base64 data
-                content_dict["image_url"] = {"url": f"data:{item.mime_type};base64,{item.data}"}
-            elif item.id:
-                # Use id as a reference (some providers may support this)
-                content_dict["image_url"] = {"url": item.id}
-
-            langchain_content.append(content_dict)
-
-    return langchain_content
-
-
-def agui_messages_to_langchain(messages: list[AGUIMessage]) -> list[BaseMessage]:
-    langchain_messages = []
-    for message in messages:
-        role = message.role
-        # 确保每条消息都有唯一的 id，避免 LangGraph add_messages reducer 错误地替换消息
-        message.id = message.id if (message.id and message.id != "None") else str(uuid.uuid4())
-        if role == PromptRole.USER.value:
-            # Handle multimodal content
-            if isinstance(message.content, str):
-                content = message.content
-            elif isinstance(message.content, list):
-                content = convert_agui_multimodal_to_langchain(message.content)
-            else:
-                content = str(message.content)
-
-            langchain_messages.append(
-                HumanMessage(
-                    id=message.id,
-                    content=content,
-                    name=message.name,
-                )
-            )
-        elif role == PromptRole.ASSISTANT.value:
-            tool_calls = []
-            if hasattr(message, "tool_calls") and message.tool_calls:
-                for tc in message.tool_calls:
-                    tool_calls.append(
-                        {
-                            "id": tc.id,
-                            "name": tc.function.name,
-                            "args": json.loads(tc.function.arguments)
-                            if hasattr(tc, "function") and tc.function.arguments
-                            else {},
-                            "type": "tool_call",
-                        }
-                    )
-            langchain_messages.append(
-                AIMessage(
-                    id=message.id,
-                    content=message.content or "",
-                    tool_calls=tool_calls,
-                    name=message.name,
-                )
-            )
-        elif role == PromptRole.SYSTEM.value:
-            langchain_messages.append(
-                SystemMessage(
-                    id=message.id,
-                    content=message.content,
-                    name=message.name,
-                )
-            )
-        elif role == PromptRole.TOOL.value:
-            langchain_messages.append(
-                ToolMessage(
-                    id=message.id,
-                    content=message.content,
-                    tool_call_id=message.tool_call_id,
-                )
-            )
-        elif role == PromptRole.INTERRUPT.value:
-            # 前端历史回放中带入的 role=interrupt 卡片：还原为 InterruptMessage
-            # （继承 ActivityMessage），既进入 state["messages"] 供 MESSAGES_SNAPSHOT
-            # 重建与前端展示，又会被 basic_middleware 的 isinstance(ActivityMessage)
-            # 过滤剔除，不会进入 LLM 输入。
-            langchain_messages.append(
-                InterruptMessage(
-                    id=message.id,
-                    content=message.content if isinstance(message.content, (dict, list)) else {},
-                    name=message.name,
-                )
-            )
-        elif role == PromptRole.INFO.value:
-            # 前端历史回放中带入的 role=info 系统信息：还原为 InfoMessage，
-            # 进入 state["messages"] 供 MESSAGES_SNAPSHOT 重建与前端展示，
-            # 但会被 basic_middleware 过滤剔除，不会进入 LLM 输入。
-            langchain_messages.append(
-                InfoMessage(
-                    id=message.id,
-                    content=message.content if isinstance(message.content, str) else str(message.content),
-                )
-            )
-        elif role in PromptRole.skip_roles():
-            # 跳过 reasoning 消息，它只用于前端展示，不需要发送给 LLM
-            continue
-        else:
-            raise ValueError(f"Unsupported message role: {role}")
-    return langchain_messages
-
-
 def resolve_reasoning_content(chunk: Any) -> LangGraphReasoning | None:
     content = chunk.content
     if not content and not hasattr(chunk, "additional_kwargs"):
@@ -703,7 +588,7 @@ def json_safe_stringify(o):
     return str(o)  # last resort
 
 
-def make_json_safe(value: Any, _seen: set[int] | None = None) -> Any:
+def make_json_safe(value: Any, _seen: set[int] | None = None) -> Any:  # nosemgrep: aidev-no-bare-any
     """
     Convert `value` into something that `json.dumps` can always handle.
 
@@ -793,6 +678,9 @@ def get_reasoning_message_id(message_id: str) -> str:
 
 def langchain_messages_to_streaming_events(
     messages: list[BaseMessage],
+    *,
+    state_messages: list[BaseMessage] | None = None,
+    tools_mapping: dict[str, Any] | None = None,
 ) -> Iterator[BaseEvent]:
     """把 LangChain 消息列表转换为「与正常流式同构」的 AG-UI 增量事件序列。
 
@@ -810,15 +698,28 @@ def langchain_messages_to_streaming_events(
       - ``HumanMessage`` / ``SystemMessage`` / ``InterruptMessage`` /
         ``ActivityMessage``：不下发（前端历史已持有，且这些类型没有"逐条增量"
         语义；resume 终态场景只补 worker 续流新写的消息）。
+
+    D-05 方向 a（DB 权威化）：当传入 ``state_messages`` 与 ``tools_mapping`` 时，
+    tool_call 重放按 DB 等价谓词过滤审批 pending（无对应 ToolMessage）的项
+    （``should_suppress_approval_tool_call`` 同源复算，不真查 DB）。
     """
     for message in messages:
         if isinstance(message, AIMessage):
-            yield from _ai_message_to_events(message)
+            yield from _ai_message_to_events(
+                message,
+                state_messages=state_messages,
+                tools_mapping=tools_mapping,
+            )
         elif isinstance(message, ToolMessage):
             yield _tool_message_to_event(message)
 
 
-def _ai_message_to_events(message: AIMessage) -> Iterator[BaseEvent]:
+def _ai_message_to_events(
+    message: AIMessage,
+    *,
+    state_messages: list[BaseMessage] | None = None,
+    tools_mapping: dict[str, Any] | None = None,
+) -> Iterator[BaseEvent]:
     """把单条 AIMessage 展开为 reasoning / text / tool_call 事件序列"""
     message_id = str(message.id) if message.id else str(uuid.uuid4())
 
@@ -854,8 +755,23 @@ def _ai_message_to_events(message: AIMessage) -> Iterator[BaseEvent]:
             message_id=message_id,
         )
 
-    # 3) tool_calls（如有）：对每个 tool_call 输出完整的 START/ARGS/END 三元组
-    for tc in message.tool_calls or []:
+    # 3) tool_calls（如有）：对每个 tool_call 输出完整的 START/ARGS/END 三元组。
+    #    D-05 方向 a（DB 权威化）：审批 pending 且无对应 ToolMessage 的 tool_call 不重放
+    #    （与中断终态快照过滤同用 should_suppress_approval_tool_call，同源复算不真查 DB）。
+    #    state_messages 为空（未显式提供）时不启用过滤，保持旧行为。
+    if state_messages is not None:
+        # 延迟导入打破 utils ↔ event_builders 循环依赖（utils 为低层模块，event_builders 从 utils 导入）。
+        from .event_builders import should_suppress_approval_tool_call
+
+        filter_tool_calls = [
+            tc
+            for tc in message.tool_calls or []
+            if not should_suppress_approval_tool_call(tc, state_messages, tools_mapping or {})
+        ]
+    else:
+        filter_tool_calls = message.tool_calls or []
+
+    for tc in filter_tool_calls:
         tc_id = str(tc.get("id") or uuid.uuid4())
         yield ExtendToolCallStartEvent(
             type=EventType.TOOL_CALL_START,
@@ -881,78 +797,10 @@ def _tool_message_to_event(message: ToolMessage) -> BaseEvent:
     return ExtendToolCallResultEvent(
         type=EventType.TOOL_CALL_RESULT,
         tool_call_id=message.tool_call_id,
-        tool_call_name=message.name,
         message_id=str(message.id) if message.id else str(uuid.uuid4()),
         content=content if not is_error else "",
         role="tool",
         is_error=is_error or None,
         duration=(message.additional_kwargs or {}).get("duration"),
+        tool_call_name=getattr(message, "name", None),
     )
-
-
-def unwrap_interrupt_source(source: Any) -> Any:
-    """从 RUN_FINISHED 事件中解包出 interrupt[0]。"""
-    if not isinstance(source, dict) or source.get("type") != "RUN_FINISHED":
-        return source
-
-    outcome = source.get("outcome")
-    if not isinstance(outcome, dict) or outcome.get("type") != "interrupt":
-        return source
-
-    interrupts = outcome.get("interrupts") or []
-    if interrupts:
-        return interrupts[0]
-    return source
-
-
-def get_interrupt_value(source: Any, *keys: str) -> Any:
-    """从 interrupt 对象/dict 中按多个候选 key 查找值。"""
-    source = unwrap_interrupt_source(source)
-    # LangGraph Interrupt 对象：实际 payload 在 source.value 中，
-    # 需要解包后才能按 dict 方式查找 callbackToken、metadata 等字段
-    original_source = source
-    if not isinstance(source, dict) and hasattr(source, "value"):
-        inner = source.value
-        if isinstance(inner, dict):
-            source = inner
-
-    metadata = {}
-    raw_metadata = source.get("metadata") if isinstance(source, dict) else getattr(source, "metadata", None)
-    if isinstance(raw_metadata, dict):
-        metadata = raw_metadata
-
-    nested_candidates = []
-    if isinstance(metadata.get("ticket"), dict):
-        nested_candidates.append(metadata["ticket"])
-    if isinstance(metadata.get("approval"), dict):
-        nested_candidates.append(metadata["approval"])
-    if isinstance(metadata.get("target"), dict):
-        nested_candidates.append(metadata["target"])
-    if isinstance(metadata.get("execution"), dict):
-        nested_candidates.append(metadata["execution"])
-
-    for candidate in nested_candidates:
-        for key in keys:
-            if key in candidate and candidate[key] is not None:
-                return candidate[key]
-
-    for key in keys:
-        if key in metadata and metadata[key] is not None:
-            return metadata[key]
-
-    for key in keys:
-        if isinstance(source, dict):
-            if key in source and source[key] is not None:
-                return source[key]
-        else:
-            value = getattr(source, key, None)
-            if value is not None:
-                return value
-
-    # 兜底：对于 Interrupt 对象（source 已被替换为 value），
-    # 仍尝试从原始对象的属性中查找（如 Interrupt.id）
-    if original_source is not source:
-        for key in keys:
-            value = getattr(original_source, key, None)
-            if value is not None:
-                return value

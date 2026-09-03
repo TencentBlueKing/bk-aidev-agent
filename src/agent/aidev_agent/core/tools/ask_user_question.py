@@ -1,57 +1,85 @@
 # -*- coding: utf-8 -*-
 """ask_user_question 可执行工具函数
 
-工具函数通过 ``InjectedState`` 读取 ``UserQuestionStrategy.interrupt`` 写入的
-答案，通过 ``ToolRuntime`` 获取当前 ``tool_call_id``，返回答案作为
-工具返回值。ToolNode 执行此函数后将返回值包装为工具消息入库（修复 12.1
-绕过 ToolNode 的 DB 入库断裂）。
+工具函数本体**直接调用 LangGraph 原生 ``interrupt()``**（D-12，工具内直调）：
+构造 ``AskUserQuestionTarget`` → ``interrupt(target.model_dump())`` 暂停图 →
+用户回答后续流恢复 → ``parse_resume_answers(answer)`` 把用户答案直接作为
+工具返回值。ToolNode 执行此函数后将返回值包装为工具消息入库。
 
 设计要点：
 - ``questions`` 是 LLM 可见 schema 参数（位置参数第一个），通过 ``Annotated``
   附带描述；不显式传 ``args_schema`` —— ``StructuredTool.from_function`` 自动
-  推断 schema 时会排除 ``Annotated[dict, InjectedState]`` 和 ``ToolRuntime``
-  类型参数，仅保留 ``questions`` 暴露给 LLM
-- ``state`` 和 ``runtime`` 是注入参数（不暴露给 LLM），由 ToolNode 自动注入
-- ``tool_call_id`` 从 ``runtime.tool_call_id`` 获取，与
-  ``UserQuestionStrategy.interrupt`` 写入 state 的 key
-  （``ask_tool_call["id"]``）一致 —— 都来自 ``last_message.tool_calls[i]["id"]``
+  推断 schema 时会排除 ``ToolRuntime`` 类型参数，仅保留 ``questions`` 暴露给 LLM
+- ``runtime`` 是注入参数（不暴露给 LLM），由 ToolNode 自动注入
+- ``tool_call_id`` 从 ``runtime.tool_call_id`` 获取，用于构造 ``AskUserQuestionTarget``
+- **interrupt() 前零副作用**（Pitfall 3）：只构造 target，答案全在返回后处理，
+  由 ToolNode 统一包装入库，保证续流重执行非幂等副作用不重复发生
+- 依赖方向：工具层（core/tools）只 import packages/interrupt_manager（packages 红线）；
+  interrupt 用 langgraph 原生实现，不 import core 类型
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, List
 
 from langchain_core.tools import StructuredTool
-from langgraph.prebuilt import InjectedState, ToolRuntime
+from langgraph.prebuilt import ToolRuntime
+from langgraph.types import interrupt
 
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
+from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_REASON,
+    ASK_USER_QUESTION_SKIPPED_CONTENT,
+)
+from aidev_agent.packages.interrupt_manager.ask_user_question import (
+    AskUserQuestionTarget,
+    parse_resume_answers,
+)
 
 
-def _ask_user_question(
+def _ask_user_question(  # nosemgrep: aidev-no-bare-any  (返回值为用户提交的任意答案结构)
     questions: Annotated[
         List[dict],
         '问题数组，每项为 {"header": str, "multiSelect": bool, "question": str, "options": [{"label": str, "description": str?}]}。',
     ],
-    state: Annotated[dict, InjectedState] = None,
     runtime: ToolRuntime = None,
 ) -> Any:
-    """向用户提问并等待回答。答案由 UserQuestionStrategy.interrupt 写入 state。
+    """向用户提问并等待回答。答案由 interrupt() 续流后直接作为工具返回值。
 
-    工具函数在续流后由 ToolNode 调用：``UserQuestionStrategy.interrupt``
-    已在续流时把用户答案写入 ``state["ask_user_question_answers"][tool_call_id]``，
-    本函数读取该答案并返回，ToolNode 将返回值包装为工具消息入库。
+    工具函数在 ToolNode 内运行：首次调用构造 ``AskUserQuestionTarget`` 并
+    ``interrupt(target.model_dump())`` 暂停图；用户回答后续流恢复，本函数从头
+    重执行，``interrupt()`` 返回用户答案，经 ``parse_resume_answers`` 处理后
+    直接作为工具返回值（由 ToolNode 包装为工具消息入库）。
 
     Args:
-        questions: 问题数组（LLM 可见参数，已由中断策略处理，此处不使用）。
-        state: 注入的图状态，含 ``ask_user_question_answers`` 字段。
+        questions: 问题数组（LLM 可见参数）。
         runtime: 工具运行时，提供当前 ``tool_call_id``。
 
     Returns:
-        当前 ``tool_call_id`` 对应的用户答案；无答案时返回空字符串。
+        用户答案（经 ``parse_resume_answers`` 提取）；跳过/取消（空答案）时返回
+        ``ASK_USER_QUESTION_SKIPPED_CONTENT`` 文案，供 LLM 继续推理。
     """
     tool_call_id = runtime.tool_call_id if runtime else ""
-    answers = (state or {}).get("ask_user_question_answers", {})
-    return answers.get(tool_call_id, "")
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    target = AskUserQuestionTarget(
+        questions=questions,
+        message="请求用户回答以下问题",
+        toolCallId=tool_call_id,
+        expiresAt=expires_at,
+    )
+    # 首次 GraphInterrupt 暂停图；续流工具函数从头重执行并拿到用户答案
+    answer = interrupt(target.model_dump())
+    answers = parse_resume_answers(answer)
+    if not answers:
+        # 跳过/取消（cancelled + 空 answers）：返回跳过文案而非空列表。
+        # 续流重跑会为该 tool_call 再次流出 TOOL_CALL_RESULT（ask_user 仅抑制
+        # START/ARGS/END，RESULT 放行），前端分组对同 toolCallId 的工具消息
+        # 后写覆盖——返回空列表会把装配层 skip 派发的 SKIPPED_CONTENT 工具
+        # 卡片内容顶成 "[]"（工具样式/内容丢失）；返回跳过文案则两处一致，
+        # 且 LLM 能拿到有意义的跳过上下文（2026-09-02 跳过路径回归）。
+        return ASK_USER_QUESTION_SKIPPED_CONTENT
+    # 答案直接作为工具返回值（ToolNode 包装为 ToolMessage 入库）
+    return answers
 
 
 ask_user_question = StructuredTool.from_function(
