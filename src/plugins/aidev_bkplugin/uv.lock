@@ -98,7 +98,7 @@ dev = [
 requires-dist = [
     { name = "aidev-agent", specifier = ">=2.2.2rc28" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
-    { name = "blueapps", specifier = ">=4.15.1,<5.0" },
+    { name = "blueapps", specifier = ">=4.16rc5,<4.17.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
 ]
 provides-extras = ["opentelemetry"]
@@ -198,7 +198,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/f9/64/0dc8465f1d54e4b86
 
 [[package]]
 name = "blueapps"
-version = "4.15.8"
+version = "4.16rc6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bkoauth" },
@@ -213,7 +213,7 @@ dependencies = [
     { name = "werkzeug" },
     { name = "whitenoise" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/72/a07426284cde030002a1e6fdabf93cd461d9b5303471cab181b91fa05103/blueapps-4.15.8.tar.gz", hash = "sha256:143495199e0d77e0e65e92119dc54234d44c863c763479c1d5d3d223e9ea9b57", size = 240584, upload-time = "2025-05-29T13:31:35.376Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/b5/f97c758315c3157ba91b47bc2506bbe0b3cf358557df2928846e71350fb2/blueapps-4.16rc6.tar.gz", hash = "sha256:4b2e68cf130d7f1ce3cd6c4bd3d0b4518a98b664ad7a1e5c99ba90cd89ff7396", size = 245905, upload-time = "2026-06-09T11:22:25.534Z" }
 
 [[package]]
 name = "bracex"
