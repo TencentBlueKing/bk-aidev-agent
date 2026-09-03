@@ -255,6 +255,10 @@ class KnowledgeSettings(BaseModel):
         default=IndependentQueryMode(os.getenv("INDEPENDENT_QUERY_MODE", "SUM_AND_CONCATE")),
         description="预处理逻辑",
     )
+    multimodal_query_model: str | None = Field(
+        default=os.getenv("KNOWLEDGE_MULTIMODAL_QUERY_MODEL") or None,
+        description="图片 query 转检索文本所用多模态模型；为空时关闭图片 query 解析",
+    )
     use_independent_query_in_translation: bool = Field(
         default=os.getenv("USE_INDEPENDENT_QUERY_IN_TRANSLATION", "false").lower() == "true",
         description="翻译查询时是否使用独立查询",

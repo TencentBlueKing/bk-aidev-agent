@@ -35,6 +35,7 @@ from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_
 from aidev_agent.pydantic_models import KnowledgeSettings
 from aidev_agent.utils.decorator import retry, timeit
 
+from .multimodal import build_multimodal_query_for_search
 from .prompts import DEFAULT_INTENT_RECOGNITION_PROMPT_TEMPLATES
 from .utils import (
     HUNYUAN_SPECIFIC_RESPONSE,
@@ -763,7 +764,13 @@ class KnowledgeRag:
 
         # 获取基本配置信息
         # 获取原始输入，基于记忆系统，查询有时候会被重写
-        raw_input = kwargs.get("input", query)
+        raw_content = kwargs.get("input", query)
+        raw_input = build_multimodal_query_for_search(
+            raw_content,
+            model=knowledge_query_options.multimodal_query_model,
+        )
+        if not isinstance(raw_content, str):
+            query = raw_input
         # 获取 LLM 实例，如果没有提供，使用默认的 LLM
         llm = kwargs.get("llm", self.llm)
         # 获取知识库配置信息, 如果没有提供，使用配置中的知识库配置
