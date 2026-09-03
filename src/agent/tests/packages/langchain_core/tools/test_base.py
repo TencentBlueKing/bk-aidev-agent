@@ -16,12 +16,19 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from aidev_agent.config import settings
-from aidev_agent.packages.langchain_core.tools.base import Tool, make_mcp_tools, make_structured_tool
+from aidev_agent.packages.langchain_core.tools.base import (
+    MCPExceptionWrapper,
+    Tool,
+    make_mcp_tools,
+    make_structured_tool,
+    wrap_mcp_exception,
+)
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import ExecuteKwargs
@@ -563,6 +570,7 @@ def test_make_mcp_tools_propagates_trace_context_to_all_remote_servers(mock_mcp_
 
     client_config = mock_mcp_client_class.call_args_list[0].args[0]
     assert client_config["apigw"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
+    assert client_config["apigw"]["headers"]["X-Bkapi-Timeout"] == "60"
     assert client_config["external"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
     assert client_config["external"]["headers"]["X-Custom"] == "kept"
     assert "headers" not in client_config["local"]
@@ -672,8 +680,6 @@ async def test_mcp_exception_wrapper_success():
 @pytest.mark.asyncio
 async def test_mcp_exception_wrapper_tool_exception():
     """测试 wrap_mcp_exception 处理 ToolException"""
-    from aidev_agent.packages.langchain_core.tools.base import wrap_mcp_exception
-    from langchain_core.tools.base import ToolException
 
     async def mock_coro(*args, **kwargs):
         raise ToolException("Tool error occurred")
@@ -690,8 +696,6 @@ async def test_mcp_exception_wrapper_tool_exception():
 @pytest.mark.asyncio
 async def test_mcp_exception_wrapper_connection_error():
     """测试 wrap_mcp_exception 处理连接错误"""
-    from aidev_agent.packages.langchain_core.tools.base import wrap_mcp_exception
-    from langchain_core.tools.base import ToolException
 
     async def mock_coro(*args, **kwargs):
         raise ConnectionError("Connection refused")
@@ -708,8 +712,6 @@ async def test_mcp_exception_wrapper_connection_error():
 @pytest.mark.asyncio
 async def test_mcp_exception_wrapper_timeout_error():
     """测试 wrap_mcp_exception 处理超时错误"""
-    from aidev_agent.packages.langchain_core.tools.base import wrap_mcp_exception
-    from langchain_core.tools.base import ToolException
 
     async def mock_coro(*args, **kwargs):
         raise TimeoutError("Request timeout")
@@ -721,6 +723,19 @@ async def test_mcp_exception_wrapper_timeout_error():
 
     assert "[ERROR]" in str(exc_info.value)
     assert "超时异常" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_mcp_exception_wrapper_enforces_tool_call_timeout(monkeypatch):
+    """MCP 工具调用超过统一工具时限后应返回工具错误。"""
+
+    async def slow_coro():
+        await asyncio.sleep(1)
+
+    monkeypatch.setitem(settings._resolved, "BKAI_MCP_TIMEOUT", 0.01)
+
+    with pytest.raises(ToolException, match="超时"):
+        await MCPExceptionWrapper(slow_coro, agent_options=None)()
 
 
 def test_make_structured_tool_with_inject_config_and_state():
@@ -1134,6 +1149,7 @@ def test_make_mcp_tools_selected_tools_not_passed_to_client(mock_mcp_client_clas
     server_cfg = call_args["server1"]
     assert "selected_tools" not in server_cfg
     assert "mcp_type" not in server_cfg
+    assert isinstance(mock_tool.coroutine, MCPExceptionWrapper)
 
 
 @patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")

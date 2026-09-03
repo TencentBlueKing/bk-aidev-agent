@@ -592,7 +592,7 @@ class BaseResourceManager(abc.ABC):
                 else:
                     auth_info = {"bk_app_code": app_code, "bk_app_secret": app_secret}
                 _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
-                _server_config["headers"]["X-Bkapi-Timeout"] = settings.BK_APIGW_MCP_TIMEOUT
+                _server_config["headers"]["X-Bkapi-Timeout"] = str(settings.BKAI_MCP_TIMEOUT)
             else:
                 _non_blueapps_servers.append(_server_config)
 
@@ -644,8 +644,7 @@ class BaseResourceManager(abc.ABC):
                         f"cost={time.monotonic() - _start:.2f}s"
                     )
                     for each in tools:
-                        if agent_options:
-                            each.coroutine = MCPExceptionWrapper(each.coroutine, agent_options)
+                        each.coroutine = MCPExceptionWrapper(each.coroutine, agent_options)
                         if not each.metadata:
                             each.metadata = {}
                         each.metadata["mcp_name"] = server_name

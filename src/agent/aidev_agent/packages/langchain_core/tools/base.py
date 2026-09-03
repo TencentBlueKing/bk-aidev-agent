@@ -16,6 +16,7 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
+import asyncio
 import contextlib
 import functools
 import json
@@ -581,7 +582,10 @@ class MCPExceptionWrapper:
 
     async def __call__(self, *args, **kwargs):
         try:
-            return await self.coro(*args, **kwargs)
+            return await asyncio.wait_for(
+                self.coro(*args, **kwargs),
+                timeout=settings.get("BKAI_MCP_TIMEOUT", 60),
+            )
         except ToolException as err:
             _logger.exception(f"failed to run mcp: {err}")
             # 尝试解析错误消息中的详细信息
