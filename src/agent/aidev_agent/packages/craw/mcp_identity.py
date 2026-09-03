@@ -25,6 +25,10 @@ IDENTITY_HEADER = "X-Bkai-Access-Token"
 IDENTITY_HEADER_ALIAS = "X-Aidev-Access-Token"
 
 
+class CrawLeaseError(RuntimeError):
+    """MCP 身份租约获取失败。启用用户身份出口时必须终止本次运行（fail-closed）。"""
+
+
 def normalize_access_token(raw: Optional[str]) -> str:
     """剥空白 / 外层引号 / Bearer 前缀，避免粘贴污染分裂身份。"""
     token = (raw or "").strip()
@@ -64,7 +68,13 @@ def resolve_user_access_token(username: str = "", resource_manager=None) -> str:
 
 @contextmanager
 def mcp_identity_lease(token: str) -> Iterator[None]:
-    """对话期间占用 egress 共享槽。未配置 egress 或无 token 时为空操作。"""
+    """对话期间占用 egress 共享槽。未配置 egress 或无 token 时为空操作。
+
+    fail-closed：配置了用户身份出口（env + token 齐备）但租约获取失败时抛
+    ``CrawLeaseError`` 终止本次运行——继续执行会让 egress 沿用共享槽中的
+    上一用户身份，造成跨用户串号。release 携带本次租约 ID 做所有权校验，
+    迟到/重复释放不会清掉下一任持有者。
+    """
     base = (os.getenv(EGRESS_URL_ENV) or "").rstrip("/")
     token = normalize_access_token(token)
     if not base or not token:
@@ -72,23 +82,22 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
         return
     try:
         import httpx
-    except ImportError:
-        _logger.warning("[CRAW] httpx 不可用，跳过 MCP 身份租约")
-        yield
-        return
+    except ImportError as exc:
+        raise CrawLeaseError("httpx 不可用，无法建立 MCP 身份租约") from exc
     timeout = float(os.getenv("BKAI_MCP_EGRESS_LEASE_TIMEOUT", "30"))
     with httpx.Client(timeout=timeout) as client:
         try:
             response = client.post(f"{base}/internal/acquire", json={"token": token})
             response.raise_for_status()
+            lease_id = str(response.json().get("leaseId") or "")
         except Exception as exc:
-            _logger.warning("[CRAW] MCP 身份租约获取失败（对话继续，MCP 可能仍是上一身份或空凭证）: %s", exc)
-            yield
-            return
+            raise CrawLeaseError(f"MCP 身份租约获取失败，已拒绝本次执行: {exc}") from exc
+        if not lease_id:
+            raise CrawLeaseError("MCP 身份租约响应缺少 leaseId，已拒绝本次执行")
         try:
             yield
         finally:
             try:
-                client.post(f"{base}/internal/release")
+                client.post(f"{base}/internal/release", json={"leaseId": lease_id})
             except Exception as exc:
                 _logger.warning("[CRAW] MCP 身份租约释放失败: %s", exc)
