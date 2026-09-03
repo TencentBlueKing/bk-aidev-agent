@@ -19,20 +19,28 @@
         v-if="citeContent || textParts.length"
         class="ai-user-message-content"
       >
-        <template v-if="Array.isArray(citeContent)">
-          <!-- property.extra.cite 是数组时，显示结构化内容 -->
-          <KeyValueContent
-            :content="citeContent"
-            :title="citeTitle"
+        <!-- 设计稿标注：消息最高显示 200px，超出后由「显示更多 / 收起」控制 -->
+        <CollapsibleContent :max-height="CONST_USER_MESSAGE_MAX_HEIGHT">
+          <template v-if="Array.isArray(citeContent)">
+            <!-- property.extra.cite 是数组时，显示结构化内容 -->
+            <KeyValueContent
+              :content="citeContent"
+              :title="citeTitle"
+            />
+          </template>
+          <!-- 发送时保留了富文本文档：把 @ 选中的资源原样还原成标签 -->
+          <MentionText
+            v-else-if="mentionDoc"
+            :doc="mentionDoc"
           />
-        </template>
-        <!-- agui user message content 显示-->
-        <TextContent
-          v-for="(text, index) in textParts"
-          v-else-if="content"
-          :key="index"
-          :content="text"
-        />
+          <!-- agui user message content 显示-->
+          <TextContent
+            v-for="(text, index) in textParts"
+            v-else-if="content"
+            :key="index"
+            :content="text"
+          />
+        </CollapsibleContent>
       </div>
       <MessageTools
         v-if="messageToolsStatus !== MessageToolsStatus.Hidden"
@@ -64,6 +72,7 @@
         v-model="editContent"
         class="user-edit-input"
         :default-upload-files="binaryFiles"
+        :menu-sources="globalConfig?.menuSources?.value ?? []"
         :on-send-message="handleSendMessage"
         :support-upload="globalConfig?.supportUpload.value ?? false"
       >
@@ -87,12 +96,12 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, shallowRef, useTemplateRef } from 'vue';
+  import { computed, nextTick, shallowRef, useTemplateRef } from 'vue';
 
   import { Button } from 'bkui-vue';
 
   import { type InputContent, type TextInputContent, MessageContentType } from '../../../ag-ui/types';
-  import { CONST_USER_MESSAGE_TOOLS } from '../../../common/constants';
+  import { CONST_USER_MESSAGE_MAX_HEIGHT, CONST_USER_MESSAGE_TOOLS } from '../../../common/constants';
   import { useClipboard } from '../../../composables';
   import { injectGlobalConfig } from '../../../composables/use-global-config';
   import { t } from '../../../lang/lang';
@@ -107,10 +116,12 @@
   import { mergeToolsById } from '../../../utils';
   import ShortcutRender from '../../ai-shortcut/shortcut-render/shortcut-render.vue';
   import CiteContent from '../../chat-content/cite-content/cite-content.vue';
+  import CollapsibleContent from '../../chat-content/collapsible-content/collapsible-content.vue';
   import FileContent from '../../chat-content/file-content/file-content.vue';
   import KeyValueContent from '../../chat-content/key-value-content/key-value-content.vue';
   import TextContent from '../../chat-content/text-content/text-content.vue';
   import ChatInput from '../../chat-input/chat-input.vue';
+  import { MentionText } from '../../mention';
   import MessageTime from '../../message-tools/message-time/message-time.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
 
@@ -127,8 +138,8 @@
     createdAt?: UserMessage['createdAt'];
     id?: UserMessage['id'];
     messageId?: UserMessage['messageId'];
-    name?: UserMessage['name'];
     messageTools?: IToolBtn[];
+    name?: UserMessage['name'];
     onAction?: MessageToolsProps['onAction'];
     property?: UserMessage['property'];
     role?: UserMessage['role'];
@@ -190,6 +201,15 @@
     return null;
   }) as Partial<Shortcut>;
 
+  /**
+   * 仅当文档里真的含标签时才走结构化渲染：
+   * 纯文本走原有 TextContent，保持历史消息与第三方消息的表现不变。
+   */
+  const mentionDoc = computed(() => {
+    const doc = props.property?.extra?.docSchema;
+    return doc?.some(line => line.some(node => node.type === 'tag')) ? doc : undefined;
+  });
+
   // 二进制文件
   const binaryFiles = computed(() => {
     if (!Array.isArray(props.content)) return [];
@@ -206,11 +226,17 @@
   const handleAction = async (tool: IToolBtn) => {
     if (tool.id === 'edit') {
       if (textParts.value.length) {
-        editContent.value = textParts.value[0] ?? '';
+        // 有富文本文档时用它回填，否则编辑态会把已选资源退化成纯文本
+        editContent.value = mentionDoc.value ?? textParts.value[0] ?? '';
         isEdit.value = true;
       }
       if (binaryFiles.value.length) {
         isEdit.value = true;
+      }
+      if (isEdit.value) {
+        // 编辑态输入框此刻才开始渲染，等挂载完成再聚焦，光标落到已有内容末尾
+        await nextTick();
+        chatInputRef.value?.focus?.();
       }
     } else if (tool.id === 'copy') {
       copy(typeof props.content === 'string' ? props.content : JSON.stringify(props.content || ''));

@@ -71,6 +71,15 @@
             >
               <component :is="getCopyIcon()" />
             </span>
+            <!-- 设计稿：引用位于下载左侧，点击后该文件以标签形式进入输入框 -->
+            <span
+              v-if="inputMention"
+              v-tippy="citeTippy"
+              class="ai-file-artifact-panel-preview-header-action"
+              @click="handleCite(activeArtifact)"
+            >
+              <component :is="getCiteIcon()" />
+            </span>
             <span
               v-if="canResolveArtifactUrl"
               v-tippy="downloadTippy"
@@ -110,10 +119,12 @@
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { useClipboard } from '../../../../composables/use-clipboard';
   import { useCommonTippyInject } from '../../../../composables/use-common';
+  import { useInputMentionConsumer } from '../../../../composables/use-input-mention';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
-  import { CopyIcon } from '../../../../icons/tools';
+  import { CiteIcon, CopyIcon } from '../../../../icons/tools';
   import { t } from '../../../../lang/lang';
+  import { toArtifactMenuItem } from '../../../../utils/collect-message-artifacts';
   import { resolveFileKind } from '../../../../utils/file-type';
   import FileIcon from '../../../file-icon/file-icon.vue';
   import ArtifactFileCard from './artifact-file-card.vue';
@@ -140,6 +151,8 @@
 
   const artifactPreview = useArtifactPreviewConsumer();
   const canResolveArtifactUrl = computed(() => !!artifactPreview?.canResolveArtifactUrl.value);
+  // 无输入框上下文（只读 / 分享态）时不展示引用入口
+  const inputMention = useInputMentionConsumer();
   const { copy } = useClipboard();
   const commonTippyOptions = useCommonTippyInject();
   const previewHostRef = useTemplateRef<InstanceType<typeof ArtifactPreviewHost>>('previewHostRef');
@@ -147,6 +160,7 @@
   // 图标为共享 VNode，每处渲染克隆一份，避免多处复用同一实例
   const getDownloadIcon = () => cloneVNode(DownloadFileIcon);
   const getCopyIcon = () => cloneVNode(CopyIcon);
+  const getCiteIcon = () => cloneVNode(CiteIcon);
 
   const keyword = shallowRef('');
   const downloadLoading = shallowRef(false);
@@ -164,6 +178,17 @@
     placement: 'top' as const,
     theme: 'ai-chat-box',
   }));
+
+  const citeTippy = computed(() => ({
+    ...commonTippyOptions?.value,
+    content: t('引用'),
+    placement: 'top' as const,
+    theme: 'ai-chat-box',
+  }));
+
+  const handleCite = (file: SessionArtifact) => {
+    inputMention?.insertMention(toArtifactMenuItem(file));
+  };
 
   const filteredArtifacts = computed(() => {
     const kw = keyword.value.trim().toLowerCase();

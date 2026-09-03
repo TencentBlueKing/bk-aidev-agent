@@ -22,6 +22,8 @@ description: >-
 | 某组件的 Props / Events / Slots / Expose / v-model / 用法 | ① `references/_index.md` 定位 slug → ② `references/components/<slug>.md`；③ 若项目装了 chat-x MCP，可用 `get_component_doc` / `search_docs` 交叉验证 |
 | 有哪些组件、按能力域怎么选 | `references/_index.md`（能力地图） |
 | composable / 类型 / 主题（字号、CSS 变量） | `references/composables/*`、`references/types/*`、`references/theme/*` |
+| 工具函数 / 指令 / Markdown 插件 / 图标 | `references/utils/*`、`references/directives/*`、`references/plugins/*`、`references/icons/*` |
+| 某个组件到底能不能 `import` | 看 reference 顶部：有「导入」行才是包入口导出；标注「未从包入口导出」的是内部组件，须经上层组件使用 |
 | 最小接入怎么写 | 本文「快速接入」一节 |
 
 > references 缺失或过期时，按本文「再生成 references」一节重新生成。
@@ -74,7 +76,7 @@ description: >-
 ## 怎么查一个组件（标准流程）
 
 1. 在 `references/_index.md` 里按名称/能力域找到组件，拿到它的 `path`。
-2. 读 `references/components/<slug>.md`：顶部是能力域 + 导入符号 + 概述 + 关联组件，正文含「核心能力 / 基础用法 / API（Props/Events/Slots/Expose/v-model）/ 类型定义」。
+2. 读 `references/components/<slug>.md`：顶部是能力域 + 导入符号（或「未从包入口导出」标注）+ 概述 + 关联组件，正文含「核心能力 / 基础用法 / API（Props/Events/Slots/Expose/v-model）/ 类型定义」。
 3. 按 API 表格落地代码，需要的类型与常量从 `@blueking/chat-x` 具名导入。
 
 > 接入逻辑常跨多个组件（如 `ChatContainer` 透传 `ChatInput` / `MessageContainer` 的 props，自定义 `#message` 插槽需透传 `onAction` 等回调）。遇到「透传到底要带哪些参数」时，连同关联组件文档一起读。
@@ -132,7 +134,9 @@ references 由脚本从 `wikis/` 生成。当库升级、wikis 更新，或 refe
 node skills/blueking-chat-x/scripts/generate-references.mjs
 ```
 
-脚本会全量重建 `references/`：`glob wikis` → `gray-matter` 解析 frontmatter → 清洗正文（去 VitePress demo `<script>` / `<div class="demo">` / 内联 style，保留代码围栏与 API 表格）→ 按组件能力域 + composables/types/theme 写出 + 生成 `_index.md`。
+脚本会全量重建 `references/`：`glob wikis` → `gray-matter` 解析 frontmatter → 清洗正文（去 VitePress demo `<script>` / `<div class="demo">` / 内联 style，保留代码围栏与 API 表格）→ 按组件能力域 + composables / types / utils / directives / plugins / icons / theme 写出 + 生成 `_index.md`。
+
+「导入」行不是从文档标题猜的：脚本会从 `src/index.ts` 递归解析 barrel，拿到包入口**值导出**与**类型导出**两个集合，只有命中值导出才生成 `import` 语句；大小写漂移（`ToolcallRender` → `ToolCallRender`）自动纠正，只存在同名类型导出的（如 `UserMessage`）会明确标注「同名导出是 TS 类型，不是组件」。个别导出名与组件名不一致时，在 wikis frontmatter 用 `exportSymbol: MessageUserFeedback` 指定，确认为内部组件则写 `exportSymbol: false`。运行后留意 `[warn]` 输出。
 
 ## 通用项目规则
 

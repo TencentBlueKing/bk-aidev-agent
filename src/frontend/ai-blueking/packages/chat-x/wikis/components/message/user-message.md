@@ -6,8 +6,13 @@ domain: message
 description: 渲染用户消息，支持纯文本、键值引用、文件附件和编辑态输入。
 aiSummary: >
   渲染用户消息：纯文本（非 Markdown）、键值引用、二进制附件与编辑态 ChatInput / ShortcutRender；
-  工具栏含 copy / cite / edit / delete。源码位置：src/components/chat-message/user-message/user-message.vue。
+  正文经 CollapsibleContent 限高 200px，property.extra.docSchema 含标签时改用 MentionText 还原资源标签；
+  工具栏含 copy / edit / delete。源码位置：src/components/chat-message/user-message/user-message.vue。
 relatedComponents:
+  - slug: mention-text
+    relation: 文档含标签时用它还原已选资源
+  - slug: collapsible-content
+    relation: 正文超过 200px 时折叠
   - slug: message-render
     relation: 由 MessageRender 在 role 为 user 时创建
   - slug: message-tools
@@ -137,13 +142,15 @@ sinceVersion: 0.0.20
 │     .ai-user-message-binary-files → FileContent（readonly=true，每个文件独立渲染）
 │
 ├── .ai-user-message-content（气泡：bg #e1ecff，padding 8×12，border-radius 4px）
-│     v-if: cite 为数组 → KeyValueContent（title + key/value 列表）
-│     v-else-if: content  → TextContent × N（textParts 中每个文本片段一个实例）
+│   └── CollapsibleContent（maxHeight = CONST_USER_MESSAGE_MAX_HEIGHT，200px）
+│         v-if: cite 为数组   → KeyValueContent（title + key/value 列表）
+│         v-else-if: 文档含标签 → MentionText（还原 @ 选中的资源）
+│         v-else-if: content   → TextContent × N（textParts 中每个文本片段一个实例）
 │
 └── MessageTools（.ai-user-message-tools）
       v-if: messageToolsStatus !== 'hidden'
       visibility: hidden（默认）→ visible（:hover 时）
-      tools: [copy, cite, edit, delete]，updateTools: []
+      tools: [copy, edit, delete]，updateTools: []
       #prepend slot → MessageTime（createdAt，工具图标左侧）
 ```
 
@@ -160,12 +167,23 @@ sinceVersion: 0.0.20
 │     @submit(formModel) → onShortcutConfirm(formModel) + isEdit=false
 │
 └── ChatInput（v-else，带自定义 #send-icon slot）
-      v-model: editContent（取 textParts[0]，即第一个文本片段）
+      v-model: editContent（有富文本文档时用文档回填，否则取 textParts[0]）
       defaultUploadFiles: binaryFiles
+      menuSources: injectGlobalConfig().menuSources
       #send-icon slot → .user-edit-footer
             Button "取消" → isEdit=false
             Button primary "发送" → chatInputRef.triggerSendMessage() + isEdit=false
 ```
+
+## 资源标签回显与正文折叠
+
+**标签回显**：`property.extra.docSchema` 是发送时输入框的富文本文档。**只有文档里真的含标签节点时**才走 [MentionText](/components/rendering/mention-text) 结构化渲染，纯文本文档仍走 `TextContent`——历史消息与第三方消息的表现因此保持不变。`content` 始终是纯文本，后端契约不变。
+
+编辑态同样以 `docSchema` 回填，否则改完这条消息已选资源会退化成纯文本；因此业务侧在 `onInputConfirm` 里要把新的 `docSchema` 一起写回。
+
+**正文折叠**：正文外层套 [CollapsibleContent](/components/rendering/collapsible-content)，超过 `CONST_USER_MESSAGE_MAX_HEIGHT`（200px）时折叠并展示「显示更多 / 收起」。
+
+**编辑态自动聚焦**：点击 `edit` 后编辑态输入框才开始渲染，组件在 `nextTick` 后调用 `focus()`，光标落到已有内容末尾。
 
 ## 基础用法
 
@@ -191,7 +209,7 @@ sinceVersion: 0.0.20
   };
 
   const handleAction = async (tool: IToolBtn) => {
-    // copy / edit 有内置行为；cite / delete 需业务侧处理
+    // copy / edit 有内置行为；delete 需业务侧处理
     console.log('工具操作:', tool.id);
   };
 </script>
@@ -201,7 +219,7 @@ sinceVersion: 0.0.20
   <UserMessageComp :content="textContent" :on-action="handleAction" />
 </div>
 
-> **工具栏**：悬停时显示「复制」「引用」「编辑」「删除」（CSS `visibility`，始终占位）。
+> **工具栏**：悬停时显示「复制」「编辑」「删除」（CSS `visibility`，始终占位）。
 
 ## 多媒体消息
 
@@ -381,8 +399,10 @@ sinceVersion: 0.0.20
 **`editContent` 的初始化逻辑**（仅文本部分，二进制文件通过 `defaultUploadFiles` 恢复）：
 
 ```
-textParts 有值  → editContent = textParts[0]（取第一个文本片段）
-binaryFiles 有值 → 进入编辑模式（editContent 可为空）
+文档含标签      → editContent = property.extra.docSchema（保留已选资源）
+否则 textParts 有值 → editContent = textParts[0]（取第一个文本片段）
+binaryFiles 有值   → 进入编辑模式（editContent 可为空）
+进入编辑态后       → nextTick 后自动 focus，光标落在内容末尾
 ```
 
 `textParts` 由 `content` 统一计算：`string` 转为单元素数组，`InputContent[]` 则过滤出 `type: 'text'` 且非空的项并映射为 `string[]`。
@@ -417,7 +437,7 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 
   const handleAction = async (tool: IToolBtn) => {
     // edit → 组件内切编辑态；copy → 组件内复制
-    // cite / delete → 无内置行为，业务侧处理（如删除会话消息）
+    // delete → 无内置行为，业务侧处理（如删除会话消息）
     console.log('工具:', tool.id);
   };
 
@@ -440,9 +460,10 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 | 工具 ID  | 名称 | 内置行为                                     |
 | -------- | ---- | -------------------------------------------- |
 | `copy`   | 复制 | 字符串直接复制；数组 `JSON.stringify` 后复制 |
-| `cite`   | 引用 | 无内置行为，需通过 `onAction` 外部处理       |
-| `edit`   | 编辑 | 切换 `isEdit=true`，进入编辑模式             |
+| `edit`   | 编辑 | 切换 `isEdit=true`，进入编辑模式并自动聚焦   |
 | `delete` | 删除 | 无内置行为，需通过 `onAction` 外部处理       |
+
+> `cite`（引用）已从内置列表移除，后续不再支持；需要类似能力时通过 `messageTools` 自行追加按钮并在 `onAction` 中处理。
 
 可通过 `messageTools` 按 id 覆盖/追加，`{ id: 'edit', hidden: true }` 可隐藏内置项。
 
@@ -458,9 +479,9 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 />
 ```
 
-## supportUpload 透传
+## 全局配置透传
 
-编辑态 `ChatInput` 的上传能力来自 `injectGlobalConfig().supportUpload`（通常由 `ChatContainer` 的 `supportUpload` prop 注册）。自定义 `#message` 插槽时须把同一配置链路保留，否则编辑态会与主输入区不一致。
+编辑态 `ChatInput` 的上传能力与菜单数据源都来自 `injectGlobalConfig()`——`supportUpload` 与 `menuSources`（通常由 `ChatContainer` 注册）。自定义 `#message` 插槽时须把同一配置链路保留，否则编辑态会与主输入区不一致（菜单为空、无法上传）。
 
 ```vue
 <template>
@@ -492,10 +513,10 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 | ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | content            | `string \| InputContent[]`                                                                 | 消息内容，字符串或含 text/binary 的数组                                   |
 | createdAt          | `number \| string`                                                                         | 消息创建时间，经 `MessageTools` 的 `#prepend` 插槽交给 `MessageTime` 渲染在工具图标左侧；无值时不展示 |
-| property           | `{ extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `extra.cite` / `shortcut` / `context`                |
+| property           | `{ extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `extra.cite` / `shortcut` / `context` / `docSchema`  |
 | messageTools       | `IToolBtn[]`                                                                               | 自定义用户消息工具组；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 |
 | messageToolsStatus | `MessageToolsStatus`                                                                       | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除                       |
-| onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`cite`/`delete` 需外部处理            |
+| onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`delete` 需外部处理                   |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>`                 | 普通消息编辑确认回调                                                      |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                                    | 快捷指令消息编辑确认回调                                                  |
 | tippyOptions       | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>`                 | 自定义工具栏 Tippy 配置，透传给内部 `MessageTools`                        |
@@ -506,7 +527,7 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 
 ### 全局配置依赖
 
-编辑态 `ChatInput` 通过 `injectGlobalConfig()` 读取 `supportUpload`。祖先需已 `useGlobalConfig()`（通常由 `ChatContainer` 注册）。
+编辑态 `ChatInput` 通过 `injectGlobalConfig()` 读取 `supportUpload` 与 `menuSources`（缺省为空数组，即编辑态无菜单）。祖先需已 `useGlobalConfig()`（通常由 `ChatContainer` 注册）。
 
 ## 类型定义
 
@@ -540,6 +561,8 @@ type MessageExtra = {
   command?: string;
   pause?: boolean;
   shortcut?: Partial<Shortcut>;
+  /** 发送时输入框的富文本文档；有标签时用于回显与编辑回填 */
+  docSchema?: TagSchema;
   context?: Array<{
     __key: string;
     __label: string;
@@ -553,6 +576,8 @@ type MessageExtra = {
 ## 关联组件
 
 - [MessageRender](/components/message/message-render) — user 角色由其实例化
+- [MentionText](/components/rendering/mention-text) — 含标签文档的回显
+- [CollapsibleContent](/components/rendering/collapsible-content) — 正文 200px 折叠
 - [MessageTools](/components/feedback/message-tools) — 工具栏交互
 - [MessageTime](/components/feedback/message-time) — 工具栏左侧的消息时间
 - [MessageContainer](/components/setup/message-container) — 列表与多选容器

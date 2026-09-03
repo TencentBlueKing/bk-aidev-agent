@@ -1,6 +1,6 @@
 # LoadingMessage 加载消息
 
-> 能力域：消息系统 ｜ 导入：`import { LoadingMessage } from '@blueking/chat-x'` ｜ since 0.0.20
+> 能力域：消息系统 ｜ 导入：`import { LoadingMessageIcon } from '@blueking/chat-x'` ｜ since 0.0.20
 
 消息列表中的加载占位，默认使用 AiLoading，也支持默认插槽覆盖。 源码位置：src/components/chat-message/loading-message/loading-message.vue。
 

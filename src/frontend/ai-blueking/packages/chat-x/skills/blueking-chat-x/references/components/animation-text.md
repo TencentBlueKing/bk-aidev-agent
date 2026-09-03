@@ -1,6 +1,6 @@
 # AnimationText 动画文本
 
-> 能力域：内容渲染 ｜ 导入：`import { AnimationText } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 按文本增量播放流式动画。 源码位置：src/components/animation-text/animation-text.vue。
 

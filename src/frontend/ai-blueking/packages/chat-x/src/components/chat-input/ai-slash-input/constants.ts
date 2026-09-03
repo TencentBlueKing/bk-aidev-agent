@@ -29,6 +29,8 @@ import type { VoidNode } from '../../../edix/doc/types';
 import type { TagSchema } from '../../../types/input';
 
 type TagNodeData = {
+  description: string;
+  icon: string;
   label: string;
   type: string;
   value: string;
@@ -51,7 +53,16 @@ export const tagSchema = schema({
       is: node => {
         return node.contentEditable === 'false' && node.dataset.tagType !== undefined;
       },
-      data: e => ({ label: e.textContent!, value: e.dataset.tagValue!, type: e.dataset.tagType! }),
+      // 标签内含图标等子节点，label 从 dataset 读取，避免 textContent 混入多余空白；
+      // icon 与 description 一并落在节点上，文档才能脱离 menuSources 独立还原
+      // （消息态回显与 hover 气泡都依赖这点）
+      data: e => ({
+        label: e.dataset.tagLabel ?? e.textContent!,
+        value: e.dataset.tagValue!,
+        type: e.dataset.tagType!,
+        icon: e.dataset.tagIcon ?? '',
+        description: e.dataset.tagDescription ?? '',
+      }),
       plain: d => (d.type === 'skill' ? `/${d.value}` : d.label),
     }),
   },

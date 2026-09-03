@@ -228,7 +228,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 
 ## 与 MessageContainer / ChatContainer 配合
 
-自定义 `ChatContainer` 的 `#message` 时，插槽参数只有 `message` / `messageToolsStatus` / `onInterruptResume`。用户消息工具相关回调需由外层自行绑定透传，否则删除/编辑/复制/引用会失效（AI 消息工具栏在 `MessageContainer` 内渲染，不受 `#message` 影响）：
+自定义 `ChatContainer` 的 `#message` 时，插槽参数只有 `message` / `messageToolsStatus` / `onInterruptResume`。用户消息工具相关回调需由外层自行绑定透传，否则删除/编辑/复制会失效（AI 消息工具栏在 `MessageContainer` 内渲染，不受 `#message` 影响）：
 
 ```vue
 <template>

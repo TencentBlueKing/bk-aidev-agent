@@ -55,9 +55,10 @@ ChatContainer                          ← 一站式对话布局
 │       ├── ShortcutBtns               ← 空对话时的快捷指令按钮
 │       ├── ShortcutRender             ← 快捷指令表单
 │       ├── ChatInput                  ← 输入区
-│       │   ├── AiSlashEditor          ← 富文本编辑器（/ 和 @ 触发）
-│       │   │   └── AiSlashMenu        ← 命令弹出菜单
-│       │   └── InputAttachment        ← 文件附件
+│       │   ├── InputMenuPanel         ← 统一菜单（/ @ \ 与 + 号共用）
+│       │   ├── AiSlashInput           ← 富文本编辑区（触发符识别 + 标签插入）
+│       │   │   └── MentionTag × N     ← 已选资源标签
+│       │   └── InputAttachment        ← 底部工具栏（+ 号 / 快捷指令 / 模型 / 发送）
 │       └── SelectionFooter            ← 多选操作栏
 └── AiSelection                        ← 划词选择浮窗（独立于 ChatContainer）
 ```

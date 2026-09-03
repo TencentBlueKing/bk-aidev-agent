@@ -1,111 +1,129 @@
 <template>
   <div
+    ref="containerRef"
     class="ai-chat-input-container"
-    :style="{ '--chat-z-index': CHAT_Z_INDEX }"
+    :style="{ '--chat-z-index': CHAT_Z_INDEX, '--chat-menu-z-index': EDITOR_MENU_Z_INDEX }"
   >
     <slot name="top" />
     <slot name="interrupt" />
-    <div
-      class="chat-input"
-      :class="{ 'is-dragover': isDragOver }"
-      :style="{ maxHeight: maxHeight + 'px' }"
-      @dragenter="handleDragEnter"
-      @dragleave="handleDragLeave"
-      @dragover="handleDragOver"
-      @drop="handleDrop"
-    >
-      <slot name="input-header">
-        <CiteContent
-          v-if="citeModel"
-          class="chat-input-cite"
-          :content="citeModel"
-          @close="handleCloseCite"
-        />
-      </slot>
-      <slot
-        name="files"
-        v-bind="{ files: uploadFiles }"
-      >
-        <div
-          v-if="uploadFiles.length"
-          ref="filesRef"
-          class="chat-input-files"
-        >
-          <FileContent
-            :files="uploadFiles"
-            @delete-file="handleDeleteFile"
-          />
-        </div>
-      </slot>
-      <AiSlashInput
-        ref="aiSlashInputRef"
-        :model-value="modelValue"
-        :placeholder="resolvedPlaceholder"
-        :prompts="prompts"
-        :resources="resources"
-        :skills="skills"
-        @keydown="handleKeyDown"
-        @update:model-value="handleUpdateModelValue"
-        @upload="handleUpload"
+    <div class="chat-input-wrapper">
+      <InputMenuPanel
+        v-if="isMenuVisible"
+        class="chat-input-menu"
+        :flat-items="flatItems"
+        :groups="menuGroups"
+        @close="handleCloseMenu"
+        @select="handleSelectMenuItem"
+        @toggle-group="handleToggleGroup"
       />
-      <InputAttachment
-        :message-state="messageState"
-        :send-disabled-tip="effectiveSendDisabledTip"
-        :tippy-options="tippyOptions"
-        @send-message="handleSendMessage"
-        @stop-sending="handleStopSending"
+      <div
+        class="chat-input"
+        :class="{ 'is-dragover': isDragOver }"
+        :style="{ maxHeight: maxHeight + 'px' }"
+        @dragenter="handleDragEnter"
+        @dragleave="handleDragLeave"
+        @dragover="handleDragOver"
+        @drop="handleDrop"
       >
-        <template #default>
-          <FileUploadBtn
-            v-if="supportUpload"
-            :tippy-options="tippyOptions"
-            @upload="handleUpload"
+        <slot name="input-header">
+          <CiteContent
+            v-if="citeModel"
+            class="chat-input-cite"
+            :content="citeModel"
+            @close="handleCloseCite"
           />
-          <span
-            v-if="supportUpload && (shortcuts?.length || selectedShortcut)"
-            class="ai-divider"
-          />
-          <slot name="attachment">
-            <ShortcutBtns
-              v-if="shortcuts && !selectedShortcut"
-              :shortcuts="shortcuts"
-              @select-shortcut="handleSelectShortcut"
-            />
-            <ShortcutBtn
-              v-if="selectedShortcut"
-              class="selected-shortcut-btn"
-              :shortcut="selectedShortcut"
-            >
-              <template #append>
-                <CloseIcon @click="handleDeleteShortcut" />
-              </template>
-            </ShortcutBtn>
-          </slot>
-        </template>
-        <template #before-send>
-          <slot
-            name="model-selector"
-            v-bind="{ models, selectedModel }"
+        </slot>
+        <slot
+          name="files"
+          v-bind="{ files: uploadFiles }"
+        >
+          <div
+            v-if="uploadFiles.length"
+            ref="filesRef"
+            class="chat-input-files"
           >
-            <ModelSelector
-              v-if="models?.length"
-              v-model="selectedModel"
-              class="chat-input-model-selector"
-              :models="models"
-              :tippy-options="tippyOptions"
-              @change="handleModelChange"
+            <FileContent
+              :files="uploadFiles"
+              @delete-file="handleDeleteFile"
             />
-          </slot>
-        </template>
-        <template #send-icon>
-          <slot name="send-icon" />
-        </template>
-      </InputAttachment>
+          </div>
+        </slot>
+        <AiSlashInput
+          ref="aiSlashInputRef"
+          :model-value="modelValue"
+          :placeholder="resolvedPlaceholder"
+          @keydown="handleKeyDown"
+          @menu-change="handleMenuChange"
+          @update:model-value="handleUpdateModelValue"
+          @upload="handleUpload"
+        />
+        <InputAttachment
+          :message-state="messageState"
+          :send-disabled-tip="effectiveSendDisabledTip"
+          :tippy-options="tippyOptions"
+          @send-message="handleSendMessage"
+          @stop-sending="handleStopSending"
+        >
+          <template #default>
+            <input
+              ref="fileInputRef"
+              class="chat-input-file-input"
+              multiple
+              type="file"
+              @change="handleFileInputChange"
+            />
+            <AddMenuBtn
+              v-if="hasAddMenu"
+              :active="menuTrigger === 'plus'"
+              :tippy-options="tippyOptions"
+              @toggle="handleToggleAddMenu"
+            />
+            <span
+              v-if="hasAddMenu && (shortcuts?.length || selectedShortcut)"
+              class="ai-divider"
+            />
+            <slot name="attachment">
+              <ShortcutBtns
+                v-if="shortcuts && !selectedShortcut"
+                :shortcuts="shortcuts"
+                @select-shortcut="handleSelectShortcut"
+              />
+              <ShortcutBtn
+                v-if="selectedShortcut"
+                class="selected-shortcut-btn"
+                :shortcut="selectedShortcut"
+              >
+                <template #append>
+                  <CloseIcon @click="handleDeleteShortcut" />
+                </template>
+              </ShortcutBtn>
+            </slot>
+          </template>
+          <template #before-send>
+            <slot
+              name="model-selector"
+              v-bind="{ models, selectedModel }"
+            >
+              <ModelSelector
+                v-if="models?.length"
+                v-model="selectedModel"
+                class="chat-input-model-selector"
+                :models="models"
+                :tippy-options="tippyOptions"
+                @change="handleModelChange"
+              />
+            </slot>
+          </template>
+          <template #send-icon>
+            <slot name="send-icon" />
+          </template>
+        </InputAttachment>
+      </div>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, reactive, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
+  import { computed, onUnmounted, reactive, ref as deepRef, shallowRef, useTemplateRef, watch, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -116,35 +134,39 @@
     MessageContentType,
     MessageStatus,
   } from '../../ag-ui/types';
-  import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import { CHAT_Z_INDEX, EDITOR_MENU_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
+  import { t } from '../../lang/lang';
   import {
     type AITippyProps,
-    type IAiSlashMenuItem,
-    type ISkillListItem,
+    type IInputMenuItem,
+    type MenuTrigger,
     type Shortcut,
     type TagSchema,
     type UploadFile,
     UploadStatus,
   } from '../../types';
-  import { t } from '../../lang/lang';
   import { formatUploadNotAddedMessage, getFileIdentity, getUploadFileName, getUploadFileSize } from '../../utils';
-  import FileUploadBtn from '../ai-buttons/file-upload-btn/file-upload-btn.vue';
+  import AddMenuBtn from '../ai-buttons/add-menu-btn/add-menu-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
   import CiteContent from '../chat-content/cite-content/cite-content.vue';
   import FileContent from '../chat-content/file-content/file-content.vue';
-  import { buildDefaultPlaceholder } from './build-default-placeholder';
   import AiSlashInput from './ai-slash-input/ai-slash-input.vue';
   import { tagSchemaToMessageString } from './ai-slash-input/constants';
+  import { buildDefaultPlaceholder } from './build-default-placeholder';
   import InputAttachment from './input-attachment/input-attachment.vue';
+  import { DEFAULT_GROUP_ITEM_LIMIT, InputMenuPanel, useInputMenu } from './input-menu';
   import { ModelSelector } from './model-selector';
 
+  import type { MenuGroupKey } from './input-menu';
   import type { IModelOption } from './model-selector';
 
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
+  const containerRef = useTemplateRef<HTMLDivElement>('containerRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
+  const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
   const citeModel = defineModel<string>('cite', {
     required: false,
     default: '',
@@ -163,12 +185,16 @@
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
-    (e: 'update:modelValue', value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]): void;
+    (e: 'update:modelValue', value: string | TagSchema, selectedResourceList: IInputMenuItem[]): void;
     (e: 'modelChange', model: IModelOption): void;
   };
   export type ChatInputProps = {
     defaultUploadFiles?: UploadFile[];
     inputMaxHeight?: number;
+    /** 菜单每个分组默认展示的条数，超出折叠为「更多 +N」 */
+    menuGroupItemLimit?: number;
+    /** 统一的菜单数据源：`@` `/` `\` 与左下角 + 号共用，按 type 分发到不同触发方式 */
+    menuSources?: IInputMenuItem[];
     messageStatus?: MessageStatus;
     models?: IModelOption[]; // 可选模型列表，传入后在发送按钮左侧展示模型选择器
     modelValue: string | TagSchema;
@@ -180,38 +206,106 @@
     onStopSending?: () => Promise<void>;
     onUpload?: (files: File[]) => Promise<ChatInputUploadResult | ChatInputUploadResult[]>;
     placeholder?: string;
-    prompts?: string[];
-    resources?: IAiSlashMenuItem[];
     sendDisabledTip?: string;
     shortcutId?: string;
     shortcuts?: Shortcut[];
-    skills?: ISkillListItem[];
     supportUpload?: boolean; // 是否支持上传文件 默认是true
     tippyOptions?: AITippyProps; // tips配置
   };
   const props = withDefaults(defineProps<ChatInputProps>(), {
-    prompts: () => [],
-    resources: () => [],
-    skills: () => [],
+    menuSources: () => [],
+    menuGroupItemLimit: DEFAULT_GROUP_ITEM_LIMIT,
     inputMaxHeight: 280,
     supportUpload: true,
   });
   const emit = defineEmits<ChatInputEmits>();
+  /** 数据源里存在的菜单类型，用于决定 placeholder 展示哪几行提示 */
+  const sourceTypes = computed(() => new Set(props.menuSources.map(item => item.type)));
   const resolvedPlaceholder = computed(() => {
     if (props.placeholder !== undefined) {
       return props.placeholder;
     }
     return buildDefaultPlaceholder({
       isEn,
-      hasSkills: (props.skills?.length ?? 0) > 0,
-      hasPrompts: (props.prompts?.length ?? 0) > 0,
-      hasResources: (props.resources?.length ?? 0) > 0,
+      hasSlashMenu: ['skill', 'mcp', 'tool'].some(type => sourceTypes.value.has(type as IInputMenuItem['type'])),
+      hasAtMenu: ['knowledgebase', 'doc', 'artifact'].some(type =>
+        sourceTypes.value.has(type as IInputMenuItem['type']),
+      ),
+      hasPromptMenu: sourceTypes.value.has('prompt'),
     });
   });
   const uploadFiles = deepRef<Partial<UploadFile>[]>(props.defaultUploadFiles || []);
   const selectedShortcut = computed(() => {
     return props.shortcuts?.find(shortcut => shortcut.id === props.shortcutId);
   });
+
+  // ---------------- 输入框菜单（@ / \ 与左下角 + 号共用同一个面板） ----------------
+  const menuTrigger = shallowRef<MenuTrigger | null>(null);
+  const menuKeyword = shallowRef('');
+  /** 已插入编辑器的标签，避免在菜单里重复出现 */
+  const insertedTagKeys = computed(() => {
+    if (typeof props.modelValue === 'string') {
+      return new Set<string>();
+    }
+    return new Set(
+      props.modelValue
+        .flat()
+        .filter(node => node.type === 'tag')
+        .map(node => `${node.data.type}:${node.data.value}`),
+    );
+  });
+  const availableSources = computed<IInputMenuItem[]>(() => {
+    const list = props.menuSources.filter(item => !insertedTagKeys.value.has(`${item.type}:${item.id}`));
+    // 「文件」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
+    return props.supportUpload ? [{ id: '__built_in_file__', type: 'file', name: t('文件') }, ...list] : list;
+  });
+  const {
+    groups: menuGroups,
+    flatItems,
+    hasContent,
+    toggleGroup,
+  } = useInputMenu({
+    sources: availableSources,
+    keyword: menuKeyword,
+    trigger: menuTrigger,
+    groupItemLimit: computed(() => props.menuGroupItemLimit),
+  });
+  const isMenuVisible = computed(() => Boolean(menuTrigger.value) && hasContent.value);
+  /** 既不能上传也没有任何可选项时不展示 + 号 */
+  const hasAddMenu = computed(() => props.supportUpload || props.menuSources.length > 0);
+
+  const handleMenuChange = (payload: { keyword: string; trigger: MenuTrigger | null }) => {
+    menuTrigger.value = payload.trigger;
+    menuKeyword.value = payload.keyword;
+  };
+  const handleCloseMenu = () => {
+    aiSlashInputRef.value?.closeMenu?.();
+  };
+  const handleToggleAddMenu = () => {
+    if (menuTrigger.value === 'plus') {
+      handleCloseMenu();
+      return;
+    }
+    aiSlashInputRef.value?.openPlusMenu?.();
+  };
+  const handleToggleGroup = (key: string) => {
+    toggleGroup(key as MenuGroupKey);
+  };
+  const handleSelectMenuItem = (item: IInputMenuItem) => {
+    if (item.type === 'file') {
+      // 与插入标签保持一致：先吃掉用于过滤的输入文本，再唤起系统文件选择器
+      aiSlashInputRef.value?.consumeTriggerText?.();
+      handleCloseMenu();
+      fileInputRef.value?.click();
+      return;
+    }
+    if (item.type === 'prompt') {
+      // Prompt 选中后整体替换输入框内容
+      aiSlashInputRef.value?.replaceAll?.(item.content ?? item.name);
+      return;
+    }
+    aiSlashInputRef.value?.insertMenuItem?.(item);
+  };
   // 输入框文本：modelValue 可能是普通字符串（如编辑态回填）或编辑器 TagSchema
   const inputText = computed(() =>
     typeof props.modelValue === 'string' ? props.modelValue : tagSchemaToMessageString(props.modelValue),
@@ -295,6 +389,10 @@
   const handleKeyDown = (event: KeyboardEvent & KeyboardPayload) => {
     if (event.key === 'Enter' || event.key === 'NumpadEnter') {
       if (event.shiftKey) {
+        return;
+      }
+      // 菜单展开时 Enter 用于选中条目，不触发发送
+      if (isMenuVisible.value) {
         return;
       }
       if (messageState.value === MessageStatus.Disabled) {
@@ -453,17 +551,53 @@
       return true;
     });
   };
-  const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
+  /** 把文档里的标签还原成菜单选项，作为 update:modelValue 的第二个参数交给业务方 */
+  const handleUpdateModelValue = (value: TagSchema) => {
+    const selectedResourceList = value
+      .flat()
+      .filter(node => node.type === 'tag')
+      .map(node => props.menuSources.find(item => item.id === node.data.value && item.type === node.data.type))
+      .filter((item): item is IInputMenuItem => Boolean(item));
     emit('update:modelValue', value, selectedResourceList);
   };
+  const handleFileInputChange = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    const files = Array.from(target.files ?? []);
+    if (files.length) {
+      // 大小与数量校验统一在 handleUpload 中处理
+      handleUpload(files);
+    }
+    target.value = '';
+  };
+  // 点击输入区之外时收起菜单；用 mousedown 以便在编辑器失焦之前处理
+  const handleDocumentMouseDown = (event: MouseEvent) => {
+    if (!containerRef.value?.contains(event.target as Node)) {
+      handleCloseMenu();
+    }
+  };
+  watch(isMenuVisible, visible => {
+    if (visible) {
+      document.addEventListener('mousedown', handleDocumentMouseDown, true);
+      return;
+    }
+    document.removeEventListener('mousedown', handleDocumentMouseDown, true);
+  });
+  onUnmounted(() => {
+    document.removeEventListener('mousedown', handleDocumentMouseDown, true);
+  });
   /**
    * 聚焦输入框
    */
   const focus = () => {
     aiSlashInputRef.value?.focus?.();
   };
+  /** 供外部（文件产物面板等）把资源以标签形式追加进输入框 */
+  const insertMention = (item: IInputMenuItem) => {
+    aiSlashInputRef.value?.appendMention?.(item);
+  };
   defineExpose({
     focus,
+    insertMention,
     triggerSendMessage: handleSendMessage,
   });
 </script>
@@ -478,20 +612,40 @@
     width: 100%;
     padding: 0 16px 16px;
 
-    .chat-input {
+    // 菜单需要溢出输入框展示，而 .chat-input 自身要 overflow: hidden，因此额外包一层定位容器
+    .chat-input-wrapper {
       position: relative;
       display: flex;
       flex-direction: column;
       width: 100%;
       min-width: variables.$chat-input-min-width;
       max-width: variables.$chat-input-max-width;
+    }
+
+    // 设计稿：菜单固定在输入框正上方并与输入框等宽，不跟随光标
+    .chat-input-menu {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      z-index: var(--chat-menu-z-index);
+    }
+
+    .chat-input-file-input {
+      display: none;
+    }
+
+    .chat-input {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
       min-height: 110px;
       max-height: 280px; // 与 inputMaxHeight 默认一致；有文件时由 inline style 叠加预览区高度
-      overflow: hidden; // 触顶后由内部 ai-slash-input 滚动
       padding-bottom: var(--ai-spacing-comfortable, 8px);
+      overflow: hidden; // 触顶后由内部 ai-slash-input 滚动
       background: #fff;
       border: 1px solid #dcdee5; // 未激活：灰色描边
-      border-radius: 8px;
+      border-radius: 16px;
 
       &::before {
         z-index: var(--chat-z-index);

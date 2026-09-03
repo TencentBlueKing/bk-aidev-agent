@@ -23,7 +23,7 @@ aiSummary: >
 | 渲染一条消息 | [MessageRender](./message/message-render.md) |
 | 渲染消息正文内容 | [ContentRender](./rendering/content-render.md) |
 | 渲染 Markdown / 代码 / 公式 / 图表 | [MarkdownContent](./rendering/markdown-content.md) |
-| 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[AiSkillList](./input/ai-skill-list.md)、[ShortcutRender](./input/shortcut-render.md) |
+| 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[InputMenuPanel](./input/input-menu-panel.md)、[ShortcutRender](./input/shortcut-render.md) |
 | 处理 ToolCall / HITL 中断 | [ToolcallRender](./agent/toolcall-render.md)、[InterruptMessage](./agent/interrupt-message.md) |
 | 展示 FlowAgent / 知识召回活动 | [FlowAgentContent](./agent/flow-agent-content.md)、[KnowledgeRagContent](./agent/knowledge-rag-content.md) |
 | 图片预览与文件展示 | [AiImage](./medias/ai-image.md)、[ImagePreviewGroup](./medias/image-preview-group.md)、[FileContent](./medias/file-content.md) |
@@ -61,6 +61,9 @@ aiSummary: >
 | [MermaidContent](./rendering/mermaid-content.md) | Mermaid 图表渲染。 |
 | [AnimationText](./rendering/animation-text.md) | 流式文本动画。 |
 | [TextContent](./rendering/text-content.md) | 纯文本渲染。 |
+| [MentionText](./rendering/mention-text.md) | 把发送时的富文本文档还原成「文本 + 资源标签」。 |
+| [MentionTag](./rendering/mention-tag.md) | 单个资源标签，带类型图标与描述气泡。 |
+| [CollapsibleContent](./rendering/collapsible-content.md) | 超高内容折叠，附「显示更多 / 收起」。 |
 | [CiteContent](./rendering/cite-content.md) | 引用片段渲染。 |
 | [ReferenceContent](./rendering/reference-content.md) | 引用来源列表渲染。 |
 | [KeyValueContent](./rendering/key-value-content.md) | 键值结构展示。 |
@@ -83,15 +86,13 @@ aiSummary: >
 | 组件 | 说明 |
 | ---- | ---- |
 | [ChatInput](./input/chat-input.md) | 聊天主输入区。 |
-| [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，支持 `/` Skill、`\` Prompt 与 `@` 资源标签。 |
-| [AiSlashEditor](./input/ai-slash-editor.md) | 富文本编辑器实现。 |
-| [AiSlashMenu](./input/ai-slash-menu.md) | 资源选择菜单。 |
-| [AiSkillList](./input/ai-skill-list.md) | Skill 列表。 |
-| [AiPromptList](./input/ai-prompt-list.md) | Prompt 列表。 |
+| [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，负责触发符识别与资源标签插入。 |
+| [InputMenuPanel](./input/input-menu-panel.md) | 输入框上方的统一菜单面板，`@` `/` `\` 与 + 号共用。 |
+| [AddMenuBtn](./input/add-menu-btn.md) | 输入框左下角 + 号，唤起聚合菜单。 |
 | [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
 | [ModelSelector](./input/model-selector.md) | 模型下拉选择器，支持搜索与能力标签。 |
 | [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |
-| [FileUploadBtn](./input/file-upload-btn.md) | 文件选择按钮。 |
+| [FileUploadBtn](./input/file-upload-btn.md) | 独立文件选择按钮（ChatInput 已改用 + 号菜单）。 |
 | [ShortcutRender](./input/shortcut-render.md) | 快捷指令表单渲染。 |
 | [ShortcutBtn](./input/shortcut-btn.md) | 单个快捷指令按钮。 |
 | [ShortcutBtns](./input/shortcut-btns.md) | 快捷指令按钮组。 |
@@ -137,6 +138,7 @@ aiSummary: >
 | [MessageLoading](./helper/message-loading.md) | 品牌加载动画。 |
 | [HighlightKeyword](./helper/highlight-keyword.md) | 关键词高亮。 |
 | [FileIcon](./helper/file-icon.md) | 按扩展名渲染文件类型图标。 |
+| [ResourceIcon](./helper/resource-icon.md) | 按 URL / 组件 / 类型兜底渲染资源图标。 |
 | [VNodeRenderer](./helper/vnode-renderer.md) | Markdown token 到 VNode 的内部渲染桥。 |
 | [QuestionsContainer](./helper/questions-container.md) | 空源码占位，无可用功能。 |
 | [SelectionQuestion](./helper/selection-question.md) | 空源码占位，无可用功能。 |

@@ -1,6 +1,6 @@
 # useCustomTab
 
-> 导入：`import { useCustomTab } from '@blueking/chat-x'` ｜ since 1.0.0
+> 导入：`import { useCustomTabConsumer, useCustomTabProvider } from '@blueking/chat-x'` ｜ since 1.0.0
 
 useCustomTabProvider 返回 tabs、selectedTab、isCollapse 及 add/ensure/remove/selectCustomTab，并通过 provide 共享；可选 onTabChange 在切换时拉取数据、可选 collapsed 注入受控折叠态 ref。 ensureCustomTab 只挂载/合并元信息，不展开侧栏、不主动切换选中；addCustomTab 会展开并选中。 未被主动切换过时，选中态默认跟随 Tab 栏首位（order 最小），如常驻的「文件产物」。 useCustomTabConsumer 在后代注入同一套 API，常用于侧栏动态节点详情等。EXECUTION_TAB_NAME 标识默认「执行情况」Tab。 ChatContainer 侧栏集成 Provider 与 Tab UI。
 

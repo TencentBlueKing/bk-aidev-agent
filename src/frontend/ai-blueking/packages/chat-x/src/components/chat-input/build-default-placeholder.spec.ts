@@ -29,29 +29,29 @@ import { describe, expect, it } from 'vitest';
 import { buildDefaultPlaceholder } from './build-default-placeholder';
 
 describe('buildDefaultPlaceholder', () => {
-  it('三种能力都有时拼接完整中文提示', () => {
+  it('三种能力都有时按设计稿顺序拼接完整中文提示', () => {
     expect(
       buildDefaultPlaceholder({
         isEn: false,
-        hasSkills: true,
-        hasPrompts: true,
-        hasResources: true,
+        hasSlashMenu: true,
+        hasPromptMenu: true,
+        hasAtMenu: true,
       }),
-    ).toBe(`输入 "/" 唤出 Skill
+    ).toBe(`输入 "/" 唤出 Skill，工具，MCP
+输入 "@" 唤出会话产物，知识库
 输入 "\\" 唤出 Prompt
-输入 "@" 唤出 工具和 MCP
 通过 Shift + Enter 进行换行输入`);
   });
 
-  it('仅有 Skill 时只保留 Skill 行和换行提示', () => {
+  it('仅有 / 菜单时只保留对应行和换行提示', () => {
     expect(
       buildDefaultPlaceholder({
         isEn: false,
-        hasSkills: true,
-        hasPrompts: false,
-        hasResources: false,
+        hasSlashMenu: true,
+        hasPromptMenu: false,
+        hasAtMenu: false,
       }),
-    ).toBe(`输入 "/" 唤出 Skill
+    ).toBe(`输入 "/" 唤出 Skill，工具，MCP
 通过 Shift + Enter 进行换行输入`);
   });
 
@@ -59,24 +59,48 @@ describe('buildDefaultPlaceholder', () => {
     expect(
       buildDefaultPlaceholder({
         isEn: false,
-        hasSkills: false,
-        hasPrompts: false,
-        hasResources: false,
+        hasSlashMenu: false,
+        hasPromptMenu: false,
+        hasAtMenu: false,
       }),
     ).toBe('通过 Shift + Enter 进行换行输入');
+  });
+
+  it('仅有 @ 菜单时只保留对应行和换行提示', () => {
+    expect(
+      buildDefaultPlaceholder({
+        isEn: false,
+        hasSlashMenu: false,
+        hasPromptMenu: false,
+        hasAtMenu: true,
+      }),
+    ).toBe(`输入 "@" 唤出会话产物，知识库
+通过 Shift + Enter 进行换行输入`);
+  });
+
+  it('仅有 Prompt 菜单时只保留对应行和换行提示', () => {
+    expect(
+      buildDefaultPlaceholder({
+        isEn: false,
+        hasSlashMenu: false,
+        hasPromptMenu: true,
+        hasAtMenu: false,
+      }),
+    ).toBe(`输入 "\\" 唤出 Prompt
+通过 Shift + Enter 进行换行输入`);
   });
 
   it('三种能力都有时拼接完整英文提示', () => {
     expect(
       buildDefaultPlaceholder({
         isEn: true,
-        hasSkills: true,
-        hasPrompts: true,
-        hasResources: true,
+        hasSlashMenu: true,
+        hasPromptMenu: true,
+        hasAtMenu: true,
       }),
-    ).toBe(`Input "/" to trigger skill
+    ).toBe(`Input "/" to trigger Skill, tool and MCP
+Input "@" to trigger conversation files and knowledge base
 Input "\\" to trigger prompt
-Input "@" to trigger tool and MCP
 Use Shift + Enter to enter a new line`);
   });
 
@@ -84,9 +108,9 @@ Use Shift + Enter to enter a new line`);
     expect(
       buildDefaultPlaceholder({
         isEn: true,
-        hasSkills: false,
-        hasPrompts: false,
-        hasResources: false,
+        hasSlashMenu: false,
+        hasPromptMenu: false,
+        hasAtMenu: false,
       }),
     ).toBe('Use Shift + Enter to enter a new line');
   });

@@ -23,6 +23,7 @@
       v-model:selected-shortcut="selectedShortcut"
       :enable-selection="false"
       :execution-tab-visible="true"
+      :menu-sources="MOCK_MENU_SOURCES"
       :message-tools="customMessageTools"
       :messages="messages"
       :model-value="userInput"
@@ -37,11 +38,9 @@
       :on-user-input-confirm="handleUserInputConfirm"
       :on-user-shortcut-confirm="handleUserShortcutConfirm"
       :opening-remark="''"
-      :prompts="MOCK_PROMPTS"
       :resize-props="{
         initialDivide: 600,
       }"
-      :resources="MOCK_RESOURCES"
       :shortcuts="shortcuts"
       :size="'small'"
       :support-upload="true"
@@ -199,16 +198,15 @@
   import { streamContent } from './markdown';
   import {
     MOCK_INFO_MESSAGES,
+    MOCK_MENU_SOURCES,
     MOCK_MESSAGES,
     MOCK_MODELS,
-    MOCK_PROMPTS,
-    MOCK_RESOURCES,
     MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
   import { mockUploadFileToSession } from './upload-file';
 
-  import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
+  import type { CustomTab, IInputMenuItem, Shortcut, TagSchema } from '../src/types';
   import type { IToolBtn } from '../src/types/tool';
 
   import '../src/styles/global.scss';
@@ -952,6 +950,8 @@
       content: message,
       messageId: `user_${Date.now()}`,
       status: MessageStatus.Complete,
+      // content 仍是纯文本；docSchema 让用户消息把 @ 选中的资源原样还原成标签
+      property: { extra: { docSchema } },
     } as UserMessage);
     await new Promise(resolve => setTimeout(resolve, 5000));
   };
@@ -983,6 +983,12 @@
 
   const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], docSchema: TagSchema) => {
     console.log('user input confirm:', message, content, docSchema);
+    // 编辑后同样要写回 docSchema，否则改完这条消息的 @ 标签就退化成纯文本了
+    const target = messages.value.find(item => item.id === message.id);
+    if (target) {
+      target.content = content as Message['content'];
+      target.property = { ...target.property, extra: { ...target.property?.extra, docSchema } };
+    }
   };
 
   const handleUserShortcutConfirm = async (message: Message, formModel: Record<string, unknown>) => {
@@ -1022,7 +1028,7 @@
     console.log('apply code, language:', language);
   };
 
-  const handleUpdateInputValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
+  const handleUpdateInputValue = (value: string | TagSchema, selectedResourceList: IInputMenuItem[]) => {
     console.log('update input value:', value, 'resources:', selectedResourceList);
     userInput.value = value;
   };

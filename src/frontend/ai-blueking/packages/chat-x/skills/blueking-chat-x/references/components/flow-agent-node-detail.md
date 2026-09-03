@@ -1,6 +1,6 @@
 # FlowAgentNodeDetail FlowAgent 节点详情
 
-> 能力域：Agent 能力 ｜ 导入：`import { FlowAgentNodeDetail } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 展示 FlowAgent 节点输入、输出、异常、耗时等详情。 源码位置：src/components/chat-content/flow-agent-content/flow-agent-node-detail.vue。
 

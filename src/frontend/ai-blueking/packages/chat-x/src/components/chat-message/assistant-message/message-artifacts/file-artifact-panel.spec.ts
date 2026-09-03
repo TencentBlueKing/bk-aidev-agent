@@ -29,6 +29,7 @@ import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ARTIFACT_PREVIEW_TOKEN } from '../../../../composables/use-artifact-preview';
+import { INPUT_MENTION_TOKEN } from '../../../../composables/use-input-mention';
 import FileArtifactPanel from './file-artifact-panel.vue';
 
 import type { SessionArtifact } from '../../../../composables/use-artifact-preview';
@@ -263,10 +264,7 @@ describe('FileArtifactPanel', () => {
 
   it('pdf 等非文本文件不应展示复制按钮', async () => {
     const artifact = createArtifact({ type: 'pdf' });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext(),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, createPreviewContext());
     await flushPromises();
 
     expect(wrapper.find('.ai-file-artifact-panel-preview-header-action .ai-copy-icon').exists()).toBe(false);
@@ -334,5 +332,36 @@ describe('FileArtifactPanel', () => {
     expect(wrapper.find('.mock-exception').exists()).toBe(true);
     expect(wrapper.find('.ai-file-artifact-panel-list').exists()).toBe(false);
     expect(wrapper.find('.ai-file-artifact-panel-preview').exists()).toBe(false);
+  });
+
+  describe('引用到输入框', () => {
+    it('无输入框上下文时预览头不展示引用', async () => {
+      const artifact = createArtifact({ type: 'pdf' });
+      wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, createPreviewContext());
+      await flushPromises();
+
+      expect(wrapper.findAll('.ai-file-artifact-panel-preview-header-action')).toHaveLength(1);
+    });
+
+    it('有输入框上下文时预览头展示引用，点击后按 outputId 插入', async () => {
+      const insertMention = vi.fn();
+      const artifact = createArtifact({ type: 'pdf', outputId: 'o1', name: '项目立项书.pdf' });
+      wrapper = mount(FileArtifactPanel, {
+        global: {
+          provide: {
+            [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext(),
+            [INPUT_MENTION_TOKEN]: { insertMention },
+          },
+        },
+        props: { activeId: artifact.outputId, artifacts: [artifact] },
+      });
+      await flushPromises();
+
+      const actions = wrapper.findAll('.ai-file-artifact-panel-preview-header-action');
+      expect(actions).toHaveLength(2);
+      await actions[0].trigger('click');
+
+      expect(insertMention).toHaveBeenCalledWith({ id: 'o1', type: 'artifact', name: '项目立项书.pdf' });
+    });
   });
 });

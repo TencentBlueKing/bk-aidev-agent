@@ -24,6 +24,8 @@
 - **用户问题中断**：待回答 `UserQuestion` 时挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，输入框直接发送走 `onSendMessage`（第三参数带 skip `payload` 与 `interrupt`），且不自动清空输入框
 - **执行摘要 / 侧栏全屏 / 自定义 Tab**：侧栏展示工具调用与 FlowAgent 记录，支持搜索定位；Tab 栏可全屏；`useCustomTabProvider` 支持动态 Tab
 - **模型选择**：透传 `models`、`v-model:selectedModel` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
+- **输入框菜单**：`menuSources` 透传至 `ChatInput`，并自动把消息里的会话产物补进 `artifact` 分组；同时经 `useGlobalConfig` 下发给消息编辑态的内嵌输入框
+- **资源引用注入**：通过 `useInputMentionProvider` 开放 `insertMention`，让消息区文件卡片与侧栏产物面板可把文件「@ 进输入框」
 - **分享模式 / 渲染模式**：内置多选分享；`renderMode` 经 Provider 下传。`Share` 态开放侧栏只读查看，隐藏底部输入与「重试 / 跳过」等交互
 - **字号主题**：`size` 为 `small`（默认 12px）/ `normal`（14px）；根节点 `data-ai-size`，浮层同步 `document.body.dataset.aiSize`
 - **消息时间时区**：`timezone` 经 `useGlobalConfig` 下传给 `MessageTime`，统一整个会话的时间展示时区；未配置时按浏览器时区
@@ -49,7 +51,7 @@ ai-chat-container（:data-ai-size="size"）
         │   └── #welcome（默认：Banner + welcomeTitle + openingRemark；自定义则整块替换）
         ├── SelectionFooter（分享模式）
         ├── ShortcutRender（有快捷指令时）
-        └── ChatInput（透传 models / selectedModel；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
+        └── ChatInput（透传 models / selectedModel / menuSources；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
 ```
 
 ## 基础用法
@@ -612,6 +614,43 @@ ai-chat-container（:data-ai-size="size"）
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
 4. 确认后触发 `confirmShare` 事件，携带选中的消息列表与触发按钮对象（`source`）
 
+## 输入框菜单与资源引用
+
+`menuSources` 继承自 [ChatInput](/components/input/chat-input)，一份数组按 `type` 分发到 `/`、`@`、`\` 与左下角 + 号。容器在此之上做了三件事：
+
+**1. 会话产物自动收集**：`menuSources` 中没有 `artifact` 条目时，容器用 [`collectMessageArtifacts`](/utils/#会话产物收集) 从 `messages` 里收集产物补进去——来源是助手消息的 `property.artifacts` 与用户消息里的二进制附件。业务方自己传了 `artifact` 条目时以传入的为准，容器不再自动补。
+
+**2. 资源引用入口**：容器通过 [useInputMention](/composables/use-input-mention) 提供 `insertMention`，消息区的文件卡片与侧栏产物面板因此能直接把文件「@ 进输入框」，无需逐层透传输入框实例。没有输入框的场景（`Share` 只读态）自动不显示引用按钮。
+
+**3. 编辑态菜单下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。
+
+```vue
+<template>
+  <ChatContainer
+    v-model="inputValue"
+    :menu-sources="menuSources"
+    :messages="messages"
+    :message-status="messageStatus"
+    :on-send-message="handleSendMessage"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatContainer, type IInputMenuItem } from '@blueking/chat-x';
+
+  // 只需提供智能体能力与知识库；会话产物由容器从 messages 自动收集
+  const menuSources = ref<IInputMenuItem[]>([
+    { id: 'translate', type: 'skill', name: '翻译', description: '把选中的文本翻译成目标语言' },
+    { id: 'database-server', type: 'mcp', name: 'database-server' },
+    { id: 'kb-api', type: 'knowledgebase', name: 'API 接口文档' },
+    { id: 'prompt-article', type: 'prompt', name: '写文章', content: '帮我写一篇关于 {topic} 的文章' },
+  ]);
+</script>
+```
+
+> 用户消息要把 `@` 选中的资源以标签形态回显，需要业务侧把 `onSendMessage` 的 `docSchema` 存进 `message.property.extra.docSchema`，详见 [MentionText](/components/rendering/mention-text)。
+
 ## 模型选择
 
 `ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。
@@ -710,7 +749,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 
 ### v-model
 
@@ -865,5 +904,6 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
-- [useGlobalConfig](/composables/use-global-config) — 注入 `size`、`supportUpload` 与 `timezone`
+- [useGlobalConfig](/composables/use-global-config) — 注入 `size`、`supportUpload`、`timezone` 与 `menuSources`
+- [useInputMention](/composables/use-input-mention) — 开放「资源插入输入框」能力
 - [主题配置](/theme/theme) — 字号主题 CSS 变量

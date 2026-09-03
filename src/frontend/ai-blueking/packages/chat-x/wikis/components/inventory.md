@@ -38,19 +38,18 @@ aiSummary: >
 | [HighlightKeyword 关键词高亮](/components/helper/highlight-keyword) | 辅助能力 | `src/components/highlight-keyword/highlight-keyword.ts` | 已覆盖 |
 | [MessageLoading 品牌加载](/components/helper/message-loading) | 辅助能力 | `src/components/message-loading/message-loading.vue` | 已覆盖 |
 | [QuestionsContainer 问题容器占位](/components/helper/questions-container) | 辅助能力 | `src/components/ai-questions/questions-container.vue` | 空源码占位 |
+| [ResourceIcon 资源图标](/components/helper/resource-icon) | 辅助能力 | `src/components/resource-icon/resource-icon.vue` | 已覆盖 |
 | [SelectionQuestion 选择问题占位](/components/helper/selection-question) | 辅助能力 | `src/components/ai-questions/selection-question.vue` | 空源码占位 |
 | [VNodeRenderer VNode 渲染器](/components/helper/vnode-renderer) | 辅助能力 | `src/components/chat-content/vnode-renderer.ts` | 已覆盖 |
-| [AiPromptList Prompt 列表](/components/input/ai-prompt-list) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-prompt-list/ai-prompt-list.vue` | 已覆盖 |
+| [AddMenuBtn 添加菜单按钮](/components/input/add-menu-btn) | 输入交互 | `src/components/ai-buttons/add-menu-btn/add-menu-btn.vue` | 已覆盖 |
 | [AiSelection 划词选择](/components/input/ai-selection) | 输入交互 | `src/components/ai-selection/ai-selection.vue` | 已覆盖 |
-| [AiSkillList Skill 列表](/components/input/ai-skill-list) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-skill-list/ai-skill-list.vue` | 已覆盖 |
-| [AiSlashEditor 富文本编辑器](/components/input/ai-slash-editor) | 输入交互 | `src/components/chat-input/ai-slash-editor/ai-slash-editor.vue` | 已覆盖 |
 | [AiSlashInput 富文本命令输入](/components/input/ai-slash-input) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-slash-input.vue` | 已覆盖 |
-| [AiSlashMenu 资源菜单](/components/input/ai-slash-menu) | 输入交互 | `src/components/chat-input/ai-slash-input/ai-slash-menu/ai-slash-menu.vue` | 已覆盖 |
 | [ChatInput 聊天输入框](/components/input/chat-input) | 输入交互 | `src/components/chat-input/chat-input.vue` | 已覆盖 |
-| [FileUploadBtn 文件上传按钮](/components/input/file-upload-btn) | 输入交互 | `src/components/ai-buttons/file-upload-btn/file-upload-btn.vue` | 已覆盖 |
+| [FileUploadBtn 文件上传按钮](/components/input/file-upload-btn) | 输入交互 | `src/components/ai-buttons/file-upload-btn/file-upload-btn.vue` | 已覆盖（ChatInput 内部已改用 AddMenuBtn） |
 | [InputAttachment 输入附件区](/components/input/input-attachment) | 输入交互 | `src/components/chat-input/input-attachment/input-attachment.vue` | 已覆盖 |
-| [ModelSelector 模型选择器](/components/input/model-selector) | 输入交互 | `src/components/chat-input/model-selector/model-selector.vue` | 已覆盖 |
 | [InputInfoAlert 输入提示条](/components/input/input-info-alert) | 输入交互 | `src/components/chat-input/input-info-alert.vue` | 已覆盖 |
+| [InputMenuPanel 输入框菜单](/components/input/input-menu-panel) | 输入交互 | `src/components/chat-input/input-menu/`（`input-menu-panel.vue`、`input-menu-option.vue`、`use-input-menu.ts`、`constants.ts`） | 已覆盖 |
+| [ModelSelector 模型选择器](/components/input/model-selector) | 输入交互 | `src/components/chat-input/model-selector/model-selector.vue` | 已覆盖 |
 | [SelectionFooter 多选操作栏](/components/input/selection-footer) | 输入交互 | `src/components/selection-footer/selection-footer.vue` | 已覆盖 |
 | [ShortcutBtn 快捷指令按钮](/components/input/shortcut-btn) | 输入交互 | `src/components/ai-shortcut/shortcut-btn/shortcut-btn.vue` | 已覆盖 |
 | [ShortcutBtns 快捷指令按钮组](/components/input/shortcut-btns) | 输入交互 | `src/components/ai-shortcut/shortcut-btns/shortcut-btns.vue` | 已覆盖 |
@@ -73,12 +72,15 @@ aiSummary: >
 | [AnimationText 动画文本](/components/rendering/animation-text) | 内容渲染 | `src/components/animation-text/animation-text.vue` | 已覆盖 |
 | [CiteContent 引用内容](/components/rendering/cite-content) | 内容渲染 | `src/components/chat-content/cite-content/cite-content.vue` | 已覆盖 |
 | [CodeContent 代码块](/components/rendering/code-content) | 内容渲染 | `src/components/markdown-token/code-content/code-content.vue` | 已覆盖 |
+| [CollapsibleContent 折叠内容](/components/rendering/collapsible-content) | 内容渲染 | `src/components/chat-content/collapsible-content/collapsible-content.vue` | 已覆盖 |
 | [CommonErrorContent 错误内容](/components/rendering/common-error-content) | 内容渲染 | `src/components/chat-content/common-error-content/common-error-content.vue` | 已覆盖 |
 | [ContentRender 内容渲染器](/components/rendering/content-render) | 内容渲染 | `src/components/chat-content/content-render/content-render.vue` | 已覆盖 |
 | [DescPanel 描述面板](/components/rendering/desc-panel) | 内容渲染 | `src/components/tool-call/desc-panel/desc-panel.vue` | 已覆盖 |
 | [KeyValueContent 键值内容](/components/rendering/key-value-content) | 内容渲染 | `src/components/chat-content/key-value-content/key-value-content.vue` | 已覆盖 |
 | [LatexContent LaTeX 公式](/components/rendering/latex-content) | 内容渲染 | `src/components/markdown-token/latex-content/latex-content.vue` | 已覆盖 |
 | [MarkdownContent Markdown 内容渲染](/components/rendering/markdown-content) | 内容渲染 | `src/components/chat-content/markdown-content/markdown-content.vue` | 已覆盖 |
+| [MentionTag 资源标签](/components/rendering/mention-tag) | 内容渲染 | `src/components/mention/mention-tag.vue`（气泡见 `mention-popover.vue`、`create-mention-tippy.ts`） | 已覆盖 |
+| [MentionText 标签文本](/components/rendering/mention-text) | 内容渲染 | `src/components/mention/mention-text.vue` | 已覆盖 |
 | [MermaidContent Mermaid 图表](/components/rendering/mermaid-content) | 内容渲染 | `src/components/markdown-token/mermaid-content/mermaid-content.vue` | 已覆盖 |
 | [ReferenceContent 引用来源](/components/rendering/reference-content) | 内容渲染 | `src/components/chat-content/reference-content/reference-content.vue` | 已覆盖 |
 | [TextContent 文本内容](/components/rendering/text-content) | 内容渲染 | `src/components/chat-content/text-content/text-content.vue` | 已覆盖 |

@@ -118,6 +118,37 @@ describe('use-global-config', () => {
       wrapper.unmount();
     });
 
+    it('应透传 menuSources 配置给后代', async () => {
+      const menuSources = computed(() => [{ id: 's1', type: 'skill' as const, name: 'Code Review' }]);
+      const supportUpload = computed(() => false);
+      let injected: ReturnType<typeof injectGlobalConfig> | undefined;
+
+      const Child = defineComponent({
+        setup() {
+          injected = injectGlobalConfig();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+      const Parent = defineComponent({
+        setup() {
+          useGlobalConfig({ supportUpload, menuSources });
+          return {};
+        },
+        render() {
+          return h(Child);
+        },
+      });
+
+      const wrapper = mount(Parent);
+      await nextTick();
+      expect(injected?.menuSources).toBe(menuSources);
+      expect(injected?.menuSources?.value).toEqual([{ id: 's1', type: 'skill', name: 'Code Review' }]);
+      wrapper.unmount();
+    });
+
     it('应透传 timezone 配置给后代', async () => {
       const timezone = computed<string | undefined>(() => 'Asia/Shanghai');
       const supportUpload = computed(() => false);

@@ -1,6 +1,6 @@
 # FileContent 文件内容
 
-> 能力域：媒体文件 ｜ 导入：`import { FileContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：媒体文件 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染文件附件，支持图片预览、上传中/失败态和下载事件。 源码位置：src/components/chat-content/file-content/file-content.vue。
 

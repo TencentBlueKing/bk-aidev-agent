@@ -1,6 +1,6 @@
 # KeyValueContent 键值内容
 
-> 能力域：内容渲染 ｜ 导入：`import { KeyValueContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 以键值列表展示结构化内容。 源码位置：src/components/chat-content/key-value-content/key-value-content.vue。
 

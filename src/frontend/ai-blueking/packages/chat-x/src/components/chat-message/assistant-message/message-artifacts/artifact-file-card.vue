@@ -26,24 +26,34 @@
         {{ file.name }}
       </span>
     </div>
-    <!-- 右侧：有异步取链能力或外部 onDownload 时展示下载按钮 -->
-    <div
-      v-if="showDownload"
-      v-tippy="downloadTippy"
-      class="ai-artifact-file-card-download"
-      :class="{ 'is-loading': downloadLoading }"
-      @click.stop="handleDownload"
-    >
-      <Loading
-        v-if="downloadLoading"
-        mode="spin"
-        size="mini"
-        theme="primary"
-      />
-      <component
-        :is="downloadIcon"
-        v-else
-      />
+    <!-- 右侧操作区：hover 显示，设计稿中引用在下载左侧 -->
+    <div class="ai-artifact-file-card-actions">
+      <div
+        v-if="inputMention"
+        v-tippy="citeTippy"
+        class="ai-artifact-file-card-action ai-artifact-file-card-cite"
+        @click.stop="handleCite"
+      >
+        <component :is="citeIcon" />
+      </div>
+      <div
+        v-if="showDownload"
+        v-tippy="downloadTippy"
+        class="ai-artifact-file-card-action ai-artifact-file-card-download"
+        :class="{ 'is-loading': downloadLoading }"
+        @click.stop="handleDownload"
+      >
+        <Loading
+          v-if="downloadLoading"
+          mode="spin"
+          size="mini"
+          theme="primary"
+        />
+        <component
+          :is="downloadIcon"
+          v-else
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -55,9 +65,12 @@
 
   import { triggerArtifactDownload, useArtifactPreviewConsumer } from '../../../../composables/use-artifact-preview';
   import { useCommonTippyInject } from '../../../../composables/use-common';
+  import { useInputMentionConsumer } from '../../../../composables/use-input-mention';
   import { OverflowTips as vOverflowTips } from '../../../../directives/overflow-tips';
   import { DownloadFileIcon } from '../../../../icons/file';
+  import { CiteIcon } from '../../../../icons/tools';
   import { t } from '../../../../lang/lang';
+  import { toArtifactMenuItem } from '../../../../utils/collect-message-artifacts';
   import FileIcon from '../../../file-icon/file-icon.vue';
 
   import type { AIFileInfo } from '../../../../ag-ui/types/file';
@@ -79,6 +92,8 @@
   // 文件产物侧栏预览上下文（由 ChatContainer 提供），无 Provider 时为 undefined
   const artifactPreview = useArtifactPreviewConsumer();
   const commonTippyOptions = useCommonTippyInject();
+  // 无输入框上下文（只读 / 分享态）时不展示引用入口
+  const inputMention = useInputMentionConsumer();
 
   // 有外部 onPreview 或处于可预览的侧栏上下文时，卡片可点击
   const clickable = computed(() => !!props.onPreview || !!artifactPreview);
@@ -88,6 +103,7 @@
 
   // 图标为共享 VNode，克隆后再渲染，避免多卡复用同一实例
   const downloadIcon = computed(() => cloneVNode(DownloadFileIcon));
+  const citeIcon = computed(() => cloneVNode(CiteIcon));
 
   const downloadLoading = shallowRef(false);
 
@@ -97,6 +113,17 @@
     theme: 'ai-chat-box',
     placement: 'top' as const,
   }));
+
+  const citeTippy = computed(() => ({
+    ...commonTippyOptions?.value,
+    content: t('引用'),
+    theme: 'ai-chat-box',
+    placement: 'top' as const,
+  }));
+
+  const handleCite = () => {
+    inputMention?.insertMention(toArtifactMenuItem(props.file));
+  };
 
   const handleCardClick = () => {
     if (props.onPreview) {
@@ -175,16 +202,31 @@
       white-space: nowrap;
     }
 
-    &-download {
-      // display: inline-flex;
+    // 操作区默认隐藏，hover 卡片时整体出现；下载中的 loading 需常驻
+    &-actions {
       display: none;
+      flex-shrink: 0;
+      gap: 4px;
+      align-items: center;
+      margin-left: 4px;
+
+      &:has(.is-loading) {
+        display: inline-flex;
+      }
+
+      .ai-artifact-file-card:hover & {
+        display: inline-flex;
+      }
+    }
+
+    &-action {
+      display: inline-flex;
       flex-shrink: 0;
       align-items: center;
       justify-content: center;
       width: 24px;
       height: 24px;
       padding: 4px;
-      margin-left: 4px;
       font-size: 16px;
       color: #979ba5;
       cursor: pointer;
@@ -196,18 +238,14 @@
       }
 
       &.is-loading {
-        display: inline-flex;
         pointer-events: none;
         cursor: default;
-      }
-
-      .ai-artifact-file-card:hover & {
-        display: inline-flex;
       }
     }
 
     // 侧栏文件列表行：去边框/底色，由 hover / 选中态驱动背景
     &.is-list {
+      flex: 0 0 32px;
       width: 100%;
       height: 32px;
       padding: 0 8px;

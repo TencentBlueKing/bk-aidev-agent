@@ -63,7 +63,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 8px 0;
+    padding: 8px;
     border-top: 1px solid #dcdee5;
 
     &-left {

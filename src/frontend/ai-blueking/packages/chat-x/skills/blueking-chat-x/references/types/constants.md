@@ -224,8 +224,7 @@ const SELECTION_Z_INDEX = 10003;
 ```typescript
 const CONST_MESSAGE_TOOLS: IToolBtn[] = [
   { id: 'copy', name: '复制', description: '复制' },
-  { id: 'cite', name: '引用', description: '引用' },
-  { id: 'rebuild', name: '重新生成', description: '重新生成' },
+  { id: 'rebuild', name: '重新生成', description: '重新生成将清空下文内容' },
   { id: 'share', name: '分享', description: '分享' },
 ];
 ```
@@ -237,10 +236,19 @@ const CONST_MESSAGE_TOOLS: IToolBtn[] = [
 ```typescript
 const CONST_USER_MESSAGE_TOOLS: IToolBtn[] = [
   { id: 'copy', name: '复制', description: '复制' },
-  { id: 'cite', name: '引用', description: '引用' },
   { id: 'edit', name: '编辑', description: '编辑' },
   { id: 'delete', name: '删除', description: '删除' },
 ];
+```
+
+> `cite`（引用）已从两份列表移除，后续不再支持。
+
+### CONST_USER_MESSAGE_MAX_HEIGHT
+
+用户消息正文的折叠阈值（px），超出后由 [CollapsibleContent](/components/rendering/collapsible-content) 折叠并展示「显示更多」：
+
+```typescript
+const CONST_USER_MESSAGE_MAX_HEIGHT = 200;
 ```
 
 ### CONST_UPDATE_TOOLS

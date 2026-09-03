@@ -70,56 +70,48 @@ import { ChatInput, MessageContainer } from '@blueking/chat-x';
 
 ## SCSS 变量
 
-组件库使用以下 SCSS 变量，可以在项目中覆盖：
+组件库在 `src/styles/variables.scss` 中定义了以下 SCSS 变量（构建期生效，仅供库内组件 `@use` 复用；消费方无法在运行时覆盖，需要改色请用 CSS 变量或类名覆盖）：
 
 ### 尺寸变量
 
 ```scss
-// 输入框尺寸
-$chat-input-min-width: 350px;
-$chat-input-max-width: 700px;
+// 输入框宽度（.chat-input-wrapper）
+$chat-input-min-width: 168px;
+$chat-input-max-width: 1000px;
 ```
 
-### 颜色变量
+### 语义色变量
 
 ```scss
-// 主题色
-$primary-color: #3a84ff;
-
-// 文字颜色
-$text-color-primary: #313238;
-$text-color-secondary: #4d4f56;
-$text-color-placeholder: #979ba5;
-
-// 背景色
-$bg-color-white: #fff;
-$bg-color-light: #f5f7fa;
-$bg-color-hover: #f0f1f5;
-
-// 边框色
-$border-color: #dcdee5;
-$border-color-hover: #c4c6cc;
+$color-title: #313238; // 标题 / 主文字
+$color-text: #4d4f56; // 常规文字
+$color-text-secondary: #979ba5; // 次要文字 / 占位
+$color-primary: #3a84ff; // 主题色
+$color-border: #dcdee5; // 边框
+$color-border-light: #eaebf0; // 浅边框 / 线条中
+$color-bg-light: #fafbfd; // 浅背景
+$color-bg-tab: #f0f1f5; // 分段控件 / tab 背景
+$color-bg-hover: #f5f7fa; // 列表 / 卡片 hover 背景
+$color-bg-selected: #e1ecff; // 选中态背景（背景蓝）
+$content-loading-icon-color-list: (#cddffe, #699df4, #1768ef); // 内容加载动画三色
 ```
 
-### Z-Index 变量
+> 旧版用于 `@` 资源标签配色的 `$resourceTypeMap`（tool / skill / shortcut / doc / knowledgebase / mcp 六组配色）随输入区重构一并移除——现在资源标签统一为「图标 + 主题蓝文字」，不再按类型分配底色，详见 [MentionTag](/components/rendering/mention-tag)。
 
-组件库使用分层的 z-index 管理：
+> 其余色值（如 hover 边框 `#c4c6cc`）目前直接写在各组件样式中，未抽为变量。
 
-```scss
-// 基础 z-index
-$chat-z-index: 9999;
+### Z-Index 分层
 
-// 编辑器 z-index
-$editor-z-index: $chat-z-index + 1;
+层级由 TS 常量维护（`src/common/constants.ts`），从包入口导出，组件通过 inline style 写成 CSS 变量下发：
 
-// 编辑器菜单 z-index
-$editor-menu-z-index: $editor-z-index + 1;
+```typescript
+import { CHAT_Z_INDEX, EDITOR_MENU_Z_INDEX, SELECTION_Z_INDEX } from '@blueking/chat-x';
 
-// 快捷指令菜单 z-index
-$shortcut-menu-z-index: $editor-menu-z-index + 1;
-
-// 划选弹窗 z-index
-$selection-z-index: $shortcut-menu-z-index + 1;
+CHAT_Z_INDEX; //           9999  对话主层
+EDITOR_Z_INDEX; //         10000 编辑器
+EDITOR_MENU_Z_INDEX; //    10001 编辑器菜单 / 资源标签气泡
+SHORTCUT_MENU_Z_INDEX; //  10002 快捷指令菜单
+SELECTION_Z_INDEX; //      10003 划词浮窗
 ```
 
 ## CSS 类覆盖

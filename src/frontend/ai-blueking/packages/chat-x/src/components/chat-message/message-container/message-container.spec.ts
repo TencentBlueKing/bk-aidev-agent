@@ -1542,7 +1542,7 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(2);
     });
 
     it('renderMode 为 Chat 时 MessageTools 应包含全部工具按钮', async () => {
@@ -1556,7 +1556,7 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
     });
 
     it('不传 renderMode 时 MessageTools 应包含全部工具按钮', async () => {
@@ -1570,7 +1570,7 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
     });
   });
 
@@ -1594,8 +1594,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.length).toBe(5);
-      expect(tools.at(-1)?.id).toBe('save');
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'share', 'save']);
     });
 
     it('传入 messageTools 中的同 id 应字段级覆盖内置项且不新增', async () => {
@@ -1603,7 +1602,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.length).toBe(4);
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'share']);
       expect(tools.find(tool => tool.id === 'copy')?.description).toBe('复制全文');
     });
 
@@ -1612,8 +1611,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.length).toBe(3);
-      expect(tools.some(tool => tool.id === 'share')).toBe(false);
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild']);
     });
 
     it('不传 updateTools 时应使用内置反馈工具（like/unlike/delete）', async () => {

@@ -49,6 +49,14 @@ import type {
   // 输入相关
   TagSchema,
   MentionState,
+  UploadFile,
+  UploadFileVariant,
+
+  // 输入框菜单
+  IInputMenuItem,
+  IInputMenuGroup,
+  MenuItemType,
+  MenuTrigger,
 
   // 内容类型
   ContentType,
@@ -73,8 +81,12 @@ import type {
 ## 引入枚举
 
 ```typescript
-import { MessageRole, MessageStatus, MessageContentType, MessageState } from '@blueking/chat-x';
+import { MessageRole, MessageStatus, MessageContentType, MessageState, UploadStatus } from '@blueking/chat-x';
 ```
+
+::: warning 已移除的输入相关类型
+`IAiSlashMenuItem`、`IAiSlashGroupItem`、`ISkillListItem`、`resourceTypeMap`、`ResourceType` 随旧版 `@` / `/` 菜单一并移除，统一改用 `IInputMenuItem` 与 `MenuItemType`，迁移方式见 [ChatInput](/components/input/chat-input)。
+:::
 
 ## 引入常量
 
@@ -87,7 +99,11 @@ import {
   SELECTION_Z_INDEX,
   CONST_MESSAGE_TOOLS,
   CONST_USER_MESSAGE_TOOLS,
+  CONST_USER_MESSAGE_MAX_HEIGHT,
   CONST_UPDATE_TOOLS,
+  MAX_UPLOAD_FILES,
+  MAX_UPLOAD_FILE_SIZE,
+  MENU_ITEM_TYPES,
   DEFAULT_SHORTCUTS,
   UserQuestionSchema,
   UserMultiChoiceQuestionSchema,

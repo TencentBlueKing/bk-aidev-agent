@@ -1,6 +1,6 @@
 # FlowAgentContent FlowAgent 执行内容
 
-> 能力域：Agent 能力 ｜ 导入：`import { FlowAgentContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染 FlowAgent 任务/节点执行状态、耗时、详情入口和自定义 Tab 联动。 源码位置：src/components/chat-content/flow-agent-content/flow-agent-content.vue。
 

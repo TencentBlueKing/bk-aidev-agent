@@ -28,5 +28,6 @@ export * from './custom';
 export * from './editor';
 export * from './image';
 export * from './input';
+export * from './input-menu';
 export * from './shortcut';
 export * from './tool';

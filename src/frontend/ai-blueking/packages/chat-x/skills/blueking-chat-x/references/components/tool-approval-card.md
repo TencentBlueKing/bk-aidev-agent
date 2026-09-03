@@ -1,6 +1,6 @@
 # ToolApprovalCard 工具审批卡片
 
-> 能力域：Agent 能力 ｜ 导入：`import { ToolApprovalCard } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染 AIDevToolApproval 中断的审批信息与取消/刷新操作；readonly prop 可用于纯只读展示（outcome.success 回显已改为可交互，不再使用 readonly）。 源码位置：src/components/chat-message/interrupt-message/tool-approval-card.vue。
 
