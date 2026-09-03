@@ -19,7 +19,7 @@ bk-plugin-runtime==2.1.9
 bkapi-bk-apigateway==1.0.12
 bkapi-client-core==1.2.0
 bkoauth==0.1.0
-blueapps==4.15.8
+blueapps[opentelemetry]==4.16rc5
 bracex==2.6
 cachetools==5.5.2
 celery==5.4.0
