@@ -27,16 +27,6 @@ CHAT_GROUP_TYPE = os.environ.get("CHAT_GROUP_TYPE", "qyweixin_chat_group")
 ENABLE_OTEL_TRACE = os.getenv("BKAPP_ENABLE_OTEL_TRACE", "1") == "1"
 BK_APP_OTEL_INSTRUMENT_DB_API = os.getenv("BKAPP_OTEL_INSTRUMENT_DB_API", "1") == "1"
 
-# OpenTelemetry 是可选 extras，未安装时不注册任何额外 instrumentor。
-# 安装方式：pip install aidev-bkplugin[opentelemetry]
-BK_APP_OTEL_ADDTIONAL_INSTRUMENTORS: list = []
-try:
-    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-
-    BK_APP_OTEL_ADDTIONAL_INSTRUMENTORS = [LangchainInstrumentor()]
-except ImportError:
-    pass
-
 # SaaS运行版本
 RUN_VER = "ieod" if os.environ.get("BKPAAS_ENGINE_REGION", "default") == "ieod" else "open"
 
