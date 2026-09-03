@@ -570,7 +570,7 @@ def test_make_mcp_tools_propagates_trace_context_to_all_remote_servers(mock_mcp_
 
     client_config = mock_mcp_client_class.call_args_list[0].args[0]
     assert client_config["apigw"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
-    assert client_config["apigw"]["headers"]["X-Bkapi-Timeout"] == "60"
+    assert client_config["apigw"]["headers"]["X-Bkapi-Timeout"] == "300"
     assert client_config["external"]["headers"]["traceparent"].split("-")[1] == "992eea94222b572e883ab78b23e73d64"
     assert client_config["external"]["headers"]["X-Custom"] == "kept"
     assert "headers" not in client_config["local"]
