@@ -584,7 +584,7 @@ class MCPExceptionWrapper:
         try:
             return await asyncio.wait_for(
                 self.coro(*args, **kwargs),
-                timeout=settings.get("BKAI_MCP_TIMEOUT", 60),
+                timeout=settings.get("BKAI_MCP_TIMEOUT", 300),
             )
         except ToolException as err:
             _logger.exception(f"failed to run mcp: {err}")
