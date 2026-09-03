@@ -5,7 +5,17 @@
 当前用户 token，OpenClaw 的 MCP URL 被重写为 ``/egress/shared/<slug>/``，
 转发时注入 ``X-Bkapi-Authorization: {"access_token": <用户 token>}``。
 
-只绑 127.0.0.1。凭证纯内存。日志只打 identityId / slug / 状态码。
+隔离语义（fail-closed）：
+- acquire 返回独立的 leaseId，release 必须携带同一 ID 才生效——迟到/重复
+  释放不会清掉下一任持有者；
+- TTL 到期不代表旧运行已停止：立即清空凭据（旧运行的迟到 MCP 请求得到
+  401 而不是下一任身份），并进入隔离状态，禁止新用户接管；隔离只能由
+  持有者的迟到 release（证明其运行已结束）解除，恢复前再经过短暂
+  drain 窗口排空残留请求；
+- 持有者永不释放（进程级故障）时保持不可用，由运维从日志取隔离的
+  leaseId 调 ``/internal/release`` 做受控恢复，或重建实例。
+
+只绑 127.0.0.1。凭证纯内存。日志只打 leaseId / slug / 状态码。
 """
 
 from __future__ import annotations
@@ -128,7 +138,8 @@ class McpEgress:
         host: str = "127.0.0.1",
         port: int = 0,
         request_open: Optional[Callable[..., Any]] = None,
-        lease_ttl: float = 360.0,
+        lease_ttl: float = 3600.0,
+        drain_seconds: float = 5.0,
     ):
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("MCP egress 只允许绑定 loopback")
@@ -136,11 +147,15 @@ class McpEgress:
         self.port = int(port)
         self._request_open = request_open or urlopen
         self.lease_ttl = lease_ttl
+        self.drain_seconds = max(0.0, float(drain_seconds))
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
-        self._holder = 0
+        self._lease_id = ""
         self._token = ""
         self._leased_at = 0.0
+        self._drain_until = 0.0
+        # 非空表示槽位处于隔离态（TTL 过期且旧运行未交接），值为过期租约 ID
+        self._quarantine_lease_id = ""
         self._key = f"bkai-egress-{secrets.token_hex(18)}"
         self._routes: dict[str, str] = {}
         self._routes_file = os.getenv("BKAI_MCP_EGRESS_ROUTES") or ""
@@ -177,42 +192,63 @@ class McpEgress:
             return self._key
 
     def _expire_if_needed_locked(self) -> None:
-        if self._holder == 0 or self.lease_ttl <= 0:
+        if not self._lease_id or self.lease_ttl <= 0:
             return
         if (time.monotonic() - self._leased_at) < self.lease_ttl:
             return
-        self._holder = 0
+        _logger.warning("[egress] lease %s 过期，清空凭据并进入隔离，等待持有者交接", self._lease_id)
+        self._quarantine_lease_id = self._lease_id
+        self._lease_id = ""
         self._token = ""
         self._leased_at = 0.0
         self._cond.notify_all()
 
-    def acquire(self, token: str, timeout: float = 30.0) -> bool:
+    def acquire(self, token: str, timeout: float = 30.0) -> str:
+        """占用共享槽并返回本次租约 ID；被占用、隔离中或超时返回空串。"""
         token = normalize_access_token(token)
         if not token:
-            return False
+            return ""
         deadline = time.monotonic() + timeout
         with self._cond:
             while True:
                 self._expire_if_needed_locked()
-                if self._holder == 0:
-                    self._holder = 1
-                    self._token = token
-                    self._leased_at = time.monotonic()
-                    return True
-                remaining = deadline - time.monotonic()
+                now = time.monotonic()
+                remaining = deadline - now
                 if remaining <= 0:
-                    return False
-                wait_for = remaining
-                if self.lease_ttl > 0 and self._leased_at:
-                    wait_for = min(wait_for, max(0.05, self.lease_ttl - (time.monotonic() - self._leased_at)))
+                    return ""
+                if not self._lease_id and not self._quarantine_lease_id and now >= self._drain_until:
+                    self._lease_id = secrets.token_hex(16)
+                    self._token = token
+                    self._leased_at = now
+                    self._cond.notify_all()
+                    return self._lease_id
+                if self._lease_id:
+                    wait_for = remaining
+                    if self.lease_ttl > 0 and self._leased_at:
+                        wait_for = min(wait_for, max(0.05, self.lease_ttl - (now - self._leased_at)))
+                elif self._quarantine_lease_id:
+                    # 隔离态只能等持有者交接；周期唤醒以便及时响应超时
+                    wait_for = min(remaining, 0.5)
+                else:
+                    wait_for = min(remaining, max(0.05, self._drain_until - now))
                 self._cond.wait(timeout=wait_for)
 
-    def release(self) -> None:
+    def release(self, lease_id: str = "") -> bool:
+        """释放租约。仅持有者可释放；过期持有者的迟到 release 用于解除隔离。"""
         with self._cond:
-            self._holder = 0
-            self._token = ""
-            self._leased_at = 0.0
-            self._cond.notify()
+            if lease_id and lease_id == self._lease_id:
+                self._lease_id = ""
+                self._token = ""
+                self._leased_at = 0.0
+                self._drain_until = time.monotonic() + self.drain_seconds
+                self._cond.notify_all()
+                return True
+            if lease_id and lease_id == self._quarantine_lease_id:
+                self._quarantine_lease_id = ""
+                self._drain_until = time.monotonic() + self.drain_seconds
+                self._cond.notify_all()
+                return True
+            return False
 
     def current_token(self) -> str:
         with self._cond:
@@ -247,15 +283,18 @@ class McpEgress:
                 parsed = urlparse(self.path)
                 if parsed.path == "/internal/acquire":
                     token = normalize_access_token((self._read_json().get("token") or ""))
-                    if egress.acquire(token):
-                        self._json(200, {"ok": True, "identityId": SHARED_ID})
+                    lease_id = egress.acquire(token)
+                    if lease_id:
+                        self._json(200, {"ok": True, "identityId": SHARED_ID, "leaseId": lease_id})
                     else:
-                        self._json(503, {"ok": False, "error": "MCP 身份租约忙碌或 token 为空"})
+                        self._json(503, {"ok": False, "error": "MCP 身份租约忙碌、隔离中或 token 为空"})
                     return
                 if parsed.path == "/internal/release":
-                    self._read_json()
-                    egress.release()
-                    self._json(200, {"ok": True})
+                    lease_id = str(self._read_json().get("leaseId") or "")
+                    if egress.release(lease_id):
+                        self._json(200, {"ok": True})
+                    else:
+                        self._json(409, {"ok": False, "error": "租约不存在或不属于本次获取"})
                     return
                 self._proxy(parsed)
 
@@ -352,12 +391,23 @@ class McpEgress:
             self._server.shutdown()
             self._server.server_close()
             self._server = None
-        self.release()
+        with self._cond:
+            self._lease_id = ""
+            self._token = ""
+            self._leased_at = 0.0
+            self._drain_until = 0.0
+            self._quarantine_lease_id = ""
+            self._cond.notify_all()
         self._routes.clear()
 
 
 def serve_forever(host: str = "127.0.0.1", port: int = 18787, config_path: str = "") -> None:
-    egress = McpEgress(host=host, port=port).start()
+    egress = McpEgress(
+        host=host,
+        port=port,
+        lease_ttl=float(os.getenv("BKAI_MCP_EGRESS_LEASE_TTL") or 3600),
+        drain_seconds=float(os.getenv("BKAI_MCP_EGRESS_DRAIN_SECONDS") or 5),
+    ).start()
     if config_path and os.path.isfile(config_path):
         result = rewrite_openclaw_config_file(config_path, egress.base_url)
         egress.register_routes(result["routes"])

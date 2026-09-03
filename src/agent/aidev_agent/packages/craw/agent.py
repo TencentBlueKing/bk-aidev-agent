@@ -46,7 +46,7 @@ from aidev_agent.packages.craw.base import (
     CrawUpstreamError,
     CrawUpstreamRunError,
 )
-from aidev_agent.packages.craw.mcp_identity import mcp_identity_lease, resolve_user_access_token
+from aidev_agent.packages.craw.mcp_identity import CrawLeaseError, mcp_identity_lease, resolve_user_access_token
 from aidev_agent.packages.craw.openclaw_ws import OpenClawWSError, OpenClawWSSession
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
@@ -155,8 +155,20 @@ class CrawCompletionAgent(BaseModel):
             return self._run_sync()
 
     def _run_stream_with_mcp_lease(self, token: str) -> Generator[str, None, None]:
-        with mcp_identity_lease(token):
-            yield from self._run_stream()
+        try:
+            with mcp_identity_lease(token):
+                yield from self._run_stream()
+        except CrawLeaseError as exc:
+            # fail-closed：租约失败时终止本次运行，绝不沿用共享槽中的上一身份；
+            # 客户端只拿脱敏提示，详情留服务端日志
+            logger.warning("[CRAW] MCP 身份租约失败，终止本次运行: %s", exc)
+            encoder = EventEncoder()
+            run_id = str(uuid.uuid4())
+            yield self._emit(
+                encoder,
+                RunStartedEvent(type=EventType.RUN_STARTED, thread_id=self.thread_id, run_id=run_id),
+            )
+            yield from self._emit_error_and_finish(encoder, run_id, "当前会话工具身份繁忙，请稍后重试")
 
     def stop(self) -> None:
         key = self.session_code or self.thread_id
