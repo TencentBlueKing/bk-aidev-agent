@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import types
+from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,10 +25,8 @@ try:
 
     settings.SECRET_KEY = "test-secret-key"
     settings.AIDEV_AGENT = "aidev_agent.services.common_agent.CommonQAAgent"
-    try:
+    with suppress(RuntimeError):
         settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "aidev_bkplugin"]
-    except RuntimeError:
-        pass
     # 根 conftest 已 configure 时 setup 会 RuntimeError；吞掉会导致整文件被 skip。
     if not apps.ready:
         django.setup()
@@ -743,9 +742,7 @@ class TestLongConnectionStreaming:
             yield 'data: {"type":"RUN_FINISHED"}\n'
 
         strategy = ChatAgentStrategy()
-        strategy.open_stream = MagicMock(
-            return_value=AgentStream("chat", generator(), "session-1")
-        )
+        strategy.open_stream = MagicMock(return_value=AgentStream("chat", generator(), "session-1"))
         request = SimpleNamespace(content="q", stream_id="chat-placeholder", username="u", group_id="g1")
 
         with (
@@ -863,6 +860,7 @@ class TestLongConnectionStreaming:
         provider.add_span_processor(SimpleSpanProcessor(exporter))
         tracer = provider.get_tracer(__name__)
         monkeypatch.setattr(tracing, "_agent_tracer", tracer)
+        monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
         captured = {}
 
         def open_stream(**_kwargs):

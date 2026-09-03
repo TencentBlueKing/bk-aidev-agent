@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Iterator
 
-from aidev_agent.utils.tracing import get_agent_tracer
+from aidev_agent.utils.tracing import recording_span
 
 try:
     from opentelemetry import context, trace
@@ -72,21 +72,18 @@ def record_ack(span: Any, response: Any) -> None:
 
 @contextmanager
 def wxbot_span(name: str, *, root: bool = False, kind=None, attributes: dict | None = None) -> Iterator[Any]:
-    """使用 Agent 的 tracer；禁用 OTel 自动采集异常正文和堆栈。"""
-    tracer = get_agent_tracer(__name__) if trace else None
-    if tracer is None:
+    """使用应用全局 tracer，使 service.name 与 MCP tool 一样为 appcode + module。"""
+    if trace is None:
         yield _NoOpSpan()
         return
-    options = {
-        "attributes": {"aidev.channel": "rtx", **(attributes or {})},
-        "record_exception": False,
-        "set_status_on_exception": False,
-    }
-    if root:
-        options["context"] = context.Context()
-    if kind is not None:
-        options["kind"] = kind
-    with tracer.start_as_current_span(name, **options) as span:
+    with recording_span(
+        name,
+        attributes={"aidev.channel": "rtx", **(attributes or {})},
+        kind=kind,
+        root=root,
+        record_exception=False,
+        use_global_tracer=True,
+    ) as span:
         try:
             yield span
         except BaseException as error:

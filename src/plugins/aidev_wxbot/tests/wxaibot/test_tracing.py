@@ -124,11 +124,44 @@ class TestWxBotSpan:
         assert not tracing.message_trace_active.get()
 
     def test_disabled_tracer_preserves_business_exception(self, monkeypatch):
-        monkeypatch.setattr(tracing, "get_agent_tracer", lambda _: None)
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _noop(*_args, **_kwargs):
+            yield tracing._NoOpSpan()
+
+        monkeypatch.setattr(tracing, "recording_span", _noop)
         error = RuntimeError("business-error")
         with pytest.raises(RuntimeError) as caught, tracing.wxbot_span("disabled"):
             raise error
         assert caught.value is error
+
+    def test_wxbot_span_uses_application_service_name(self, monkeypatch):
+        from aidev_agent.utils import tracing as agent_tracing
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        def _provider(service_name):
+            exporter = InMemorySpanExporter()
+            provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+            provider.add_span_processor(SimpleSpanProcessor(exporter))
+            return provider, exporter
+
+        agent_provider, agent_exporter = _provider("ai-skill-stag")
+        app_provider, app_exporter = _provider("ai-skill-stag-default")
+        monkeypatch.setattr(agent_tracing, "_agent_tracer", agent_provider.get_tracer("agent"))
+        monkeypatch.setattr(agent_tracing.trace, "get_tracer", lambda _: app_provider.get_tracer("app"))
+        try:
+            with tracing.wxbot_span("wxbot.message.receive"):
+                pass
+            [span] = app_exporter.get_finished_spans()
+            assert span.resource.attributes["service.name"] == "ai-skill-stag-default"
+            assert not agent_exporter.get_finished_spans()
+        finally:
+            agent_provider.shutdown()
+            app_provider.shutdown()
 
     @pytest.mark.parametrize("fallback", [False, True])
     def test_identity_conversion_records_fallback_without_identity(self, wxbot_spans, fallback):

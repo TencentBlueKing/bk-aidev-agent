@@ -100,6 +100,8 @@ def wxbot_spans(monkeypatch):
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(tracing, "_agent_tracer", provider.get_tracer("wxbot-test"))
+    tracer = provider.get_tracer("wxbot-test")
+    monkeypatch.setattr(tracing, "_agent_tracer", tracer)
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
     yield exporter
     provider.shutdown()

@@ -330,6 +330,7 @@ def wxbot_process(path, sent, status, expected_messages, trace_records=None, app
 def configure_tracing(records):
     import threading
 
+    from aidev_agent.utils import tracing as agent_tracing
     from aidev_agent.utils.tracing import set_agent_tracer
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
@@ -356,7 +357,10 @@ def configure_tracing(records):
 
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(QueueExporter()))
-    set_agent_tracer(provider.get_tracer("cross-process-test"))
+    tracer = provider.get_tracer("cross-process-test")
+    set_agent_tracer(tracer)
+    if agent_tracing.trace is not None:
+        agent_tracing.trace.get_tracer = lambda _name: tracer
     return published
 
 
