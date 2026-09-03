@@ -127,6 +127,8 @@ export const MAX_UPLOAD_FILES = 9; // 最大上传文件数量
 
 export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
 
+export { ALLOWED_UPLOAD_EXTENSIONS, DEFAULT_UPLOAD_ACCEPT } from '../utils/upload-accept';
+
 /**
  * 关键词高亮类名
  */

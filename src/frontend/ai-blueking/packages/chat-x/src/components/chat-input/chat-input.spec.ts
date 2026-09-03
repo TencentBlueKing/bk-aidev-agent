@@ -24,16 +24,16 @@
  * IN THE SOFTWARE.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { defineComponent, h } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageStatus } from '../../ag-ui/types';
+import { DEFAULT_UPLOAD_ACCEPT } from '../../common';
 import ChatInput from './chat-input.vue';
 
 import type { UploadFile } from '../../types';
@@ -295,6 +295,7 @@ vi.mock('../chat-content/file-content/file-content.vue', () => ({
 vi.mock('../ai-buttons/file-upload-btn/file-upload-btn.vue', () => ({
   default: defineComponent({
     name: 'FileUploadBtn',
+    props: ['accept', 'tippyOptions'],
     emits: ['upload'],
     setup(_, { emit }) {
       return () =>
@@ -609,9 +610,7 @@ describe('ChatInput', () => {
     });
 
     it('应该正确接收 skills 属性', () => {
-      const skills = [
-        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
-      ];
+      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
 
       wrapper = mount(ChatInput, {
         props: {
@@ -1089,6 +1088,62 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.mock-file-upload-btn').exists()).toBe(false);
+    });
+
+    it('默认应将允许列表传给 FileUploadBtn', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+    });
+
+    it('应支持自定义 accept 覆盖默认允许列表', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', accept: '.pdf' },
+      });
+
+      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe('.pdf');
+    });
+
+    it('不支持的文件格式应拦截且提示，不调用 onUpload', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['x'], 'malware.exe', { type: 'application/x-msdownload' })]);
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
+    });
+
+    it('一次选择中应只上传允许格式的文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/a.png' });
+      const allowed = new File(['img'], 'a.png', { type: 'image/png' });
+      const blocked = new File(['zip'], 'a.zip', { type: 'application/zip' });
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [allowed, blocked]);
+
+      expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(onUpload).toHaveBeenCalledWith([allowed]);
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+        }),
+      );
     });
 
     it('没有上传文件时不应该渲染 FileContent', () => {
@@ -1715,6 +1770,25 @@ describe('ChatInput', () => {
 
       expect(onUpload).toHaveBeenCalledWith([file]);
       expect(dropZone.classes()).not.toContain('is-dragover');
+    });
+
+    it('拖入不支持的格式应拦截并提示', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const file = new File(['exe-body'], 'setup.exe');
+      await wrapper.find('.chat-input').trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
     });
   });
 });

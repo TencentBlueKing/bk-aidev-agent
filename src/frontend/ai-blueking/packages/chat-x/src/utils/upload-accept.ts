@@ -24,11 +24,50 @@
  * IN THE SOFTWARE.
  */
 
-export * from './file';
-export * from './file-type';
-export * from './markdown-completer';
-export * from './merge-tools-by-id';
-export { completeMarkdownSyntax } from './stream-markdown-completer';
-export * from './upload-accept';
-export * from './upload-file';
-export * from './utils';
+/** 对话上传允许的扩展名（含点），分类仅用于 tooltip 展示 */
+export const ALLOWED_UPLOAD_EXTENSIONS = {
+  image: ['.gif', '.jpeg', '.jpg', '.png', '.webp'],
+  document: ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.pdf', '.epub', '.mobi', '.csv'],
+  text: [
+    '.txt',
+    '.md',
+    '.rst',
+    '.log',
+    '.json',
+    '.xml',
+    '.yaml',
+    '.yml',
+    '.toml',
+    '.ini',
+    '.conf',
+    '.html',
+    '.css',
+    '.scss',
+    '.sql',
+  ],
+  code: [
+    '.py',
+    '.js',
+    '.jsx',
+    '.ts',
+    '.tsx',
+    '.vue',
+    '.java',
+    '.go',
+    '.c',
+    '.cpp',
+    '.h',
+    '.hpp',
+    '.cs',
+    '.php',
+    '.rb',
+    '.rs',
+    '.kt',
+    '.swift',
+    '.sh',
+    '.bash',
+  ],
+} as const;
+
+/** 系统文件选择框 / 校验共用的默认 accept */
+export const DEFAULT_UPLOAD_ACCEPT = Object.values(ALLOWED_UPLOAD_EXTENSIONS).flat().join(',');

@@ -17,7 +17,7 @@
 
 > **能力域**：输入交互
 
-聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；**不限制文件类型**，在按钮层只对**单文件**做大小与空文件过滤，**已选文件个数上限**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
+聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；**组件缺省不限制文件类型**（`ChatInput` 会传入对话默认允许列表）。在按钮层只对**单文件**做大小与空文件过滤，**已选文件个数上限与类型校验**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
 
 ## 组件结构
 
@@ -28,6 +28,7 @@
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
 └── span.ai-shortcut-btn.file-upload-btn-icon（热区 32×32px / 圆角 8px；图标字号跟随 --ai-icon-size-sm：small=16px、normal=18px；color: #979ba5；hover: #f0f1f5）
       v-tippy: "上传文件，最多支持 {count} 个，单个最大 {size}MB"
+        传入 accept 时追加支持格式说明（默认允许列表用分类文案）
         （{count} / {size} 由 MAX_UPLOAD_FILES 与 MAX_UPLOAD_FILE_SIZE 运行时填充，theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
       @click → fileInputRef.click()
       └── <slot> 默认：FileUploadIcon
@@ -61,7 +62,7 @@
 
 > `multiple` prop 声明存在但当前模板中 `input` 的 `multiple` 属性为**硬编码**（非 `:multiple="multiple"` 绑定），始终允许多选，该 prop 暂时无实际效果。
 
-> **文件类型不做限制**：组件不再默认 `accept="image/*"`，任意类型文件都可选择。若业务需要收窄，显式传入 `accept`。个数上限由上层（如 `ChatInput` 的 `MAX_UPLOAD_FILES`）控制，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
+> **文件类型默认不限制**：组件本身不再默认 `accept="image/*"`。`ChatInput` 会传入对话默认允许列表；独立使用时若需收窄，显式传入 `accept`。个数上限与类型校验由上层（如 `ChatInput`）控制，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
 
 ## 基础用法
 
@@ -105,7 +106,7 @@
 </template>
 ```
 
-> `accept` 仅影响文件选择框的过滤 UI，不做服务端验证，请在 `upload` 回调中自行校验 MIME 类型。
+> `accept` 仅影响本组件的文件选择框过滤 UI。`ChatInput` 会在选择/拖拽/粘贴后再按扩展名校验；独立使用 `FileUploadBtn` 时请在 `upload` 回调中自行校验。
 
 ## 自定义图标
 

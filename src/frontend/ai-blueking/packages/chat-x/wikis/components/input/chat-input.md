@@ -488,11 +488,12 @@ const handleSendMessage = async (
 - **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 发送成功后，`uploadFiles` 自动清空
 
-**个数与大小校验（与 `FileUploadBtn` 分工）**：
+**个数、大小与格式校验（与 `FileUploadBtn` 分工）**：
 
 - 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
 - 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
-- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限与重复校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
+- **文件类型**：默认使用 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名列表）。系统文件选择框带 `accept` 过滤；选择后、拖拽、粘贴仍会再按扩展名校验，不支持的格式弹出「因格式不支持未添加」并不会入队。可通过 `accept` prop 覆盖（空字符串表示不限制）。
+- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限、重复校验与类型校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
 
 **发送内容格式**（有文件时）：
 
@@ -815,6 +816,7 @@ const handleSendMessage = async (
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
+| accept             | `string`                                                                   | `DEFAULT_UPLOAD_ACCEPT` | - | 文件选择框过滤类型，同时用于选择/拖拽/粘贴后的扩展名校验；空字符串表示不限制 |
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |

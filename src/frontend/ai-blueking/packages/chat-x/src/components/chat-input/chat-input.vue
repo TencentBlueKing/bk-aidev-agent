@@ -58,6 +58,7 @@
         <template #default>
           <FileUploadBtn
             v-if="supportUpload"
+            :accept="accept"
             :tippy-options="tippyOptions"
             @upload="handleUpload"
           />
@@ -105,7 +106,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, reactive, ref as deepRef, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
+  import { computed, ref as deepRef, reactive, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -116,9 +117,10 @@
     MessageContentType,
     MessageStatus,
   } from '../../ag-ui/types';
-  import { CHAT_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
+  import { t } from '../../lang/lang';
   import {
     type AITippyProps,
     type IAiSlashMenuItem,
@@ -128,16 +130,21 @@
     type UploadFile,
     UploadStatus,
   } from '../../types';
-  import { t } from '../../lang/lang';
-  import { formatUploadNotAddedMessage, getFileIdentity, getUploadFileName, getUploadFileSize } from '../../utils';
+  import {
+    formatUploadNotAddedMessage,
+    getFileIdentity,
+    getUploadFileName,
+    getUploadFileSize,
+    isFileAcceptedByAccept,
+  } from '../../utils';
   import FileUploadBtn from '../ai-buttons/file-upload-btn/file-upload-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
   import CiteContent from '../chat-content/cite-content/cite-content.vue';
   import FileContent from '../chat-content/file-content/file-content.vue';
-  import { buildDefaultPlaceholder } from './build-default-placeholder';
   import AiSlashInput from './ai-slash-input/ai-slash-input.vue';
   import { tagSchemaToMessageString } from './ai-slash-input/constants';
+  import { buildDefaultPlaceholder } from './build-default-placeholder';
   import InputAttachment from './input-attachment/input-attachment.vue';
   import { ModelSelector } from './model-selector';
 
@@ -154,12 +161,6 @@
     required: false,
   });
   const maxHeight = shallowRef(280);
-  export type ChatInputUploadResult = {
-    download_url?: string;
-    error?: string;
-    id?: string;
-    status?: 'failed' | 'success';
-  };
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
@@ -167,6 +168,7 @@
     (e: 'modelChange', model: IModelOption): void;
   };
   export type ChatInputProps = {
+    accept?: string; // 文件选择框过滤类型，缺省为对话默认允许列表
     defaultUploadFiles?: UploadFile[];
     inputMaxHeight?: number;
     messageStatus?: MessageStatus;
@@ -189,12 +191,19 @@
     supportUpload?: boolean; // 是否支持上传文件 默认是true
     tippyOptions?: AITippyProps; // tips配置
   };
+  export type ChatInputUploadResult = {
+    download_url?: string;
+    error?: string;
+    id?: string;
+    status?: 'failed' | 'success';
+  };
   const props = withDefaults(defineProps<ChatInputProps>(), {
     prompts: () => [],
     resources: () => [],
     skills: () => [],
     inputMaxHeight: 280,
     supportUpload: true,
+    accept: DEFAULT_UPLOAD_ACCEPT,
   });
   const emit = defineEmits<ChatInputEmits>();
   const resolvedPlaceholder = computed(() => {
@@ -351,6 +360,7 @@
     const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? getFileIdentity(item.file) : '')));
     const acceptedItems: Partial<UploadFile>[] = [];
     let rejectedCount = 0;
+    let typeRejectedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const key = getFileIdentity(file);
@@ -360,6 +370,10 @@
       if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
         rejectedCount += files.length - i;
         break;
+      }
+      if (!isFileAcceptedByAccept(file, props.accept)) {
+        typeRejectedCount += 1;
+        continue;
       }
       if (file.size <= 0 || file.size >= MAX_UPLOAD_FILE_SIZE) {
         rejectedCount += 1;
@@ -373,6 +387,12 @@
       });
       uploadFiles.value.push(fileItem);
       acceptedItems.push(fileItem);
+    }
+    if (typeRejectedCount > 0) {
+      Message({
+        message: t('有 {count} 个文件因格式不支持未添加').replace('{count}', String(typeRejectedCount)),
+        theme: 'error',
+      });
     }
     if (rejectedCount > 0) {
       Message({
@@ -487,8 +507,8 @@
       max-width: variables.$chat-input-max-width;
       min-height: 110px;
       max-height: 280px; // 与 inputMaxHeight 默认一致；有文件时由 inline style 叠加预览区高度
-      overflow: hidden; // 触顶后由内部 ai-slash-input 滚动
       padding-bottom: var(--ai-spacing-comfortable, 8px);
+      overflow: hidden; // 触顶后由内部 ai-slash-input 滚动
       background: #fff;
       border: 1px solid #dcdee5; // 未激活：灰色描边
       border-radius: 8px;

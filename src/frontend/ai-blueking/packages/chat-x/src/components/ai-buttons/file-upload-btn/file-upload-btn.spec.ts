@@ -29,6 +29,7 @@ import { defineComponent, h } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_UPLOAD_ACCEPT } from '../../../common';
 import FileUploadBtn from './file-upload-btn.vue';
 
 // ============= Mock 区域 =============
@@ -178,6 +179,15 @@ describe('FileUploadBtn', () => {
 
       const input = wrapper.find('input[type="file"]');
       expect(input.attributes('accept')).toBe('.pdf,.doc,.docx');
+    });
+
+    it('传入默认允许列表时应下发到 file input', () => {
+      wrapper = mount(FileUploadBtn, {
+        props: { accept: DEFAULT_UPLOAD_ACCEPT },
+      });
+
+      const input = wrapper.find('input[type="file"]');
+      expect(input.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
     });
 
     it('multiple 默认值应该为 true', () => {
