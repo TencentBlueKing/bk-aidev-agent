@@ -1,14 +1,14 @@
 [project]
 name = "ai-plugin"
-version = "2.2.2rc28"
+version = "3.0.0rc56"
 description = ""
 readme = "readme.md"
 authors = [{ name = "blueking" }]
 requires-python = "~=3.11.9"
 dependencies = [
-    "aidev-agent[opentelemetry]==2.2.2rc28",
-    "aidev-bkplugin==2.2.2rc28",
-    "aidev-wxbot==2.2.2rc28",
+    "aidev-agent[opentelemetry]==3.0.0rc56",
+    "aidev-bkplugin==3.0.0rc56",
+    "aidev-wxbot==3.0.0rc56",
     "aidev-ai-blueking==2.2.4b7",
     "bk-plugin-framework==2.3.15",
     "bkapi-bk-apigateway==1.0.12",
@@ -25,6 +25,7 @@ dependencies = [
     "tiktoken==0.11.0",
     "langchain-community>=0.4.1",
     "django>=4.2.28,<5.0",
+    "blueapps[opentelemetry]==4.16rc6",
     "drf-yasg==1.21.11",
 ]
 
