@@ -16,6 +16,7 @@ from aidev_agent.packages.craw.mcp_egress import (
     rewrite_openclaw_mcp_to_egress,
 )
 from aidev_agent.packages.craw.mcp_identity import (
+    CrawLeaseError,
     bind_user_access_token,
     get_bound_user_access_token,
     mcp_identity_lease,
@@ -125,32 +126,34 @@ def upstream():
 
 
 def test_egress_injects_leased_user_token(upstream):
-    egress = McpEgress(port=0).start()
+    egress = McpEgress(port=0, drain_seconds=0).start()
     try:
         egress.register_routes({"log-query": upstream})
-        assert egress.acquire("user-token-aaa")
+        lease_id = egress.acquire("user-token-aaa")
+        assert lease_id
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
         response = httpx.post(url, json={"method": "initialize"})
         assert response.status_code == 200
         assert response.headers.get_list("content-length") == [str(len(response.content))]
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-aaa"}
     finally:
-        egress.release()
+        egress.release(lease_id)
         egress.stop()
 
 
 def test_egress_proxies_delete_for_session_cleanup(upstream):
-    egress = McpEgress(port=0).start()
+    egress = McpEgress(port=0, drain_seconds=0).start()
     try:
         egress.register_routes({"log-query": upstream})
-        assert egress.acquire("user-token-delete")
+        lease_id = egress.acquire("user-token-delete")
+        assert lease_id
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
         response = httpx.delete(url)
         assert response.status_code == 204
         assert _Upstream.seen[-1]["method"] == "DELETE"
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-delete"}
     finally:
-        egress.release()
+        egress.release(lease_id)
         egress.stop()
 
 
@@ -181,18 +184,91 @@ def test_identity_lease_roundtrip(monkeypatch, upstream):
         egress.stop()
 
 
-def test_stuck_lease_expires_by_ttl(upstream):
-    egress = McpEgress(port=0, lease_ttl=0.05).start()
+def test_stuck_lease_expires_into_quarantine(upstream):
+    """TTL 到期：清凭据 + 隔离，禁止下任接管，直到持有者迟到 release 交接。"""
+    egress = McpEgress(port=0, lease_ttl=0.05, drain_seconds=0.05).start()
     try:
         egress.register_routes({"log-query": upstream})
-        assert egress.acquire("old-token")
+        old_lease = egress.acquire("old-token")
+        assert old_lease
         time.sleep(0.08)
+        # 过期后凭据立即清空：旧运行的迟到请求是 401，而不会拿到下任身份
         assert egress.current_token() == ""
         response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
         assert response.status_code == 401
-        assert egress.acquire("new-token")
+        # 隔离态禁止新用户接管（超时快速失败）
+        assert egress.acquire("new-token", timeout=0.2) == ""
+        assert egress.current_token() == ""
+        # 持有者迟到 release（其运行已结束）解除隔离并进入 drain
+        assert egress.release(old_lease) is True
+        # drain 窗口内 acquire 会等待排空；超时短于窗口则失败
+        assert egress.acquire("new-token", timeout=0.01) == ""
+        time.sleep(0.08)
+        new_lease = egress.acquire("new-token")
+        assert new_lease
         response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
         assert response.status_code == 200
         assert json.loads(_Upstream.seen[-1]["auth"])["access_token"] == "new-token"
+        # 旧租约的再次迟到 release 不能清掉新持有者
+        assert egress.release(old_lease) is False
+        assert egress.current_token() == "new-token"
+    finally:
+        egress.stop()
+
+
+def test_release_requires_ownership(upstream):
+    """release 必须携带本次租约 ID；错误 ID 不清槽。"""
+    egress = McpEgress(port=0, drain_seconds=0).start()
+    try:
+        egress.register_routes({"log-query": upstream})
+        lease_id = egress.acquire("user-token-owner")
+        assert lease_id
+        assert egress.release("") is False
+        assert egress.release("not-the-lease") is False
+        assert egress.current_token() == "user-token-owner"
+        assert egress.release(lease_id) is True
+        assert egress.current_token() == ""
+        # 重复释放不生效
+        assert egress.release(lease_id) is False
+        other = egress.acquire("user-token-next")
+        assert other and other != lease_id
+        assert egress.release(lease_id) is False
+        assert egress.current_token() == "user-token-next"
+    finally:
+        egress.stop()
+
+
+def test_lease_fail_closed_when_slot_busy(monkeypatch, upstream):
+    """租约获取失败必须终止运行（CrawLeaseError），不能沿用共享槽里的上一身份。"""
+    egress = McpEgress(port=0, drain_seconds=0).start()
+    monkeypatch.setenv("BKAI_MCP_EGRESS_URL", egress.base_url)
+    monkeypatch.setenv("BKAI_MCP_EGRESS_LEASE_TIMEOUT", "0.2")
+    egress.register_routes({"log-query": upstream})
+    holder = egress.acquire("user-token-holder")
+    assert holder
+    try:
+        with pytest.raises(CrawLeaseError), mcp_identity_lease("user-token-waiting"):
+            pass
+        # 失败方未获得租约，持有者身份原样保留
+        assert egress.current_token() == "user-token-holder"
+    finally:
+        egress.stop()
+
+
+def test_release_enters_drain_window(upstream):
+    """正常 release 后经过短暂 drain 才允许下一任接管，排空旧运行的残留请求。"""
+    egress = McpEgress(port=0, drain_seconds=0.1).start()
+    try:
+        egress.register_routes({"log-query": upstream})
+        lease_id = egress.acquire("user-token-a")
+        assert lease_id
+        assert egress.release(lease_id) is True
+        # drain 窗口内：无凭据（残留请求 401），也不可接管
+        assert egress.current_token() == ""
+        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        assert response.status_code == 401
+        assert egress.acquire("user-token-b", timeout=0.02) == ""
+        time.sleep(0.12)
+        assert egress.acquire("user-token-b")
     finally:
         egress.stop()
