@@ -33,9 +33,10 @@ dependencies = [
     "requests>=2.28.0",
     "redis>=5.3.1,<6.0.0",
     "rstream>=0.40.1,<1.0.0",
+    "websocket-client>=1.8.0,<2.0.0",
 ]
 name = "aidev-agent"
-version = "2.2.2rc28"
+version = "2.2.2rc39"
 description = "bkaidev agent builder"
 
 [project.optional-dependencies]

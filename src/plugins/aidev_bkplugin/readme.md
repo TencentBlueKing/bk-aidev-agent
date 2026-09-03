@@ -39,4 +39,5 @@ make build-aidev-bkplugin
 GIT_ROOT=$(git rev-parse --show-toplevel)
 cd /tmp
 python -m cookiecutter ${GIT_ROOT} --directory template/builtin --no-input
+# 同一模板也支持协作智能体；仅当部署环境设置 BKAI_CRAW_BACKEND 时启用 Craw 接管。
 ```

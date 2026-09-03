@@ -267,6 +267,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agents/skill/{skill_id}/",
     )
 
+    retrieve_resource_v1_skill_download = bind_property(
+        Operation,
+        name="retrieve_resource_v1_skill_download",
+        method="GET",
+        path="/openapi/aidev/resource/v1/agents/skill/{skill_id}/download/",
+    )
+
     retrieve_latest_skill_version_image = bind_property(
         Operation,
         name="retrieve_latest_skill_version_image",
@@ -400,7 +407,9 @@ class BKAidevApi(ApiProtocol):
     @classmethod
     def get_client_by_username(cls, username, app_code=None, app_secret=None, **kwargs):
         return _partial(Client, _get_client_by_username)(
-            username, endpoint=BKAIDEV_URL,
-            bk_app_code=app_code, bk_app_secret=app_secret,
+            username,
+            endpoint=BKAIDEV_URL,
+            bk_app_code=app_code,
+            bk_app_secret=app_secret,
             **kwargs,
         )
