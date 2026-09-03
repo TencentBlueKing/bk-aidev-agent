@@ -89,16 +89,16 @@ describe('formatDefaultUploadAcceptTip', () => {
       extensions.length > 5 ? `${extensions.slice(0, 5).join(' ')}${ellipsis}` : extensions.join(' ');
 
     expect(formatDefaultUploadAcceptTip(false).split('\n')).toEqual([
-      `图片:${preview(ALLOWED_UPLOAD_EXTENSIONS.image, ' 等')}`,
-      `文档:${preview(ALLOWED_UPLOAD_EXTENSIONS.document, ' 等')}`,
-      `文本:${preview(ALLOWED_UPLOAD_EXTENSIONS.text, ' 等')}`,
-      `代码:${preview(ALLOWED_UPLOAD_EXTENSIONS.code, ' 等')}`,
+      `图片: ${preview(ALLOWED_UPLOAD_EXTENSIONS.image, ' 等')}`,
+      `文档: ${preview(ALLOWED_UPLOAD_EXTENSIONS.document, ' 等')}`,
+      `文本: ${preview(ALLOWED_UPLOAD_EXTENSIONS.text, ' 等')}`,
+      `代码: ${preview(ALLOWED_UPLOAD_EXTENSIONS.code, ' 等')}`,
     ]);
     expect(formatDefaultUploadAcceptTip(true).split('\n')).toEqual([
-      `Images:${preview(ALLOWED_UPLOAD_EXTENSIONS.image, ' etc.')}`,
-      `Documents:${preview(ALLOWED_UPLOAD_EXTENSIONS.document, ' etc.')}`,
-      `Text:${preview(ALLOWED_UPLOAD_EXTENSIONS.text, ' etc.')}`,
-      `Code:${preview(ALLOWED_UPLOAD_EXTENSIONS.code, ' etc.')}`,
+      `Images: ${preview(ALLOWED_UPLOAD_EXTENSIONS.image, ' etc.')}`,
+      `Documents: ${preview(ALLOWED_UPLOAD_EXTENSIONS.document, ' etc.')}`,
+      `Text: ${preview(ALLOWED_UPLOAD_EXTENSIONS.text, ' etc.')}`,
+      `Code: ${preview(ALLOWED_UPLOAD_EXTENSIONS.code, ' etc.')}`,
     ]);
   });
 });
