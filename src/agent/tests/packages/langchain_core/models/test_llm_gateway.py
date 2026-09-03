@@ -18,11 +18,14 @@ to the current version of the project delivered to anyone in the future.
 
 import asyncio
 import base64
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import openai
 import pytest
+from aidev_agent import config as agent_config
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
 from langchain_core.messages import HumanMessage
@@ -48,6 +51,26 @@ def get_test_image_base64() -> str:
     """读取测试图片并返回 base64 编码"""
     with open(TEST_IMAGE_PATH, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
+
+def test_bkai_token_check_timeout_default():
+    assert int(os.getenv("BKAI_TOKEN_CHECK_TIMEOUT") or 3) == agent_config.BKAI_TOKEN_CHECK_TIMEOUT
+
+
+@pytest.mark.parametrize("timeout", [3, 8])
+def test_get_num_tokens_uses_bkai_token_check_timeout(timeout, monkeypatch):
+    settings.set("BKAI_TOKEN_CHECK_TIMEOUT", timeout)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"prompts": [{"tokenCount": 4}]}
+    mock_post = MagicMock(return_value=mock_resp)
+    monkeypatch.setattr("aidev_agent.packages.langchain_core.models.llm_gateway.requests.post", mock_post)
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    try:
+        assert model.get_num_tokens("hello") == 4
+        assert mock_post.call_args.kwargs["timeout"] == timeout
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+        settings.reset()
 
 
 def test_chat_model_async_clients_are_isolated_across_worker_threads():
