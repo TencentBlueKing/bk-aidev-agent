@@ -23,7 +23,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.2.2rc28"
+version = "2.2.2rc58"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -55,28 +55,28 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/13/aa6bdce346c9bb7e110edf52ede090b7daa47ce960122b0f5d014aa8938a/aidev_agent-2.2.2rc28.tar.gz", hash = "sha256:862a0c6b3bca9da3fb05e11a990483d542123b0abfb9941bef454a2fefe69b36", size = 813645, upload-time = "2026-08-27T13:48:09.89Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/e2/c21acaa33c5e0912b9ba01d995c034aa8cdb75dc7a5c15c2204fd784d9e7/aidev_agent-2.2.2rc58.tar.gz", hash = "sha256:46afd225366debfccf7f3cd3354f30945b9e9fde77ab96c81b5e31bfa33b3ca4", size = 998556, upload-time = "2026-09-03T13:04:00.491Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/92/8d270489a71304f9ff4c4fb89664d89431290c9ba7c48b854a0f96bc1a5c/aidev_agent-2.2.2rc28-py3-none-any.whl", hash = "sha256:c98aaff8c7f62d524c663b9fdd58a374d68b51caa2da8a4833f8bb6e8a2c8918", size = 581937, upload-time = "2026-08-27T13:48:06.424Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/d1/691a0e692081e4d0cd4961183fad7911d493e431942c751935d11c036747/aidev_agent-2.2.2rc58-py3-none-any.whl", hash = "sha256:492a819de49cdb351c0684b8411b53326a6b9794a32f66ca7f4547dd82f45fa6", size = 660770, upload-time = "2026-09-03T13:04:04.285Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.2.2rc28"
+version = "2.2.2rc58"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
     { name = "django" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d7/47/f073863e5180fa6f0eaea11b0c764827436a637ccd323b15672078fd8613/aidev_bkplugin-2.2.2rc28.tar.gz", hash = "sha256:ed8d99de91b07fbda8b40759a4737cce3862248f618cb70b188abc31bd80a3d1", size = 106018, upload-time = "2026-08-27T13:48:16.869Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/87/f2/bd3dd9719be1218863245e35572b54b956c92f3488ba18795aa34dd0d3fe/aidev_bkplugin-2.2.2rc58.tar.gz", hash = "sha256:1917e5394512161cb6a60762b08892f3bf78577c9d924e5fe1f2e24845198567", size = 130734, upload-time = "2026-09-03T13:04:10.295Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/1d/8933554ac77bba84c1e11f1f6fcadcfeaeb04eec536d60b6b413f45e7f38/aidev_bkplugin-2.2.2rc28-py3-none-any.whl", hash = "sha256:8c9440ecb518300b5e22965a741d50b2d1cc87c364f029788c10aa84143ff380", size = 96645, upload-time = "2026-08-27T13:48:14.879Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/d8/d2e093a69df2307dec00ebaafb27e12d734dbf6f94536740cbbba2b8fd1d/aidev_bkplugin-2.2.2rc58-py3-none-any.whl", hash = "sha256:c6dce4f2a8d987cfb1ee42327d96330faa73f0b141d6bb5a737a0b0a227dea5f", size = 110394, upload-time = "2026-09-03T13:04:12.091Z" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
-version = "2.2.2rc28"
+version = "2.2.2rc58"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-bkplugin" },
@@ -102,7 +102,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-bkplugin", specifier = ">=2.2.2rc28" },
+    { name = "aidev-bkplugin", specifier = ">=2.2.2rc58" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "djangorestframework", specifier = ">=3.14.0" },
     { name = "pika", specifier = ">=1.3.0,<2.0" },
@@ -2004,7 +2004,7 @@ resolution-markers = [
     "python_full_version < '3.12'",
 ]
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8b/04/e7c1fe4dc78a6fdbfd6c337b1c3732ff543b8a397683ab38378447baa331/pyee-13.0.1.tar.gz", hash = "sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8", size = 31655, upload-time = "2026-02-14T21:12:28.044Z" }
 wheels = [
@@ -2019,7 +2019,7 @@ resolution-markers = [
     "python_full_version >= '3.12'",
 ]
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version >= '3.12'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/f1/fdedc2c75c3e31a330659c85e5793bb18b3397981fbf0844c6dee5b18926/pyee-14.0.0.tar.gz", hash = "sha256:76dd0f4314ecd27f02dc73589dea7fd3853f9b6176d8ef9b122860657e3602de", size = 98760, upload-time = "2026-08-13T04:26:11.021Z" }
 wheels = [

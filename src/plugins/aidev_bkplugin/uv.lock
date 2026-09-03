@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.2.2rc28"
+version = "2.2.2rc58"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/13/aa6bdce346c9bb7e110edf52ede090b7daa47ce960122b0f5d014aa8938a/aidev_agent-2.2.2rc28.tar.gz", hash = "sha256:862a0c6b3bca9da3fb05e11a990483d542123b0abfb9941bef454a2fefe69b36", size = 813645, upload-time = "2026-08-27T13:48:09.89Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/e2/c21acaa33c5e0912b9ba01d995c034aa8cdb75dc7a5c15c2204fd784d9e7/aidev_agent-2.2.2rc58.tar.gz", hash = "sha256:46afd225366debfccf7f3cd3354f30945b9e9fde77ab96c81b5e31bfa33b3ca4", size = 998556, upload-time = "2026-09-03T13:04:00.491Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0d/92/8d270489a71304f9ff4c4fb89664d89431290c9ba7c48b854a0f96bc1a5c/aidev_agent-2.2.2rc28-py3-none-any.whl", hash = "sha256:c98aaff8c7f62d524c663b9fdd58a374d68b51caa2da8a4833f8bb6e8a2c8918", size = 581937, upload-time = "2026-08-27T13:48:06.424Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/d1/691a0e692081e4d0cd4961183fad7911d493e431942c751935d11c036747/aidev_agent-2.2.2rc58-py3-none-any.whl", hash = "sha256:492a819de49cdb351c0684b8411b53326a6b9794a32f66ca7f4547dd82f45fa6", size = 660770, upload-time = "2026-09-03T13:04:04.285Z" },
 ]
 
 [package.optional-dependencies]
@@ -71,7 +71,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.2.2rc28"
+version = "2.2.2rc58"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -96,7 +96,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.2.2rc28" },
+    { name = "aidev-agent", specifier = ">=2.2.2rc58" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
