@@ -43,6 +43,7 @@ from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import (
@@ -432,13 +433,76 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
 
         return chunk, reasoning_start_time, current_reasoning_content or ""
 
+    def _llm_stream_span_attributes(self, operation: str) -> dict[str, Any]:
+        return {
+            "gen_ai.operation.name": operation,
+            "gen_ai.request.model": self.model_name or "unknown",
+            "gen_ai.system": "aidev_llm_gateway",
+        }
+
+    def _stream_chunks_with_token_spans(self, chunks: Iterator[ChatGenerationChunk]) -> Iterator[ChatGenerationChunk]:
+        """Split streaming wait into first-token and remaining read-stream spans."""
+        chunk_iter = iter(chunks)
+        with recording_span(
+            "llm.first_token",
+            kind=CLIENT_SPAN_KIND,
+            use_global_tracer=True,
+            attributes=self._llm_stream_span_attributes("first_token"),
+        ) as span:
+            try:
+                first = next(chunk_iter)
+            except StopIteration:
+                span.set_attribute("llm.stream.empty", True)
+                return
+        yield first
+        remaining = 0
+        with recording_span(
+            "llm.read_stream",
+            kind=CLIENT_SPAN_KIND,
+            use_global_tracer=True,
+            attributes=self._llm_stream_span_attributes("read_stream"),
+        ) as span:
+            for chunk in chunk_iter:
+                remaining += 1
+                yield chunk
+            span.set_attribute("llm.stream.remaining_chunks", remaining)
+
+    async def _astream_chunks_with_token_spans(
+        self, chunks: AsyncIterator[ChatGenerationChunk]
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Async counterpart of ``_stream_chunks_with_token_spans``."""
+        chunk_iter = chunks.__aiter__()
+        with recording_span(
+            "llm.first_token",
+            kind=CLIENT_SPAN_KIND,
+            use_global_tracer=True,
+            attributes=self._llm_stream_span_attributes("first_token"),
+        ) as span:
+            try:
+                first = await chunk_iter.__anext__()
+            except StopAsyncIteration:
+                span.set_attribute("llm.stream.empty", True)
+                return
+        yield first
+        remaining = 0
+        with recording_span(
+            "llm.read_stream",
+            kind=CLIENT_SPAN_KIND,
+            use_global_tracer=True,
+            attributes=self._llm_stream_span_attributes("read_stream"),
+        ) as span:
+            async for chunk in chunk_iter:
+                remaining += 1
+                yield chunk
+            span.set_attribute("llm.stream.remaining_chunks", remaining)
+
     def _stream(self, *args, **kwargs) -> Iterator[ChatGenerationChunk]:
-        """对reasoning_content字段进行时间统计"""
+        """对reasoning_content字段进行时间统计，并拆出首 Token / 读流 Span。"""
         handle = self._begin_model_observation()
         reasoning_start_time = 0
         last_reasoning_content = ""
         try:
-            for chunk in super()._stream(*args, **kwargs):
+            for chunk in self._stream_chunks_with_token_spans(super()._stream(*args, **kwargs)):
                 chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
                     chunk, reasoning_start_time, last_reasoning_content
                 )
@@ -449,12 +513,12 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         self._finish_model_observation_success(handle)
 
     async def _astream(self, *args, **kwargs) -> AsyncIterator[ChatGenerationChunk]:
-        """对reasoning_content字段进行时间统计"""
+        """对reasoning_content字段进行时间统计，并拆出首 Token / 读流 Span。"""
         handle = self._begin_model_observation()
         reasoning_start_time = 0
         last_reasoning_content = ""
         try:
-            async for chunk in super()._astream(*args, **kwargs):
+            async for chunk in self._astream_chunks_with_token_spans(super()._astream(*args, **kwargs)):
                 chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
                     chunk, reasoning_start_time, last_reasoning_content
                 )
