@@ -34,6 +34,7 @@ from aidev_agent.packages.craw.base import (
 )
 from aidev_agent.packages.craw.hermes import HermesBackend
 from aidev_agent.packages.craw.mcp_identity import (
+    CrawLeaseError,
     bind_user_access_token,
     get_bound_user_access_token,
     mcp_identity_lease,
@@ -60,6 +61,7 @@ __all__ = [
     "CrawCompletionAgent",
     "CrawIdentity",
     "CrawIdentityError",
+    "CrawLeaseError",
     "CrawStreamProtocolError",
     "CrawSyncResult",
     "CrawSyncer",
