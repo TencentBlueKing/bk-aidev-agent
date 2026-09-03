@@ -27,13 +27,25 @@
 import { defineComponent, h } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageStatus } from '../../ag-ui/types';
+import { DEFAULT_UPLOAD_ACCEPT } from '../../common';
 import ChatInput from './chat-input.vue';
 
 import type { UploadFile } from '../../types';
 import type { IAiSlashMenuItem } from '../../types/editor';
+
+const chatInputSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-input.vue'), 'utf-8');
+
+async function waitUntilSendEnabled(wrapper: VueWrapper) {
+  await vi.waitFor(() => {
+    expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBeFalsy();
+  });
+}
 
 const mockBkMessage = vi.fn();
 vi.mock('bkui-vue', () => ({
@@ -51,7 +63,7 @@ vi.mock('../../common', async importOriginal => {
     ...actual,
     CHAT_Z_INDEX: 1000,
     isEn: false,
-    MAX_UPLOAD_FILES: 3,
+    MAX_UPLOAD_FILES: 9,
     MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
     commonSVGProps: {
       class: 'mock-svg-icon',
@@ -110,6 +122,7 @@ vi.mock('../chat-content/cite-content/cite-content.vue', () => ({
 }));
 
 // Mock AiSlashInput
+const mockInputFocus = vi.fn();
 vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
   default: defineComponent({
     name: 'AiSlashInput',
@@ -121,13 +134,15 @@ vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
       skills: { type: Array, default: () => [] },
     },
     emits: ['update:modelValue', 'keydown', 'upload'],
-    setup(_, { emit, expose }) {
+    setup(props, { emit, expose }) {
       expose({
         cleanup: vi.fn(),
+        focus: mockInputFocus,
       });
       return () =>
         h('div', {
           class: 'mock-ai-slash-input',
+          'aria-placeholder': props.placeholder,
           onKeydown: (e: KeyboardEvent) => emit('keydown', e),
         });
     },
@@ -280,6 +295,7 @@ vi.mock('../chat-content/file-content/file-content.vue', () => ({
 vi.mock('../ai-buttons/file-upload-btn/file-upload-btn.vue', () => ({
   default: defineComponent({
     name: 'FileUploadBtn',
+    props: ['accept', 'tippyOptions'],
     emits: ['upload'],
     setup(_, { emit }) {
       return () =>
@@ -294,6 +310,7 @@ vi.mock('../ai-buttons/file-upload-btn/file-upload-btn.vue', () => ({
   }),
 }));
 
+// style-note: chat-x PR4 — inputMaxHeight 默认 280 / 未激活灰边框
 describe('ChatInput', () => {
   let wrapper: VueWrapper;
 
@@ -314,6 +331,17 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+    });
+
+    it('输入容器底部间距应为 16px', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+        },
+      });
+
+      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+      expect(chatInputSource).toMatch(/\.ai-chat-input-container\s*\{[\s\S]*?padding:\s*0\s+16px\s+16px;/);
     });
 
     it('应该渲染 chat-input 容器', () => {
@@ -396,6 +424,82 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
+    });
+
+    it('无 Skill/Prompt/Resources 时默认 placeholder 仅保留换行提示', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe(
+        '通过 Shift + Enter 进行换行输入',
+      );
+    });
+
+    it('仅有 Skill 时默认 placeholder 含 Skill 行且不含 Prompt 和 @ 行', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+        },
+      });
+
+      const placeholder = wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder') ?? '';
+      expect(placeholder).toContain('输入 "/" 唤出 Skill');
+      expect(placeholder).not.toContain('唤出 Prompt');
+      expect(placeholder).not.toContain('工具和 MCP');
+      expect(placeholder).toContain('通过 Shift + Enter 进行换行输入');
+    });
+
+    it('显式 placeholder 不被 skills/prompts/resources 改写', () => {
+      const placeholder = '请输入你的问题';
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          placeholder,
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+          prompts: ['帮我总结'],
+          resources: [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[],
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe(placeholder);
+    });
+
+    it('显式空字符串 placeholder 完全覆盖动态文案', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          placeholder: '',
+          skills: [
+            {
+              skill_name: 'Code Review',
+              skill_code: 'code-review',
+              description: '审查代码',
+              icon: '',
+            },
+          ],
+        },
+      });
+
+      expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe('');
     });
 
     it('应该正确接收 prompts', () => {
@@ -506,9 +610,7 @@ describe('ChatInput', () => {
     });
 
     it('应该正确接收 skills 属性', () => {
-      const skills = [
-        { skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' },
-      ];
+      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
 
       wrapper = mount(ChatInput, {
         props: {
@@ -988,6 +1090,62 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-file-upload-btn').exists()).toBe(false);
     });
 
+    it('默认应将允许列表传给 FileUploadBtn', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+    });
+
+    it('应支持自定义 accept 覆盖默认允许列表', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', accept: '.pdf' },
+      });
+
+      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe('.pdf');
+    });
+
+    it('不支持的文件格式应拦截且提示，不调用 onUpload', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['x'], 'malware.exe', { type: 'application/x-msdownload' })]);
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
+    });
+
+    it('一次选择中应只上传允许格式的文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/a.png' });
+      const allowed = new File(['img'], 'a.png', { type: 'image/png' });
+      const blocked = new File(['zip'], 'a.zip', { type: 'application/zip' });
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [allowed, blocked]);
+
+      expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(onUpload).toHaveBeenCalledWith([allowed]);
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+        }),
+      );
+    });
+
     it('没有上传文件时不应该渲染 FileContent', () => {
       wrapper = mount(ChatInput, {
         props: {
@@ -1044,7 +1202,7 @@ describe('ChatInput', () => {
       });
     });
 
-    it('上传返回无 download_url 时应标记为 Error', async () => {
+    it('上传返回空对象时应标记为 Error', async () => {
       const onUpload = vi.fn().mockResolvedValue({});
 
       wrapper = mount(ChatInput, {
@@ -1057,6 +1215,29 @@ describe('ChatInput', () => {
       await wrapper.find('.mock-file-upload-btn').trigger('click');
       await vi.waitFor(() => {
         expect(onUpload).toHaveBeenCalled();
+      });
+    });
+
+    it('上传仅返回 id 时应成功，发送内容携带永久身份', async () => {
+      const onSendMessage = vi.fn();
+      const onUpload = vi.fn().mockResolvedValue({ id: 'files/report.pdf', status: 'success' });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onSendMessage,
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][0][0]).toMatchObject({
+        id: 'files/report.pdf',
+        filename: 'report.pdf',
       });
     });
 
@@ -1076,6 +1257,26 @@ describe('ChatInput', () => {
       await aiSlashInput.vm.$emit('upload', [sameFile]);
 
       expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(mockBkMessage).not.toHaveBeenCalled();
+    });
+
+    it('仅因重复未加入时不应提示超过大小或个数', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/file.txt' });
+      const sameFile = new File(['test'], 'test.txt', { type: 'text/plain', lastModified: 1000 });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [sameFile]);
+      mockBkMessage.mockClear();
+      await aiSlashInput.vm.$emit('upload', [sameFile]);
+
+      expect(mockBkMessage).not.toHaveBeenCalled();
     });
 
     it('同名但不同大小的文件不应被去重', async () => {
@@ -1112,6 +1313,325 @@ describe('ChatInput', () => {
       await aiSlashInput.vm.$emit('upload', [file, file]);
 
       expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(mockBkMessage).not.toHaveBeenCalled();
+    });
+
+    it('一次选择多个文件时只调用一次 onUpload 并传入全部文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue([
+        { id: 'files/a.pdf', status: 'success' },
+        { id: 'files/b.pdf', status: 'success' },
+      ]);
+      const fileA = new File(['a'], 'a.pdf', { type: 'application/pdf', lastModified: 1 });
+      const fileB = new File(['b'], 'b.pdf', { type: 'application/pdf', lastModified: 2 });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [fileA, fileB]);
+
+      expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(onUpload).toHaveBeenCalledWith([fileA, fileB]);
+    });
+
+    it('批量结果按顺序回填，部分失败只标记对应文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue([
+        { id: 'files/ok.pdf', status: 'success' },
+        { status: 'failed', error: 'too large' },
+      ]);
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          onSendMessage,
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [
+        new File(['ok'], 'ok.pdf', { type: 'application/pdf', lastModified: 1 }),
+        new File(['bad'], 'bad.pdf', { type: 'application/pdf', lastModified: 2 }),
+      ]);
+      await vi.waitFor(() => {
+        expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe(
+          '存在上传失败的文件，请删除后重试',
+        );
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('文件加入列表后应自动聚焦输入区', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/file.txt' });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['test'], 'test.txt', { type: 'text/plain' })]);
+
+      expect(mockInputFocus).toHaveBeenCalled();
+    });
+
+    it('全部文件都未通过校验时不应聚焦输入区', async () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload: vi.fn(),
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File([], 'empty.txt', { type: 'text/plain' })]);
+
+      expect(mockInputFocus).not.toHaveBeenCalled();
+    });
+
+    it('只有附件、输入框为空时发送按钮应可用', async () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          messageStatus: MessageStatus.Complete,
+          onUpload: vi.fn().mockResolvedValue({ download_url: 'http://example.com/report.pdf' }),
+        },
+      });
+
+      const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
+      expect(inputAttachment.props('messageState')).toBe(MessageStatus.Disabled);
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+
+      expect(inputAttachment.props('messageState')).toBe(MessageStatus.Complete);
+    });
+
+    it('纯附件消息不应带空文本段', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({ download_url: 'http://example.com/report.pdf' }),
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+
+      const content = onSendMessage.mock.calls[0][0];
+      expect(content).toHaveLength(1);
+      expect(content[0]).toMatchObject({ filename: 'report.pdf' });
+    });
+
+    it('modelValue 为普通字符串且有附件时应正常发送（编辑态回填）', async () => {
+      const onSendMessage = vi.fn();
+      const defaultFiles = [
+        {
+          type: 'binary',
+          url: 'http://example.com/report.pdf',
+          filename: 'report.pdf',
+          mimeType: 'application/pdf',
+        },
+      ] as unknown as UploadFile[];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '这是编辑态的文本',
+          defaultUploadFiles: defaultFiles,
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      const content = onSendMessage.mock.calls[0][0];
+      expect(content).toHaveLength(2);
+      expect(content[1]).toMatchObject({ text: '这是编辑态的文本' });
+    });
+
+    it('只有附件时 Enter 键也应能发送', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({ download_url: 'http://example.com/report.pdf' }),
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
+
+      expect(onSendMessage).toHaveBeenCalled();
+    });
+
+    it('发送时应带上 filename / mimeType / size', async () => {
+      const onSendMessage = vi.fn();
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/report.pdf' });
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          onSendMessage,
+          onUpload,
+        },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf-body'], 'report.pdf', { type: 'application/pdf' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][0][0]).toMatchObject({
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 8,
+      });
+    });
+
+    it('编辑态回填的附件（无 File）发送时仍保留 filename / mimeType / size', async () => {
+      const onSendMessage = vi.fn();
+      const defaultFiles = [
+        {
+          type: 'binary',
+          url: 'http://example.com/report.pdf',
+          filename: 'report.pdf',
+          mimeType: 'application/pdf',
+          size: 2048,
+        },
+      ] as unknown as UploadFile[];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: 'hello',
+          defaultUploadFiles: defaultFiles,
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][0][0]).toMatchObject({
+        filename: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 2048,
+      });
+    });
+
+    it('上传未完成时点击、Enter、triggerSendMessage 均不发送', async () => {
+      let resolveUpload: (value: { download_url: string }) => void = () => {};
+      const onUpload = vi.fn(
+        () =>
+          new Promise<{ download_url: string }>(resolve => {
+            resolveUpload = resolve;
+          }),
+      );
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: 'hello', onSendMessage, onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await wrapper.vm.$nextTick();
+
+      const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
+      expect(inputAttachment.props('sendDisabledTip')).toBe('文件上传中，请稍候');
+      expect(inputAttachment.props('messageState')).not.toBe(MessageStatus.Pending);
+
+      await wrapper.find('.send-btn').trigger('click');
+      await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
+      (wrapper.vm as { triggerSendMessage: () => void }).triggerSendMessage();
+
+      expect(onSendMessage).not.toHaveBeenCalled();
+
+      resolveUpload({ download_url: 'http://example.com/report.pdf' });
+      await vi.waitFor(() => {
+        expect(inputAttachment.props('sendDisabledTip')).toBeFalsy();
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).toHaveBeenCalled();
+    });
+
+    it('上传失败后仍禁用，删除失败附件后恢复发送', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ status: 'failed' });
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: 'hello', onSendMessage, onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await vi.waitFor(() => {
+        expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe(
+          '存在上传失败的文件，请删除后重试',
+        );
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).not.toHaveBeenCalled();
+      expect(wrapper.find('.mock-file-content').exists()).toBe(true);
+
+      await wrapper.find('.mock-file-item').trigger('click');
+      await wrapper.vm.$nextTick();
+
+      expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBeFalsy();
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).toHaveBeenCalled();
+    });
+
+    it('多文件中任一 Pending 或 Error 都阻塞发送', async () => {
+      let resolveBatch: (value: Array<{ download_url?: string; status?: 'failed' | 'success' }>) => void = () => {};
+      const onUpload = vi.fn(
+        () =>
+          new Promise<Array<{ download_url?: string; status?: 'failed' | 'success' }>>(resolve => {
+            resolveBatch = resolve;
+          }),
+      );
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: 'hello', onSendMessage, onUpload },
+      });
+
+      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
+      await aiSlashInput.vm.$emit('upload', [
+        new File(['a'], 'a.pdf', { type: 'application/pdf', lastModified: 1 }),
+        new File(['b'], 'b.pdf', { type: 'application/pdf', lastModified: 2 }),
+      ]);
+      await wrapper.vm.$nextTick();
+
+      expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe('文件上传中，请稍候');
+
+      resolveBatch([{ download_url: 'http://example.com/a.pdf' }, { status: 'failed' }]);
+      await vi.waitFor(() => {
+        expect(wrapper.findComponent({ name: 'InputAttachment' }).props('sendDisabledTip')).toBe(
+          '存在上传失败的文件，请删除后重试',
+        );
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage).not.toHaveBeenCalled();
     });
 
     it('应该正确接收 inputMaxHeight 属性', () => {
@@ -1164,6 +1684,111 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.custom-files').exists()).toBe(true);
+    });
+  });
+
+  // ---------- 拖拽上传测试 ----------
+  describe('拖拽上传测试', () => {
+    const createFileDataTransfer = (files: File[]) => ({
+      dropEffect: '',
+      files,
+      types: ['Files'],
+    });
+
+    it('拖入文件时输入框应进入拖拽态', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      await wrapper.find('.chat-input').trigger('dragenter', { dataTransfer: createFileDataTransfer([]) });
+
+      expect(wrapper.find('.chat-input').classes()).toContain('is-dragover');
+    });
+
+    it('拖离后应退出拖拽态', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      const dropZone = wrapper.find('.chat-input');
+      await dropZone.trigger('dragenter', { dataTransfer: createFileDataTransfer([]) });
+      await dropZone.trigger('dragleave', { dataTransfer: createFileDataTransfer([]) });
+
+      expect(dropZone.classes()).not.toContain('is-dragover');
+    });
+
+    it('进入子元素再离开不应提前退出拖拽态', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      const dropZone = wrapper.find('.chat-input');
+      await dropZone.trigger('dragenter', { dataTransfer: createFileDataTransfer([]) });
+      await dropZone.trigger('dragenter', { dataTransfer: createFileDataTransfer([]) });
+      await dropZone.trigger('dragleave', { dataTransfer: createFileDataTransfer([]) });
+
+      expect(dropZone.classes()).toContain('is-dragover');
+    });
+
+    it('编辑器内部拖拽（非文件）不应进入拖拽态', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      await wrapper
+        .find('.chat-input')
+        .trigger('dragenter', { dataTransfer: { dropEffect: '', files: [], types: ['text/plain'] } });
+
+      expect(wrapper.find('.chat-input').classes()).not.toContain('is-dragover');
+    });
+
+    it('supportUpload 为 false 时不响应拖拽', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload, supportUpload: false },
+      });
+
+      const file = new File(['test'], 'test.txt', { type: 'text/plain' });
+      await wrapper.find('.chat-input').trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
+
+      expect(wrapper.find('.chat-input').classes()).not.toContain('is-dragover');
+      expect(onUpload).not.toHaveBeenCalled();
+    });
+
+    it('释放文件应走同一条上传链路并退出拖拽态', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/report.pdf' });
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const dropZone = wrapper.find('.chat-input');
+      const file = new File(['pdf-body'], 'report.pdf', { type: 'application/pdf' });
+      await dropZone.trigger('dragenter', { dataTransfer: createFileDataTransfer([file]) });
+      await dropZone.trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
+
+      expect(onUpload).toHaveBeenCalledWith([file]);
+      expect(dropZone.classes()).not.toContain('is-dragover');
+    });
+
+    it('拖入不支持的格式应拦截并提示', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const file = new File(['exe-body'], 'setup.exe');
+      await wrapper.find('.chat-input').trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
     });
   });
 });

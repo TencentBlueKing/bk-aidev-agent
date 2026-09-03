@@ -103,6 +103,7 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
         # agent_type：完全由 agent_info 决定，按 execute_kwargs.version 路由（version 为空 → 最新版）。
         # agent_code 来自 view 的请求级 resource manager；为空时 get_info 回落全局 rm
         agent_code = (self.context or {}).get("agent_code") or None
+        rm = (self.context or {}).get("resource_manager")
         agent_info = AgentConfigFetcher.get_info(app_code=agent_code, username=username, version=execute_kwargs.version)
         attrs["agent_type"] = agent_info.get("agent_type", "") or ""
 
@@ -115,7 +116,7 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
 
         # model 热切换授权校验：非空时校验是否在当前空间可用模型列表内，避免越权切换到未授权模型
         model = attrs.get("model", "")
-        if model and not LLMService.is_llm_accessible(username=username, llm_code=model):
+        if model and not LLMService.is_llm_accessible(username=username, llm_code=model, resource_manager=rm):
             raise serializers.ValidationError({"model": f"模型 {model} 不在当前空间可用模型列表内"})
 
         return attrs

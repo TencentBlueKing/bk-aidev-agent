@@ -23,7 +23,8 @@ import random
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, Optional, Tuple, cast
+from contextlib import contextmanager
+from typing import Any, Callable, Optional, Tuple, cast
 
 from asgiref.sync import sync_to_async
 from django.db import OperationalError, close_old_connections, connections, router, transaction
@@ -45,6 +46,48 @@ from langgraph.checkpoint.serde.types import ChannelProtocol
 RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
 CHECKPOINT_WRITE_MAX_RETRIES = 3
 CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
+_SQLITE_WRITE_LOCKS: dict[str, threading.RLock] = {}
+_SQLITE_WRITE_LOCKS_GUARD = threading.Lock()
+
+
+def _database_vendor(model) -> tuple[str, str]:
+    alias = router.db_for_write(model)
+    return alias, connections[alias].vendor
+
+
+@contextmanager
+def _database_write_lock(model):
+    """Serialize only local SQLite writes across saver instances in this process."""
+    alias, vendor = _database_vendor(model)
+    if vendor != "sqlite":
+        yield
+        return
+
+    with _SQLITE_WRITE_LOCKS_GUARD:
+        lock = _SQLITE_WRITE_LOCKS.setdefault(alias, threading.RLock())
+    with lock:
+        yield
+
+
+def _is_retryable_database_error(exc: OperationalError, model) -> bool:
+    error_code = exc.args[0] if exc.args else None
+    if error_code in RETRYABLE_DATABASE_ERROR_CODES:
+        return True
+    _, vendor = _database_vendor(model)
+    return vendor == "sqlite" and "database is locked" in str(exc).lower()
+
+
+def _run_database_write_with_retry(operation: Callable[[], None], model) -> None:
+    for attempt in range(CHECKPOINT_WRITE_MAX_RETRIES):
+        try:
+            operation()
+            return
+        except OperationalError as exc:
+            exhausted = attempt == CHECKPOINT_WRITE_MAX_RETRIES - 1
+            if not _is_retryable_database_error(exc, model) or exhausted:
+                raise
+            close_old_connections()
+            time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
 
 
 async def run_db_in_thread(func, *args, **kwargs):
@@ -628,28 +671,23 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         raw_metadata = get_checkpoint_metadata(config, metadata)
         # 通过 json 序列化再反序列化来确保所有值都是 JSON 兼容类型
         serialized_metadata = json.loads(json.dumps(raw_metadata, default=str).replace("\\u0000", ""))
-        # 使用Django的update_or_create方法
-        with self.lock:
-            for attempt in range(CHECKPOINT_WRITE_MAX_RETRIES):
-                try:
-                    self.checkpoint_model.objects.update_or_create(
-                        thread_id=thread_id,
-                        checkpoint_ns=checkpoint_ns,
-                        checkpoint_id=checkpoint["id"],
-                        defaults={
-                            "parent_checkpoint_id": config["configurable"].get("checkpoint_id"),
-                            "type": type_,
-                            "checkpoint": serialized_checkpoint,
-                            "metadata": serialized_metadata,
-                        },
-                    )
-                    break
-                except OperationalError as exc:
-                    error_code = exc.args[0] if exc.args else None
-                    if error_code not in RETRYABLE_DATABASE_ERROR_CODES or attempt == CHECKPOINT_WRITE_MAX_RETRIES - 1:
-                        raise
-                    close_old_connections()
-                    time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
+
+        def save_checkpoint() -> None:
+            self.checkpoint_model.objects.update_or_create(
+                thread_id=thread_id,
+                checkpoint_ns=checkpoint_ns,
+                checkpoint_id=checkpoint["id"],
+                defaults={
+                    "parent_checkpoint_id": config["configurable"].get("checkpoint_id"),
+                    "type": type_,
+                    "checkpoint": serialized_checkpoint,
+                    "metadata": serialized_metadata,
+                },
+            )
+
+        # SQLite 只允许单写者；跨 saver 实例串行本进程写入，MySQL 等数据库仍保持并行。
+        with self.lock, _database_write_lock(self.checkpoint_model):
+            _run_database_write_with_retry(save_checkpoint, self.checkpoint_model)
 
         return {
             "configurable": {
@@ -681,11 +719,10 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         checkpoint_id = str(config["configurable"]["checkpoint_id"])
         writes_objects = []
 
-        with self.lock:
-            for idx, (channel, value) in enumerate(writes):
-                type_, serialized_value = self.serde.dumps_typed(value)
-
-                write_obj = self.writes_model(
+        for idx, (channel, value) in enumerate(writes):
+            type_, serialized_value = self.serde.dumps_typed(value)
+            writes_objects.append(
+                self.writes_model(
                     thread_id=thread_id,
                     checkpoint_ns=checkpoint_ns,
                     checkpoint_id=checkpoint_id,
@@ -695,8 +732,9 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
                     type=type_,
                     value=serialized_value,
                 )
-                writes_objects.append(write_obj)
-            # 根据写入类型选择策略
+            )
+
+        def save_writes() -> None:
             if all(w[0] in WRITES_IDX_MAP for w in writes):
                 # 如果所有写入都在WRITES_IDX_MAP中，使用bulk_create with update_conflicts
                 bulk_upsert(
@@ -710,6 +748,9 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
                     writes_objects,
                     ignore_conflicts=True,
                 )
+
+        with self.lock, _database_write_lock(self.writes_model):
+            _run_database_write_with_retry(save_writes, self.writes_model)
 
     def delete_thread(self, thread_id: str) -> None:
         """删除与线程ID关联的所有检查点和写入记录

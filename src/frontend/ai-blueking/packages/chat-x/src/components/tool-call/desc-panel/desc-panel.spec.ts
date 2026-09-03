@@ -29,6 +29,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DescPanel from './desc-panel.vue';
 
+const copyMock = vi.fn();
+vi.mock('../../../composables/use-clipboard', () => ({
+  useClipboard: () => ({ copy: copyMock }),
+}));
+
 describe('DescPanel', () => {
   let wrapper: VueWrapper;
 
@@ -208,6 +213,45 @@ describe('DescPanel', () => {
 
       expect(wrapper.find('script').exists()).toBe(false);
       expect(wrapper.find('.desc-panel').text()).toBe(desc);
+    });
+  });
+
+  describe('复制功能测试', () => {
+    it('有 desc 时应该渲染复制按钮', () => {
+      wrapper = mount(DescPanel, {
+        props: {
+          title: '参数',
+          desc: '{"path":"/app"}',
+        },
+      });
+
+      expect(wrapper.find('.desc-copy').exists()).toBe(true);
+    });
+
+    it('没有 desc 时不应该渲染复制按钮', () => {
+      wrapper = mount(DescPanel, {
+        props: {
+          title: '参数',
+        },
+      });
+
+      expect(wrapper.find('.desc-copy').exists()).toBe(false);
+    });
+
+    // 复制原始文本而非解析后的展示内容，便于二次使用
+    it('点击复制按钮应该复制原始 desc 文本', async () => {
+      const desc = '{"path":"/app","target_runtime":"paas_sandbox_file-kit"}';
+
+      wrapper = mount(DescPanel, {
+        props: {
+          title: '参数',
+          desc,
+        },
+      });
+
+      await wrapper.find('.desc-copy').trigger('click');
+
+      expect(copyMock).toHaveBeenCalledWith(desc);
     });
   });
 

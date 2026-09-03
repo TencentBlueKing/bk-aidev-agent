@@ -61,11 +61,15 @@ def test_by_thread_id_with_chat_history_persists_then_builds():
         mock_factory.return_value = MagicMock()
         mock_build.return_value = MagicMock()
         builder = AgentBuilder(username="alice", session_manager=sm, turn_id="turn-1")
-        agent_instance, session_code = builder.by_thread_id_with_chat_history("t-1", history)
+        agent_instance, session_code = builder.by_thread_id_with_chat_history(
+            "t-1",
+            history,
+            channel_type="rtx",
+        )
 
     assert session_code == "session-xyz"
     assert agent_instance is mock_build.return_value
-    sm.get_or_create_by_thread_id.assert_called_once_with("t-1")
+    sm.get_or_create_by_thread_id.assert_called_once_with("t-1", channel_type="rtx")
     sm.save_chat_history.assert_called_once_with("session-xyz", history[:-1])
     sm.save_content.assert_called_once_with(
         session_code="session-xyz",
@@ -90,9 +94,10 @@ def test_by_thread_id_skips_save_when_save_content_false():
     sm.save_content.assert_not_called()
 
 
-def test_by_session_code_passes_user_resource_manager():
+def test_by_session_code_wraps_user_resource_manager_for_events():
     from aidev_agent.packages.resource_manager.agent import AgentResourceManager
     from aidev_bkplugin.services.agent_builder import AgentBuilder
+    from aidev_bkplugin.services.event_resource_manager import EventResourceManager
 
     build_p, factory_p, client_p, checkpointer_p = _patch_factories()
     with build_p as mock_build, factory_p as mock_factory, client_p, checkpointer_p:
@@ -101,7 +106,8 @@ def test_by_session_code_passes_user_resource_manager():
         AgentBuilder(username="alice").by_session_code("sc-1")
 
     rm = mock_build.call_args.kwargs["resource_manager"]
-    assert isinstance(rm, AgentResourceManager)
+    assert isinstance(rm, EventResourceManager)
+    assert isinstance(rm._resource_manager, AgentResourceManager)
     assert rm.username == "alice"
 
 

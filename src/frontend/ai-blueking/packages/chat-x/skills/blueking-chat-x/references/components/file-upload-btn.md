@@ -17,16 +17,19 @@
 
 > **能力域**：输入交互
 
-聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；在按钮层对**单文件**做大小与空文件过滤，**已选文件个数上限**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
+聊天输入框内置的文件上传触发按钮，点击后弹出系统文件选择框。内部包含隐藏的 `<input type="file">` 与可见的图标按钮；**组件缺省不限制文件类型**（`ChatInput` 会传入对话默认允许列表）。在按钮层只对**单文件**做大小与空文件过滤，**已选文件个数上限与类型校验**由上层（如 `ChatInput`）统一校验并提示，避免按钮与输入区各弹一条错误提示。
 
 ## 组件结构
 
 ```
-.file-upload-btn（display: flex，align-items: center）
+.ai-file-upload-btn（display: flex，align-items: center）
 ├── input[type="file"]（.file-upload-btn-input，display: none，multiple，:accept）
+│     accept 缺省时不下发该属性，系统选择框不过滤任何类型
 │     触发后走 handleFileInputChange → 校验 → emit upload → target.value = ''
-└── span.ai-shortcut-btn.file-upload-btn-icon（24×24px，color: #979ba5，hover: cursor: pointer）
-      v-tippy: "上传图片, 最多支持上传 3 个, 最大支持 2.4MB"（theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
+└── span.ai-shortcut-btn.file-upload-btn-icon（热区 32×32px / 圆角 8px；图标字号跟随 --ai-icon-size-sm：small=16px、normal=18px；color: #979ba5；hover: #f0f1f5）
+      v-tippy: "上传文件，最多支持 {count} 个，单个最大 {size}MB"
+        传入 accept 时追加支持格式说明（默认允许列表用分类文案）
+        （{count} / {size} 由 MAX_UPLOAD_FILES 与 MAX_UPLOAD_FILE_SIZE 运行时填充，theme: ai-chat-box，offset: [0, 16]，可通过 tippyOptions 扩展）
       @click → fileInputRef.click()
       └── <slot> 默认：FileUploadIcon
 ```
@@ -59,7 +62,7 @@
 
 > `multiple` prop 声明存在但当前模板中 `input` 的 `multiple` 属性为**硬编码**（非 `:multiple="multiple"` 绑定），始终允许多选，该 prop 暂时无实际效果。
 
-> **`maxFiles` prop**：当前版本在按钮内**不参与截断或计数校验**，仅作类型与文档预留；列表最多几个文件由上层（如 `ChatInput` 的 `MAX_UPLOAD_FILES`）控制。详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
+> **文件类型默认不限制**：组件本身不再默认 `accept="image/*"`。`ChatInput` 会传入对话默认允许列表；独立使用时若需收窄，显式传入 `accept`。个数上限与类型校验由上层（如 `ChatInput`）控制，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)。
 
 ## 基础用法
 
@@ -82,11 +85,14 @@
 
 ## 限制文件类型
 
-通过 `accept` 属性控制系统文件选择框的过滤条件，遵循 `<input type="file">` 的 `accept` 规范：
+默认**不限制**文件类型。需要收窄时通过 `accept` 属性控制系统文件选择框的过滤条件，遵循 `<input type="file">` 的 `accept` 规范：
 
 ```vue
 <template>
-  <!-- 仅图片（默认） -->
+  <!-- 不限制类型（默认，不下发 accept） -->
+  <FileUploadBtn @upload="handleUpload" />
+
+  <!-- 仅图片 -->
   <FileUploadBtn
     accept="image/*"
     @upload="handleUpload"
@@ -97,16 +103,10 @@
     accept=".pdf,.doc,.docx,.xlsx,.pptx"
     @upload="handleUpload"
   />
-
-  <!-- 不限制类型 -->
-  <FileUploadBtn
-    accept="*/*"
-    @upload="handleUpload"
-  />
 </template>
 ```
 
-> `accept` 仅影响文件选择框的过滤 UI，不做服务端验证，请在 `upload` 回调中自行校验 MIME 类型。
+> `accept` 仅影响本组件的文件选择框过滤 UI。`ChatInput` 会在选择/拖拽/粘贴后再按扩展名校验；独立使用 `FileUploadBtn` 时请在 `upload` 回调中自行校验。
 
 ## 自定义图标
 
@@ -124,12 +124,11 @@
 
 ### Props
 
-| 属性名       | 类型           | 默认值      | 说明                                                                 |
-| ------------ | -------------- | ----------- | -------------------------------------------------------------------- |
-| accept       | `string`       | `'image/*'` | 文件选择框过滤类型，遵循 `<input accept>` 规范                       |
-| maxFiles     | `number`       | `3`         | 预留字段，**当前不在按钮内生效**；个数上限见 `ChatInput` 与全局常量 |
-| multiple     | `boolean`      | `true`      | 声明属性（当前版本未实际绑定到 input，始终多选）                     |
-| tippyOptions | `AITippyProps` | —           | 扩展 tooltip 配置，会与内置配置合并                                |
+| 属性名       | 类型           | 默认值 | 说明                                                                       |
+| ------------ | -------------- | ------ | -------------------------------------------------------------------------- |
+| accept       | `string`       | —      | 文件选择框过滤类型，遵循 `<input accept>` 规范；缺省时不下发，不限制类型 |
+| multiple     | `boolean`      | `true` | 声明属性（当前版本未实际绑定到 input，始终多选）                           |
+| tippyOptions | `AITippyProps` | —      | 扩展 tooltip 配置，会与内置配置合并                                        |
 
 ### Events
 

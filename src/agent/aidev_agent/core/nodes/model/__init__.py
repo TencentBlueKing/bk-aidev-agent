@@ -6,6 +6,7 @@
 """
 
 from .basic_middleware import get_beijing_now
+from .chat_history_assembly import convert_chat_history_to_messages
 from .context_assembly import ContextAssembly
 from .node import ModelState, build_model_node
 from .pydantic_models import (
@@ -54,6 +55,7 @@ __all__ = [
     "ToolOutputTokenCompressionMiddleware",
     "TruncationError",
     "build_model_node",
+    "convert_chat_history_to_messages",
     "get_beijing_now",
     "parse_standalone_plain_text_tool_call_blocks",
     "promote_plain_text_tool_call_message",

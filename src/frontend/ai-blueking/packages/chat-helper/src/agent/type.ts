@@ -90,6 +90,10 @@ export interface IAgentCommandComponentApi {
 
 export interface IAgentInfo {
   agentName?: string;
+  /** Agent 类型：single 为普通智能体，claw 为 Claw 智能体 */
+  agentType?: 'claw' | 'single' | string;
+  /** 后端 agent_sdk_version，如 2.2.2rc17；用于上传等接口兼容分流 */
+  agentSdkVersion?: string;
   relatedSkills?: IRelatedSkill[];
   resources?: IAgentResourceItem[];
   saasUrl?: string;
@@ -112,6 +116,9 @@ export interface IAgentInfo {
 
 export interface IAgentInfoApi {
   agent_name: string;
+  /** Agent 类型：single 为普通智能体，claw 为 Claw 智能体 */
+  agent_type?: 'claw' | 'single' | string;
+  agent_sdk_version?: string;
   related_skills?: IRelatedSkillApi[];
   resources?: IAgentResourceItem[];
   saas_url?: string;
@@ -236,3 +243,10 @@ export interface ILlmItemApi {
   tag_names?: string[];
   user_auth_mode?: string;
 }
+
+/**
+ * chat_completion execute_kwargs.stream_mode
+ * - start: 可创建生产者，开新一轮执行（默认）
+ * - attach: 仅接管/回放已有流，不允许新建生产者
+ */
+export type StreamMode = 'start' | 'attach';

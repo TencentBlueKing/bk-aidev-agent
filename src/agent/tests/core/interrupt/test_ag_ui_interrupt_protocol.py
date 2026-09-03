@@ -5,7 +5,6 @@ import pytest
 from ag_ui.core import EventType, RunFinishedEvent, RunStartedEvent, ToolCallStartEvent
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.approval import ApprovalOutcomeBuilder
 from aidev_agent.core.ag_ui.events import ExtendToolCallStartEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
@@ -16,6 +15,7 @@ from aidev_agent.core.ag_ui.types import (
     RunFinishedSuccessOutcome,
     serialize_run_finished_outcome,
 )
+from aidev_agent.packages.interrupt_manager import ApprovalOutcomeBuilder
 from langchain_core.tools import StructuredTool
 
 
@@ -112,6 +112,123 @@ async def test_handle_single_event_enhances_non_approval_tool_call(monkeypatch):
     assert events[0].description == "a normal tool"
     # 非审批工具不加入 suppressed set
     assert "call-1" not in agent._suppressed_tool_call_ids  # noqa: SLF001
+
+
+def _approval_tool(name: str = "skill_tool") -> StructuredTool:
+    """构造带 approval metadata 的审批工具（复用既有测试的构造方式）。"""
+
+    async def _impl(a: int, b: int) -> int:  # noqa: ARG001
+        return a + b
+
+    tool = StructuredTool.from_function(coroutine=_impl, name=name, description="approval tool")
+    tool.metadata = {
+        "skill_name": "skill-runner",
+        "approval": {
+            "tool_type": "skill",
+            "skill_code": "skill-runner",
+            "tool_name": "Skill Runner",
+            "target": {"type": "skill", "skill_name": "skill-runner", "display_name": "Skill Runner"},
+        },
+    }
+    return tool
+
+
+def _start_event(tool_call_id: str, tool_name: str) -> ToolCallStartEvent:
+    return ToolCallStartEvent(
+        type=EventType.TOOL_CALL_START,
+        tool_call_id=tool_call_id,
+        tool_call_name=tool_name,
+        parent_message_id="msg-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_single_event_ontoolend_source_passes_approval_tool_call(monkeypatch):
+    """OnToolEnd 补发来源：approval 工具 ToolCallStartEvent 透传（不抑制）+ 加入 suppressed set。
+
+    resume 续流中审批已决出、工具已执行，OnToolEnd 补发的 START 需与独立路径的
+    TOOL_CALL_RESULT 完整流向前端，避免孤儿 RESULT（工具卡片样式丢失）。
+    """
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        yield _start_event("call-skill-1", "skill_tool")
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+
+    tool = _approval_tool()
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"skill_tool": tool})
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_tool_end"}, {})]
+
+    # OnToolEnd 补发来源放行：透传 1 个 ExtendToolCallStartEvent，且不加入 suppressed set
+    assert len(events) == 1
+    assert isinstance(events[0], ExtendToolCallStartEvent)
+    assert events[0].tool_call_id == "call-skill-1"
+    assert "call-skill-1" not in agent._suppressed_tool_call_ids  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_handle_single_event_model_source_still_suppresses_approval_tool_call(monkeypatch):
+    """模型阶段来源：approval 工具 ToolCallStartEvent 仍被抑制（首跑 pre-approval 隐藏语义回归锚点）。"""
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        yield _start_event("call-skill-1", "skill_tool")
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+
+    tool = _approval_tool()
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"skill_tool": tool})
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})]
+
+    assert len(events) == 0
+    assert "call-skill-1" in agent._suppressed_tool_call_ids  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_handle_single_event_ontoolend_source_still_suppresses_ask_user(monkeypatch):
+    """OnToolEnd 来源：ask_user_question 工具仍被无条件抑制（快照已渲染，三元组冗余）。
+
+    UAT 复盘（单 ask_user 双样式回归）：ask_user tool_call 不在 45-04 快照谓词
+    should_suppress_approval_tool_call 过滤范围内（谓词仅审批），首跑 MESSAGES_SNAPSHOT
+    已渲染一次——补发三元组放行会渲染第二次。与审批工具的差异：审批 pending
+    tool_call 被快照谓词过滤（快照渲染 0 次），补发放行恰好一次。
+    """
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        yield _start_event("call-auq-1", "ask_user_question")
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+
+    auq_tool = StructuredTool.from_function(
+        coroutine=lambda **kwargs: None, name="ask_user_question", description="ask user question"
+    )
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"ask_user_question": auq_tool})
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_tool_end"}, {})]
+
+    assert len(events) == 0
+    assert "call-auq-1" in agent._suppressed_tool_call_ids  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_handle_single_event_model_source_still_suppresses_ask_user(monkeypatch):
+    """模型阶段来源：ask_user_question 工具 ToolCallStartEvent 仍被抑制（首跑问题卡片在途，三元组冗余）。"""
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        yield _start_event("call-auq-1", "ask_user_question")
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+
+    auq_tool = StructuredTool.from_function(
+        coroutine=lambda **kwargs: None, name="ask_user_question", description="ask user question"
+    )
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"ask_user_question": auq_tool})
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})]
+
+    assert len(events) == 0
+    assert "call-auq-1" in agent._suppressed_tool_call_ids  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
@@ -485,38 +602,17 @@ async def test_resume_ask_user_question_emits_first_frame_run_finished(monkeypat
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # 续流首帧回放：首条 MESSAGES_SNAPSHOT 之后紧跟 RUN_FINISHED（关闭前端弹窗），
-    # 随后是 SDK 的 RUN_STARTED / RUN_FINISHED。不再下发第二次 MESSAGES_SNAPSHOT，
-    # interrupt 卡片终态由 RUN_FINISHED 的 outcome/result 承载。
+    # 2026-09-02 处置：ask_user 续流首帧回放已移除（处理前置改写 + MESSAGES_SNAPSHOT
+    # 完整携带 resolved 卡片，replay 冗余且 raw 数据缺 reason 使前端卡片消失——
+    # 生产回归实证；294ff5d55 好基线同样不推）。序列应为 MESSAGES_SNAPSHOT →
+    # SDK 的 RUN_STARTED / RUN_FINISHED，无 replay 事件。
     types = [p["type"] for p in payloads]
     assert types[0] == EventType.MESSAGES_SNAPSHOT.value
-    assert types[1] == EventType.RUN_FINISHED.value, f"首帧回放 RUN_FINISHED 未发出，types={types}"
-    assert types[2:] == [EventType.RUN_STARTED.value, EventType.RUN_FINISHED.value], (
-        f"RUN_FINISHED 之后应直接是 SDK 的 RUN_STARTED / RUN_FINISHED，types={types}"
+    assert types[1:] == [EventType.RUN_STARTED.value, EventType.RUN_FINISHED.value], (
+        f"MESSAGES_SNAPSHOT 后应直接是 SDK 的 RUN_STARTED / RUN_FINISHED（无 replay），types={types}"
     )
-
-    # RUN_FINISHED 事件：顶层 outcome / result / runId
-    run_finished = payloads[1]
-    assert run_finished["runId"] == auq_interrupts[0]["id"], "runId 应为 interruptId，让前端据此关闭弹窗"
-    assert run_finished["outcome"]["type"] == "success"
-    assert "interrupts" in run_finished["outcome"], "outcome 应含 interrupts 字段"
-    assert len(run_finished["outcome"]["interrupts"]) > 0, "interrupts 应非空"
-    # interrupts[0] 应为已答问题的历史快照，status 刷写为 resolved
-    auq_interrupt = run_finished["outcome"]["interrupts"][0]
-    assert auq_interrupt["reason"] == "aidev:user_question"
-    assert auq_interrupt["metadata"]["status"] == "resolved"
-
-    # result 是 dict（来自 AskUserQuestionOutcomeBuilder.build_run_finished_payload）
-    result = run_finished.get("result")
-    assert isinstance(result, dict), f"result 应为 dict，实际: {type(result)}"
-    assert result["interruptId"] == auq_interrupts[0]["id"]
-    assert result["reason"] == "aidev:user_question"
-    assert result["status"] == "resolved"
-    # WR-02 修复：断言 answers 内容等于 resume payload 的值，而非仅 key 存在。
-    # resume payload answers = [{"question": "q", "answer": [{"label": "a", "description": "d"}]}]
-    assert result["payload"]["answers"] == [{"question": "q", "answer": [{"label": "a", "description": "d"}]}], (
-        "result.payload.answers 应来自 resume payload（用户刚提交的答案），而非空的 metadata.answers"
-    )
+    replay_finished = [p for p in payloads if p["type"] == EventType.RUN_FINISHED.value and p.get("resume_replay")]
+    assert not replay_finished, f"不应推送 resume_replay RUN_FINISHED，实际: {replay_finished}"
 
 
 @pytest.mark.asyncio

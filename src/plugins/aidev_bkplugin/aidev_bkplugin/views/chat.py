@@ -15,11 +15,13 @@ from blueapps.core.exceptions import ClientBlueException
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
 
+from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.chat_tracing import chat_request_span
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
@@ -39,6 +41,7 @@ class ChatCompletionViewSet(PluginViewSet):
             return ChannelType.API.value
         return ChannelType.POPUP.value
 
+    @chat_request_span
     def create(self, request):
         """
         入参校验与解析统一交给 ChatCompletionRequestSerializer：
@@ -58,7 +61,7 @@ class ChatCompletionViewSet(PluginViewSet):
         try:
             serializer = ChatCompletionRequestSerializer(
                 data=request.data,
-                context={"username": username, "agent_code": agent_code},
+                context={"username": username, "agent_code": agent_code, "resource_manager": rm},
             )
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
@@ -78,7 +81,10 @@ class ChatCompletionViewSet(PluginViewSet):
                 session_code = SessionManager(
                     username=username, agent_code=agent_code, resource_manager=rm
                 ).get_or_create_by_session_code(
-                    session_code, session_name="子智能体调用", is_temporary=session_temporary
+                    session_code,
+                    session_name="子智能体调用",
+                    is_temporary=session_temporary,
+                    channel_type=self.channel_type,
                 )
 
             logger.info(f"resolved agent_type={agent_type}, version={execute_kwargs.version}")
@@ -90,7 +96,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     try:
                         session_code = SessionManager(
                             username=username, agent_code=agent_code, resource_manager=rm
-                        ).get_or_create_by_thread_id(thread_id)
+                        ).get_or_create_by_thread_id(thread_id, channel_type=self.channel_type)
                         execute_kwargs.session_code = session_code
                         logger.info(
                             "[FLOW_AGENT] Resolved session_code from thread_id: thread_id=%s, session_code=%s",
@@ -277,13 +283,15 @@ class ChatCompletionViewSet(PluginViewSet):
         session_code: str,
         username: str,
         content: str,
-        rm: Optional[ResourceManagerProtocol] = None,
+        resource_manager: Optional[ResourceManagerProtocol] = None,
         turn_id: str = "",
     ) -> str:
         if not session_code or not content:
-            return self._resolve_turn_id(session_code, username, rm, turn_id)
-        agent_code = rm.get_agent_code() if rm else None
-        saved = SessionManager(username=username, resource_manager=rm, agent_code=agent_code).save_content(
+            return self._resolve_turn_id(session_code, username, resource_manager, turn_id)
+        agent_code = resource_manager.get_agent_code() if resource_manager else None
+        saved = SessionManager(
+            username=username, resource_manager=resource_manager, agent_code=agent_code
+        ).save_content(
             session_code=session_code,
             role=PromptRole.USER.value,
             content=content,
@@ -293,17 +301,17 @@ class ChatCompletionViewSet(PluginViewSet):
 
     @staticmethod
     def _resolve_turn_id(
-        session_code: str, username: str, rm: Optional[ResourceManagerProtocol] = None, turn_id: str = ""
+        session_code: str, username: str, resource_manager: Optional[ResourceManagerProtocol] = None, turn_id: str = ""
     ) -> str:
         """用户消息已由 SDK 落库时，从最近一条 user 内容继承 turn_id。"""
         if turn_id:
             return turn_id
         if not session_code:
             return ""
-        agent_code = rm.get_agent_code() if rm else None
-        contents = SessionManager(username, resource_manager=rm, agent_code=agent_code).list_session_contents(
-            session_code
-        )
+        agent_code = resource_manager.get_agent_code() if resource_manager else None
+        contents = SessionManager(
+            username, resource_manager=resource_manager, agent_code=agent_code
+        ).list_session_contents(session_code)
         for item in reversed(contents):
             if item.get("role") != PromptRole.USER.value:
                 continue
@@ -317,7 +325,7 @@ class ChatCompletionViewSet(PluginViewSet):
         session_code: str,
         username: str,
         _input: str,
-        rm: Optional[ResourceManagerProtocol] = None,
+        resource_manager: Optional[ResourceManagerProtocol] = None,
         turn_id: str = "",
     ) -> str:
         """产出本轮 user-ai 回复的 turn_id（三分支，必须保序）。
@@ -333,7 +341,7 @@ class ChatCompletionViewSet(PluginViewSet):
         if turn_id:
             return turn_id
         if not _input:
-            return ChatCompletionViewSet._resolve_turn_id(session_code, username, rm, turn_id)
+            return ChatCompletionViewSet._resolve_turn_id(session_code, username, resource_manager, turn_id)
         return uuid.uuid4().hex
 
     def _handle_flow_agent(
@@ -372,7 +380,7 @@ class ChatCompletionViewSet(PluginViewSet):
         if session_code:
             flow_info = session_manager.get_flow_info(session_code)
             if flow_info.get("resume_pending"):
-                resume_task_id = flow_info.get("task_id") or ""
+                resume_task_id = flow_info.get("task_id")
                 if resume_task_id:
                     task_id = resume_task_id
                     resume_action = flow_info.get("resume_action") or ""
@@ -525,7 +533,8 @@ class ChatCompletionViewSet(PluginViewSet):
         sr.headers["Cache-Control"] = "no-cache"
         sr.headers["X-Accel-Buffering"] = "no"
         sr.headers["content-type"] = "text/event-stream"
-        sr.headers["Otel-Trace-Id"] = getattr(self.request._request, "otel_trace_id", "") or ""
+        trace_id = get_response_trace_id(self.request._request) or ""
+        sr.headers["Otel-Trace-Id"] = trace_id
         # 注入 session 相关响应标头，便于客户端获取会话信息和跳转链接
         if session_code:
             sr.headers["x-bkaidev-agent-session-code"] = session_code

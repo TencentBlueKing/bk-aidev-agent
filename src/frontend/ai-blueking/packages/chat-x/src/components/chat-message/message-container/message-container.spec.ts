@@ -86,6 +86,7 @@ vi.mock('../message-render/message-render.vue', () => ({
     name: 'MessageRender',
     props: {
       message: { type: Object, default: null },
+      messageTools: { type: Array, default: undefined },
       messageToolsStatus: { type: String, default: undefined },
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
@@ -100,6 +101,7 @@ vi.mock('../message-render/message-render.vue', () => ({
             'data-message-id': props.message?.messageId,
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
+            'data-user-tools-json': JSON.stringify(props.messageTools ?? []),
           },
           props.message?.content,
         );
@@ -1633,6 +1635,26 @@ describe('MessageContainer', () => {
 
       const tools = readTools(wrapper, 'data-update-tools-json');
       expect(tools.map(tool => tool.id)).toEqual(['like', 'unlike', 'collect']);
+    });
+
+    it('userMessageTools 应透传给 MessageRender 的 messageTools', async () => {
+      const userMessage = createUserMessage('u1', '你好', 1);
+      const hiddenTools = [
+        { id: 'edit', hidden: true },
+        { id: 'delete', hidden: true },
+      ];
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: [userMessage],
+          messageGroups: buildGroups([userMessage]),
+          userMessageTools: hiddenTools,
+        },
+      });
+      await nextTick();
+
+      const render = wrapper.find('.mock-message-render');
+      expect(JSON.parse(render.attributes('data-user-tools-json') ?? '[]')).toEqual(hiddenTools);
     });
   });
 });

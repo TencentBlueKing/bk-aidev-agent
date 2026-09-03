@@ -214,4 +214,56 @@ describe('useChatbotState', () => {
       expect(chatbotStyle.value.maxWidth).toBe('800px');
     });
   });
+
+  describe('claw agent toolbar hiding', () => {
+    const setAgentType = (agentType?: string) => {
+      const chatHelper = shallowRef(createMockChatHelper());
+      (chatHelper.value.agent.info as any).value = agentType === undefined ? {} : { agentType };
+      return chatHelper;
+    };
+
+    it('should hide rebuild/edit/delete when agentType is claw', () => {
+      const params = createParams({ chatHelper: setAgentType('claw'), props: {} as ChatBotProps });
+      const { effectiveMessageTools, effectiveUpdateTools, effectiveUserMessageTools } = useChatbotState(params);
+      expect(effectiveMessageTools.value).toEqual([{ id: 'rebuild', hidden: true }]);
+      expect(effectiveUpdateTools.value).toEqual([{ id: 'delete', hidden: true }]);
+      expect(effectiveUserMessageTools.value).toEqual([
+        { id: 'edit', hidden: true },
+        { id: 'delete', hidden: true },
+      ]);
+    });
+
+    it('should prepend claw hidden flags so they take precedence over consumer tools', () => {
+      const params = createParams({
+        chatHelper: setAgentType('claw'),
+        props: {
+          messageTools: [{ id: 'rebuild', name: '重新生成' }],
+          updateTools: [{ id: 'delete', name: '删除' }],
+        } as ChatBotProps,
+      });
+      const { effectiveMessageTools, effectiveUpdateTools } = useChatbotState(params);
+      expect(effectiveMessageTools.value?.[0]).toEqual({ id: 'rebuild', hidden: true });
+      expect(effectiveUpdateTools.value?.[0]).toEqual({ id: 'delete', hidden: true });
+    });
+
+    it('should pass through consumer tools when agentType is single', () => {
+      const messageTools = [{ id: 'save', name: '保存' }];
+      const params = createParams({
+        chatHelper: setAgentType('single'),
+        props: { messageTools } as ChatBotProps,
+      });
+      const { effectiveMessageTools, effectiveUpdateTools, effectiveUserMessageTools } = useChatbotState(params);
+      expect(effectiveMessageTools.value).toEqual(messageTools);
+      expect(effectiveUpdateTools.value).toBeUndefined();
+      expect(effectiveUserMessageTools.value).toBeUndefined();
+    });
+
+    it('should not hide tools when agentType is absent', () => {
+      const params = createParams({ chatHelper: setAgentType(), props: {} as ChatBotProps });
+      const { effectiveMessageTools, effectiveUpdateTools, effectiveUserMessageTools } = useChatbotState(params);
+      expect(effectiveMessageTools.value).toBeUndefined();
+      expect(effectiveUpdateTools.value).toBeUndefined();
+      expect(effectiveUserMessageTools.value).toBeUndefined();
+    });
+  });
 });

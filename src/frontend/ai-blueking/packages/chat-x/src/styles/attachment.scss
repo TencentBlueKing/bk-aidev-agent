@@ -1,0 +1,23 @@
+// 附件项共用的删除徽标：图片项与文件项在设计稿中是同一枚徽标，
+// 抽为 mixin 保证两者视觉与 hover 行为不会各自漂移。
+// $parent 为宿主项的类名，用于生成「宿主 hover 才显形」的规则。
+@mixin delete-badge($parent) {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
+  color: #fff;
+  cursor: pointer;
+  background: #313238;
+  border: 1px solid #fff;
+  border-radius: 50%;
+
+  #{$parent}:hover & {
+    display: flex;
+  }
+}

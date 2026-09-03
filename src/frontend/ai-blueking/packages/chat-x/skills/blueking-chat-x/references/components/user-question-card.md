@@ -2,7 +2,7 @@
 
 > 能力域：Agent 能力 ｜ 导入：`import { UserQuestionCard } from '@blueking/chat-x'` ｜ since 1.0.0
 
-渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。源码位置：src/components/chat-message/interrupt-message/user-question/user-question-card.vue。
+渲染 UserQuestion 中断的待回答面板：一次只展示一题，标题栏提供题号切换， Footer 展示已完成进度；支持单选自动跳下一题、多选/Others、完成与跳过。 源码位置：src/components/chat-message/interrupt-message/user-question/user-question-card.vue。
 
 **关联**：interrupt-message（outcome.success 时挂载 UserQuestionAnsweredCard 回显回答）、chat-container（检测最近待回答 UserQuestion 并把 UserQuestionCard 放在输入区上方）、interrupt（定义 UserQuestionInterrupt 与 UserQuestionResume 协议）
 
@@ -29,6 +29,7 @@
 - **自定义作答形态**：通过 `#question` slot 可替换默认选择题，渲染任意表单；作答有效时调用 `setAnswer` 回传 `UserQuestionAnswerItem`，无效时传 `undefined`。
 - **完成校验**：所有题目均已作答（`setAnswer` 收到有效答案）后才允许点击「完成」。
 - **跳过**：点击「跳过」返回 `status: 'cancelled'` 与空 `answers`。
+- **提交 loading**：完成/跳过为同步 `onResume`，组件无法在回调内获知请求结果。点击后当前按钮进入 loading、另一按钮禁用，并忽略重复点击；待后台刷新使 `UserQuestionCard` 卸载后状态随实例销毁。
 - **输入框发送**：存在待回答 UserQuestion 时，用户也可在 `ChatInput` 直接发送；`ChatContainer` 会调用 `onSendMessage` 并在第三参数附带与「跳过」等价的 skip `payload` 及 `interrupt`，输入框内容不会自动清空。
 
 ## 数据协议
@@ -141,7 +142,7 @@ const payload = {
 />
 ```
 
-- 卡片内「完成 / 跳过」→ `onInterruptResume(payload, interrupt)`
+- 卡片内「跳过 / 完成」→ `onInterruptResume(payload, interrupt)`（Footer 右置，跳过在前、完成在后）
 - 输入框直接发送 → `onSendMessage(content, docSchema, { interrupt, payload })`，其中 `payload` 由 `buildSkipResumePayload(interrupt)` 生成（`status: 'cancelled'`）
 
 ## 工具函数 buildSkipResumePayload
@@ -183,6 +184,8 @@ const payload = buildSkipResumePayload(interrupt);
 ```
 
 `ChatContainer` 提供同名 `#interruptQuestion` slot，参数与 `#question` 一致，透传自输入区上方的 `UserQuestionCard`。
+
+> **跳过按钮禁用态**：`disabled` 时文字与图标同步变灰（`currentColor` / `#c4c6cc`）。
 
 ## API
 

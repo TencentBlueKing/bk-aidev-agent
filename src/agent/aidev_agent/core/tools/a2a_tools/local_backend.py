@@ -150,7 +150,9 @@ class LocalBackend:
             raise
 
     # ==================== 内部方法 ====================
-    def _prepare_session(self, rm: Any, agent_name: str, session_code: str, message: str, executor: str) -> list[dict]:
+    def _prepare_session(
+        self, resource_manager: Any, agent_name: str, session_code: str, message: str, executor: str
+    ) -> list[dict]:
         """准备平台 session：创建、保存用户输入、加载历史。
 
         执行流程：
@@ -161,11 +163,11 @@ class LocalBackend:
 
         返回的平台原始上下文列表（``session_context_data``）将通过
         ``ctx.session_context_data`` 传入 ``ChatCompletionAgent.build(ctx)``，
-        复用 ``ChatAgentBuilder.build_chat_history`` → ``convert_history_to_messages``
+        复用 ``ChatAgentBuilder.build_chat_history`` → ``convert_chat_history_to_messages``
         管道完成转换，无需在本层重复实现。
 
         Args:
-            rm: resource_manager 实例
+            resource_manager: resource_manager 实例
             agent_name: Agent 名称
             session_code: 会话标识
             message: 用户输入消息
@@ -178,7 +180,7 @@ class LocalBackend:
 
         headers = {"X-BKAIDEV-USER": executor}
         session_type = "dev" if settings.BKPAAS_ENVIRONMENT.lower() in {"dev", "development"} else "agent"
-        rm.get_or_create_session(
+        resource_manager.get_or_create_session(
             session_code=session_code,
             session_name=f"local-{agent_name}-session",
             protocol_version="v2",
@@ -186,15 +188,15 @@ class LocalBackend:
             session_type=session_type,
             headers=headers,
         )
-        rm.update_session_status(session_code, SessionsStatus.RUNNING.value)
+        resource_manager.update_session_status(session_code, SessionsStatus.RUNNING.value)
 
-        rm.save_session_content(
+        resource_manager.save_session_content(
             session_code=session_code,
             role="user",
             content=message,
         )
 
-        context = rm.get_chat_session_context(session_code) or []
+        context = resource_manager.get_chat_session_context(session_code) or []
         session_context_data = [each for each in context if each.get("role", "") != "system"]
 
         return session_context_data

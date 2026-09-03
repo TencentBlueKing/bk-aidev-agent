@@ -5,7 +5,6 @@
     :style="{
       '--resize-main-width': resizeMainWidth,
       '--resize-aside-width': resizeAsideWidthVar,
-      borderTopColor: isCollapse ? 'transparent' : '#eaebf0',
     }"
   >
     <div
@@ -186,6 +185,7 @@
             :on-user-shortcut-confirm="onUserShortcutConfirm"
             :render-mode="renderMode"
             :update-tools="updateTools"
+            :user-message-tools="userMessageTools"
             @stop-streaming="emits('stopStreaming')"
           >
             <template #group="{ group }">
@@ -497,11 +497,14 @@
     },
   });
 
-  // 全屏时 tippy 默认挂 body 会跑出全屏层，统一把 appendTo 切到全屏容器再注入给子组件
-  const commonTippyOptions = computed<AITippyProps>(() => ({
-    ...props.commonTippyOptions,
-    appendTo: isFullScreen.value && fullScreenRef.value ? fullScreenRef.value : props.commonTippyOptions?.appendTo,
-  }));
+  // 全屏时 tippy 默认挂 body 会跑出全屏层，此时才强制把 appendTo 切到全屏容器；
+  // 非全屏原样透传，外部未传时不写入 appendTo 字段，避免 undefined 覆盖各浮层组件自身的挂载点默认值
+  const commonTippyOptions = computed<AITippyProps>(() => {
+    if (isFullScreen.value && fullScreenRef.value) {
+      return { ...props.commonTippyOptions, appendTo: fullScreenRef.value };
+    }
+    return { ...props.commonTippyOptions };
+  });
   useCommonTippyProvider({ tippyOptions: commonTippyOptions });
 
   const {
@@ -770,7 +773,6 @@
     height: 100%;
     font-size: var(--ai-font-size, 12px);
     border: none;
-    border-top: 1px solid transparent;
 
     &-loading {
       display: flex;
@@ -805,6 +807,13 @@
         gap: 4px;
         align-items: center;
         justify-content: center;
+
+        .ai-execution-summary-icon {
+          flex-shrink: 0;
+          width: 16px;
+          height: 16px;
+          font-size: 16px;
+        }
 
         &-text {
           max-width: 100px;

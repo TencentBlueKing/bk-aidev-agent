@@ -9,12 +9,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
 from logging import getLogger
 
 from aidev_agent.enums import ChatContentStatus, PromptRole, StreamEventType
-from aidev_agent.pydantic_models import ExecuteKwargs
+from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
+from aidev_agent.services.resume_events import uses_resume_event_stream
 
 # OpenTelemetry 是可选 extras（pip install aidev-bkplugin[opentelemetry]）。
 # 未安装时 trace context 注入降级为 no-op，其余流程不受影响。
@@ -75,6 +77,9 @@ class AgentExecutor:
                 return generator
             return self.wrap_generator(generator, session_code, turn_id=turn_id)
         result = agent_instance.execute(execute_kwargs)
+        if uses_resume_event_stream(getattr(agent_instance, "resource_manager", None), execute_kwargs):
+            # The internal AG-UI producer already persisted/finalized this response.
+            return result
         # 非流式 ainvoke 不经过 AG-UI 事件分发，必须显式写回 assistant
         self.session_manager.save_ai_response(session_code, result, turn_id=turn_id)
         event_handler = getattr(agent_instance, "event_handler", None)
@@ -91,6 +96,7 @@ class AgentExecutor:
         session_manager: SessionManager,
         *,
         turn_id: str = "",
+        consume_stream: Callable[[Iterator[str]], None] | None = None,
     ):
         """执行 agent 直至结束；会话终态由 Agent 流完成回调统一写入。"""
         # 后台 drain（for _ in out: pass，无 SSE 下游）：标记为 background_only，
@@ -109,8 +115,13 @@ class AgentExecutor:
             turn_id=turn_id,
         )
         if execute_kwargs.stream:
-            for _ in out:
-                pass
+            try:
+                if consume_stream is not None:
+                    consume_stream(out)
+            finally:
+                # Channel errors must not leave the session writer half-consumed.
+                for _ in out:
+                    pass
         return out
 
     def wrap_generator(self, generator, session_code: str, *, turn_id: str = ""):
@@ -259,6 +270,10 @@ class AgentExecutor:
         execute_kwargs: ExecuteKwargs,
         channel_type: str | None = None,
         save_content: bool = True,
+        transient_system_prompt: str | None = None,
+        enable_query_clarification: bool | None = None,
+        temperature: float | None = None,
+        retry_strategy: str | None = None,
     ):
         """通过 ``thread_id`` 统一执行 ChatCompletion 并自动处理会话保存。
 
@@ -266,11 +281,17 @@ class AgentExecutor:
 
         :param channel_type: 调用渠道（如 ``api`` / ``popup`` / ``bkplugin`` / ``rtx``），
             透传到 SDK 用于 token usage 渠道分类；不传时按空处理（不上报渠道）。
+        :param transient_system_prompt: 仅参与本轮执行、不写入会话存储的系统提示词。
+        :param enable_query_clarification: 按调用渠道覆盖查询澄清开关；不传时沿用智能体配置。
+        :param temperature: 按调用渠道覆盖模型温度；不传时沿用智能体配置。
         """
         if not input_text:
             raise ValueError("input_text is required when using thread_id")
 
-        builder = AgentBuilder(username=username)
+        builder_kwargs = {"username": username, "temperature": temperature}
+        if retry_strategy is not None:
+            builder_kwargs["retry_strategy"] = retry_strategy
+        builder = AgentBuilder(**builder_kwargs)
         agent_instance, session_code = builder.by_thread_id(
             thread_id=thread_id,
             input_text=input_text,
@@ -278,6 +299,13 @@ class AgentExecutor:
             version=execute_kwargs.version,
             channel_type=channel_type,
         )
+        if transient_system_prompt:
+            agent_instance.chat_history.insert(
+                0,
+                ChatPrompt(role=PromptRole.SYSTEM.value, content=transient_system_prompt),
+            )
+        if enable_query_clarification is not None:
+            agent_instance.knowledge_query_options.enable_query_clarification = enable_query_clarification
         turn_id = builder.turn_id
         execute_kwargs.session_code = session_code
         if hasattr(execute_kwargs, "turn_id"):

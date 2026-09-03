@@ -1,17 +1,23 @@
 [project]
 name = "aidev-bkplugin"
-version = "2.2.1post1"
+version = "2.2.2rc28"
 description = "AiDev Agent Bkplugin builtin functions"
 readme = "readme.md"
 requires-python = "<3.12,>=3.11"
 dependencies = [
-    "aidev-agent>=2.2.1post1",
+    "aidev-agent>=2.2.2rc28",
     "blueapps>=4.15.1, <5.0",
     "django>=4.2.28,<5.0",
 ]
 
+[project.optional-dependencies]
+opentelemetry = [
+    "aidev-agent[opentelemetry]>=2.2.2rc17",
+]
+
 [dependency-groups]
 dev = [
+    "aidev-agent[opentelemetry]>=2.2.2rc28",
     "pytest>=7.4.4,<9",
     "pytest-cov>=4.1.0,<4.2.0",
     "pytest-mock>=3.14.0",

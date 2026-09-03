@@ -259,6 +259,11 @@ export class FetchClient {
       headers.set('Accept', 'text/event-stream');
     }
 
+    // multipart 必须由浏览器带 boundary；默认 application/json 会破坏 FormData
+    if (body instanceof FormData) {
+      headers.delete('Content-Type');
+    }
+
     if (body !== undefined && body !== null) {
       if (requestConfig.transformRequest) {
         body = requestConfig.transformRequest(body, getValue(requestConfig.headers)) as BodyInit | null | undefined;

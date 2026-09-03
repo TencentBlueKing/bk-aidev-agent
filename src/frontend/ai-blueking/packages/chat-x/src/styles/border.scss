@@ -1,14 +1,21 @@
-@mixin linear-gradient-border($angle: 145deg, $color1: #b8c6ec, $color2: #e3d2e3) {
+@mixin linear-gradient-border($angle: 145deg, $color1: #b8c6ec, $color2: #e3d2e3, $width: 1px) {
   position: absolute;
   inset: 0;
   z-index: 2;
-  padding: 1px;
+  box-sizing: border-box; // padding 计入尺寸，保证描边稳定为 $width（默认 1px）
+  padding: $width;
   pointer-events: none;
   content: '';
-  background: linear-gradient(145deg, $color1 0%, $color2 100%);
-  border-radius: 8px;
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
+  background: linear-gradient($angle, $color1 0%, $color2 100%);
+  border-radius: inherit;
+  // 必须用 longhand。lightningcss 压缩 mask 简写时会：
+  // 1) 丢掉 mask-composite: exclude
+  // 2) 把 -webkit-mask-composite 排到 -webkit-mask 简写之前
+  // 简写会重置 composite 为 add，中间挖空失败，渐变铺满整块。
+  -webkit-mask-image: linear-gradient(#fff 0 0), linear-gradient(#fff 0 0);
+  -webkit-mask-clip: content-box, border-box;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#fff 0 0), linear-gradient(#fff 0 0);
+  mask-clip: content-box, border-box;
   mask-composite: exclude;
 }

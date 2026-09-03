@@ -3,13 +3,17 @@ Django REST Framework implementation for aidev_wxbot.
 """
 
 import json
-import threading
 import time
 import uuid
+from dataclasses import dataclass
 from logging import getLogger
+from urllib.parse import urlsplit
 
 from aidev_agent.packages.resource_manager import resource_manager
 from aidev_agent.services.messages_handler import ConsumerPreemptedError
+from aidev_bkplugin.services.agent_helpers import AgentHelper
+from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.execution import get_agent_executor
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -19,8 +23,27 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from .constants import EMPTY_INPUT_PROMPT, GROUP_CHAT_TYPE, NEW_CONVERSATION_CMDS, WRONG_MENTION_PROMPT
-from .context import ContextGenerator, LlmChunkMsg, WxWorkAiBotContext, stream_msg, text_msg
+from .channel_config import find_rtx_channel, get_channel_config
+from .constants import (
+    EMPTY_INPUT_PROMPT,
+    GROUP_CHAT_TYPE,
+    HELP_CMDS,
+    HELP_REPLY,
+    NEW_CONVERSATION_CMDS,
+    STOP_CMDS,
+    STOP_NO_ACTIVE_REPLY,
+    WRONG_MENTION_PROMPT,
+)
+from .context import (
+    ContextGenerator,
+    LlmChunkMsg,
+    WxWorkAiBotContext,
+    _escape_markdown_text,
+    _normalize_url,
+    stream_msg,
+    text_msg,
+)
+from .database import database_connection_scope
 from .decryption import WXBizJsonMsgCrypt
 from .models import AgentSession
 from .strategies import resolve_strategy
@@ -29,6 +52,16 @@ from ..context.message import MsgType
 from ..utils.rabbitmq import rabbitmq_client
 
 logger = getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class WxBotAgentRequest:
+    """已完成企微消息校验、可交给 Agent 的请求。"""
+
+    content: str
+    stream_id: str
+    username: str
+    group_id: str
 
 
 class WxAiBotViewSet(ViewSet):
@@ -47,11 +80,10 @@ class WxAiBotViewSet(ViewSet):
                 "contact": "智能体管理员",
             }
 
-        # 从AI开发平台获取配置
-        configs = [item for item in BkAiDevApi().retrieve_agent_channel_configs("rtx") if item["channel_type"] == "rtx"]
-        if not configs:
+        channel = find_rtx_channel(BkAiDevApi().retrieve_agent_channel_configs("rtx"))
+        if not channel:
             raise Exception("请先在AI开发平台配置企业智能机器人渠道")
-        config = configs[0]["config"] or {}
+        config = get_channel_config(channel)
         if not config.get("contact"):
             config["contact"] = "智能体管理员"
         return config
@@ -103,44 +135,63 @@ class WxAiBotViewSet(ViewSet):
             logger.exception(f"处理事件消息失败: {e}")
         return stream_msg("", True, uuid.uuid4().hex)
 
-    def _get_or_create_thread_id(self, group_id: str) -> str:
+    def _session_scope(self, group_id: str, username: str) -> str:
+        """会话轮换的作用域键，即 ``AgentSession`` 这张表的主键。
+
+        回调按群共享一个 thread_id；长连接覆写为按人，见其子类说明。
+        """
+        return group_id
+
+    def _get_or_create_thread_id(self, scope: str) -> str:
         """
         获取或创建thread_id
 
         Args:
-            group_id: 群组ID
+            scope: 会话作用域键，由 ``_session_scope`` 给出
 
         Returns:
             str: thread_id
         """
         try:
             # 尝试获取现有会话
-            agent_session = AgentSession.objects.get(group_id=group_id)
+            agent_session = AgentSession.objects.get(group_id=scope)
 
             # 检查会话是否有效（30分钟内）
             if agent_session.is_session_valid(timeout_minutes=30):
-                logger.info(f"group_id:{group_id} 使用现有会话 thread_id:{agent_session.thread_id}")
+                # 每条消息都会命中，放 INFO 没有信息量
+                logger.debug(f"scope:{scope} 使用现有会话 thread_id:{agent_session.thread_id}")
                 # 更新最后会话时间
                 agent_session.update_session()
                 return agent_session.thread_id
             else:
                 # 会话已过期，生成新的thread_id
-                new_thread_id = f"{group_id}_{int(time.time())}"
+                new_thread_id = f"{scope}_{int(time.time())}"
                 agent_session.update_session(thread_id=new_thread_id)
-                logger.info(f"group_id:{group_id} 会话已过期，生成新的 thread_id:{new_thread_id}")
+                logger.info(f"scope:{scope} 会话已过期，生成新的 thread_id:{new_thread_id}")
                 return new_thread_id
 
         except AgentSession.DoesNotExist:
             # 创建新会话
-            new_thread_id = f"{group_id}_{int(time.time())}"
-            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
-            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+            new_thread_id = f"{scope}_{int(time.time())}"
+            AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
             return new_thread_id
 
     def _reply_text(self, payload: dict) -> dict:
         """
         处理文本消息，启动异步 AI 请求线程并立即返回流式占位响应。
         """
+        response, request = self.prepare_agent_request(payload)
+        if response is not None:
+            return response
+        if request is None:
+            return stream_msg("服务暂时不可用", True, "")
+        if not self._start_async_processing(request.content, request.stream_id, request):
+            return stream_msg("当前请求较多，请稍后重试", True, request.stream_id)
+        return stream_msg("正在思考中...", False, request.stream_id)
+
+    def prepare_agent_request(self, payload: dict) -> tuple[dict | None, WxBotAgentRequest | None]:
+        """解析企微文本消息，但不启动 Agent；长连接与 callback 共用。"""
         stream_id = ""
         try:
             # 提取并验证必要字段
@@ -160,19 +211,22 @@ class WxAiBotViewSet(ViewSet):
                 result, content = self._handle_single_chat(content, stream_id, current_context)
             # 如果需要立即返回（如提示信息）
             if result is not None:
-                return result
+                return result, None
             # 处理引用消息
             content = self._process_quote(payload, content)
-            # 启动异步处理
-            self._start_async_processing(content, stream_id, current_context)
-            return stream_msg("正在思考中...", False, stream_id)
+            return None, WxBotAgentRequest(
+                content=content,
+                stream_id=stream_id,
+                username=current_context.sender_id,
+                group_id=current_context.group_id,
+            )
 
         except (KeyError, AttributeError) as e:
             logger.error(f"[WxAiBot] 消息格式错误: {e}")
-            return stream_msg("消息格式错误", True, stream_id)
+            return stream_msg("消息格式错误", True, stream_id), None
         except Exception as e:
             logger.exception(f"[WxAiBot] 处理异常: {e}")
-            return stream_msg("服务暂时不可用", True, stream_id)
+            return stream_msg("服务暂时不可用", True, stream_id), None
 
     def _handle_single_chat(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> tuple[dict | None, str]:
         """
@@ -181,8 +235,8 @@ class WxAiBotViewSet(ViewSet):
         stripped = content.strip()
         if not stripped:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
-        if stripped in NEW_CONVERSATION_CMDS:
-            return self._new_conversation(context.group_id, stream_id), ""
+        if command := self._resolve_builtin_command(stripped, stream_id, context):
+            return command, ""
         return None, content
 
     def _handle_group_chat(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> tuple[dict | None, str]:
@@ -210,8 +264,8 @@ class WxAiBotViewSet(ViewSet):
         user_input = content[prefix_len:].strip()
         if not user_input:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
-        if user_input in NEW_CONVERSATION_CMDS:
-            return self._new_conversation(context.group_id, stream_id), ""
+        if command := self._resolve_builtin_command(user_input, stream_id, context):
+            return command, ""
         return None, user_input
 
     def _process_mention_fallback(
@@ -229,7 +283,64 @@ class WxAiBotViewSet(ViewSet):
         user_input = parts[1].strip()
         if not user_input:
             return stream_msg(EMPTY_INPUT_PROMPT, True, stream_id), ""
+        if command := self._resolve_builtin_command(user_input, stream_id, context):
+            return command, ""
         return None, user_input
+
+    def _resolve_builtin_command(self, user_input: str, stream_id: str, context: WxWorkAiBotContext) -> dict | None:
+        """命中内置命令则返回终态响应，否则返回 None 交给 Agent。
+
+        单聊、@机器人、未配置机器人名的兜底解析三条路径共用本入口，避免命令集
+        在某一条路径上漏掉。
+        """
+        if user_input in NEW_CONVERSATION_CMDS:
+            return self._new_conversation(context.group_id, context.sender_id, stream_id)
+        if user_input in HELP_CMDS:
+            return stream_msg(HELP_REPLY, True, stream_id)
+        if user_input in STOP_CMDS:
+            return self.stop_generation(context.group_id, context.sender_id, stream_id)
+        parts = user_input.split(maxsplit=1)
+        if parts and parts[0] in {"/title", "/web"}:
+            argument = parts[1].strip() if len(parts) == 2 else ""
+            return self._session_command(parts[0], argument, stream_id, context)
+        return None
+
+    def _session_command(self, command: str, argument: str, stream_id: str, context: WxWorkAiBotContext) -> dict:
+        """Inspect/rename only the last selected session; never rotate or create it."""
+        if command == "/title" and (not argument or len(argument) > 255 or any(c in argument for c in "\r\n")):
+            return stream_msg("用法：/title 新标题（1–255 个字符，单行）", True, stream_id)
+        if command == "/web" and argument:
+            return stream_msg("用法：/web（返回当前会话的 AI 小鲸地址）", True, stream_id)
+        try:
+            scope = self._session_scope(context.group_id, context.sender_id)
+            local_session = AgentSession.objects.get(group_id=scope)
+            manager = SessionManager(username=context.sender_id)
+            session_code = manager.generate_session_code(context.sender_id, manager.agent_code, local_session.thread_id)
+            if not manager.retrieve_session(session_code):
+                return stream_msg("当前没有可用会话，请先发送问题。", True, stream_id)
+            if command == "/title":
+                manager.update_session_name(session_code, argument)
+                content = f"会话标题已修改为：{_escape_markdown_text(argument)}"
+            else:
+                url = AgentHelper.build_session_detail_url(session_code, username=context.sender_id)
+                parsed = urlsplit(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                    return stream_msg("暂时无法获取 AI 小鲸地址，请联系管理员检查配置。", True, stream_id)
+                content = f"[在 AI 小鲸打开当前会话]({_normalize_url(url)})"
+            return stream_msg(content, True, stream_id)
+        except AgentSession.DoesNotExist:
+            return stream_msg("当前没有可用会话，请先发送问题。", True, stream_id)
+        except Exception as error:
+            logger.warning("event=wxbot_session_command_failed command=%s error_type=%s", command, type(error).__name__)
+            return stream_msg("会话操作未成功，请稍后重试或检查会话访问权限。", True, stream_id)
+
+    def stop_generation(self, group_id: str, username: str, stream_id: str) -> dict:
+        """中止该发起人正在生成的回复。
+
+        HTTP 回调没有进程内的活跃流登记（企微靠轮询取结果，进程间也不共享状态），
+        因此基类只能如实回复「没有正在生成的回复」；长连接服务覆写本方法接上登记簿。
+        """
+        return stream_msg(STOP_NO_ACTIVE_REPLY, True, stream_id)
 
     def _process_quote(self, payload: dict, content: str) -> str:
         """
@@ -252,7 +363,12 @@ class WxAiBotViewSet(ViewSet):
         logger.debug(f"[WxAiBot] 合并引用消息 | original_len={len(content)}, merged_len={len(merged)}")
         return merged
 
-    def _start_async_processing(self, content: str, stream_id: str, context: WxWorkAiBotContext) -> None:
+    def _start_async_processing(
+        self,
+        content: str,
+        stream_id: str,
+        context: WxWorkAiBotContext | WxBotAgentRequest,
+    ) -> bool:
         """
         启动异步线程处理 AI 请求。
 
@@ -261,16 +377,24 @@ class WxAiBotViewSet(ViewSet):
             stream_id: 流式响应 ID
             context: 消息上下文
         """
-        logger.debug(
-            f"[WxAiBot] 启动异步处理 | stream_id={stream_id}, content_len={len(content)}, sender={context.sender_id}"
-        )
+        username = context.username if isinstance(context, WxBotAgentRequest) else context.sender_id
+        logger.debug(f"[WxAiBot] 启动异步处理 | stream_id={stream_id}, content_len={len(content)}, sender={username}")
 
-        thread = threading.Thread(
-            target=self._process_ai_request_async,
-            args=(content, stream_id, context.sender_id, context.group_id),
-            daemon=True,
+        submitted = get_agent_executor().submit(
+            self._process_ai_request_async,
+            content,
+            stream_id,
+            username,
+            context.group_id,
         )
-        thread.start()
+        if not submitted:
+            logger.warning(
+                "event=wxbot_agent_overload stream_id=%s sender=%s group_id=%s",
+                stream_id,
+                username,
+                context.group_id,
+            )
+        return submitted
 
     @staticmethod
     def _build_quoted_input(quote_content: str, user_content: str) -> str:
@@ -279,32 +403,35 @@ class WxAiBotViewSet(ViewSet):
             quote_content = quote_content.split("\n</think>\n\n", 1)[-1]
         return f"引用内容：「{quote_content}」\n\n{user_content}"
 
-    def _new_conversation(self, group_id: str, stream_id: str) -> dict:
+    def _new_conversation(self, group_id: str, username: str, stream_id: str) -> dict:
         """
         创建新会话
 
         Args:
             group_id: 群组ID
+            username: 发起人
             stream_id: 流式响应ID
 
         Returns:
             dict: 返回消息
         """
+        scope = self._session_scope(group_id, username)
         # 生成新的thread_id
-        new_thread_id = f"{group_id}_{int(time.time())}"
+        new_thread_id = f"{scope}_{int(time.time())}"
 
         try:
             # 尝试获取现有会话并更新
-            agent_session = AgentSession.objects.get(group_id=group_id)
+            agent_session = AgentSession.objects.get(group_id=scope)
             agent_session.update_session(thread_id=new_thread_id)
-            logger.info(f"group_id:{group_id} 更新会话 thread_id:{new_thread_id}")
+            logger.info(f"scope:{scope} 更新会话 thread_id:{new_thread_id}")
         except AgentSession.DoesNotExist:
             # 创建新会话
-            AgentSession.objects.create(group_id=group_id, thread_id=new_thread_id, last_session_time=timezone.now())
-            logger.info(f"group_id:{group_id} 创建新会话 thread_id:{new_thread_id}")
+            AgentSession.objects.create(group_id=scope, thread_id=new_thread_id, last_session_time=timezone.now())
+            logger.info(f"scope:{scope} 创建新会话 thread_id:{new_thread_id}")
 
         return stream_msg("已创建新会话，请输入咨询内容", True, stream_id)
 
+    @database_connection_scope()
     def _process_ai_request_async(self, content: str, stream_id: str, username: str, group_id: str):
         """异步处理 AI 请求：根据 agent_type 选择策略，执行并桥接到 RabbitMQ。
 
@@ -313,7 +440,7 @@ class WxAiBotViewSet(ViewSet):
         """
         try:
             logger.debug(f"[WxAiBot] 发送至Agent | stream_id:{stream_id}, content_len={len(content)}")
-            thread_id = self._get_or_create_thread_id(group_id)
+            thread_id = self._get_or_create_thread_id(self._session_scope(group_id, username))
             strategy = resolve_strategy(username)
             strategy.execute(
                 content=content,
@@ -324,8 +451,15 @@ class WxAiBotViewSet(ViewSet):
                 rabbitmq_client=rabbitmq_client,
             )
         except ConsumerPreemptedError:
-            # 消费者被抢占是框架正常行为，静默处理，不返回错误给用户
-            logger.debug(f"stream_id:{stream_id} consumer 被新请求抢占，当前请求终止")
+            logger.info("event=wxbot_stream_preempted stream_id=%s group_id=%s", stream_id, group_id)
+            try:
+                LlmChunkMsg(
+                    content="当前会话已有新请求，原请求已结束",
+                    is_finish=True,
+                    stream_id=stream_id,
+                ).append_to_cache(rabbitmq_client)
+            except Exception as cache_e:
+                logger.error(f"stream_id:{stream_id} 写入抢占终态失败: {cache_e}")
         except Exception as e:
             logger.exception(f"stream_id:{stream_id} 异步处理AI请求失败: {e}")
             try:

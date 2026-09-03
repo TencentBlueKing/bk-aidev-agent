@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 2s
+  evaluation_interval: 2s
+
+scrape_configs:
+  - job_name: aidev-agent-otel
+    static_configs:
+      - targets: ["otel-collector:8889"]

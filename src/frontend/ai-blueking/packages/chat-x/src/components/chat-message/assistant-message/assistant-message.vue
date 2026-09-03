@@ -18,23 +18,23 @@
       </slot>
     </div>
     <!-- 工具调用 -->
-    <template v-if="toolCalls && toolCalls.length > 0">
-      <template
+    <div
+      v-if="toolCalls && toolCalls.length > 0"
+      class="ai-assistant-message-toolcalls"
+    >
+      <ToolCallRender
         v-for="toolCall in toolCalls"
         :key="toolCall.id"
-      >
-        <ToolCallRender
-          :status="
-            !toolCall.toolMessage
-              ? MessageStatus.Pending
-              : toolCall.toolMessage.error
-                ? MessageStatus.Error
-                : (toolCall.toolMessage.status ?? status)
-          "
-          :tool-call="toolCall"
-        />
-      </template>
-    </template>
+        :status="
+          !toolCall.toolMessage
+            ? MessageStatus.Pending
+            : toolCall.toolMessage.error
+              ? MessageStatus.Error
+              : (toolCall.toolMessage.status ?? status)
+        "
+        :tool-call="toolCall"
+      />
+    </div>
     <!-- 生成文件产物 -->
     <MessageArtifacts
       v-if="artifacts && artifacts.length > 0"
@@ -83,6 +83,14 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      width: 100%;
+    }
+
+    // 多条工具调用之间保持 8px 间距（设计稿），不受外层 12px 间距影响
+    &-toolcalls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
       width: 100%;
     }
 

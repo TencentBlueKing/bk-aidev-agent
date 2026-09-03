@@ -118,6 +118,28 @@ describe('AIHeader aside toggle', () => {
     expect(wrapper.emitted('toggle-aside')).toHaveLength(1);
   });
 
+  it('should add is-aside-expanded on header when aside is expanded', () => {
+    const wrapper = mount(AIHeader, {
+      props: {
+        asideCollapsed: false,
+        showAsideToggle: true,
+      },
+    });
+
+    expect(wrapper.find('.ai-header').classes()).toContain('is-aside-expanded');
+  });
+
+  it('should not add is-aside-expanded when aside is collapsed', () => {
+    const wrapper = mount(AIHeader, {
+      props: {
+        asideCollapsed: true,
+        showAsideToggle: true,
+      },
+    });
+
+    expect(wrapper.find('.ai-header').classes()).not.toContain('is-aside-expanded');
+  });
+
   it('should hide the toggle and divider when showAsideToggle is false', () => {
     const wrapper = mount(AIHeader, {
       props: {

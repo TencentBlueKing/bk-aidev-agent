@@ -5,7 +5,9 @@ import json
 import threading
 import time
 from contextvars import ContextVar
+from unittest.mock import MagicMock
 
+import aidev_agent.services.messages_handler.in_memory as in_memory_module
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
 import pytest
 from ag_ui.core import EventType, RunFinishedEvent
@@ -385,6 +387,19 @@ class TestInMemoryQueueMessageHandler:
         messages = handler.get(thread_id, timeout=1.0)
         assert len(messages) == 3
         assert messages == ["message1", "message2", "message3"]
+
+    def test_put_records_actual_handler_metrics(self, handler, monkeypatch):
+        publish_metric = MagicMock()
+        monkeypatch.setattr(in_memory_module, "record_message_publish_metrics", publish_metric)
+
+        handler.put("metric-thread", "message")
+
+        publish_metric.assert_called_once()
+        call = publish_metric.call_args.kwargs
+        assert call["handler_type"] == "inmemory"
+        assert call["messaging_system"] == "in_memory"
+        assert call["event_count"] == 1
+        assert call["message_sizes"][0] > 0
 
     def test_get_timeout(self, handler):
         """测试 get 超时"""
@@ -978,11 +993,13 @@ class TestInMemoryQueueMessageHandler:
         assert notified == []
         handler.release_consumer(helper.thread_id, consumer_id)
 
-    def test_producer_error_emits_terminal_events(self, handler):
+    def test_producer_error_emits_terminal_events(self, handler, monkeypatch):
         """producer 异常应形成完整终止事件对并同步分发。"""
         helper = GeneratorStreamingHelper(handler, thread_id="test_producer_error")
         dispatched = []
         completed = []
+        recorder = MagicMock()
+        monkeypatch.setattr(streaming_helper_module, "get_enabled_agent_metrics", lambda: recorder)
 
         def broken_generator():
             yield "chunk"
@@ -1000,6 +1017,39 @@ class TestInMemoryQueueMessageHandler:
         assert _event_types(result[1:]) == ["RUN_ERROR", "RUN_FINISHED"]
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
         assert completed == [True]
+        assert recorder.record_sse_event.call_count == 3
+
+    def test_sse_metrics_count_only_events_enqueued_for_delivery(self, handler, monkeypatch):
+        recorder = MagicMock()
+        monkeypatch.setattr(streaming_helper_module, "get_enabled_agent_metrics", lambda: recorder)
+        helper = GeneratorStreamingHelper(handler, thread_id="test_sse_metric_delivery")
+
+        helper._producer(iter(["chunk"]))
+
+        recorder.record_sse_event.assert_called_once_with(
+            {"aidev.message.handler.type": "inmemory", "messaging.system": "in_memory"}
+        )
+
+    def test_sse_metrics_count_cancel_terminal_events_not_discarded_chunk(self, handler, monkeypatch):
+        recorder = MagicMock()
+        monkeypatch.setattr(streaming_helper_module, "get_enabled_agent_metrics", lambda: recorder)
+        cancel_event = threading.Event()
+        cancel_event.set()
+
+        GeneratorStreamingHelper(handler, thread_id="test_sse_metric_cancel")._producer(
+            iter(["discarded"]), cancel_event=cancel_event
+        )
+
+        assert recorder.record_sse_event.call_count == 2
+
+    def test_sse_metric_failure_does_not_interrupt_stream(self, handler, monkeypatch):
+        recorder = MagicMock()
+        recorder.record_sse_event.side_effect = RuntimeError("metric backend unavailable")
+        monkeypatch.setattr(streaming_helper_module, "get_enabled_agent_metrics", lambda: recorder)
+
+        result = list(GeneratorStreamingHelper(handler, thread_id="test_sse_metric_failure").stream(iter(["chunk"])))
+
+        assert result == ["chunk"]
 
     def test_cancel_terminal_events_retry_after_partial_queue_failure(self, handler, monkeypatch):
         """取消终态第二帧首次入队失败时，只重试缺失帧且完成回调仅执行一次。"""

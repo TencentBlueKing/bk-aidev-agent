@@ -1,0 +1,4 @@
+.env
+.runtime/
+reports/
+__pycache__/

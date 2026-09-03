@@ -639,7 +639,7 @@ class TestDispatchCompressActivity:
         assert call_args[0][0] == "info"
         value = call_args[0][1]
         assert "messageId" in value
-        assert value["content"] == "已压缩上下文（历史对话、工具结果 3500 tokens）"
+        assert value["content"] == "上下文已自动压缩"
 
         # 2) InfoMessage 写入 state["messages"]（蛇形 message_id，完整 content）
         messages = ctx.state["messages"]
@@ -647,7 +647,7 @@ class TestDispatchCompressActivity:
         assert isinstance(messages[0], InfoMessage)
         assert messages[0].id == value["messageId"]
         assert messages[0].message_id == value["messageId"]
-        assert messages[0].content == "已压缩上下文（历史对话、工具结果 3500 tokens）"
+        assert messages[0].content == "上下文已自动压缩"
 
     @patch("aidev_agent.core.nodes.model.token_compression.conditional_dispatch_custom_event")
     def test_skips_when_no_compressed_items(self, mock_dispatch):

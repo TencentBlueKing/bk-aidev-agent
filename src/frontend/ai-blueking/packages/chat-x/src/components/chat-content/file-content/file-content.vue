@@ -1,52 +1,37 @@
 <template>
-  <div class="ai-files-content">
+  <div
+    class="ai-files-content"
+    :class="`is-${variant}`"
+  >
+    <!-- 设计稿：图片始终排在文件前方，两类各自成行 -->
     <div
-      v-for="file in files"
-      :key="file.file?.name"
-      class="file-content"
-      :class="{
-        'is-file-object': !isImage(file) || imageErrorMap[getFileKey(file)],
-      }"
+      v-if="imageItems.length"
+      class="ai-files-content-row is-images"
     >
-      <img
-        v-if="isImage(file) && !imageErrorMap[getFileKey(file)]"
-        :alt="file.filename || file.file?.name"
-        class="file-content-image"
-        :src="file.url || getFilePreviewUrl(file.file)"
-        @click="handlePreview(file)"
-        @error="handleImageError(file)"
+      <UploadImageItem
+        v-for="item in imageItems"
+        :key="item.key"
+        :has-error="item.hasError"
+        :name="item.name"
+        :readonly="readonly"
+        :src="item.src"
+        :status="item.file.status"
+        :variant="variant"
+        @delete="handleDeleteFile(item.file)"
+        @error="handleImageError(item.key)"
+        @preview="handlePreview(item.key)"
       />
-      <div
-        v-else-if="isImage(file) && imageErrorMap[getFileKey(file)]"
-        class="file-content-image image-error"
-      >
-        <ImageErrorIcon class="file-error-icon" />
-      </div>
-      <div
-        v-else
-        class="file-content-object"
-      >
-        <div class="file-description">
-          <DocumentIcon class="file-icon" />
-          <span class="file-name">
-            {{ file.filename || file.file?.name }}
-          </span>
-          <span class="file-type">
-            {{
-              file.file
-                ? getFileExtension(file.file)
-                : file.filename?.split('.').pop() || file.mimeType?.split('/').pop()
-            }}
-          </span>
-        </div>
-        <div class="file-size">
-          {{ formatFileSize(file.file) }}
-        </div>
-      </div>
-      <DeleteCircleIcon
-        v-if="!readonly"
-        class="file-delete-icon"
-        @click="handleDeleteFile(file)"
+    </div>
+    <div
+      v-if="fileItems.length"
+      class="ai-files-content-row is-files"
+    >
+      <UploadFileItem
+        v-for="item in fileItems"
+        :key="item.key"
+        :file="item.file"
+        :readonly="readonly"
+        @delete="handleDeleteFile(item.file)"
       />
     </div>
     <ImagePreview
@@ -58,165 +43,132 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, reactive, shallowRef } from 'vue';
+  import { computed, onBeforeUnmount, shallowReactive, shallowRef, watch } from 'vue';
 
-  import { DeleteCircleIcon, DocumentIcon, ImageErrorIcon } from '../../../icons';
-  import { type UploadFile } from '../../../types';
-  import { formatFileSize, getFileExtension, getFilePreviewUrl, isImageFile } from '../../../utils';
+  import { type UploadFile, type UploadFileVariant, UploadStatus } from '../../../types';
+  import { getUploadFileKey, getUploadFileName, splitUploadFiles } from '../../../utils';
   import ImagePreview from '../../image-preview/image-preview.vue';
+  import UploadFileItem from './upload-file-item.vue';
+  import UploadImageItem from './upload-image-item.vue';
 
   import type { ImageItem } from '../../../types/image';
 
   const emit = defineEmits<{
     (e: 'deleteFile', file: Partial<UploadFile>): void;
   }>();
-  const props = defineProps<{
-    files: Partial<UploadFile>[];
-    readonly?: boolean;
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      files: Partial<UploadFile>[];
+      readonly?: boolean;
+      variant?: UploadFileVariant;
+    }>(),
+    {
+      variant: 'input',
+    },
+  );
 
-  // 记录图片加载错误状态
-  const imageErrorMap = reactive<Record<string, boolean>>({});
+  // 图片加载失败：key -> true，失败项降级为错误占位且不进入预览列表
+  const imageErrorMap = shallowReactive<Record<string, boolean>>({});
 
-  const isImage = (file: Partial<UploadFile>) => {
-    if (file.url) {
-      return true;
+  // 本地 File 的 blob URL 按 key 缓存，避免每次渲染都新建；文件移除 / 组件卸载时回收
+  const objectUrlMap = new Map<string, string>();
+
+  const resolveImageSrc = (key: string, file: Partial<UploadFile>): string => {
+    if (file.url) return file.url;
+    if (!file.file) return '';
+    const cached = objectUrlMap.get(key);
+    if (cached) return cached;
+    const objectUrl = URL.createObjectURL(file.file);
+    objectUrlMap.set(key, objectUrl);
+    return objectUrl;
+  };
+
+  const revokeObjectUrls = (keepKeys?: Set<string>) => {
+    for (const [key, objectUrl] of objectUrlMap) {
+      if (keepKeys?.has(key)) continue;
+      URL.revokeObjectURL(objectUrl);
+      objectUrlMap.delete(key);
     }
-    return isImageFile(file.mimeType || file.file?.type);
   };
 
-  const getFileKey = (file: Partial<UploadFile>) => {
-    return file.url || file.file?.name || '';
-  };
-  const handleImageError = (file: Partial<UploadFile>) => {
-    imageErrorMap[getFileKey(file)] = true;
-  };
-  const handleDeleteFile = (file: Partial<UploadFile>) => {
-    emit('deleteFile', file);
-  };
+  const groups = computed(() => splitUploadFiles(props.files));
+
+  const imageItems = computed(() =>
+    groups.value.imageFiles.map(file => {
+      const key = getUploadFileKey(file);
+      return {
+        file,
+        hasError: !!imageErrorMap[key],
+        key,
+        name: getUploadFileName(file),
+        src: resolveImageSrc(key, file),
+      };
+    }),
+  );
+
+  const fileItems = computed(() =>
+    groups.value.otherFiles.map(file => ({
+      file,
+      key: getUploadFileKey(file),
+    })),
+  );
+
+  // post 刷新：等 DOM 用上新 src 后再回收旧 blob，避免 img 指向已失效地址触发 error
+  watch(imageItems, items => revokeObjectUrls(new Set(items.map(item => item.key))), { flush: 'post' });
+  onBeforeUnmount(() => revokeObjectUrls());
 
   const previewVisible = shallowRef(false);
   const previewIndex = shallowRef(0);
 
-  const imageFiles = computed(() => props.files.filter(f => isImage(f) && !imageErrorMap[getFileKey(f)]));
-
-  const previewImages = computed<(File | ImageItem | string)[]>(() =>
-    imageFiles.value
-      .map(f => {
-        if (f.url) return f.url;
-        if (f.file) return f.file;
-        return '';
-      })
-      .filter(Boolean),
+  // 仅加载成功的图片可预览，下标需与 previewImages 对齐
+  const previewItems = computed(() =>
+    imageItems.value.filter(
+      item =>
+        !item.hasError &&
+        item.src &&
+        item.file.status !== UploadStatus.Pending &&
+        item.file.status !== UploadStatus.Error,
+    ),
+  );
+  const previewImages = computed<ImageItem[]>(() =>
+    previewItems.value.map(item => ({ name: item.name, url: item.src })),
   );
 
-  const handlePreview = (file: Partial<UploadFile>) => {
-    const idx = imageFiles.value.indexOf(file);
-    if (idx < 0) return;
-    previewIndex.value = idx;
+  const handleImageError = (key: string) => {
+    imageErrorMap[key] = true;
+  };
+  const handleDeleteFile = (file: Partial<UploadFile>) => {
+    emit('deleteFile', file);
+  };
+  const handlePreview = (key: string) => {
+    const index = previewItems.value.findIndex(item => item.key === key);
+    if (index < 0) return;
+    previewIndex.value = index;
     previewVisible.value = true;
   };
 </script>
+
 <style lang="scss">
   .ai-files-content {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 8px;
     width: 100%;
 
-    .file-content {
-      position: relative;
+    &-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
 
-      .file-delete-icon {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        display: none;
-        width: 16px;
-        height: 16px;
-        font-size: 16px;
-        color: #4d4f56;
-        cursor: pointer;
-        outline: 1px solid transparent;
-        background-color: #fff;
-        border-radius: 50%;
+    // 消息已发送态：整体右对齐，图片间距按设计稿 10px
+    &.is-message {
+      .ai-files-content-row {
+        justify-content: flex-end;
       }
 
-      &:hover {
-        .file-delete-icon {
-          display: flex;
-          cursor: pointer;
-        }
-      }
-
-      &-image {
-        display: flex;
-        flex: 0 0 48px;
-        align-items: center;
-        justify-content: center;
-        width: 48px;
-        height: 48px;
-        cursor: zoom-in;
-        object-fit: contain;
-        border-radius: 4px;
-
-        &.image-error {
-          background: #fff0f0;
-          border: 1px solid #ea3636;
-          border-radius: 4px;
-
-          .file-error-icon {
-            width: 18px;
-            height: 18px;
-            color: #979ba5;
-          }
-        }
-      }
-
-      &-object {
-        display: flex;
-        flex: 1;
-        flex-direction: column;
-        justify-content: center;
-        max-width: 170px;
-        height: 48px;
-        padding: 4px 8px;
-        font-size: var(--ai-font-size, 12px);
-        background: #eaebf0;
-        border-radius: 4px;
-
-        .file-description {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-          width: 100%;
-          height: 20px;
-          color: #4d4f56;
-
-          .file-icon {
-            flex: 0 0 12px;
-            width: 12px;
-            height: 12px;
-            font-size: 12px; // 图标尺寸固定，不随 size 主题缩放
-          }
-
-          .file-name {
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-
-          .file-type {
-            font-size: var(--ai-font-size, 12px);
-            color: #4d4f56;
-          }
-        }
-
-        .file-size {
-          margin-left: 16px;
-          color: #979ba5;
-        }
+      .ai-files-content-row.is-images {
+        gap: 10px;
       }
     }
   }

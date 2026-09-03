@@ -10,7 +10,7 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 │  ai-blueking.vue - 组装各子组件、门面模式                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                        组件层 (Components)                        │
-│  ChatBot（~200 行纯组装层）、AIHeader - UI 渲染、用户交互响应       │
+│  ChatBot（composable 组装层）、AIHeader - UI 渲染、用户交互响应     │
 ├─────────────────────────────────────────────────────────────────┤
 │                  ChatBot Composables (ChatBot 内部拆分)            │
 │  useChatbotInit / useInterruptResume / useChatbotState           │
@@ -241,7 +241,7 @@ const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
 
 ## ChatBot 内部 Composable 架构
 
-ChatBot (`chat-bot.vue`) 采用 composable 拆分模式，`<script setup>` 仅 ~200 行，作为纯组装层。
+ChatBot (`chat-bot.vue`) 采用 composable 拆分模式：模板只组装 `ChatContainer`，`<script setup>` 负责接线（约 350 行），业务逻辑在 composable 中。
 
 ### 8 个 Composable 及职责
 

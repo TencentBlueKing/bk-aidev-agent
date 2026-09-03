@@ -13,10 +13,11 @@ import uuid
 from logging import getLogger
 from typing import Iterable
 
-from aidev_agent.enums import ChatContentStatus, PromptRole, SessionsStatus
+from aidev_agent.enums import ChannelType, ChatContentStatus, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ChatPrompt
+from aidev_agent.utils.tracing import get_current_trace_id
 from django.conf import settings
 
 from ..constants import AGUI_PROTOCOL_VERSION
@@ -25,6 +26,7 @@ from ..enums import PluginPollTaskState
 logger = getLogger(__name__)
 
 STALE_SESSION_THRESHOLD_SECONDS = 1800  # 30 分钟
+DEFAULT_SESSION_NAME = "新会话"
 
 
 class SessionManager:
@@ -44,6 +46,7 @@ class SessionManager:
         resource_manager: ResourceManagerProtocol | None = None,
     ):
         self.username = username
+        self.trace_id = get_current_trace_id() or ""
         self.agent_code = agent_code or settings.APP_CODE
         self.resource_manager = resource_manager or resource_manager_factory()
 
@@ -59,7 +62,13 @@ class SessionManager:
     def _user_headers(self) -> dict:
         return {"X-BKAIDEV-USER": self.username}
 
-    def get_or_create_by_session_code(self, session_code: str, session_name="新会话", is_temporary=None) -> str:
+    def get_or_create_by_session_code(
+        self,
+        session_code: str,
+        session_name=DEFAULT_SESSION_NAME,
+        is_temporary=None,
+        channel_type: str = ChannelType.POPUP.value,
+    ) -> str:
         """根据 ``thread_id`` 取回或创建 session_code（幂等）。
 
         使用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
@@ -69,19 +78,23 @@ class SessionManager:
             session_name=session_name,
             protocol_version=AGUI_PROTOCOL_VERSION,
             is_temporary=is_temporary,
-            channel_type="popup",
+            channel_type=channel_type,
             headers=self._user_headers(),
         )
         return session_code
 
-    def get_or_create_by_thread_id(self, thread_id: str) -> str:
+    def get_or_create_by_thread_id(
+        self,
+        thread_id: str,
+        channel_type: str = ChannelType.POPUP.value,
+    ) -> str:
         """根据 ``thread_id`` 取回或创建 session_code（幂等）。
 
         使用平台 get_or_create 幂等接口，替代 retrieve+create 两步操作。
         解决 falsy data 边界问题（原 retrieve 返回 data 为 null/空时跳过创建）。
         """
         session_code = self.generate_session_code(self.username, self.agent_code, thread_id)
-        return self.get_or_create_by_session_code(session_code)
+        return self.get_or_create_by_session_code(session_code, channel_type=channel_type)
 
     def save_content(
         self,
@@ -101,6 +114,8 @@ class SessionManager:
             data["extra"] = extra
         if turn_id:
             data["property"] = {"turn_id": turn_id}
+        if self.trace_id:
+            data.setdefault("property", {})["trace_id"] = self.trace_id
         client = self._client()
         result = client.api.create_chat_session_content(json=data, headers=self._user_headers())
         saved = result.get("data", {})
@@ -118,6 +133,24 @@ class SessionManager:
 
     def retrieve_session(self, session_code: str) -> dict:
         result = self._client().api.retrieve_chat_session(
+            path_params={"session_code": session_code},
+            headers=self._user_headers(),
+        )
+        return result.get("data") or {}
+
+    def update_session_name(self, session_code: str, session_name: str) -> None:
+        """Rename an existing session as its caller, without invoking AI rename."""
+        result = self._client().api.update_chat_session(
+            path_params={"session_code": session_code},
+            json={"session_name": session_name},
+            headers=self._user_headers(),
+        )
+        if (result.get("data") or {}).get("session_name") != session_name:
+            raise ValueError("Session title update was not confirmed")
+
+    def ai_rename(self, session_code: str) -> dict:
+        """按最新 user prompt 调平台生成会话名。"""
+        result = self._client().api.rename_chat_session(
             path_params={"session_code": session_code},
             headers=self._user_headers(),
         )
@@ -208,9 +241,10 @@ class SessionManager:
         *,
         input_text: str = "",
         turn_id: str = "",
+        channel_type: str = ChannelType.POPUP.value,
     ) -> tuple[str, str]:
         """取/建 session，必要时落库本轮 user，返回 ``session_code`` 与 ``turn_id``。"""
-        session_code = self.get_or_create_by_thread_id(thread_id)
+        session_code = self.get_or_create_by_thread_id(thread_id, channel_type=channel_type)
         if input_text:
             saved = self.save_content(
                 session_code=session_code,

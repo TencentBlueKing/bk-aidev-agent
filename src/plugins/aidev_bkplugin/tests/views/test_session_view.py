@@ -66,7 +66,10 @@ def test_list_without_pagination_returns_legacy_array():
     assert response.data == [_session("v2")]
     api.list_chat_session.assert_called_once_with(
         headers={"X-BKAIDEV-USER": "alice"},
-        params={"session_type": view.session_type, "protocol_version": AGUI_PROTOCOL_VERSION},
+        params={
+            "session_type": view.session_type,
+            "protocol_version": AGUI_PROTOCOL_VERSION,
+        },
     )
 
 
@@ -125,6 +128,38 @@ def test_list_pagination_params_invalid_fallback_to_default():
     )
 
 
+@pytest.mark.parametrize("pagination", [{}, {"page": "1", "page_size": "20"}])
+def test_api_session_list_keeps_api_channel(pagination):
+    class ApiSessionView(session_mod.ChatSessionViewSet):
+        # 与 OpenapiChatSessionViewSet 相同的渠道覆盖。
+        channel_type = "api"
+
+    api = MagicMock()
+    api.list_chat_session.return_value = {"data": []}
+    _view(ApiSessionView, api).list(_request(pagination))
+    assert api.list_chat_session.call_args.kwargs["params"]["channel_type"] == "api"
+
+
+@pytest.mark.parametrize("channel_type", ["popup", "api"])
+def test_session_creation_keeps_entry_channel(channel_type):
+    api = MagicMock()
+    api.create_chat_session.return_value = {"data": _session("new-session")}
+    view_class = type("SessionView", (session_mod.ChatSessionViewSet,), {"channel_type": channel_type})
+    _view(view_class, api).create(_request(data={"session_name": "new"}))
+    assert api.create_chat_session.call_args.kwargs["json"]["channel_type"] == channel_type
+
+
+@pytest.mark.parametrize("paginated", [False, True])
+def test_web_list_keeps_both_channels_returned_by_platform(paginated):
+    sessions = [_session("web"), _session("wecom")]
+    data = {"page": 1, "num_pages": 1, "count": 2, "results": sessions} if paginated else sessions
+    api = MagicMock()
+    api.list_chat_session.return_value = {"data": data}
+    response = _view(session_mod.ChatSessionViewSet, api).list(_request({"page": "1"} if paginated else {}))
+    assert response.data == data
+    assert "channel_type" not in api.list_chat_session.call_args.kwargs["params"]
+
+
 @pytest.mark.parametrize("run_id", ["run-current", None])
 def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_id):
     """每轮 stop 先清旧通知，并兼容不传 run_id 的旧前端。"""
@@ -163,6 +198,142 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
         headers={"X-BKAIDEV-USER": "alice"},
     )
     handler.mark_stopped.assert_not_called()
+
+
+def test_create_attaches_image_url_to_user_binary(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {
+        "data": {
+            "id": 34739,
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {
+                    "filename": "角色.png",
+                    "id": "files/角色.png",
+                    "mime_type": "image/png",
+                    "type": "binary",
+                    "url": "https://cdn/role.png",
+                },
+                {"type": "text", "text": "这个图片内容是啥？"},
+            ],
+        }
+    }
+    file_service = MagicMock()
+    file_service.get_download_url.return_value = {"download_url": "https://cdn/role.png"}
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [
+            {"filename": "角色.png", "id": "files/角色.png", "mime_type": "image/png", "type": "binary"},
+            {"type": "text", "text": "这个图片内容是啥？"},
+        ],
+    }
+    response = _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert sent["content"][0]["url"] == "https://cdn/role.png"
+    assert "url" not in sent["content"][1]
+    file_service.get_download_url.assert_called_once_with(
+        session_code="s1",
+        path="files/角色.png",
+        expires_in=session_mod.IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    )
+    assert response.data["content"][0]["url"] == "https://cdn/role.png"
+
+
+def test_create_skips_signing_for_text_only_message(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1, "content": "你好"}}
+    make_service = MagicMock()
+    monkeypatch.setattr(session_mod.ChatSessionViewSet, "_make_pv_file_service", make_service)
+
+    _view(session_mod.ChatSessionContentViewSet, api).create(
+        _request(data={"role": "user", "session_code": "s1", "content": "你好"})
+    )
+
+    make_service.assert_not_called()
+    api.create_chat_session_content.assert_called_once()
+
+
+def test_create_still_writes_when_image_url_sign_fails(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    file_service.get_download_url.side_effect = session_mod.SandboxFileError("boom")
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [{"type": "binary", "id": "files/角色.png", "mime_type": "image/png"}],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert "url" not in sent["content"][0]
+    api.create_chat_session_content.assert_called_once()
+
+
+def test_create_keeps_existing_image_url(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [
+            {
+                "type": "binary",
+                "id": "files/角色.png",
+                "mime_type": "image/png",
+                "url": "https://already/there",
+            }
+        ],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert sent["content"][0]["url"] == "https://already/there"
+    file_service.get_download_url.assert_not_called()
+
+
+def test_create_ignores_preview_url_when_download_url_missing(monkeypatch):
+    api = MagicMock()
+    api.create_chat_session_content.return_value = {"data": {"id": 1}}
+    file_service = MagicMock()
+    file_service.get_download_url.return_value = {"preview_url": "https://preview/html"}
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    payload = {
+        "role": "user",
+        "session_code": "s1",
+        "content": [{"type": "binary", "id": "files/角色.png", "mime_type": "image/png"}],
+    }
+    _view(session_mod.ChatSessionContentViewSet, api).create(_request(data=payload))
+
+    sent = api.create_chat_session_content.call_args.kwargs["json"]
+    assert "url" not in sent["content"][0]
 
 
 def test_stop_omits_producer_state_when_detection_fails(monkeypatch):

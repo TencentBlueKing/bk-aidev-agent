@@ -4,7 +4,7 @@
 
 聊天输入区，组合富文本输入、快捷指令、附件、引用、发送/停止等交互。 源码位置：src/components/chat-input/chat-input.vue。
 
-**关联**：shortcut-btns（底部附件区默认展示的快捷指令列表）、shortcut-btn（已选快捷指令以单按钮形式展示并可关闭）、shortcut-render（快捷指令含 components 时由外层唤起表单渲染）、chat-container（顶层聊天布局中作为输入区子组件）、cite-content（消息引用区展示选中的上下文片段）
+**关联**：shortcut-btns（底部附件区默认展示的快捷指令列表）、shortcut-btn（已选快捷指令以单按钮形式展示并可关闭）、shortcut-render（快捷指令含 components 时由外层唤起表单渲染）、chat-container（顶层聊天布局中作为输入区子组件）、model-selector（传入 models 后在发送按钮左侧默认展示模型选择器）、cite-content（消息引用区展示选中的上下文片段）
 
 ---
 
@@ -22,7 +22,7 @@
 ## 组件结构
 
 ```
-chat-input-container
+ai-chat-input-container（padding: 0 16px 16px，底部间距 16px）
 ├── slot#top（容器顶部，在输入框框体外侧）
 ├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）
@@ -33,6 +33,7 @@ chat-input-container
         ├── FileUploadBtn（仅当 supportUpload 为 true 时显示，在 slot#attachment 外部）
         ├── 分隔线（仅当 supportUpload 为 true 且有快捷指令时显示）
         ├── slot#attachment（默认：ShortcutBtns 或已选 ShortcutBtn + 关闭图标）
+        ├── slot#before-send（默认：传入 models 时渲染 ModelSelector）
         └── slot#send-icon（默认：发送/停止图标，仅替换图标，按钮容器保留）
 ```
 
@@ -78,15 +79,17 @@ chat-input-container
 
 ## 发送状态（messageStatus）
 
-`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
+`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空且没有附件时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
 
-| `messageStatus`               | 输入框有内容时按钮表现                                 | 输入框空时               |
+| `messageStatus`               | 输入框有内容或已有附件时按钮表现                       | 输入框空且无附件时       |
 | ----------------------------- | ------------------------------------------------------ | ------------------------ |
 | `complete` / `stop` / `error` | 蓝色发送按钮，点击触发 `onSendMessage`                 | 灰色禁用                 |
 | `streaming` / `pending` / `fetching` | 蓝色停止按钮（Loading 图标），点击触发 `onStopSending` | 蓝色停止按钮（仍可点击） |
 | `disabled`                    | 灰色禁用，点击无效                                     | 灰色禁用                 |
 
-> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则**已有上传附件时视为可发送**（纯附件消息无需输入文字）；再否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+
+> **纯附件消息**：只上传附件不输入文字时，`onSendMessage` 的 `content` 只含 `binary` 项，**不会**附带空文本段。
 
 ### onSendMessage 第三参数 options（UserQuestion 上下文）
 
@@ -178,9 +181,24 @@ const handleSendMessage = async (
 
 **渲染效果**（顶部引用区，点击右侧 × 关闭引用）
 
-## Prompt 模板（`/` 触发）
+## Skill 列表（`/` 触发）
 
-通过 `prompts` 传入字符串数组，用户在编辑器中输入 `/` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
+通过 `skills` 传入 Skill 列表，用户在编辑器中输入 `/` 唤出 [AiSkillList](/components/input/ai-skill-list) 菜单，支持按名称/编码模糊搜索，选择后以 Skill 标签嵌入编辑器。无 icon 或 icon 加载失败时展示首字母 fallback。已插入的 Skill 不会再出现在下拉菜单中（自动去重）。
+
+```vue
+<script setup lang="ts">
+  import type { ISkillListItem } from '@blueking/chat-x';
+
+  const skills: ISkillListItem[] = [
+    { skill_code: 'translate', skill_name: '翻译', description: '翻译文本', icon: '' },
+    { skill_code: 'summarize', skill_name: '总结', description: '总结内容', icon: 'https://example.com/icon.png' },
+  ];
+</script>
+```
+
+## Prompt 模板（`\` 触发）
+
+通过 `prompts` 传入字符串数组，用户在编辑器中输入 `\` 唤出 Prompt 菜单，支持模糊搜索，选择后自动填入编辑器：
 
 ```vue
 <script setup lang="ts">
@@ -301,15 +319,17 @@ const handleSendMessage = async (
 
 - 底部工具栏出现文件上传按钮（在快捷指令左侧）
 - 支持**点击选择**、**拖拽上传**、**粘贴上传**（Ctrl+V）
-- `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string }`
+- `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
+- **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 发送成功后，`uploadFiles` 自动清空
 
-**个数与大小校验（与 `FileUploadBtn` 分工）**：
+**个数、大小与格式校验（与 `FileUploadBtn` 分工）**：
 
-- 列表最多保留 **`MAX_UPLOAD_FILES`（3）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
-- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）**、或与已有文件重复的项会被跳过；若本轮有任意文件因此未加入列表，会在处理结束后弹出**同一条文案风格**的错误提示，汇总未成功添加的数量。
-- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限与重复校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
+- 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
+- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
+- **文件类型**：默认使用 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名列表）。系统文件选择框带 `accept` 过滤；选择后、拖拽、粘贴仍会再按扩展名校验，不支持的格式弹出「因格式不支持未添加」并不会入队。可通过 `accept` prop 覆盖（空字符串表示不限制）。
+- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限、重复校验与类型校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
 
 **发送内容格式**（有文件时）：
 
@@ -358,12 +378,12 @@ const handleSendMessage = async (
     messageStatus.value = MessageStatus.Stop;
   };
 
-  // 每次传入单个 File，需返回 { download_url: string }
-  const handleUpload = async (file: File) => {
+  // 一次选择多个文件只回调一次，按文件顺序返回结果
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json(); // ChatInputUploadResult[]
   };
 </script>
 ```
@@ -392,7 +412,7 @@ const handleSendMessage = async (
 
 ## 自定义占位符
 
-通过 `placeholder` 自定义占位符文案，支持多行（换行用 `\n`）：
+未传入 `placeholder` 时，组件会按 `skills` / `prompts` / `resources` 是否非空动态生成提示行。传入后完全覆盖，支持多行（换行用 `\n`）：
 
 ```vue
 <template>
@@ -478,6 +498,57 @@ const handleSendMessage = async (
 
 **渲染效果**（顶部自定义模型信息与中断提示）
 
+## 模型选择
+
+传入 `models` 后，会在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象。能力标签由组件依据 `property` 自动派生。
+
+```vue
+<template>
+  <ChatInput
+    v-model="inputValue"
+    v-model:selected-model="selectedModel"
+    :message-status="messageStatus"
+    :models="models"
+    :on-send-message="handleSendMessage"
+    @model-change="handleModelChange"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatInput, MessageStatus, type IModelOption, type TagSchema } from '@blueking/chat-x';
+
+  const inputValue = ref('');
+  // 选中值为 llm_name
+  const selectedModel = ref('GPT-4');
+  const messageStatus = ref(MessageStatus.Complete);
+  const models: IModelOption[] = [
+    { id: 1, llm_name: 'GPT-4', property: { support_thinking: true } },
+    { id: 2, llm_name: 'Claude 3', property: {} },
+  ];
+
+  const handleSendMessage = async (content: string, docSchema: TagSchema) => {
+    /* 发送时可读取 selectedModel.value */
+  };
+
+  const handleModelChange = (model: IModelOption) => {
+    console.log('切换模型:', model);
+  };
+</script>
+```
+
+也可通过 `#model-selector` 插槽完全自定义选择器，插槽参数为 `{ models, selectedModel }`：
+
+```vue
+<template>
+  <ChatInput v-model="inputValue" :models="models">
+    <template #model-selector="{ models, selectedModel }">
+      <span>当前：{{ selectedModel || '未选择' }}（共 {{ models.length }} 个）</span>
+    </template>
+  </ChatInput>
+</template>
+```
+
 ## Expose（模板引用）
 
 通过 `ref` 获取组件实例后可调用以下方法：
@@ -512,35 +583,45 @@ const handleSendMessage = async (
 | 属性名             | 类型                                                                       | 默认值   | 必填 | 说明                                                    |
 | ------------------ | -------------------------------------------------------------------------- | -------- | ---- | ------------------------------------------------------- |
 | modelValue         | `string \| TagSchema`                                                      | -        | ✅   | 编辑器的值，支持 `v-model`                              |
+| selectedModel      | `string`                                                                   | -        | -    | 当前选中模型的 `llm_name`，支持 `v-model:selected-model` |
 | messageStatus      | `MessageStatus`                                                            | -        | -    | 消息状态，控制按钮；输入为空时内部强制 `disabled`       |
 | cite               | `string`                                                                   | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区       |
-| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `/` 触发                          |
+| skills             | `ISkillListItem[]`                                                         | `[]`     | -    | Skill 列表，输入 `/` 触发，选中后插入 Skill 标签        |
+| prompts            | `string[]`                                                                 | `[]`     | -    | Prompt 模板列表，输入 `\` 触发                          |
 | resources          | `IAiSlashMenuItem[]`                                                       | `[]`     | -    | 资源列表，输入 `@` 触发，按 `type` 分组展示             |
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
+| models             | `IModelOption[]`                                                           | -        | -    | 可选模型列表，传入后在发送按钮左侧展示模型选择器        |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
-| placeholder        | `string`                                                                   | 见默认值 | -    | 编辑器占位符，支持多行                                  |
-| inputMaxHeight     | `number`                                                                   | `200`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
+| placeholder        | `string`                                                                   | 动态默认 | -    | 编辑器占位符，支持多行；未传时按 skills/prompts/resources 动态拼接 |
+| inputMaxHeight     | `number`                                                                   | `280`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
+| accept             | `string`                                                                   | `DEFAULT_UPLOAD_ACCEPT` | - | 文件选择框过滤类型，同时用于选择/拖拽/粘贴后的扩展名校验；空字符串表示不限制 |
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |
-| onUpload           | `(file: File) => Promise<{ download_url?: string }>`                       | -        | -    | 文件上传回调（每次单文件）                              |
+| onUpload           | `(files: File[]) => Promise<ChatInputUploadResult \| ChatInputUploadResult[]>` | -        | -    | 文件上传回调（一次选择批量传入）；上传中/失败附件会阻塞发送 |
 
 ### 默认占位符
 
+未传入 `placeholder` 时，根据当前 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
+
 ```
-输入 "/"唤出 Prompt
-输入"@"唤出工具
-通过 Shift + Enter 进行换行输入
+输入 "/" 唤出 Skill          // 仅当 skills 非空
+输入 "\" 唤出 Prompt         // 仅当 prompts 非空
+输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+通过 Shift + Enter 进行换行输入  // 始终显示
 ```
+
+显式传入 `placeholder`（含空字符串）时完全覆盖上述默认文案。三种列表都为空时，只显示换行提示。
 
 ### Events
 
 | 事件名            | 参数                                                                     | 触发时机                                                  |
 | ----------------- | ------------------------------------------------------------------------ | --------------------------------------------------------- |
 | update:modelValue | `(value: string \| TagSchema, selectedResourceList: IAiSlashMenuItem[])` | 编辑器值变化时触发；第二个参数为当前已选中的 `@` 资源列表 |
+| modelChange       | `(model: IModelOption)`                                                  | 用户切换模型时触发                                        |
 | selectShortcut    | `(shortcut: Shortcut)`                                                   | 点击底部快捷指令按钮                                      |
 | deleteShortcut    | -                                                                        | 点击已选快捷指令旁的关闭按钮                              |
 
@@ -553,6 +634,7 @@ const handleSendMessage = async (
 | input-header | -                                  | 框体内顶部，替换引用区（`CiteContent`）                    |
 | files        | `{ files: Partial<UploadFile>[] }` | 文件预览区                                                 |
 | attachment   | -                                  | 底部快捷指令区，`FileUploadBtn` 在其左侧，不受此 slot 影响 |
+| model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined }` | 发送按钮左侧模型选择区，默认渲染 ModelSelector             |
 | send-icon    | -                                  | 发送按钮内图标，按钮的点击逻辑和样式仍由组件控制           |
 
 ### Expose
@@ -575,18 +657,10 @@ const handleSendMessage = async (
 
 ## 类型定义
 
+> `MessageStatus` 完整取值见 [常量枚举](../../types/constants)。与输入区相关：`pending` / `streaming` / `fetching` → 停止按钮；`complete` / `completed` / `error` / `stop` → 发送；`disabled` → 置灰。
+
 ```typescript
 import type { UserMessage } from '@blueking/chat-x';
-
-// 消息状态
-enum MessageStatus {
-  Pending = 'pending', // 等待中（显示停止按钮）
-  Streaming = 'streaming', // 流式输出中（显示停止按钮）
-  Complete = 'complete', // 完成（显示发送按钮）
-  Error = 'error', // 错误（显示发送按钮）
-  Stop = 'stop', // 已停止（显示发送按钮）
-  Disabled = 'disabled', // 禁用（发送按钮置灰）
-}
 
 // 上传状态
 enum UploadStatus {
@@ -680,11 +754,11 @@ type OnSendMessage = (
     abortAICall();
   };
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json();
   };
 </script>
 ```

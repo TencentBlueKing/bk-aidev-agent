@@ -245,6 +245,7 @@ class FlowAgentViewSet(PluginViewSet):
 
         if task_id is None:
             raise ClientBlueException(message="task_id is required for node retry/skip")
+        task_id = int(task_id)
 
         try:
             # 1. 调用平台 API 执行节点操作（通过 PluginResourceManager 走 resource_manager 协议）
@@ -271,13 +272,13 @@ class FlowAgentViewSet(PluginViewSet):
                 session_code=session_code,
                 client=AgentHelper.get_client(),
                 username=username,
-                task_id=str(task_id),
+                task_id=task_id,
             )
 
             agent_instance = FlowAgentCompletionAgent(
                 resource_manager=resource_manager,
                 session_code=session_code,
-                task_id=str(task_id),
+                task_id=task_id,
                 resume_from_node=action_name,
                 poll_interval=poll_interval,
                 poll_timeout=poll_timeout,

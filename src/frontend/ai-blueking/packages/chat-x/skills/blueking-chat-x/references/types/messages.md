@@ -51,6 +51,10 @@ interface BaseMessage<T extends MessageType, C = string> {
   // 消息名称（可选）
   name?: string;
 
+  // 可选：消息创建时间，ISO 字符串或毫秒时间戳，由消息层（chat-helper）写入
+  // 用于 MessageTime 展示；缺省时不展示时间
+  createdAt?: number | string;
+
   // 消息属性（可选）
   property?: {
     extra?: {
@@ -141,6 +145,9 @@ enum MessageStatus {
   // 已完成
   Complete = 'complete',
 
+  // 已完成（与 Complete 同义，兼容协议/后端返回的 completed）
+  Completed = 'completed',
+
   // 已禁用
   Disabled = 'disabled',
 
@@ -166,6 +173,8 @@ enum MessageStatus {
   Success = 'success',
 }
 ```
+
+完整取值与说明见 [常量枚举 · MessageStatus](./constants#messagestatus)。
 
 ## 具体消息类型
 
@@ -203,11 +212,16 @@ type ToolCall = {
   function: FunctionCall;
 };
 
+// 调用类型：不填等价于 function
+type FunctionCallType = 'function' | 'mcp' | 'skill';
+
 type FunctionCall = {
   name: string;
   arguments: string;
   description?: string;
   mcpName?: string;
+  // 决定 ToolcallRender 头部前缀（调用工具 / 调用 MCP / 读取 Skill）
+  type?: FunctionCallType;
 };
 
 // 示例

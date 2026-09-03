@@ -444,6 +444,8 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 | `edit`   | 编辑 | 切换 `isEdit=true`，进入编辑模式             |
 | `delete` | 删除 | 无内置行为，需通过 `onAction` 外部处理       |
 
+可通过 `messageTools` 按 id 覆盖/追加，`{ id: 'edit', hidden: true }` 可隐藏内置项。
+
 ```vue
 <!-- 经 MessageRender 控制工具栏状态 -->
 <MessageRender
@@ -491,6 +493,7 @@ binaryFiles 有值 → 进入编辑模式（editContent 可为空）
 | content            | `string \| InputContent[]`                                                                 | 消息内容，字符串或含 text/binary 的数组                                   |
 | createdAt          | `number \| string`                                                                         | 消息创建时间，经 `MessageTools` 的 `#prepend` 插槽交给 `MessageTime` 渲染在工具图标左侧；无值时不展示 |
 | property           | `{ extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `extra.cite` / `shortcut` / `context`                |
+| messageTools       | `IToolBtn[]`                                                                               | 自定义用户消息工具组；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 |
 | messageToolsStatus | `MessageToolsStatus`                                                                       | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除                       |
 | onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`cite`/`delete` 需外部处理            |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>`                 | 普通消息编辑确认回调                                                      |

@@ -9,16 +9,13 @@ import uuid
 from typing import Any
 
 from ag_ui.core import EventType
+from langchain_core.messages import ToolMessage
 
-from aidev_agent.core.nodes.tool.approval_wrapper import is_approval_configured
+from aidev_agent.packages.interrupt_manager import is_approval_configured
 
 from .events import ExtendToolCallResultEvent
 from .types import ExtendFunctionCall, ExtendToolCall
-
-# 仅有tool_calls、无文本输出的 assistant 消息使用的占位符 content。
-# 首帧 MESSAGES_SNAPSHOT（历史还原）与 interrupt 终态回放需将其归一化为 ""，
-# 与前端读接口（session_content / session）的展示语义保持一致。
-TOOL_CALLING_PLACEHOLDER = "正在调用工具..."
+from .utils import TOOL_CALLING_PLACEHOLDER
 
 
 def is_tool_approval_required(tool_call_name: str, tools: dict[str, Any]) -> bool:
@@ -77,6 +74,7 @@ def build_tool_result_event(tool_msg: Any, is_immediate: bool = False) -> Extend
     return ExtendToolCallResultEvent(
         type=EventType.TOOL_CALL_RESULT,
         tool_call_id=tool_msg.tool_call_id,
+        tool_call_name=getattr(tool_msg, "name", None),
         message_id=tool_msg.id or str(uuid.uuid4()),
         content=content,
         role="tool",
@@ -109,6 +107,15 @@ def should_switch_thinking_step(thinking_process: dict | None, reasoning_data: d
     return current_index is not None and new_index is not None and current_index != new_index
 
 
+def _is_deferred_tool(_tool: Any) -> bool:
+    """deferred 判定谓词（D-15）：审批工具 或 ask_user_question 工具均延迟写入。
+
+    与 approval ``is_approval_configured`` 并集：ask_user_question 工具不再走
+    immediate 写入，与 approval 统一抑制/回填语义（T-47-11 mitigate 同源复算对称）。
+    """
+    return is_approval_configured(_tool) or (getattr(_tool, "name", "") == "ask_user_question")
+
+
 def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: dict[str, Any]) -> tuple[list, list]:
     """从模型输出中构建 tool_calls 列表，将需要审批的工具分离出来延迟写入。
 
@@ -122,7 +129,7 @@ def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: di
     Returns:
         (immediate_tool_calls, deferred_tool_calls)
         - immediate_tool_calls: 不需要审批的工具调用，立即写入
-        - deferred_tool_calls: 需要审批的工具调用，待审批通过执行后补充写入
+        - deferred_tool_calls: 需要审批/ask_user 的工具调用，待终态后补充写入
     """
     immediate_tool_calls = []
     deferred_tool_calls = []
@@ -138,11 +145,45 @@ def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: di
             ),
         ).model_dump()
 
-        if is_approval_configured(_tool):
+        if _is_deferred_tool(_tool):
             deferred_tool_calls.append(tool_call_dict)
         else:
             immediate_tool_calls.append(tool_call_dict)
     return immediate_tool_calls, deferred_tool_calls
+
+
+def should_suppress_approval_tool_call(
+    tool_call: dict, state_messages: list[Any], tools_mapping: dict[str, Any]
+) -> bool:
+    """DB 等价谓词（D-05 方向 a 同源复算）：审批 pending 且无对应 ToolMessage 的 tool_call 应过滤。
+
+    用于 checkpoint 派生快照（agent.py 中断终态 MESSAGES_SNAPSHOT）与方案 B 重放
+    （utils.py langchain_messages_to_streaming_events）两处出口，按 DB 等价谓词过滤
+    审批 pending 的 tool_call，实现提示为**同源复算**（is_approval_configured 拆分 +
+    state 中 ToolMessage 存在性），**不真查 DB**。
+
+    - 审批/ask_user 判定：``tools_mapping.get(tool_call["name"])`` 经 ``_is_deferred_tool`` 为 True
+    - ToolMessage 存在性：``state_messages`` 中存在 ``ToolMessage`` 且 ``tool_call_id == tool_call["id"]``
+    - 命中（deferred pending 且无 ToolMessage）→ True（过滤）；否则 False（保留）
+
+    已执行（有 ToolMessage）或已拒绝（状态终态）的 tool_call 保留，仅 deferred pending
+    且未执行的多余项被过滤，防误过滤（T-45-10）。
+
+    Args:
+        tool_call: 模型请求的 tool_call（dict 形态，含 id/name/args）
+        state_messages: 会话消息列表（state_values.get("messages", [])，LangChain 消息）
+        tools_mapping: 工具名→工具对象映射（SSE 侧 self._tool_mapping 或 DB 侧 self._tools_mapping）
+
+    Returns:
+        True 表示该 tool_call 应被过滤（deferred pending 且无对应 ToolMessage）
+    """
+    _tool = tools_mapping.get(tool_call.get("name"))
+    if not _is_deferred_tool(_tool):
+        return False
+    tool_call_id = tool_call.get("id")
+    return not any(
+        isinstance(message, ToolMessage) and message.tool_call_id == tool_call_id for message in state_messages
+    )
 
 
 def resolve_content(

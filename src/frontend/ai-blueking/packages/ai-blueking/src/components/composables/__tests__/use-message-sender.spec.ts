@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ref, shallowRef, computed } from 'vue';
+import { nextTick, ref, shallowRef, computed } from 'vue';
 
 import {
   createErrorReporterParams,
@@ -139,16 +139,81 @@ describe('useMessageSender', () => {
   });
 
   describe('handleUpload', () => {
-    it('should call session.uploadFile and return result', async () => {
+    it('should call session.uploadFiles once and return results', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const fileA = new File(['a'], 'a.png');
+      const fileB = new File(['b'], 'b.png');
+      (params.chatHelper.value!.session.uploadFiles as any).mockResolvedValue([
+        { download_url: 'https://example.com/a.png' },
+        { download_url: 'https://example.com/b.png' },
+      ]);
       const { handleUpload } = useMessageSender(params);
 
-      const file = new File(['content'], 'test.png');
-      const result = await handleUpload(file);
+      const result = await handleUpload([fileA, fileB]);
 
-      expect(params.chatHelper.value!.session.uploadFile).toHaveBeenCalledWith('session-1', file);
-      expect(result).toEqual({ download_url: 'https://example.com/file.png' });
+      expect(params.chatHelper.value!.session.uploadFiles).toHaveBeenCalledTimes(1);
+      expect(params.chatHelper.value!.session.uploadFiles).toHaveBeenCalledWith('session-1', [fileA, fileB]);
+      expect(params.chatHelper.value!.session.uploadFile).not.toHaveBeenCalled();
+      expect(result).toEqual([
+        { download_url: 'https://example.com/a.png' },
+        { download_url: 'https://example.com/b.png' },
+      ]);
+    });
+
+    it('should accept pv_files success without download_url', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.uploadFiles as any).mockResolvedValue([
+        {
+          type: 'file',
+          id: 'files/doc.pdf',
+          path: 'files/doc.pdf',
+          name: 'doc.pdf',
+          mime_type: 'application/pdf',
+          size: 10,
+          status: 'success',
+        },
+      ]);
+      const { handleUpload } = useMessageSender(params);
+
+      const result = await handleUpload([new File(['pdf'], 'doc.pdf')]);
+
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'files/doc.pdf', status: 'success' }),
+      ]);
+    });
+
+    it('should return failed items without aborting the batch', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.uploadFiles as any).mockResolvedValue([
+        {
+          type: 'file',
+          id: 'files/ok.pdf',
+          path: 'files/ok.pdf',
+          name: 'ok.pdf',
+          mime_type: 'application/pdf',
+          size: 2,
+          status: 'success',
+        },
+        {
+          type: 'file',
+          id: 'files/bad.exe',
+          path: 'files/bad.exe',
+          name: 'bad.exe',
+          mime_type: 'application/octet-stream',
+          size: 1,
+          status: 'failed',
+          error: 'extension not allowed',
+        },
+      ]);
+      const { handleUpload } = useMessageSender(params);
+
+      const result = await handleUpload([new File(['ok'], 'ok.pdf'), new File(['x'], 'bad.exe')]);
+
+      expect(result[0]).toMatchObject({ status: 'success' });
+      expect(result[1]).toMatchObject({ status: 'failed', error: 'extension not allowed' });
     });
 
     it('should throw when no active session', async () => {
@@ -157,7 +222,7 @@ describe('useMessageSender', () => {
       const { handleUpload } = useMessageSender(params);
 
       const file = new File(['content'], 'test.png');
-      await expect(handleUpload(file)).rejects.toThrow('no active session');
+      await expect(handleUpload([file])).rejects.toThrow('no active session');
     });
   });
 
@@ -345,6 +410,32 @@ describe('useMessageSender', () => {
       const sentOptions = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
       expect(sentOptions.property.extra.command).toBe('cmd-1');
       expect(sentOptions.property.extra.context).toBeUndefined();
+    });
+  });
+
+  describe('session change', () => {
+    it('should clear cite when the current session changes', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { cite } = useMessageSender(params);
+
+      cite.value = '引用内容';
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-2' };
+      await nextTick();
+
+      expect(cite.value).toBe('');
+    });
+
+    it('should keep cite when the current session stays the same', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { cite } = useMessageSender(params);
+
+      cite.value = '引用内容';
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1', sessionName: 'renamed' };
+      await nextTick();
+
+      expect(cite.value).toBe('引用内容');
     });
   });
 });

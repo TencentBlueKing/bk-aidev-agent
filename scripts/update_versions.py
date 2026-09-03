@@ -27,49 +27,49 @@ VERSION_RULES: list[tuple[str, str, str]] = [
         r'"aidev-agent>=[^"]*"',
         "agent",
     ),
-    ("template/{{cookiecutter.project_name}}/pyproject.toml", r'^version = "[^"]*"$', "template"),
+    ("template/builtin/{{cookiecutter.project_name}}/pyproject.toml", r'^version = "[^"]*"$', "template"),
     (
-        "template/{{cookiecutter.project_name}}/pyproject.toml",
+        "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         r'"aidev-agent(?P<agent_extras>\[[^"]+\])?==[^"]*"',
         "agent",
     ),
     (
-        "template/{{cookiecutter.project_name}}/pyproject.toml",
+        "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         r'"aidev-bkplugin==[^"]*"',
         "bkplugin",
     ),
     (
-        "template/{{cookiecutter.project_name}}/pyproject.toml",
+        "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         r'"aidev-wxbot==[^"]*"',
         "wxbot",
     ),
     (
-        "template/{{cookiecutter.project_name}}/pyproject.toml",
+        "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         r'"aidev-ai-blueking==[^"]*"',
         "ai_blueking",
     ),
     (
-        "template/{{cookiecutter.project_name}}/requirements.txt",
+        "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         r'^"?aidev-agent(?P<agent_extras>\[[^\]"]+\])?==.*"?$',
         "agent",
     ),
     (
-        "template/{{cookiecutter.project_name}}/requirements.txt",
+        "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         r'^"?aidev-ai-blueking==.*"?$',
         "ai_blueking",
     ),
     (
-        "template/{{cookiecutter.project_name}}/requirements.txt",
+        "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         r'^"?aidev-bkplugin==.*"?$',
         "bkplugin",
     ),
     (
-        "template/{{cookiecutter.project_name}}/requirements.txt",
+        "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         r'^"?aidev-wxbot==.*"?$',
         "wxbot",
     ),
     (
-        "template/{{cookiecutter.project_name}}/VERSION",
+        "template/builtin/{{cookiecutter.project_name}}/VERSION",
         r"^.+$",
         "template",
     ),
@@ -83,8 +83,8 @@ SOURCE_PACKAGE_VERSION_FILES: dict[str, str] = {
 }
 
 TEMPLATE_VERSION_TARGETS = {
-    Path("template/{{cookiecutter.project_name}}/pyproject.toml"),
-    Path("template/{{cookiecutter.project_name}}/requirements.txt"),
+    Path("template/builtin/{{cookiecutter.project_name}}/pyproject.toml"),
+    Path("template/builtin/{{cookiecutter.project_name}}/requirements.txt"),
 }
 
 # `make release_versions VERSION=...` 统一版本时不会触达的组件；

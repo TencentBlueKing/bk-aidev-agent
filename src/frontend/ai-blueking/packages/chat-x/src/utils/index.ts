@@ -27,5 +27,8 @@
 export * from './file';
 export * from './file-type';
 export * from './markdown-completer';
+export * from './merge-tools-by-id';
 export { completeMarkdownSyntax } from './stream-markdown-completer';
+export * from './upload-accept';
+export * from './upload-file';
 export * from './utils';

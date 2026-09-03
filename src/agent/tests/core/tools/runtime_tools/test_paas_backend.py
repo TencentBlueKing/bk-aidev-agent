@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 from aidev_agent.core.tools.runtime_tools.paas_backend import ExecResult, PaasSandboxBackend
 from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, WriteResult
+from aidev_agent.utils.tracing import set_agent_tracer
 from requests.exceptions import HTTPError
 
 # ---------------------------------------------------------------------------
@@ -470,11 +471,30 @@ def _is_echo_home(cmd) -> bool:
 
 
 class TestResolvePath:
-    """验证 _resolve_path 将 ~ 展开为绝对路径，供 HTTP API 使用。"""
+    """验证 _resolve_path 将路径变量展开为绝对路径，供 HTTP API 使用。"""
 
     def test_absolute_path_unchanged(self, backend, mock_ops):
         """绝对路径原样返回，不触发 shell 调用。"""
         assert backend._resolve_path("/app/test.txt") == "/app/test.txt"
+
+    def test_storage_path_expanded_from_runtime_env(self, backend, mock_ops):
+        """会话文件路径按当前 runtime 的 STORAGE_PATH 展开。"""
+        backend._env_vars["STORAGE_PATH"] = "/app/.storage/"
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+        assert backend._resolve_path("${STORAGE_PATH}/session/files/report.txt") == (
+            "/app/.storage/session/files/report.txt"
+        )
+
+    def test_storage_path_uses_default_when_runtime_env_missing(self, backend, mock_ops):
+        """runtime 未配置 STORAGE_PATH 时使用后端默认路径。"""
+        backend._env_vars.pop("STORAGE_PATH", None)
+
+        assert backend._resolve_path("$STORAGE_PATH/session/files/report.txt") == (
+            "/app/storage/session/files/report.txt"
+        )
 
     def test_tilde_only(self, backend, mock_ops):
         """单独 ~ 展开为 $HOME。"""
@@ -742,6 +762,42 @@ class TestPaasSandboxBackendErrors:
 
 class TestPaasSandboxBackendHTTPMethods:
     """测试各 HTTP API 方法（通过 mock client）。"""
+
+    def test_exec_command_records_sandbox_client_span(self, http_backend):
+        TracerProvider = pytest.importorskip("opentelemetry.sdk.trace").TracerProvider
+        SimpleSpanProcessor = pytest.importorskip("opentelemetry.sdk.trace.export").SimpleSpanProcessor
+        InMemorySpanExporter = pytest.importorskip(
+            "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+        ).InMemorySpanExporter
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        set_agent_tracer(provider.get_tracer(__name__))
+        http_backend.client.exec_command.request.return_value = _make_http_response(
+            json_data={"stdout": "ok", "stderr": "", "exit_code": 0}
+        )
+
+        try:
+            http_backend.exec_command("sb-123", "echo hello")
+        finally:
+            set_agent_tracer(None)
+
+        span = exporter.get_finished_spans()[0]
+        assert span.name == "sandbox.execute"
+        assert span.kind.name == "CLIENT"
+        assert span.attributes["sandbox.operation.name"] == "execute"
+        assert "echo hello" not in str(span.attributes)
+
+    def test_exec_command_propagates_current_trace_context(self, http_backend, monkeypatch):
+        traceparent = "00-992eea94222b572e883ab78b23e73d64-99e019654b49749a-01"
+        monkeypatch.setattr(f"{_PAAS_BACKEND_MOD}.trace_headers", lambda: {"traceparent": traceparent})
+        http_backend.client.exec_command.request.return_value = _make_http_response(
+            json_data={"stdout": "ok", "stderr": "", "exit_code": 0}
+        )
+
+        http_backend.exec_command("sb-123", "echo hello")
+
+        assert http_backend.client.exec_command.request.call_args.kwargs["headers"] == {"traceparent": traceparent}
 
     @pytest.fixture()
     def http_backend(self):

@@ -24,16 +24,16 @@ import pytest
 from ag_ui.core import EventType, RunFinishedEvent, RunStartedEvent
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import (
-    ASK_USER_QUESTION_REASON,
-    AskUserQuestionHandler,
-    AskUserQuestionOutcomeBuilder,
-)
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     ResumeItem,
     RunFinishedSuccessOutcome,
     serialize_run_finished_outcome,
+)
+from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_REASON,
+    AskUserQuestionHandler,
+    AskUserQuestionOutcomeBuilder,
 )
 
 # --------------------------------------------------------------------------- #
@@ -415,13 +415,17 @@ async def test_resume_first_frame_calls_outcome_builder(monkeypatch):
         )
     ]
 
-    # Phase 14.2: builder 仅被调用 1 次（RunFinishedEvent，MESSAGES_SNAPSHOT 已取消）
-    assert call_count["n"] >= 1, (
-        f"AskUserQuestionOutcomeBuilder.build_run_finished_payload 应被调用 >=1 次（RunFinishedEvent），"
-        f"实际 {call_count['n']} 次"
+    # 2026-09-02 处置：ask_user 续流首帧回放已移除（处理前置改写 + MESSAGES_SNAPSHOT
+    # 完整携带 resolved 卡片，replay 冗余且 raw 数据缺 reason 使前端卡片消失——
+    # 生产回归实证；294ff5d55 好基线同样不推）。builder 不应被调用。
+    assert call_count["n"] == 0, (
+        f"replay 已移除，AskUserQuestionOutcomeBuilder.build_run_finished_payload 不应被调用，实际 {call_count['n']} 次"
     )
     # 确保确实产生了 SSE 事件（非空流）
     assert chunks, "续流应产生 SSE 事件"
+    # 不应出现 resume_replay 事件
+    replay_chunks = [c for c in chunks if '"resume_replay":true' in c]
+    assert not replay_chunks, f"不应推送 resume_replay 事件，实际: {replay_chunks}"
 
 
 @pytest.mark.asyncio
@@ -497,20 +501,12 @@ async def test_resume_first_frame_result_answers_from_resume_payload(monkeypatch
     ]
     payloads = [json.loads(chunk[6:]) for chunk in chunks]
 
-    # Phase 14.2: ACTIVITY_SNAPSHOT 已改为 RunFinishedEvent
-    # RunFinishedEvent 的 result 是 dict（非 list），内含 payload.answers
-    run_finished = next(p for p in payloads if p["type"] == EventType.RUN_FINISHED.value)
-    result_dict = run_finished.get("result", {})
-    assert isinstance(result_dict, dict)
+    # 2026-09-02 处置：ask_user 续流不再发 replay 首帧事件——用户答案的权威载体为
+    # MESSAGES_SNAPSHOT 中被处理前置改写为终态的 interrupt 记录（result.payload.answers，
+    # 生产路径回归见 test_ask_user_card_production_path.py）。此处断言无 replay 事件。
+    replay_finished = [p for p in payloads if p["type"] == EventType.RUN_FINISHED.value and p.get("resume_replay")]
+    assert not replay_finished, f"ask_user 续流不应推送 replay RUN_FINISHED，实际: {replay_finished}"
 
-    # WR-01 核心断言：result.payload.answers 等于 resume payload 的 answers（非空，非 metadata.answers）
-    assert result_dict.get("payload", {}).get("answers") == expected_answers, (
-        f"RunFinishedEvent result.payload.answers 应等于 resume payload answers "
-        f"({expected_answers})，实际: {result_dict.get('payload', {}).get('answers')}"
-    )
-
-    # Phase 14.2: MESSAGES_SNAPSHOT 已取消，仅保留首帧 MESSAGES_SNAPSHOT
+    # 首帧 MESSAGES_SNAPSHOT 仍在（已答卡回显载体）
     messages_snapshots = [p for p in payloads if p["type"] == EventType.MESSAGES_SNAPSHOT.value]
-    assert len(messages_snapshots) >= 1, (
-        f"应至少有 1 个 MESSAGES_SNAPSHOT（首帧），实际: {len(messages_snapshots)}"
-    )
+    assert len(messages_snapshots) >= 1, f"应至少有 1 个 MESSAGES_SNAPSHOT（首帧），实际: {len(messages_snapshots)}"

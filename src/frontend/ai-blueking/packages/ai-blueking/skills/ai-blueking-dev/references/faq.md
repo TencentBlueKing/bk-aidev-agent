@@ -98,6 +98,18 @@ const messageStatus = computed(() =>
 
 **A**: 侧栏已固定从右侧展开，`ChatBot` / `AIBlueking` **已移除 `placement`**。请改用 `v-model:asideCollapsed`。
 
+### Q: 浮窗展开/收起侧栏时窗口会怎么移动？
+
+**A**: 几何由 `useDraggable.expandForSidePanel` / `collapseSidePanel` 负责（`AIHeader` 开关只改 `asideCollapsed`）：
+
+1. **右侧空间不足**（贴右边）：展开先左移再扩宽；收起先缩宽，再移回**挪窗前**的位置（贴右边回到贴右边）
+2. **右侧空间充足**（含窗口已够宽）：只扩宽 / 缩宽，不移动
+3. **展开后用户拖动或缩放了浮窗**：展开前快照失效，收起只缩宽、保持左边缘不动
+
+第 3 条有个坑：侧栏开关画在 `AIHeader` 上，而 Header 就是拖拽手柄（`.drag-handle`），`@click.stop` 拦不住 mousedown。点开关时鼠标抖几像素，`vue-draggable-resizable` 会发出**真实**的 `dragging` / `dragStop`，一旦当成用户挪窗就会清掉快照、收起时不归位（表现为时好时坏）。所以 `useDraggable` 用 `USER_MOVE_EPSILON`（3px）比对最近一次编程式落点来区分抖动和真正的挪窗。注意 VDR 的 `x` / `w` watcher 只调 `moveHorizontally` / `changeWidth`，**不会**回打事件，不需要为编程式改几何加忽略开关。
+
+嵌入式 `ChatBot` 不走这套浮窗几何。
+
 ---
 
 ## 会话管理问题
@@ -384,16 +396,16 @@ it('should initialize', async () => {
 });
 ```
 
-### Q: chat-bot.vue 只有 ~200 行，逻辑都在哪里？
+### Q: chat-bot.vue 的逻辑都在哪里？
 
-**A**: 所有逻辑拆分到 7 个 composable 中，`chat-bot.vue` 仅负责：
+**A**: 模板只组装 `ChatContainer`；业务拆到 8 个 composable，`chat-bot.vue` 的 `<script setup>` 负责接线：
 1. 创建共享 ref（`selectedShortcut`、`internalEnableSelection`、`selectedResources`）
 2. 定义辅助函数（`scrollToBottom`、`focusInput`）
-3. 按依赖拓扑顺序调用 7 个 composable
+3. 按依赖拓扑顺序调用 composable
 4. 保留 `switchSession`、`setCiteText` 等简单辅助方法
 5. `defineExpose` 暴露接口
 
-组装顺序（依赖拓扑）：`useChatbotInit` → `useInterruptResume` → `useMessageSender` → `useShortcuts` → `useChatbotState` → `useToolActions` → `useShareSelection`
+组装顺序（依赖拓扑）：`useErrorReporter` → `useChatbotInit` → `useInterruptResume` → `useMessageSender` → `useShortcuts` → `useChatbotState` → `useToolActions` → `useShareSelection`
 
 ---
 

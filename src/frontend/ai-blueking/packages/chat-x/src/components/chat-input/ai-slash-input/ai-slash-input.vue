@@ -471,8 +471,8 @@
     flex: 1;
     flex-direction: column;
     width: 100%;
+    min-height: 0; // 父级触达 max-height 后允许收缩并内部滚动
     height: fit-content;
-    max-height: 400px;
     overflow: auto;
 
     @each $type, $color in variables.$resourceTypeMap {

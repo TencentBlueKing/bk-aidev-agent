@@ -33,7 +33,9 @@ import { resolveRequestValue } from '../fetch';
 
 import type {
   GetPvFileDownloadUrlOptions,
+  ILegacyUploadFileResult,
   IPvFileDownloadUrlResult,
+  IPvFileUploadResult,
   ISession,
   ISessionApi,
   ISessionFeedback,
@@ -171,14 +173,14 @@ export const useSession = (fetchClient: FetchClient) => {
       .post<ISessionApi>(`session/${sessionCode}/ai_rename/`, undefined, config)
       .then(res => transferSessionApi2Session(res));
 
-  // 上传文件到会话（传输名与展示名分离，见 buildSafeUploadFileName）
+  // 旧版上传：session/{code}/upload/{asciiFileName}/（agent_sdk_version < 2.2.2rc25）
   const uploadFile = (sessionCode: string, file: File, config?: IRequestConfig) => {
     const safeFileName = buildSafeUploadFileName(file);
     const fileName = encodeURIComponent(safeFileName);
     const headers = resolveRequestValue(config?.headers) ?? {};
 
     return file.arrayBuffer().then(content =>
-      fetchClient.post<{ download_url?: string }>(`session/${sessionCode}/upload/${fileName}/`, content, {
+      fetchClient.post<ILegacyUploadFileResult>(`session/${sessionCode}/upload/${fileName}/`, content, {
         ...config,
         headers: {
           ...headers,
@@ -186,6 +188,15 @@ export const useSession = (fetchClient: FetchClient) => {
         },
       }),
     );
+  };
+
+  /** 新版批量上传：session/{code}/pv_files/upload/（agent_sdk_version ≥ 2.2.2rc25） */
+  const uploadPvFiles = (sessionCode: string, files: File[], config?: IRequestConfig) => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    return fetchClient.post<IPvFileUploadResult>(`session/${sessionCode}/pv_files/upload/`, formData, config);
   };
 
   /**
@@ -230,6 +241,7 @@ export const useSession = (fetchClient: FetchClient) => {
     getSessionFeedbackReasons,
     renameSession,
     uploadFile,
+    uploadPvFiles,
     getPvFileDownloadUrl,
     isResumeSession,
   };

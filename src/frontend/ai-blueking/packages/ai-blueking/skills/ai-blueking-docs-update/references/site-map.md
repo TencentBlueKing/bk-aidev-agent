@@ -22,7 +22,7 @@
 
 | 链接 | 文件 |
 | --- | --- |
-| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽（≥ v2.2.3） |
+| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3） |
 | `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` | 嵌入式 ChatBot；**业务 Header**（会话名 + `v-model:asideCollapsed`，侧栏固定右侧） |
 | `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
 | `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |
@@ -62,7 +62,7 @@
 | --- | --- |
 | `@blueking/ai-blueking` | `api/ai-blueking/`（chatbot、aiblueking、standalone、managers、types） |
 | `@blueking/chat-x` | `api/chat-x/`（components、types；含 ModelSelector / `IModelOption`） |
-| `@blueking/chat-helper` | `api/chat-helper/`（sdk、types；含 `getLlms` / `ILlmItem`） |
+| `@blueking/chat-helper` | `api/chat-helper/`（sdk、types；含 `getLlms` / `ILlmItem` / `StreamMode`） |
 
 组件行为变更时：更新对应 API 表 + 在指南中加交叉链接。
 
@@ -71,6 +71,8 @@
 消息时间时区 `timezone` 落点（≥ v2.2.3）：指南 `chat-interaction.md`（四档格式 / `createdAt` 来源）+ `ui-customization.md`（`timezone` prop）；FAQ「如何让消息时间按指定时区显示」；API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`，以及 `api/chat-x/components.md` `MessageTime`。未配置时按浏览器时区。
 
 模型选择相关落点（≥ v2.2.2）：指南 `model-selection.md`；API 同步 `aiblueking` / `chatbot` / `managers`（含 `ModelSelectionManager`） / `types`、`chat-helper/sdk`、`chat-x/components`；FAQ「如何关闭或自定义模型选择」。
+
+`stream_mode`（`start` / `attach`）落点：指南 `chat-interaction.md`「刷新 / 切会话续流」、`session-management.md` 切换会话；API `api/chat-helper/sdk.md` `#stream-mode`、`api/chat-helper/types.md` `StreamMode`。ChatBot / AIBlueking 无新 Props。
 
 ## 示例 `/demos/`
 

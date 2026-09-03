@@ -26,9 +26,11 @@ from opentelemetry.instrumentation.utils import unwrap
 from wrapt import wrap_function_wrapper
 
 from aidev_agent.pydantic_models import ExecuteKwargs
+from aidev_agent.utils.tracing import set_agent_tracer
 
 from .callback_handler import BkAidevAgentCallbackHandler, BkAidevAgentInjector
 from .config import OTelConfig
+from .metrics import configure_metrics
 from .otel_service import BkAgentOTelService
 from .utils import dont_throw
 
@@ -64,12 +66,14 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
         Args:
             config: 必须显式提供 ``OTelConfig``。本插桩器内部读取
                 ``config.enabled`` / ``config.enable_traces`` / ``config.debug`` /
-                ``config.max_attribute_length`` 等字段；若放任为 ``None`` 会在
+                ``config.max_input_attribute_length`` / ``config.max_output_attribute_length`` 等字段；若放任为
+                ``None`` 会在
                 ``_get_agent`` wrap 中触发 ``AttributeError``，因此在构造期强制要求。
         """
         if config is None:
             raise TypeError("BkAidevAgentInstrumentor requires a non-None OTelConfig")
         self._otel_service_config = config
+        configure_metrics(config.enabled and config.enable_metrics)
         self._otel_service: Optional[BkAgentOTelService] = None
 
     def start_otel_service(self):
@@ -88,6 +92,7 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
         if tracer is None:
             self.start_otel_service()
             tracer = self._otel_service.get_tracer(__name__)
+        set_agent_tracer(tracer)
         # 在 _get_agent 阶段一次性完成：
         #   1. 创建 root span（HTTP 线程，便于同步 RPC 关联）
         #   2. 注入 caller_trace_context 用于跨服务传播
@@ -116,6 +121,7 @@ class BkAidevAgentInstrumentor(BaseInstrumentor):
             bool: 是否成功取消插桩
         """
         self.stop_otel_service()
+        set_agent_tracer(None)
         unwrap("aidev_agent.services.agent.chat", "ChatCompletionAgent._get_agent")
         unwrap("aidev_agent.core.nodes.knowledge", "AgentKnowledgeNode.__call__")
 
@@ -308,11 +314,14 @@ class ChatCompletionAgentGetAgentWrapper:
             parent_trace_context=execute_kwargs.caller_trace_context,
             enabled=self.config.enabled,
             enable_traces=self.config.enable_traces,
+            enable_metrics=self.config.enable_metrics,
             debug=self.config.debug,
-            max_attribute_length=self.config.max_attribute_length,
+            max_input_attribute_length=self.config.max_input_attribute_length,
+            max_output_attribute_length=self.config.max_output_attribute_length,
             agent_id=agent_info.get("agent_id"),
             agent_code=agent_info.get("agent_code"),
             agent_name=agent_info.get("agent_name"),
+            agent_sdk_version=agent_info.get("agent_sdk_version"),
             session_code=execute_kwargs.session_code,
             caller_executor=execute_kwargs.caller_executor,
             injector=injector,

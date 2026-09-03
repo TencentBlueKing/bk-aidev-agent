@@ -264,6 +264,8 @@ await chatBotRef.value.switchSession('target_session_code');
 await aiBluekingRef.value.switchToSession('target_session_code');
 ```
 
+目标会话若仍为 `Running`，底层会 `resumeStreamingChat`（`stream_mode=attach`）接管已有流，不会新开一轮执行。详见 [刷新 / 切会话续流](/guide/core-features/chat-interaction#刷新--切会话续流)。
+
 ### 创建新会话
 
 ```typescript

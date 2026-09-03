@@ -9,6 +9,7 @@
 | `completeMarkdown`       | Markdown 语法补全      |
 | `completeMarkdownSyntax` | 流式 Markdown 语法补全 |
 | `getCookieByName`        | 获取 Cookie 值         |
+| `mergeToolsById`         | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏 |
 
 ## Markdown 语法补全
 
@@ -41,6 +42,28 @@ const completed2 = completeMarkdownSyntax(incomplete2);
 | 删除线   | `~~strike`      | `~~strike~~`         |
 | 链接     | `[text](`       | `[text](#)`          |
 | 图片     | `![alt](`       | `![alt](#)`          |
+
+## 消息工具栏合并
+
+### mergeToolsById
+
+按 `id` 将自定义工具按钮合并到内置列表：同 id 字段级覆盖，新 id 追加到末尾，`hidden: true` 的项会被过滤。
+
+```typescript
+import { mergeToolsById } from '@blueking/chat-x';
+
+const tools = mergeToolsById(
+  [
+    { id: 'copy', name: '复制' },
+    { id: 'edit', name: '编辑' },
+    { id: 'delete', name: '删除' },
+  ],
+  [
+    { id: 'edit', hidden: true },
+    { id: 'delete', hidden: true },
+  ],
+);
+```
 
 ## Cookie 工具
 

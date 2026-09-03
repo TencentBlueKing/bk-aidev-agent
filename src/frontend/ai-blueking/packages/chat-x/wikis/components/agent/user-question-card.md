@@ -268,6 +268,9 @@ const payload = buildSkipResumePayload(interrupt);
 
 `ChatContainer` 提供同名 `#interruptQuestion` slot，参数与 `#question` 一致，透传自输入区上方的 `UserQuestionCard`。
 
+
+> **跳过按钮禁用态**：`disabled` 时文字与图标同步变灰（`currentColor` / `#c4c6cc`）。
+
 ## API
 
 ### UserQuestionCard Props

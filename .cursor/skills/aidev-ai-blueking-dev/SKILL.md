@@ -16,7 +16,7 @@ src/frontend/
 
 src/plugins/aidev_ai_blueking/ # Python 包（包含构建后的前端静态文件）
 
-template/{{cookiecutter.project_name}}/  # Django 模板项目（最终运行环境）
+template/builtin/{{cookiecutter.project_name}}/  # Django 模板项目（最终运行环境）
 ```
 
 ### 依赖关系
@@ -31,7 +31,7 @@ template/{{cookiecutter.project_name}}/  # Django 模板项目（最终运行环
 | 前端本地开发 | `pnpm dev` | `src/frontend/publish-template/` |
 | 构建+部署一键完成 | `make deploy-aidev-ai-blueking` | 项目根目录 |
 | 仅构建 Python 包 | `make build-aidev-ai-blueking` | 项目根目录 |
-| 启动 Django 服务 | `make dev` | `template/{{cookiecutter.project_name}}/` |
+| 启动 Django 服务 | `make dev` | `template/builtin/{{cookiecutter.project_name}}/` |
 
 ## 前端本地开发（publish-template）
 
@@ -61,9 +61,9 @@ make deploy-aidev-ai-blueking
 make build-aidev-ai-blueking
 
 # 2. 安装到模板项目的 .venv
-cd template/{{cookiecutter.project_name}}/
+cd template/builtin/{{cookiecutter.project_name}}/
 UV_PROJECT_ENVIRONMENT=.venv uv pip install --reinstall \
-  ../../src/plugins/aidev_ai_blueking/dist/aidev_ai_blueking-*.tar.gz
+  ../../../src/plugins/aidev_ai_blueking/dist/aidev_ai_blueking-*.tar.gz
 
 # 3. 启动 Django 验证
 make dev    # 端口 5000

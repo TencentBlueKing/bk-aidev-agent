@@ -49,49 +49,6 @@ $resourceTypeMap: (
     #f59500,
   ),
 );
-
-// toolcall status color map
-// background, borderColor
-// Complete = 'complete',
-// Disabled = 'disabled',
-// Error = 'error',
-// Pending = 'pending',
-// Stop = 'stop',
-// Streaming = 'streaming',
-$toolcallStatusMap: (
-  pending: (
-    #fafbfd,
-    #dcdee5,
-  ),
-  streaming: (
-    #fafbfd,
-    #dcdee5,
-  ),
-  stop: (
-    #fafbfd,
-    #dcdee5,
-  ),
-  disabled: (
-    #fafbfd,
-    #dcdee5,
-  ),
-  complete: (
-    #ebfaf0,
-    #a1e3ba,
-  ),
-  completed: (
-    #ebfaf0,
-    #a1e3ba,
-  ),
-  success: (
-    #ebfaf0,
-    #a1e3ba,
-  ),
-  error: (
-    #fff0f0,
-    #f8b4b4,
-  ),
-);
 $chat-input-min-width: 168px;
 $chat-input-max-width: 1000px;
 $content-loading-icon-color-list: (#cddffe, #699df4, #1768ef);

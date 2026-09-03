@@ -34,6 +34,10 @@
     background: #f5f7fa;
     border-radius: 4px;
 
+    &:hover {
+      background: #eaebf0;
+    }
+
     .ai-cite-content-text {
       flex: 1;
       overflow: hidden;

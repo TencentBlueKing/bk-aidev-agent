@@ -27,8 +27,9 @@
 - **两级折叠**：任务整体由 `ActivityLayout` 折叠；每个任务节点列表可单独展开/收起
 - **耗时格式化**：节点耗时与任务总耗时按 `d/h/m/s` 紧凑展示，小于 1 秒显示 `<1s`
 - **节点行尾操作**：hover 失败节点行显示「重试 / 跳过 / 详情」按钮组（间距 12px）；成功 / 运行中等非失败节点仅显示「详情」。重试 / 跳过依赖节点 `retryable` / `skippable` 能力位，通过 `onInterruptResume` 回传 Agent
+- **重试 / 跳过进行中态**：点击后节点行进入 `is-pending`，按钮组常驻显示（无需 hover）；进行中按钮切换为 loading +「重试中 / 跳过中」，重试与跳过互斥禁用；被阻塞按钮 hover 显示提示（如「任务正在重试中，不可跳过」）；详情不受影响。pending 以 `task_id:node_id:retry` 为键，后端 `retry` 计数变化后自动失效
 - **详情入口联动**：「详情」按钮点击后通过自定义 Tab 挂载 `FlowAgentNodeDetail`
-- **分享态降级**：`RenderMode.Share` 下隐藏耗时与行尾操作按钮，仅保留只读的执行状态
+- **分享态只读查看**：`RenderMode.Share` 下保留耗时、「详情」「有效证据」等只读查看入口，仅隐藏「重试 / 跳过」等交互式 resume 操作
 
 ## 状态映射
 
@@ -90,7 +91,20 @@
 
 ## 失败节点重试 / 跳过
 
-失败节点（`convergedState === 'failed'`）且具备对应能力位时，hover 行尾展示「重试」或「跳过」按钮。点击后调用 `onInterruptResume`，**不传** `interrupt` 参数：
+失败节点（`convergedState === 'failed'`）且具备对应能力位时，hover 行尾展示「重试」或「跳过」按钮。点击后：
+
+1. 节点行添加 `is-pending` class，按钮组常驻显示（设计稿：鼠标移出后仍可见进行中反馈）
+2. 被点击按钮进入 loading +「重试中 / 跳过中」，重试与跳过均禁用（`is-disabled`，置灰色 `#c4c6cc`）
+3. 另一按钮 hover 显示阻塞提示（`v-tippy`）
+4. 调用 `onInterruptResume`，**不传** `interrupt` 参数；进行中重复点击被 `handleActionClick` 拦截
+
+```typescript
+// 组件层点击分发（禁用态不执行 run）
+const handleActionClick = (action: FlowNodeActionVM) => {
+  if (action.disabled) return;
+  action.run();
+};
+```
 
 ```typescript
 // 重试
@@ -106,11 +120,11 @@ onInterruptResume?.({
 });
 ```
 
-| 按钮 | 显隐条件                              | `operation`          |
-| ---- | ------------------------------------- | ---------------------- |
-| 重试 | 失败态且 `node.retryable === true`    | `flow_node_retry`      |
-| 跳过 | 失败态且 `node.skippable === true`    | `flow_node_skip`       |
-| 详情 | 始终展示（Share 模式除外）            | —（打开侧栏 Tab，不走 resume） |
+| 按钮 | 显隐条件                              | 进行中表现                         | `operation`          |
+| ---- | ------------------------------------- | ---------------------------------- | ---------------------- |
+| 重试 | 失败态且 `node.retryable === true`    | loading +「重试中」，二者均禁用    | `flow_node_retry`      |
+| 跳过 | 失败态且 `node.skippable === true`    | loading +「跳过中」，二者均禁用    | `flow_node_skip`       |
+| 详情 | 始终展示（含 Share 分享态）           | 不受 pending 影响                  | —（打开侧栏 Tab，不走 resume） |
 
 行尾操作由内部 composable [`useFlowNodeActions`](/composables/use-flow-node-actions) 聚合为声明式列表，组件层仅遍历渲染。
 
@@ -153,15 +167,15 @@ ActivityLayout（activity-type=flow_agent，v-model:collapsed）
     │   ├── task-name（HighlightKeyword + 溢出提示）
     │   └── task-time（任务总耗时 = 各节点耗时累加）
     └── flow-agent-task-nodes（v-show 折叠）
-        └── flow-agent-node-item × N（节点）
+        └── flow-agent-node-item × N（节点；`is-pending` 时按钮组常驻）
             ├── node-status（Loading / 状态圆点）
             ├── node-name（HighlightKeyword + 溢出提示）
-            └── node-trailing（非 Share 态）
-                ├── node-time（节点耗时，hover 时隐藏）
-                └── node-actions（hover 时显示按钮组，间距 12px）
-                    ├── node-action-btn「重试」（失败 + retryable）
-                    ├── node-action-btn「跳过」（失败 + skippable）
-                    └── node-action-btn「详情」（始终，点击挂载详情 Tab）
+            └── node-trailing（含 Share 分享态）
+                ├── node-time（节点耗时，hover / pending 时隐藏）
+                └── node-actions（hover 或 `is-pending` 时显示，间距 12px）
+                    ├── node-action-btn「重试」（失败 + retryable；Share 态隐藏；进行中 loading + 禁用）
+                    ├── node-action-btn「跳过」（失败 + skippable；Share 态隐藏；进行中 loading + 禁用）
+                    └── node-action-btn「详情」（始终可用，含 Share 态，点击挂载详情 Tab）
 ```
 
 ## API
@@ -236,8 +250,9 @@ interface BkFlowNode {
 3. **任务总耗时为节点累加**：`task-time` 由各节点 `elapsed_time` 求和得到，并非任务级独立字段。
 4. **`task_outputs` 暂不渲染**：模板中任务输出展示区块已注释，传入也不会显示。
 5. **未知状态兜底为 `running`**：`getConvergedState` 对未识别的原始状态统一归为运行中。
-6. **Share 模式降级**：`RenderMode.Share` 下不渲染节点耗时与行尾操作按钮（重试 / 跳过 / 详情），仅保留只读执行状态。
+6. **Share 模式只读查看**：`RenderMode.Share` 下保留节点/任务耗时与「详情」「有效证据」查看入口，仅过滤「重试 / 跳过」等交互式 resume 操作（由 `useFlowNodeActions` 的 `hideResumeActions` 收敛）。
 7. **`onInterruptResume` 透传链路**：`MessageRender` → `ActivityMessage` → `FlowAgentContent`；未传入时重试 / 跳过按钮仍展示但点击无回调。
+8. **pending 自动收敛**：`useFlowNodeActions` 以 `task_id:node_id:retry` 为 pending 键；节点重试再次失败（`retry` +1）后键变化，进行中态自动解除，无需手动清理。
 
 ## 关联组件
 

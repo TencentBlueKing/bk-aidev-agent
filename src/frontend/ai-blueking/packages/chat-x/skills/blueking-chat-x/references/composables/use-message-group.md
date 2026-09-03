@@ -20,10 +20,12 @@ useMessageGroup 接收 keyword、messages、selectedUserMessages，通过 watchE
 function useMessageGroup(options: {
   keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
+  renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
 }): {
   messageGroups: Ref<MessageGroup[]>;
   executionGroups: ComputedRef<MessageGroup[]>;
+  sessionArtifacts: ComputedRef<SessionArtifact[]>;
   pendingApprovalCount: ComputedRef<number>;
   pendingApprovalTipText: ComputedRef<string>;
   isShareMode: ShallowRef<boolean>;
@@ -56,7 +58,7 @@ role=user  role=tool     其他 role
  成组           后 continue
 
 ④ 遍历结束后将剩余 assistantMessages 推入 list
-⑤ 末尾为 user 消息 → 追加 Loading 消息组
+⑤ 末尾为 user 消息 → 追加 Loading 消息组（`renderMode` 为 `Share` 时不追加）
 ```
 
 注入的占位 Loading 消息使用固定 id：`LOADING_MESSAGE_ID`（`'__loading__'`，定义于 `common/constants`）。`ChatContainer` 据此判断是否在「请求中」阶段，并向 `ChatInput` / `MessageContainer` 下传 `MessageStatus.Fetching`，与流式中的停止、防重复发送行为对齐。
@@ -114,6 +116,33 @@ const isExecutionMessage = (m: Message): boolean => {
 | ---------- | ------------------------------------------------------------ |
 | toolCall   | `function.name`、`mcpName`、`description`、`arguments`、`id` |
 | flow_agent | 各任务 `task_name`、各节点 `name`                             |
+
+## sessionArtifacts 会话级文件产物
+
+`sessionArtifacts` 拍平当前会话所有 `AssistantMessage.property.artifacts`，供 `ChatContainer` 侧栏「文件产物」Tab 聚合预览。以 **`outputId`** 为会话内唯一键去重（同 `outputId` 视为同一文件），保留最后一次出现的文件信息，列表顺序与「最后一次出现」的相对顺序一致：
+
+```typescript
+const sessionArtifacts = computed(() => {
+  // delete + set：同 key 覆盖内容，并把该项挪到 Map 末尾，保证「最后出现」顺序
+  const byOutputId = new Map();
+  for (const message of messages.value) {
+    if (message.role !== MessageRole.Assistant) continue;
+    const artifacts = message.property?.artifacts;
+    if (!artifacts?.length) continue;
+    for (const file of artifacts) {
+      if (byOutputId.has(file.outputId)) {
+        byOutputId.delete(file.outputId);
+      }
+      byOutputId.set(file.outputId, file);
+    }
+  }
+  return Array.from(byOutputId.values());
+});
+```
+
+> `SessionArtifact` 即为 `AIFileInfo` 别名；文件名可能重复，不可作唯一键。
+
+预览命中与取链见 [useArtifactPreview](./use-artifact-preview)；侧栏列表与分类型预览（`ArtifactPreviewHost`）见 [FileArtifactPanel](../components/message/file-artifact-panel)。
 
 ## 待审批统计
 
@@ -185,6 +214,7 @@ const {
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
 | executionGroups  | `ComputedRef<MessageGroup[]>` | 仅包含执行类消息的分组（工具调用 + FlowAgent），自动提取 `userMessageTitle` |
+| sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 拍平会话所有 AssistantMessage 文件产物，按 `outputId` 去重（保留最后一次） |
 | pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
 | pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
 | isShareMode      | `ShallowRef<boolean>`         | 是否处于分享模式                                                            |

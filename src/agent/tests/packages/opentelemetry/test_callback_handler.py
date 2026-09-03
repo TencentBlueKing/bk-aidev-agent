@@ -21,16 +21,16 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from aidev_agent.packages.opentelemetry.callback_handler import (
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
-from aidev_agent.packages.opentelemetry.callback_handler import (
-    BkAidevAgentCallbackHandler,
-    BkAidevAgentInjector,
-)
+from opentelemetry.trace import NoOpTracerProvider
 
 
 @pytest.fixture
@@ -124,10 +124,10 @@ class TestBkAidevAgentInjector:
         # 验证 agent.session.* 属性
         assert span.attributes["agent.session.executor"] == "test-executor"
         assert span.attributes["agent.session.session_code"] == "test-session-123"
+        assert span.attributes["agent.session.caller_executor"] == "test-user"
         assert span.attributes["agent.session.caller_bk_app_code"] == "test-app"
         assert span.attributes["agent.session.caller_bk_biz_env"] == "domestic_biz"
         assert span.attributes["agent.session.caller_bk_biz_id"] == 123
-        assert span.attributes["agent.session.caller_executor"] == "test-user"
         assert span.attributes["agent.session.caller_order_type"] == "ai_chat"
         assert "agent.session.input" in span.attributes
         assert "agent.session.start_time" in span.attributes
@@ -176,6 +176,221 @@ class TestBkAidevAgentInjector:
 
 class TestBkAidevAgentCallbackHandler:
     """测试 BkAidevAgentCallbackHandler 类"""
+
+    def test_agent_metrics_follow_top_level_chain_without_injector(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
+
+        recorder.record_active_agent.assert_any_call(1, handler._metric_agent_attributes)
+        recorder.record_active_agent.assert_any_call(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
+    def test_agent_metrics_are_finalized_once_on_top_level_error(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+        error = RuntimeError("boom")
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_error(error, run_id=run_id))
+        handler._finalize_injector(error=error)
+
+        assert recorder.record_active_agent.call_count == 2
+        recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
+    def test_active_agent_is_decremented_when_summary_recording_fails(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        recorder.record_agent.side_effect = RuntimeError("metric backend failed")
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
+        handler._finalize_injector()
+
+        assert recorder.record_active_agent.call_count == 2
+        recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
+        recorder.record_agent.assert_called_once()
+
+    def test_active_llm_is_decremented_with_the_same_dimensions(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_llm_start(serialized={"name": "model-a"}, prompts=["hello"], run_id=run_id))
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=run_id))
+
+        assert recorder.record_active_llm.call_count == 2
+        start_call, end_call = recorder.record_active_llm.call_args_list
+        assert start_call.args[0] == 1
+        assert end_call.args[0] == -1
+        assert start_call.args[1] == end_call.args[1]
+
+    def test_agent_iteration_count_equals_llm_start_callbacks_in_one_run(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+        chat_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_error(RuntimeError("retry"), run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(
+            handler.on_chat_model_start(
+                serialized={"name": "model-b"},
+                messages=[[HumanMessage(content="retry")]],
+                run_id=chat_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=chat_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=chain_run_id))
+
+        assert recorder.record_agent.call_args.kwargs["iteration_count"] == 2
+
+    def test_agent_phase_and_first_token_metrics_follow_runtime_callbacks(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_llm_new_token("a", run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_llm_new_token("b", run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_llm_error(RuntimeError("boom"), run_id=llm_run_id, parent_run_id=chain_run_id))
+        asyncio.run(handler.on_chain_end(outputs={}, run_id=chain_run_id))
+
+        recorder.record_agent_started.assert_called_once_with(handler._metric_agent_attributes)
+        recorder.record_agent_first_token.assert_called_once()
+        phase_deltas: dict[str, int] = {}
+        for call in recorder.record_agent_phase_active.call_args_list:
+            phase_deltas[call.args[1]] = phase_deltas.get(call.args[1], 0) + call.args[0]
+        assert phase_deltas == {"processing": 0, "llm": 0, "finalizing": 0}
+
+    def test_active_tool_is_decremented_with_the_same_dimensions(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(RuntimeError("boom"), run_id=run_id))
+
+        assert recorder.record_active_tool.call_count == 2
+        start_call, end_call = recorder.record_active_tool.call_args_list
+        assert start_call.args[0] == 1
+        assert end_call.args[0] == -1
+        assert start_call.args[1] == end_call.args[1]
+
+    def test_finalize_balances_unfinished_llm_and_tool_operations(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
+        chain_run_id = uuid4()
+        llm_run_id = uuid4()
+        tool_run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=chain_run_id))
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "model-a"},
+                prompts=["hello"],
+                run_id=llm_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "demo-tool"},
+                input_str="input",
+                run_id=tool_run_id,
+                parent_run_id=chain_run_id,
+            )
+        )
+        asyncio.run(handler.on_chain_error(RuntimeError("cancelled"), run_id=chain_run_id))
+
+        assert [call.args[0] for call in recorder.record_active_llm.call_args_list] == [1, -1]
+        assert [call.args[0] for call in recorder.record_active_tool.call_args_list] == [1, -1]
+        assert handler._active_llm_operation_count == 0
+        assert handler._active_tool_operation_count == 0
+
+    def test_tool_error_metric_is_recorded_when_traces_are_disabled(self, tracer_and_exporter):
+        tracer, _ = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            enable_traces=False,
+            metric_recorder=recorder,
+        )
+        run_id = uuid4()
+        error = RuntimeError("boom")
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(error, run_id=run_id))
+
+        recorder.record_tool.assert_called_once()
+        assert recorder.record_tool.call_args.kwargs["error"] is error
+
+    def test_tool_timeout_is_classified_separately_from_session_deadline(self, tracer_and_exporter, mocker):
+        tracer, _ = tracer_and_exporter
+        timeout_metric = mocker.patch("aidev_agent.packages.opentelemetry.callback_handler.record_operation_timeout")
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=MagicMock())
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "demo-tool"}, input_str="input", run_id=run_id))
+        asyncio.run(handler.on_tool_error(TimeoutError("upstream timed out"), run_id=run_id))
+
+        timeout_metric.assert_called_once()
+        assert timeout_metric.call_args.kwargs["scope"] == "tool"
+        assert timeout_metric.call_args.kwargs["outcome"] == "failed"
+
+    def test_llm_metric_keeps_request_model_when_traces_are_disabled(self):
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(
+            tracer=NoOpTracerProvider().get_tracer(__name__),
+            enable_traces=False,
+            metric_recorder=recorder,
+        )
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "demo-model"},
+                prompts=["hello"],
+                run_id=run_id,
+                invocation_params={"model": "qwen3"},
+            )
+        )
+
+        attributes = recorder.record_active_llm.call_args_list[0].args[1]
+        assert attributes["gen_ai.request.model"] == "qwen3"
 
     def test_llm_generate_span_attributes(self, tracer_and_exporter):
         """测试 llm.generate span 包含 llm.input 和 llm.output 属性"""
@@ -274,6 +489,25 @@ class TestBkAidevAgentCallbackHandler:
         assert "llm.input" in span.attributes
         assert "llm.output" in span.attributes
 
+    def test_llm_content_uses_separate_input_and_output_limits(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            max_input_attribute_length=8,
+            max_output_attribute_length=4,
+        )
+        run_id = uuid4()
+
+        asyncio.run(handler.on_llm_start(serialized={}, prompts=["0123456789"], run_id=run_id))
+        response = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="abcdefghij"))]])
+        asyncio.run(handler.on_llm_end(response=response, run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert len(span.attributes["llm.input"]) == 8
+        assert len(span.attributes["gen_ai.input.messages"]) == 8
+        assert len(span.attributes["llm.output"]) == 4
+        assert len(span.attributes["gen_ai.output.messages"]) == 4
+
     def test_tool_execution_span_attributes(self, tracer_and_exporter):
         """测试 tool.* span 包含 tool.input 和 tool.output 属性"""
         tracer, exporter = tracer_and_exporter
@@ -317,6 +551,22 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["tool.input"] == "1+1"
         assert span.attributes["tool.output"] == "2"
         assert span.attributes["tool.name"] == "calculator"
+
+    def test_tool_content_uses_separate_input_and_output_limits(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            max_input_attribute_length=8,
+            max_output_attribute_length=4,
+        )
+        run_id = uuid4()
+
+        asyncio.run(handler.on_tool_start(serialized={"name": "bounded"}, input_str="0123456789", run_id=run_id))
+        asyncio.run(handler.on_tool_end(output="abcdefghij", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.input"] == "23456789"
+        assert span.attributes["tool.output"] == "ghij"
 
     def test_tool_execution_with_dict_output(self, tracer_and_exporter):
         """测试 tool.execution span 当 output 为字典时，tool.output 正确转换为字符串"""
@@ -376,6 +626,48 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["tool.name"] == "json_processor"
         assert span.attributes["tool.input"] == '{"action": "process", "data": [1, 2, 3]}'
         assert span.attributes["tool.execution_status"] == "success"
+
+    def test_mcp_tool_execution_span_has_mcp_semantic_attributes(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "search"},
+                input_str='{"query": "blueking"}',
+                run_id=run_id,
+                metadata={"mcp_name": "resource", "mcp_transport": "streamable_http"},
+            )
+        )
+        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.type"] == "mcp"
+        assert span.attributes["rpc.system"] == "mcp"
+        assert span.attributes["mcp.operation.name"] == "tools/call"
+        assert span.attributes["mcp.server.name"] == "resource"
+        assert span.attributes["mcp.tool.name"] == "search"
+        assert span.attributes["mcp.transport"] == "streamable_http"
+
+    def test_http_tool_execution_span_has_interface_attributes(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "get_ticket"},
+                input_str="{}",
+                run_id=run_id,
+                metadata={"tool_code": "get_ticket"},
+            )
+        )
+        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["tool.type"] == "http_api"
+        assert span.attributes["tool.code"] == "get_ticket"
 
     def test_rag_retrieval_span_attributes(self, tracer_and_exporter):
         """测试 rag.retrieval span 包含 rag.knowledge_bases 和 rag.knowledge_items 属性"""

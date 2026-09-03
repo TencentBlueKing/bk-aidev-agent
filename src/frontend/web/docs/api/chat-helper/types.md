@@ -50,6 +50,8 @@ Agent 信息接口，描述一个 AI Agent 的基础配置。
 interface IAgentInfo {
   /** Agent 名称 */
   agentName: string;
+  /** Agent 类型：`single` 为普通智能体；`claw` 时 ChatBot 自动隐藏编辑/删除/重新生成 */
+  agentType?: 'claw' | 'single' | string;
   /** 可用资源列表 */
   resources: IAgentResource[];
   /** SaaS 地址 */
@@ -120,6 +122,23 @@ interface ILlmItem {
   user_auth_mode: string;
 }
 ```
+
+## StreamMode {#streammode}
+
+`chat_completion` 的 `execute_kwargs.stream_mode`（`@blueking/chat-helper` 导出）。
+
+```typescript
+/** start：可创建生产者，开新一轮执行（默认） */
+/** attach：仅接管/回放已有流，不允许新建生产者 */
+type StreamMode = "start" | "attach"
+```
+
+| 值 | 说明 |
+| --- | --- |
+| `start` | 新发送、重发、HITL 恢复、用户操作后续流 |
+| `attach` | `resumeStreamingChat`、静默重连 |
+
+详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)。
 
 ## ISession
 

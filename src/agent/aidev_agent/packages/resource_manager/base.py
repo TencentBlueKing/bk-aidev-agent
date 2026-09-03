@@ -16,12 +16,15 @@ import abc
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from copy import deepcopy
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, List, Optional
 
+from ag_ui.core import BaseEvent
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.interceptors import MCPToolCallRequest, MCPToolCallResult
 
 from aidev_agent.api.paas_client import BkPaaSSandboxApi
 from aidev_agent.config import settings
@@ -35,6 +38,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
 )
 from aidev_agent.pydantic_models import AgentConfig
 from aidev_agent.utils.loop import run_coro_sync
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
 try:
     import bkoauth
@@ -45,6 +49,35 @@ if TYPE_CHECKING:
     from aidev_agent.api.bk_aidev import Client
 
 _logger = getLogger(__name__)
+
+
+def _inject_mcp_trace_headers(server_config: dict[str, dict[str, Any]]) -> None:
+    """Inject active W3C context into MCP discovery and initialization calls."""
+
+    current_headers = trace_headers()
+    if not current_headers:
+        return
+    for connection in server_config.values():
+        if not connection.get("url"):
+            continue
+        headers = connection.get("headers")
+        if not isinstance(headers, dict):
+            headers = {}
+            connection["headers"] = headers
+        headers.update(current_headers)
+
+
+async def _mcp_trace_context_interceptor(
+    request: MCPToolCallRequest,
+    handler: Callable[[MCPToolCallRequest], Awaitable[MCPToolCallResult]],
+) -> MCPToolCallResult:
+    """Refresh W3C trace headers when an MCP tool creates its HTTP session."""
+
+    current_headers = trace_headers()
+    if not current_headers:
+        return await handler(request)
+    headers = {**(request.headers or {}), **current_headers}
+    return await handler(request.override(headers=headers))
 
 
 def _get_access_token_by_user(username: str) -> str | None:
@@ -92,6 +125,12 @@ class BaseResourceManager(abc.ABC):
     def get_agent_code(self, **kwargs: Any) -> str:
         """获取resource manager的agent code。子类可覆写按照其他场景获取agent code"""
         return self.app_code
+
+    def publish_event(self, event: BaseEvent) -> None:
+        """Optional integration boundary; standalone agents have no event backend."""
+
+    def event_publishing_enabled(self) -> bool:
+        return False
 
     def resolve_access_token(self, username: str = None) -> str:
         """获取 access_token，优先级：self.access_token > username 参数 > self.username > 空字符串。
@@ -152,6 +191,40 @@ class BaseResourceManager(abc.ABC):
     def get_chat_session_context(self, session_code: str, **kwargs) -> list[dict]:
         client = self.get_client()
         return client.api.get_chat_session_context(path_params={"session_code": session_code}, **kwargs).get("data", [])
+
+    def get_chat_session_contents(self, session_code: str, **kwargs) -> list[dict]:
+        """取回会话全部落库内容记录（与前端历史消息接口同源，property 不含 builtin_property）。
+
+        封装 GET /openapi/aidev/resource/v1/chat/session_content/content/ 接口，
+        使用 query 参数传 ``session_code``（该端点无路径占位符，必须用 ``params=``）。
+        返回结构 = 后端 ``data`` 记录列表；失败时回退空列表。快照 messages 数据源以此为准。
+        """
+        client = self.get_client()
+        return client.api.get_chat_session_contents(params={"session_code": session_code}, **kwargs).get("data", [])
+
+    def is_resume_session(self, session_code: str, **kwargs) -> bool:
+        """查询会话是否为续流（resume）会话。
+
+        封装 GET /openapi/aidev/resource/v1/agent/session/{session_code}/is_resume/ 接口，
+        返回平台 ``data`` 布尔值；失败时回退 ``False``。
+        """
+        client = self.get_client()
+        return client.api.is_resume_session(path_params={"session_code": session_code}, **kwargs).get("data", False)
+
+    def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
+        """创建工具调用审批单。
+
+        封装 POST /openapi/aidev/resource/v1/agent/tool_approval/ 接口，
+        将 ``payload`` 作为 json body 提交；当传入 ``username`` 时注入 ``X-BKAIDEV-USER`` 请求头。
+        返回平台 ``data`` 字段；失败时回退空 dict。
+        """
+        headers = dict(kwargs.pop("headers", None) or {})
+        if username:
+            headers["X-BKAIDEV-USER"] = username
+        if headers:
+            kwargs["headers"] = headers
+        client = self.get_client()
+        return client.api.create_tool_approval(json=payload, **kwargs).get("data", {})
 
     def retrieve_chat_session(self, session_code: str, **kwargs) -> dict:
         client = self.get_client()
@@ -537,10 +610,29 @@ class BaseResourceManager(abc.ABC):
 
         async def _load_tool(server_name, selected_tools_map, index) -> tuple[list[StructuredTool], Any | None]:
             _start = time.monotonic()
+            server_config = new_server_config[server_name]
+            transport = str(server_config.get("transport") or "unknown")
             for _i in range(2):
-                client = MultiServerMCPClient(new_server_config)
                 try:
-                    tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                    with recording_span(
+                        "mcp.tools.list",
+                        kind=CLIENT_SPAN_KIND,
+                        attributes={
+                            "rpc.system": "mcp",
+                            "mcp.operation.name": "tools/list",
+                            "mcp.server.name": server_name,
+                            "mcp.transport": transport,
+                            "mcp.retry.count": _i,
+                        },
+                    ) as span:
+                        client_config = deepcopy(new_server_config)
+                        _inject_mcp_trace_headers(client_config)
+                        client = MultiServerMCPClient(
+                            client_config,
+                            tool_interceptors=[_mcp_trace_context_interceptor],
+                        )
+                        tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
+                        span.set_attribute("mcp.tool.count", len(tools))
                     total_count = len(tools)
                     if selected_tools_map.get(server_name):
                         tools = [each for each in tools if each.name in selected_tools_map[server_name]]
@@ -557,6 +649,7 @@ class BaseResourceManager(abc.ABC):
                         if not each.metadata:
                             each.metadata = {}
                         each.metadata["mcp_name"] = server_name
+                        each.metadata["mcp_transport"] = transport
                     return (tools, None)
                 except Exception as err:
                     error_detail = _extract_mcp_tools_error_detail(err)

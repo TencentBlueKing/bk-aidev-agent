@@ -254,16 +254,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     });
   };
 
-  // ==================== Tippy 配置 ====================
-  const messageToolsTippyOptions = {
-    appendTo: (ref: Element) => {
-      const container = ref.closest('.draggable-container-content');
-      console.log('[ai-blueking] appendTo called, ref:', ref);
-      console.log('[ai-blueking] appendTo closest result:', container);
-      return container ?? document.body;
-    },
-  };
-
   // ==================== 派生状态 ====================
   const isCompressed = computed(() => componentManager.isCompressed.value);
   const agentName = computed(() => bootstrapAgentName.value);
@@ -411,7 +401,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     currentSession,
     isCompressed,
     isWelcomeState,
-    messageToolsTippyOptions,
     agentResources,
     agentPrompts,
     agentSkills,

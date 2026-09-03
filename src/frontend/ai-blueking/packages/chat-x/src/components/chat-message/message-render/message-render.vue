@@ -22,6 +22,7 @@
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
   import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { UserMessageActionsProps } from '../user-message/user-message.vue';
+  import type { IToolBtn } from '../../../types';
 
   defineSlots<{
     // 中断消息「已回答内容」回显的自定义 slot，透传给 InterruptMessageRender
@@ -34,6 +35,7 @@
     Partial<UserMessageActionsProps> &
       Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
         message: Partial<Message>;
+        messageTools?: IToolBtn[];
         onInterruptResume?: OnInterruptResume;
       }
   >();
@@ -50,6 +52,7 @@
           onAction: props.onAction,
           onInputConfirm: props.onInputConfirm,
           onShortcutConfirm: props.onShortcutConfirm,
+          messageTools: props.messageTools,
           messageToolsStatus: props.messageToolsStatus,
           tippyOptions: props.tippyOptions,
         });

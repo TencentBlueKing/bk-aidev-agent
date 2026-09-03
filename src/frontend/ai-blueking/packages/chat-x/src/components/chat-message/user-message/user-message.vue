@@ -7,27 +7,14 @@
     />
     <!-- 非编辑状态 -->
     <template v-if="!isEdit">
-      <template v-if="binaryFiles.length">
-        <div
-          v-if="binaryImageFiles.length"
-          class="ai-user-message-binary-files"
-        >
-          <FileContent
-            :files="binaryImageFiles"
-            :readonly="true"
-          />
-        </div>
-        <div
-          v-for="(file, index) in binaryNonImageFiles"
-          :key="file.url ?? index"
-          class="ai-user-message-binary-files"
-        >
-          <FileContent
-            :files="[file]"
-            :readonly="true"
-          />
-        </div>
-      </template>
+      <!-- 图片 / 文件的分组与排序由 FileContent 内部按设计稿处理 -->
+      <FileContent
+        v-if="binaryFiles.length"
+        class="ai-user-message-binary-files"
+        :files="binaryFiles"
+        :readonly="true"
+        variant="message"
+      />
       <div
         v-if="citeContent || textParts.length"
         class="ai-user-message-content"
@@ -50,7 +37,7 @@
       <MessageTools
         v-if="messageToolsStatus !== MessageToolsStatus.Hidden"
         class="ai-user-message-tools"
-        :message-tools="CONST_USER_MESSAGE_TOOLS"
+        :message-tools="mergedMessageTools"
         :message-tools-status="messageToolsStatus"
         :on-action="handleAction"
         :tippy-options="tippyOptions"
@@ -117,7 +104,7 @@
     type UploadFile,
     MessageToolsStatus,
   } from '../../../types';
-  import { isImageFile } from '../../../utils';
+  import { mergeToolsById } from '../../../utils';
   import ShortcutRender from '../../ai-shortcut/shortcut-render/shortcut-render.vue';
   import CiteContent from '../../chat-content/cite-content/cite-content.vue';
   import FileContent from '../../chat-content/file-content/file-content.vue';
@@ -141,6 +128,7 @@
     id?: UserMessage['id'];
     messageId?: UserMessage['messageId'];
     name?: UserMessage['name'];
+    messageTools?: IToolBtn[];
     onAction?: MessageToolsProps['onAction'];
     property?: UserMessage['property'];
     role?: UserMessage['role'];
@@ -151,6 +139,7 @@
   const props = defineProps<UserMessageProps>();
   const globalConfig = injectGlobalConfig();
   const { copy } = useClipboard();
+  const mergedMessageTools = computed(() => mergeToolsById(CONST_USER_MESSAGE_TOOLS, props.messageTools));
   const isEdit = shallowRef(false);
   const editContent = shallowRef<string | TagSchema>('');
   const chatInputRef = useTemplateRef<InstanceType<typeof ChatInput>>('chatInputRef');
@@ -201,15 +190,11 @@
     return null;
   }) as Partial<Shortcut>;
 
-  const isBinaryImage = (file: UploadFile) => !!file.url || isImageFile(file.mimeType || file.file?.type);
-
   // 二进制文件
   const binaryFiles = computed(() => {
     if (!Array.isArray(props.content)) return [];
     return props.content?.filter(item => item.type === MessageContentType.Binary) as UploadFile[];
   });
-  const binaryImageFiles = computed(() => binaryFiles.value.filter(f => isBinaryImage(f)));
-  const binaryNonImageFiles = computed(() => binaryFiles.value.filter(f => !isBinaryImage(f)));
   // 文本内容（统一为 string[]，兼容 content 为 string 或 InputContent[]）
   const textParts = computed((): string[] => {
     if (!props.content) return [];

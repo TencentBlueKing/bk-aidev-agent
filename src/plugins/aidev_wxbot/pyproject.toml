@@ -1,6 +1,6 @@
 [project]
 name = "aidev-wxbot"
-version = "2.2.1post1"
+version = "2.2.2rc28"
 description = "A Django app for WeChat AI bot integration with BK AI Dev platform"
 authors = [
     {name = "tencentblueking"}
@@ -24,14 +24,17 @@ dependencies = [
     "pycryptodome>=3.23.0",
     "requests>=2.32.5",
     "pika>=1.3.0,<2.0",
-    "aidev-bkplugin>=2.2.1post1",
+    "aidev-bkplugin>=2.2.2rc28",
+    "wecom-aibot-python-sdk-async==1.0.2",
 ]
 
 [dependency-groups]
 dev = [
+    "opentelemetry-instrumentation-requests>=0.41b0",
+    "opentelemetry-sdk>=1.20",
     "pytest>=7.4.4,<9",
     "pytest-asyncio>=0.23.3,<1",
-    "pytest-django>=4.7.0,<5",
+    "pytest-django>=4.7.0,<4.13",
     "pytest-dotenv>=0.5.2,<1",
 ]
 
@@ -74,7 +77,6 @@ section-order = [
 relative-imports-order = "closest-to-furthest"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "aidev_wxbot.settings"
 env_override_existing_values = 1
 env_files = [".env"]
 asyncio_default_fixture_loop_scope = "session"

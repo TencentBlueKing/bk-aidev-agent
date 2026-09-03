@@ -5,7 +5,7 @@
 - 无 hook 时 ``_emit_run_end_extras`` 是空 async generator
 - 有 hook 时按顺序转发 hook 产出的事件，并把 ``state_values / thread_id / active_run /
   dispatch_event`` 4 项运行期上下文以关键字参数传给 hook
-- 源码级：hook 调用点位于 MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前
+- 源码级：hook 调用点位于终态 STATE_SNAPSHOT 之后、RUN_FINISHED 之前
 
 业务契约（PV 判定 / PaaS HTTP / artifact 转换 / 异常兜底）测试见
 ``tests/services/test_artifacts_hook.py``。
@@ -13,11 +13,10 @@
 
 import inspect
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
-from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
+from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 
 
 def _make_agent(hook=None) -> AidevAGUIAgent:
@@ -75,21 +74,21 @@ class TestEmitRunEndExtrasProtocol:
 
 
 class TestEventOrderInSource:
-    """源码级：hook 调用点位于 MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前。
+    """源码级：hook 调用点位于终态 STATE_SNAPSHOT 之后、RUN_FINISHED 之前。
 
     父类 :class:`LangGraphAGUIAgent` 的 ``_handle_stream_events`` 里
-    ``async for ev in self._emit_run_end_extras(...): yield ev`` 位于 ``final_snapshot_events[1]``
+    ``async for ev in self._emit_run_end_extras(...): yield ev`` 位于 ``final_snapshot_event``
     发射之后、``RunFinishedEvent`` 构造之前，重构后位置不变。
     """
 
     def test_hook_called_between_snapshot_and_run_finished(self):
         source = inspect.getsource(LangGraphAGUIAgent._handle_stream_events)
         hook_pos = source.find("_emit_run_end_extras")
-        snapshot_pos = source.find("final_snapshot_events[1]")
+        snapshot_pos = source.find("final_snapshot_event")
         # 存在多处 RunFinishedEvent（cancelled 与正常终态），hook 应位于终态那次之前
         finished_pos = source.rfind("RunFinishedEvent(")
 
         assert hook_pos != -1, "hook 未在 _handle_stream_events 中调用"
-        assert snapshot_pos != -1, "未找到 MESSAGES_SNAPSHOT 位点"
+        assert snapshot_pos != -1, "未找到终态 STATE_SNAPSHOT 位点"
         assert finished_pos != -1, "未找到 RUN_FINISHED 位点"
         assert snapshot_pos < hook_pos < finished_pos, "hook 顺序错误"

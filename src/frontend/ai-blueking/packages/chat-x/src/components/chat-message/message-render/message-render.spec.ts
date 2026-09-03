@@ -40,6 +40,7 @@ vi.mock('../user-message/user-message.vue', () => ({
     name: 'UserMessage',
     props: {
       content: { type: [String, Array], default: '' },
+      messageTools: { type: Array, default: undefined },
       messageToolsStatus: { type: String, default: undefined },
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
@@ -52,6 +53,7 @@ vi.mock('../user-message/user-message.vue', () => ({
             class: 'mock-user-message',
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
+            'data-tools-json': JSON.stringify(props.messageTools ?? []),
           },
           props.content as string,
         );
@@ -459,6 +461,27 @@ describe('MessageRender', () => {
 
       const userMessage = wrapper.find('.mock-user-message');
       expect(userMessage.attributes('data-message-tools-status')).toBeUndefined();
+    });
+
+    it('应该将 messageTools 传递给 UserMessage', () => {
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.User,
+            content: '用户消息',
+          },
+          messageTools: [
+            { id: 'edit', hidden: true },
+            { id: 'delete', hidden: true },
+          ],
+        },
+      });
+
+      const userMessage = wrapper.find('.mock-user-message');
+      expect(JSON.parse(userMessage.attributes('data-tools-json') ?? '[]')).toEqual([
+        { id: 'edit', hidden: true },
+        { id: 'delete', hidden: true },
+      ]);
     });
   });
 

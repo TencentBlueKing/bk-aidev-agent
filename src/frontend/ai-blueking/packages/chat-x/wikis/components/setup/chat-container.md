@@ -239,6 +239,7 @@ sinceVersion: 1.0.0
 ## 核心能力
 
 - **分栏布局**：基于 `ResizeLayout`，侧栏固定从右侧展开且无内置折叠按钮；展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断，容器只负责渲染与回写，不再依赖 `executionGroups`、`keyword` 等数据条件。无数据时侧栏照常展开，由各面板展示空态
+- **顶部分割线**：容器自身不再绘制 `border-top`。侧栏展开时的顶栏分割线由业务 Header（如 AI 小鲸 `ai-header`）在 `asideCollapsed === false` 时绘制，以保证贯穿全宽
 - **消息分组**：内置 `useMessageGroup`，自动分组、Tool 合并、Loading 注入
 - **输入区状态推导**：对内 `messageStatus` 取 `inputStatus`——分组中存在 `LOADING_MESSAGE_ID`（`'__loading__'`）时用 `MessageStatus.Fetching`，否则用外部 `messageStatus`，保证「已发未流式」阶段也能停止、并避免重复发送
 - **待审批发送阻塞**：存在 `AIDevToolApproval` 且为 `pending` / `draft` 时，输入区上方提示，并通过 `ChatInput.sendDisabledTip` 禁止发送
@@ -400,7 +401,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 侧边栏与执行摘要
 
-侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。
+侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。Tab 标签内 `.ai-execution-summary-icon` 固定 16×16px，避免被 flex 压缩。
 
 面板内的消息虽与对话流复用同一套渲染链路，但按**只读回看**呈现：`ExecutionSummary` 会 provide 面板上下文，FlowAgent 失败节点在面板内不展示「重试 / 跳过」，只保留「详情」；对话流内不受影响。详见 [ExecutionSummary](/components/agent/execution-summary)。
 
@@ -533,6 +534,7 @@ ai-chat-container（:data-ai-size="size"）
 除「执行情况」外，容器内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`（按 `outputId` 去重）：
 
 - **常驻挂载 / 默认选中**：容器初始化即通过 `ensureCustomTab` 挂上该 Tab（不展开侧栏）；因 `order: -1` 排在 Tab 栏首位，在用户未主动切换过 Tab 时它就是侧栏的默认面板。不随产物有无增删，无产物时由面板展示整块空态
+- **默认图标**：`ArtifactTabIcon`，16×16 线性折角文档，`fill` 走 `currentColor` 以继承 Tab 选中/默认色
 - **主动打开**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 以 `outputId` 命中该文件，再 `addCustomTab` 展开侧栏并选中「文件产物」
 - **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
 - **命中态维护**：产物列表为空时清空命中；命中项已不在列表时回落到第一个 `outputId`
@@ -944,7 +946,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 自定义按钮触发多选（triggerSelection）
 
-除内置「分享」外，任意自定义工具按钮标记 `triggerSelection: true` 后，点击即可复用同一套多选流程（勾选消息 → `SelectionFooter` 确认），确认时同样触发 `confirmShare`。配合 `messageTools` / `updateTools`（合并规则见 [MessageContainer · 自定义消息工具栏](/components/setup/message-container)）即可扩展如「保存」「收藏到空间」等批量操作。
+除内置「分享」外，任意自定义工具按钮标记 `triggerSelection: true` 后，点击即可复用同一套多选流程（勾选消息 → `SelectionFooter` 确认），确认时同样触发 `confirmShare`。配合 `messageTools` / `updateTools` / `userMessageTools`（合并规则见 [MessageContainer · 自定义消息工具栏](/components/setup/message-container)）即可扩展如「保存」「收藏到空间」等批量操作，或隐藏用户消息上的编辑 / 删除。
 
 ```vue
 <template>
@@ -1106,7 +1108,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | 属性名                    | 类型                                                                                     | 默认值    | 说明                                                                                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
-| commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件                                                                           |
+| commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件。原样透传，仅全屏态强制把 `appendTo` 改为全屏容器；未传 `appendTo` 时不注入该字段，各浮层沿用自身默认挂载点 |
 | executionTabVisible       | `boolean`                                                                                | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
 | getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
@@ -1119,7 +1121,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 
 ### v-model
 

@@ -12,7 +12,6 @@ from aidev_agent.config import settings
 from aidev_agent.core.graphs.react.graph import DefaultState, ReActAgentBuilder
 from aidev_agent.core.graphs.react.skill_middleware import SkillsPromptMiddleware, _extract_paas_params
 from aidev_agent.core.graphs.react.team_middleware import TeamPromptMiddleware
-from aidev_agent.core.nodes.interrupt import ItsmApprovalStrategy, make_interrupt_node
 from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings
 from aidev_agent.core.nodes.tool import ToolNodeSettings
 from aidev_agent.core.tools.a2a_tools.types import AgentSpec
@@ -805,9 +804,9 @@ class TestReActAgentBuilder:
     # B (continued). _should_continue 测试
     # ----------------------------------------------------------------
 
-    def test_should_continue_returns_approval_check_when_tool_calls(self):
+    def test_should_continue_returns_pv_node_when_tool_calls(self):
         msg = AIMessage(content="", tool_calls=[{"id": "1", "name": "calc", "args": {}}])
-        assert ReActAgentBuilder._should_continue({"messages": [msg]}) == "approval_check"
+        assert ReActAgentBuilder._should_continue({"messages": [msg]}) == "pv_node"
 
     def test_should_continue_returns_end_when_no_tool_calls(self):
         msg = AIMessage(content="done")
@@ -815,194 +814,6 @@ class TestReActAgentBuilder:
 
     def test_should_continue_returns_end_for_empty_messages(self):
         assert ReActAgentBuilder._should_continue({"messages": []}) == "end"
-
-    def test_approval_check_processes_all_tool_calls(self):
-        """approval_check 不应只处理第一个需要审批的 tool_call。"""
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "approval": {"approval_enabled": True},
-        }
-        try:
-            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
-            state = {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        id="ai_approval_all",
-                        tool_calls=[
-                            {"id": "call_1", "name": "calculator", "args": {"a": 1, "b": 2}, "type": "tool_call"},
-                            {"id": "call_2", "name": "calculator", "args": {"a": 3, "b": 4}, "type": "tool_call"},
-                        ],
-                    )
-                ]
-            }
-
-            with patch(
-                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
-                side_effect=[True, False],
-            ) as mock_request:
-                command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
-
-            assert command.goto == "pv_node"
-            updated_messages = command.update["messages"]
-            assert len(updated_messages) == 1
-            updated_ai_message = updated_messages[0]
-            approval_state = updated_ai_message.additional_kwargs["tool_approval"]
-            assert approval_state["call_1"]["status"] == "approved"
-            assert approval_state["call_2"]["status"] == "rejected"
-            # 两个 target 各调一次 request_approval_decision（ 复刻 11.1 _check for 循环）
-            assert mock_request.call_count == 2
-        finally:
-            calculator.metadata = original_metadata
-
-    def test_approval_check_skips_decided_calls_and_continues_pending_one(self):
-        """已决策 tool_call 不应重复审批，后续 pending call 应继续处理。"""
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "approval": {"approval_enabled": True},
-        }
-        try:
-            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
-            state = {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        id="ai_approval_resume",
-                        tool_calls=[
-                            {"id": "call_1", "name": "calculator", "args": {"a": 1, "b": 2}, "type": "tool_call"},
-                            {"id": "call_2", "name": "calculator", "args": {"a": 3, "b": 4}, "type": "tool_call"},
-                        ],
-                        additional_kwargs={
-                            "tool_approval": {
-                                "call_1": {"status": "approved"},
-                                "call_2": {"status": "pending", "interrupt": {"id": "int-approval-call_2"}},
-                            }
-                        },
-                    )
-                ]
-            }
-
-            with patch(
-                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
-                return_value=True,
-            ) as mock_request:
-                command = approval_check(
-                    state, {"configurable": {"execute_kwargs": MagicMock(resume=[{"approved": True}])}}
-                )
-
-            assert command.goto == "pv_node"
-            updated_ai_message = next(msg for msg in command.update["messages"] if isinstance(msg, AIMessage))
-            approval_state = updated_ai_message.additional_kwargs["tool_approval"]
-            assert approval_state["call_1"]["status"] == "approved"
-            assert approval_state["call_2"]["status"] == "approved"
-            assert mock_request.call_count == 1
-            # call_2 是唯一 pending target，其 interrupt_payload 应复用已有记录
-            payload = mock_request.call_args.kwargs["interrupt_payload"]
-            assert payload == {"id": "int-approval-call_2"}
-        finally:
-            calculator.metadata = original_metadata
-
-    def test_approval_check_matches_skill_metadata_without_need_approval(self):
-        """skill 只要 approval metadata 完整，也应进入统一审批链路。"""
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "skill_name": "skill-runner",
-            "approval": {
-                "tool_type": "skill",
-                "skill_code": "skill-runner",
-                "tool_name": "Skill Runner",
-                "target": {
-                    "type": "skill",
-                    "code": "skill-runner",
-                    "skill_name": "skill-runner",
-                    "display_name": "Skill Runner",
-                },
-            },
-        }
-        try:
-            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
-            state = {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        id="ai_skill_approval",
-                        tool_calls=[
-                            {"id": "call_skill_1", "name": "calculator", "args": {"a": 1, "b": 2}, "type": "tool_call"}
-                        ],
-                    )
-                ]
-            }
-
-            with patch(
-                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
-                return_value=True,
-            ):
-                command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
-
-            assert command.goto == "pv_node"
-            updated_ai_message = command.update["messages"][0]
-            approval_state = updated_ai_message.additional_kwargs["tool_approval"]
-            assert approval_state["call_skill_1"]["status"] == "approved"
-            # 验证 skill metadata 正确识别
-            assert approval_state["call_skill_1"]["toolName"] == "Skill Runner"
-            assert approval_state["call_skill_1"]["toolCode"] == "skill-runner"
-            assert approval_state["call_skill_1"]["type"] == "skill"
-        finally:
-            calculator.metadata = original_metadata
-
-    def test_approval_check_matches_mcp_metadata_without_need_approval(self):
-        """mcp tool 只要 approval metadata 完整，也应进入统一审批链路。"""
-        original_metadata = dict(getattr(calculator, "metadata", None) or {})
-        calculator.metadata = {
-            **original_metadata,
-            "tool_code": "query-time",
-            "mcp_name": "time-server",
-            "approval": {
-                "tool_type": "mcp",
-                "mcp_code": "time-server",
-                "tool_code": "query-time",
-                "tool_name": "Query Time",
-                "target": {
-                    "type": "mcp",
-                    "mcp_name": "time-server",
-                    "code": "query-time",
-                    "display_name": "Query Time",
-                },
-            },
-        }
-        try:
-            approval_check = make_interrupt_node([ItsmApprovalStrategy([calculator])])
-            state = {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        id="ai_mcp_approval",
-                        tool_calls=[
-                            {"id": "call_mcp_1", "name": "calculator", "args": {"a": 1, "b": 2}, "type": "tool_call"}
-                        ],
-                    )
-                ]
-            }
-
-            with patch(
-                "aidev_agent.core.nodes.interrupt.itsm_approval.request_approval_decision",
-                return_value=True,
-            ):
-                command = approval_check(state, {"configurable": {"execute_kwargs": MagicMock(resume=None)}})
-
-            assert command.goto == "pv_node"
-            updated_ai_message = command.update["messages"][0]
-            approval_state = updated_ai_message.additional_kwargs["tool_approval"]
-            assert approval_state["call_mcp_1"]["status"] == "approved"
-            # 验证 mcp metadata 正确识别
-            assert approval_state["call_mcp_1"]["toolName"] == "Query Time"
-            assert approval_state["call_mcp_1"]["toolCode"] == "query-time"
-            assert approval_state["call_mcp_1"]["type"] == "mcp"
-        finally:
-            calculator.metadata = original_metadata
 
     # ----------------------------------------------------------------
     # B (continued). _prepare_store 测试
@@ -1344,6 +1155,9 @@ class TestReActAgentBuilder:
         t1 = MagicMock(spec=BaseTool)
         t2 = MagicMock(spec=BaseTool)
         builder = ReActAgentBuilder()
+        # ask_user_question 是模块级单例，_prepare_agent_tools(ignore_errors=True)
+        # 会就地改写列表内所有工具的 handle_* 标志；不关闭会把污染泄漏给后续测试
+        builder._enable_ask_user_question_tool = False
         # 直接通过 extra_tools 传入，绕过其他注入路径
         tools = builder._prepare_agent_tools(extra_tools=[t1, t2], ignore_errors=True, langchain_middleware=[])
         for t in tools:
@@ -1526,6 +1340,17 @@ class TestReActAgentBuilder:
         hints = get_type_hints(schema)
         assert "foo" in hints
 
+    def test_state_schema_has_no_ask_user_question_answers(self):
+        """D-12：DefaultState 及合并后的 state schema 不应含 ask_user_question_answers。
+
+        UserQuestionStrategy 下放后（工具本体直调 interrupt），state key
+        ``ask_user_question_answers`` 已删除，react graph state schema 一并清理。
+        """
+        assert "ask_user_question_answers" not in get_type_hints(DefaultState)
+        builder = ReActAgentBuilder()
+        schema = builder._prepare_state_schema(None)
+        assert "ask_user_question_answers" not in get_type_hints(schema)
+
     # ----------------------------------------------------------------
     # P2. _build_graph 真实构造图(覆盖 knowledge_node 路径)
     # ----------------------------------------------------------------
@@ -1554,7 +1379,6 @@ class TestReActAgentBuilder:
             model_node=model_node,
             tool_node=None,
             pv_node=MagicMock(),
-            interrupt_node=MagicMock(),
             tools=None,
         )
         assert result_graph is not None

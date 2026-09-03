@@ -1,0 +1,1451 @@
+from __future__ import annotations
+
+import base64
+import json
+import os
+import shutil
+import socket
+import sqlite3
+import subprocess
+import tempfile
+import threading
+import time
+import urllib.parse
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Callable
+
+from .app import ManagedApp
+from .config import Config, Identity
+from .http import request, stream_request, with_query
+from .report import CaseResult, RunReport
+from .trace import API_TRACE
+from .wecom_ws import WeComWebSocketMock
+
+
+def parse_sse_events(body: str) -> list[dict]:
+    events: list[dict] = []
+    for line in body.splitlines():
+        if not line.startswith("data: "):
+            continue
+        payload = line.removeprefix("data: ").strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def assistant_text(events: list[dict]) -> str:
+    return "".join(str(event.get("delta", "")) for event in events if event.get("type") == "TEXT_MESSAGE_CONTENT")
+
+
+def run_finished(events: list[dict], *, outcome: str | None = None) -> dict | None:
+    candidates = [event for event in events if event.get("type") == "RUN_FINISHED"]
+    if outcome is not None:
+        candidates = [event for event in candidates if (event.get("outcome") or {}).get("type") == outcome]
+    return candidates[-1] if candidates else None
+
+
+class Checks:
+    def __init__(self, config: Config, identity: Identity, report: RunReport):
+        self.config = config
+        self.identity = identity
+        self.report = report
+
+    @contextmanager
+    def case(self, module: str, scenario_id: str, name: str, coverage: str):
+        started = time.monotonic()
+        detail: dict = {}
+        with API_TRACE.case(module, name, scenario_id):
+            try:
+                yield detail
+            except Exception as error:
+                self.report.cases.append(
+                    CaseResult(
+                        module,
+                        name,
+                        "failed",
+                        round((time.monotonic() - started) * 1000),
+                        detail,
+                        str(error),
+                        coverage,
+                        scenario_id,
+                    )
+                )
+            else:
+                self.report.cases.append(
+                    CaseResult(
+                        module,
+                        name,
+                        "passed",
+                        round((time.monotonic() - started) * 1000),
+                        detail,
+                        coverage=coverage,
+                        scenario_id=scenario_id,
+                    )
+                )
+
+    @staticmethod
+    def require(result, expected=(200,)):
+        if result.status not in expected:
+            raise AssertionError(f"HTTP {result.status}: {result.body}")
+        return result
+
+    def auth(self):
+        with self.case(
+            "api", "api.auth", "登录与身份解析", "username 登录 mock、access token 优先级和用户身份解析"
+        ) as detail:
+            if self.identity.mode == "access_token":
+                result = request(
+                    "POST",
+                    self.config.mock_url + "/api/v1/auth/access-tokens/verify",
+                    json_body={"access_token": self.identity.access_token},
+                )
+                self.require(result)
+                resolved = result.body["data"]["username"]
+            else:
+                result = request(
+                    "POST", self.config.mock_url + "/api/v1/auth/login", json_body={"username": self.identity.username}
+                )
+                self.require(result)
+                resolved = result.body["data"]["username"]
+            if resolved != self.identity.username:
+                raise AssertionError(f"resolved username mismatch: {resolved}")
+            detail.update({"auth_mode": self.identity.mode, "username": resolved})
+
+    def api(self):
+        headers = self.identity.headers
+        root = self.config.mock_url + "/openapi/aidev/resource/v1/chat/session/"
+        session_code = ""
+
+        def reply_content(result) -> str:
+            try:
+                return str(result.body["data"]["choices"][0]["delta"]["content"])
+            except (KeyError, IndexError, TypeError) as error:
+                raise AssertionError(f"chat response did not contain assistant content: {result.body}") from error
+
+        def record_conversation(scenario_id: str, case: str, conversation_id: str, messages: list[dict]) -> None:
+            self.report.conversations.append(
+                {
+                    "module": "api",
+                    "scenario_id": scenario_id,
+                    "case": case,
+                    "conversation_id": conversation_id,
+                    "messages": messages,
+                }
+            )
+
+        with self.case(
+            "api", "api.remote-session", "远端 Session 生命周期", "Session 创建、列表、改名、详情回查和删除"
+        ) as detail:
+            created = self.require(request("POST", root, headers=headers, json_body={"session_name": "E2E"}))
+            session_code = created.body["data"]["session_code"]
+            listed = self.require(request("GET", root, headers=headers))
+            updated = self.require(
+                request("PUT", root + session_code + "/", headers=headers, json_body={"session_name": "E2E renamed"})
+            )
+            fetched = self.require(request("GET", root + session_code + "/", headers=headers))
+            self.require(request("DELETE", root + session_code + "/", headers=headers))
+            if not listed.body["data"] or fetched.body["data"]["session_name"] != "E2E renamed":
+                raise AssertionError("session mock did not persist CRUD state")
+            detail.update({"session_code": session_code, "updated": updated.body["data"]})
+
+        with self.case(
+            "api", "api.openapi", "智能体 OpenAPI", "Django 应用探活以及应用态 Session 创建、查询和删除"
+        ) as detail:
+            health = request("GET", self.config.app_url + "/bk_plugin/meta/", headers=headers, timeout=5)
+            self.require(health)
+            created = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/session/",
+                    headers=headers,
+                    json_body={"session_name": "E2E application session"},
+                    timeout=30,
+                )
+            )
+            app_session = created.body["data"]["session_code"]
+            fetched = self.require(
+                request(
+                    "GET", self.config.app_url + f"/bk_plugin/openapi/agent/session/{app_session}/", headers=headers
+                )
+            )
+            self.require(
+                request(
+                    "DELETE", self.config.app_url + f"/bk_plugin/openapi/agent/session/{app_session}/", headers=headers
+                )
+            )
+            detail.update({"session_code": app_session, "response": fetched.body})
+
+        with self.case(
+            "api",
+            "api.application-chat",
+            "应用态智能体对话",
+            "模板 README 3.1/3.2：X-BKAIDEV-USER、chat_history 和非流式 chat_completion 协议",
+        ) as detail:
+            payload = {
+                "chat_history": [{"role": "user", "content": "应用态 API 本地 E2E 测试"}],
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"protocol": "application", "response": result.body})
+            record_conversation(
+                "api.application-chat",
+                "应用态智能体对话",
+                conversation_id,
+                [*payload["chat_history"], {"role": "assistant", "content": content}],
+            )
+
+        with self.case(
+            "api",
+            "api.user-chat",
+            "用户态智能体对话",
+            "模板 README 3.3：本地登录身份注入和 plugin_api/chat_completion 非流式调用",
+        ) as detail:
+            payload = {
+                "input": "用户态 API 本地 E2E 测试",
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/plugin_api/chat_completion/",
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"protocol": "user", "response": result.body})
+            record_conversation(
+                "api.user-chat",
+                "用户态智能体对话",
+                conversation_id,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": content},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.plugin-invoke",
+            "蓝鲸插件同步调用",
+            "模板 README 3.4：1.0.0assistant 的 inputs/context 标准插件协议与同步输出",
+        ) as detail:
+            payload = {
+                "inputs": {
+                    "command": "",
+                    "input": "蓝鲸插件协议本地 E2E 测试",
+                    "chat_history": [{"role": "system", "content": "请返回确定性的本地测试结果"}],
+                },
+                "context": {"executor": self.identity.username},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/invoke/1.0.0assistant",
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            response_text = json.dumps(result.body, ensure_ascii=False, default=str)
+            expected = "这是本地 mock LLM 的确定性回复。"
+            if expected not in response_text:
+                raise AssertionError(f"plugin response did not contain assistant output: {result.body}")
+            detail.update({"protocol": "bk-plugin", "response": result.body})
+            record_conversation(
+                "api.plugin-invoke",
+                "蓝鲸插件同步调用",
+                "",
+                [
+                    {"role": "user", "content": payload["inputs"]["input"]},
+                    {"role": "assistant", "content": expected},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.sse-protocol",
+            "API 流式响应协议",
+            "模板 README 3.5：SSE 包含运行开始、文本 Start/Content/End 和成功结束事件",
+        ) as detail:
+            payload = {"input": "API SSE 协议本地 E2E 测试", "execute_kwargs": {"stream": True}}
+            result = self.require(
+                stream_request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            events = parse_sse_events(result.body)
+            event_types = [str(event.get("type", "")) for event in events]
+            required = {"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
+            content = assistant_text(events)
+            if (
+                not required.issubset(set(event_types))
+                or not content
+                or run_finished(events, outcome="success") is None
+            ):
+                raise AssertionError(f"incomplete API SSE protocol: {event_types}")
+            conversation_id = result.headers.get("x-bkaidev-agent-session-code", "")
+            detail.update({"event_types": event_types, "terminal": run_finished(events, outcome="success")})
+            record_conversation(
+                "api.sse-protocol",
+                "API 流式响应协议",
+                conversation_id,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": content},
+                ],
+            )
+
+        with self.case(
+            "api",
+            "api.multimodal-chat",
+            "多模态消息协议",
+            "模板 README 3.1：chat_history.content 接受 text 与 image_url 组合并完成智能体调用",
+        ) as detail:
+            multimodal_content = [
+                {"type": "text", "text": "描述这张本地测试图片"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII="
+                    },
+                },
+            ]
+            payload = {
+                "chat_history": [{"role": "user", "content": multimodal_content}],
+                "execute_kwargs": {"stream": False},
+            }
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=headers,
+                    json_body=payload,
+                    timeout=90,
+                )
+            )
+            content = reply_content(result)
+            conversation_id = str(result.body["data"].get("id", ""))
+            detail.update({"content_types": [item["type"] for item in multimodal_content], "response": result.body})
+            record_conversation(
+                "api.multimodal-chat",
+                "多模态消息协议",
+                conversation_id,
+                [
+                    {"role": "user", "content": multimodal_content},
+                    {"role": "assistant", "content": content},
+                ],
+            )
+
+    def ai_blueking(self):
+        chat_url = self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/"
+        content_url = self.config.app_url + "/bk_plugin/openapi/agent/session_content/"
+
+        def create_session(name: str) -> str:
+            created = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/session/",
+                    headers=self.identity.headers,
+                    json_body={"session_name": name},
+                    timeout=30,
+                )
+            )
+            return created.body["data"]["session_code"]
+
+        def execute_stream(payload: dict, timeout: float = 90):
+            result = self.require(
+                stream_request(
+                    "POST",
+                    chat_url,
+                    headers=self.identity.headers,
+                    json_body=payload,
+                    timeout=timeout,
+                )
+            )
+            if "text/event-stream" not in result.headers.get("content-type", "").lower():
+                raise AssertionError(f"chat completion did not return SSE: {result.headers}")
+            return result, parse_sse_events(result.body)
+
+        def record_conversation(scenario_id: str, case: str, conversation_id: str, messages: list[dict]) -> None:
+            self.report.conversations.append(
+                {
+                    "module": "ai-blueking",
+                    "scenario_id": scenario_id,
+                    "case": case,
+                    "conversation_id": conversation_id,
+                    "messages": messages,
+                }
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.configuration",
+            "页面与 Agent 配置",
+            "AI 小鲸页面、Agent 基本信息、配置和访问权限",
+        ) as detail:
+            page = self.require(request("GET", self.config.app_url + "/chat-window/", headers=self.identity.headers))
+            if "html" not in page.headers.get("Content-Type", "").lower():
+                raise AssertionError("chat-window did not return HTML")
+            info = self.require(
+                request(
+                    "GET", self.config.app_url + "/bk_plugin/openapi/agent/agent/info/", headers=self.identity.headers
+                )
+            )
+            detail.update({"page_bytes": len(str(page.body).encode()), "agent": info.body})
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.browser-render",
+            "浏览器渲染",
+            "AI 小鲸页面在 Chrome/Chromium headed 或 headless 模式正常渲染",
+        ) as detail:
+            configured = os.getenv("E2E_BROWSER_BIN", "").strip()
+            candidates = (
+                configured,
+                shutil.which("chromium") or "",
+                shutil.which("chromium-browser") or "",
+                shutil.which("google-chrome") or "",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            )
+            browser = next((Path(item) for item in candidates if item and Path(item).is_file()), None)
+            if browser is None:
+                raise RuntimeError("Chrome/Chromium not found; configure E2E_BROWSER_BIN")
+            command = [str(browser), "--no-first-run", "--no-default-browser-check"]
+            if self.config.headless:
+                with tempfile.TemporaryDirectory(prefix="bk-aidev-agent-e2e-chrome-") as profile:
+                    screenshot = Path(profile) / "chat-window.png"
+                    process = subprocess.Popen(
+                        [
+                            *command,
+                            f"--user-data-dir={profile}",
+                            "--headless",
+                            "--disable-gpu",
+                            "--disable-background-networking",
+                            "--disable-dev-shm-usage",
+                            "--disable-extensions",
+                            "--window-size=1280,720",
+                            f"--screenshot={screenshot}",
+                            self.config.app_url + "/chat-window/",
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    deadline = time.monotonic() + 20
+                    while time.monotonic() < deadline and not screenshot.is_file() and process.poll() is None:
+                        time.sleep(0.2)
+                    rendered_bytes = screenshot.stat().st_size if screenshot.is_file() else 0
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+                    if rendered_bytes <= 0:
+                        raise AssertionError(
+                            f"headless browser did not render a screenshot (exit={process.returncode})"
+                        )
+                detail.update({"mode": "headless", "browser": browser.name, "rendered_bytes": rendered_bytes})
+            else:
+                profile = self.config.root / "dev/e2e/.runtime/browser-profile"
+                process = subprocess.Popen(
+                    [*command, f"--user-data-dir={profile}", "--new-window", self.config.app_url + "/chat-window/"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(3)
+                if process.poll() not in {None, 0}:
+                    raise AssertionError(f"headed browser exited with {process.returncode}")
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=10)
+                detail.update({"mode": "headed", "browser": browser.name})
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.sync-chat",
+            "同步智能体对话",
+            "chat_completion、会话初始化、Token 计算、LLM 调用和会话内容写入",
+        ) as detail:
+            chat_request = {"input": "本地 E2E 测试", "execute_kwargs": {"stream": False}}
+            result = self.require(
+                request(
+                    "POST",
+                    self.config.app_url + "/bk_plugin/openapi/agent/chat_completion/",
+                    headers=self.identity.headers,
+                    json_body=chat_request,
+                    timeout=90,
+                )
+            )
+            assistant_content = result.body["data"]["choices"][0]["delta"]["content"]
+            detail.update({"request": chat_request, "response": result.body})
+            self.report.conversations.append(
+                {
+                    "module": "ai-blueking",
+                    "scenario_id": "ai-blueking.sync-chat",
+                    "case": "同步智能体对话",
+                    "conversation_id": result.body["data"].get("id", ""),
+                    "messages": [
+                        {"role": "user", "content": chat_request["input"]},
+                        {"role": "assistant", "content": assistant_content},
+                    ],
+                }
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.stream-terminal",
+            "流式消息与正常终态",
+            "SSE 依次包含运行开始、文本增量、文本结束和当前运行的 RUN_FINISHED(success)",
+        ) as detail:
+            payload = {"input": "请用流式消息回复本地测试", "execute_kwargs": {"stream": True}}
+            result, events = execute_stream(payload)
+            event_types = [event.get("type") for event in events]
+            required = {"RUN_STARTED", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
+            if not required.issubset(set(event_types)) or run_finished(events, outcome="success") is None:
+                raise AssertionError(f"incomplete successful stream: {event_types}")
+            content = assistant_text(events)
+            if not content:
+                raise AssertionError("stream did not contain assistant text")
+            session_code = result.headers.get("x-bkaidev-agent-session-code", "")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "message_handler": os.getenv("MESSAGE_HANDLER_TYPE", "redis"),
+                    "event_types": event_types,
+                    "terminal": run_finished(events, outcome="success"),
+                }
+            )
+            record_conversation(
+                "ai-blueking.stream-terminal",
+                "流式消息与正常终态",
+                session_code,
+                [{"role": "user", "content": payload["input"]}, {"role": "assistant", "content": content}],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.multi-turn-context",
+            "多轮上下文连续性",
+            "同一 session 连续两轮对话，第二次 LLM 请求可见第一轮用户消息与助手回复",
+        ) as detail:
+            session_code = create_session("E2E multi-turn conversation")
+            first_input = "[E2E_CONTEXT_TURN_1] 第一轮：项目代号是蓝鲸。"
+            _, first_events = execute_stream(
+                {"session_code": session_code, "input": first_input, "execute_kwargs": {"stream": True}}
+            )
+            if run_finished(first_events, outcome="success") is None:
+                raise AssertionError("first turn did not create a completed session")
+            second_input = "[E2E_CONTEXT_TURN_2] 第二轮：请确认仍记得第一轮。"
+            _, second_events = execute_stream(
+                {"session_code": session_code, "input": second_input, "execute_kwargs": {"stream": True}}
+            )
+            second_answer = assistant_text(second_events)
+            if "多轮上下文完整" not in second_answer or run_finished(second_events, outcome="success") is None:
+                raise AssertionError(f"second turn lost prior context: {second_answer}")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "turns": 2,
+                    "first_terminal": run_finished(first_events, outcome="success"),
+                    "second_terminal": run_finished(second_events, outcome="success"),
+                }
+            )
+            record_conversation(
+                "ai-blueking.multi-turn-context",
+                "多轮上下文连续性",
+                session_code,
+                [
+                    {"role": "user", "content": first_input},
+                    {"role": "assistant", "content": assistant_text(first_events)},
+                    {"role": "user", "content": second_input},
+                    {"role": "assistant", "content": second_answer},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.disconnect-replay",
+            "断线重连与消息回放",
+            "客户端收到首段文本后主动断开，生产者继续运行；attach 重连可回放完整消息并收到成功终态",
+        ) as detail:
+            session_code = create_session("E2E reconnect conversation")
+            payload = {
+                "session_code": session_code,
+                "input": "[E2E_SLOW_STREAM] 验证断线后重连",
+                "execute_kwargs": {"stream": True},
+            }
+            disconnected = self.require(
+                stream_request(
+                    "POST",
+                    chat_url,
+                    headers=self.identity.headers,
+                    json_body=payload,
+                    timeout=90,
+                    stop_after=lambda line: '"type":"TEXT_MESSAGE_CONTENT"' in line,
+                )
+            )
+            partial_events = parse_sse_events(disconnected.body)
+            if not assistant_text(partial_events) or run_finished(partial_events) is not None:
+                raise AssertionError("disconnect point was not inside an active stream")
+            reconnected, replay_events = execute_stream(
+                {
+                    "session_code": session_code,
+                    "input": "",
+                    "execute_kwargs": {"stream": True, "stream_mode": "attach"},
+                },
+                timeout=90,
+            )
+            replay_text = assistant_text(replay_events)
+            if "断线恢复" not in replay_text or "分段响应" not in replay_text:
+                raise AssertionError(f"replay did not restore the complete answer: {replay_text}")
+            if run_finished(replay_events, outcome="success") is None:
+                raise AssertionError("reconnected stream did not reach current successful terminal")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "partial_event_types": [event.get("type") for event in partial_events],
+                    "replayed_event_types": [event.get("type") for event in replay_events],
+                    "terminal": run_finished(replay_events, outcome="success"),
+                    "reconnect_status": reconnected.status,
+                }
+            )
+            record_conversation(
+                "ai-blueking.disconnect-replay",
+                "断线重连与消息回放",
+                session_code,
+                [
+                    {"role": "user", "content": payload["input"]},
+                    {"role": "assistant", "content": replay_text},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.stop-idempotent",
+            "生成中停止与重复停止",
+            "文本流生成期间携带当前 run_id 停止，消费者收敛到取消终态；重复停止不产生重复中断内容",
+        ) as detail:
+            session_code = create_session("E2E stop conversation")
+            first_delta_seen = threading.Event()
+            run_id_seen = threading.Event()
+            captured: dict[str, object] = {"run_id": ""}
+
+            def on_line(line: str) -> None:
+                if not line.startswith("data: "):
+                    return
+                try:
+                    event = json.loads(line.removeprefix("data: "))
+                except json.JSONDecodeError:
+                    return
+                if event.get("type") == "RUN_STARTED":
+                    captured["run_id"] = event.get("runId", "")
+                    run_id_seen.set()
+                if event.get("type") == "TEXT_MESSAGE_CONTENT":
+                    first_delta_seen.set()
+
+            def consume_slow_stream() -> None:
+                try:
+                    captured["result"] = stream_request(
+                        "POST",
+                        chat_url,
+                        headers=self.identity.headers,
+                        json_body={
+                            "session_code": session_code,
+                            "input": "[E2E_SLOW_STREAM] 请生成一段可停止的回复",
+                            "execute_kwargs": {"stream": True},
+                        },
+                        timeout=90,
+                        on_line=on_line,
+                    )
+                except Exception as error:  # pragma: no cover - surfaced by assertion below
+                    captured["error"] = str(error)
+
+            consumer = threading.Thread(target=consume_slow_stream, name="e2e-stop-stream", daemon=True)
+            consumer.start()
+            if not run_id_seen.wait(20) or not first_delta_seen.wait(20):
+                raise AssertionError("slow stream did not reach the stoppable stage")
+            stop_payload = {"session_code": session_code, "run_id": captured["run_id"]}
+            first_stop = self.require(
+                request(
+                    "POST",
+                    content_url + "stop/",
+                    headers=self.identity.headers,
+                    json_body=stop_payload,
+                    timeout=30,
+                )
+            )
+            consumer.join(timeout=30)
+            if consumer.is_alive() or captured.get("error"):
+                raise AssertionError(f"stream did not stop cleanly: {captured.get('error', 'still running')}")
+            second_stop = self.require(
+                request(
+                    "POST",
+                    content_url + "stop/",
+                    headers=self.identity.headers,
+                    json_body=stop_payload,
+                    timeout=30,
+                )
+            )
+            stream_result = captured.get("result")
+            if stream_result is None:
+                raise AssertionError("stopped stream result is missing")
+            stopped_events = parse_sse_events(stream_result.body)
+            terminal = run_finished(stopped_events)
+            session = self.require(
+                request(
+                    "GET",
+                    self.config.app_url + f"/bk_plugin/openapi/agent/session/{session_code}/",
+                    headers=self.identity.headers,
+                )
+            ).body["data"]
+            if terminal is None or terminal.get("runId") != "cancelled" or session.get("status") != "cancelled":
+                raise AssertionError(f"stream did not expose a cancellation terminal: {terminal}")
+            contents = self.require(
+                request(
+                    "GET",
+                    with_query(content_url + "content/", session_code=session_code),
+                    headers=self.identity.headers,
+                )
+            ).body["data"]
+            interrupted = [
+                item
+                for item in contents
+                if item.get("role") == "assistant"
+                and (item.get("status") in {"cancelled", "error"} or "取消" in str(item.get("content", "")))
+            ]
+            if len(interrupted) > 1:
+                raise AssertionError(f"duplicate interruption content after repeated stop: {interrupted}")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "run_id": captured["run_id"],
+                    "terminal": terminal,
+                    "session_status": session.get("status"),
+                    "first_stop": first_stop.body,
+                    "second_stop": second_stop.body,
+                    "interruption_records": interrupted,
+                }
+            )
+            record_conversation(
+                "ai-blueking.stop-idempotent",
+                "生成中停止与重复停止",
+                session_code,
+                [
+                    {"role": "user", "content": "[E2E_SLOW_STREAM] 请生成一段可停止的回复"},
+                    {"role": "assistant", "content": assistant_text(stopped_events) or "（生成已停止）"},
+                ],
+            )
+
+        with self.case(
+            "ai-blueking",
+            "ai-blueking.ask-user-resume",
+            "提问卡片答题与续流",
+            "模型触发 ask_user_question 中断，提交选项后同一会话恢复并产出助手回复与当前运行成功终态",
+        ) as detail:
+            session_code = create_session("E2E ask-user-question conversation")
+            question_input = "[E2E_ASK_USER] 部署前请先询问我要使用哪个环境。"
+            _, question_events = execute_stream(
+                {"session_code": session_code, "input": question_input, "execute_kwargs": {"stream": True}}
+            )
+            interrupt_terminal = run_finished(question_events, outcome="interrupt")
+            interrupts = (interrupt_terminal or {}).get("outcome", {}).get("interrupts", [])
+            if not interrupts:
+                raise AssertionError(f"ask_user_question did not produce an interrupt: {interrupt_terminal}")
+            interrupt = interrupts[0]
+            interrupt_id = interrupt.get("id") or interrupt.get("interruptId") or ""
+            metadata = interrupt.get("metadata") or {}
+            if interrupt.get("reason") != "aidev:user_question" or not metadata.get("questions") or not interrupt_id:
+                raise AssertionError(f"invalid ask_user_question payload: {interrupt}")
+            answers = [
+                {
+                    "question": "请选择部署环境",
+                    "answer": [{"label": "生产环境", "description": "prod"}],
+                }
+            ]
+            _, resumed_events = execute_stream(
+                {
+                    "session_code": session_code,
+                    "input": "",
+                    "resume": [{"interruptId": interrupt_id, "payload": {"answers": answers}}],
+                    "execute_kwargs": {"stream": True},
+                }
+            )
+            resumed_text = assistant_text(resumed_events)
+            if "已收到你的选择：生产环境" not in resumed_text:
+                raise AssertionError(f"resume did not continue to the assistant answer: {resumed_text}")
+            success_terminals = [
+                event
+                for event in resumed_events
+                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
+            ]
+            if not success_terminals:
+                raise AssertionError("resumed run did not expose its own successful terminal")
+            replay_terminal_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_FINISHED"), -1
+            )
+            run_started_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_STARTED"), -1
+            )
+            assistant_index = next(
+                (index for index, event in enumerate(resumed_events) if event.get("type") == "TEXT_MESSAGE_CONTENT"),
+                -1,
+            )
+            current_terminal_index = max(
+                index
+                for index, event in enumerate(resumed_events)
+                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
+            )
+            if not replay_terminal_index < run_started_index < assistant_index < current_terminal_index:
+                raise AssertionError("old question-card terminal prematurely ended the resumed run")
+            detail.update(
+                {
+                    "session_code": session_code,
+                    "interrupt": interrupt,
+                    "submitted_answers": answers,
+                    "resumed_event_types": [event.get("type") for event in resumed_events],
+                    "replayed_card_terminal": resumed_events[replay_terminal_index],
+                    "success_terminal": success_terminals[-1],
+                }
+            )
+            record_conversation(
+                "ai-blueking.ask-user-resume",
+                "提问卡片答题与续流",
+                session_code,
+                [
+                    {"role": "user", "content": question_input},
+                    {"role": "assistant", "content": "请选择部署环境：测试环境 / 生产环境"},
+                    {"role": "user", "content": "生产环境"},
+                    {"role": "assistant", "content": resumed_text},
+                ],
+            )
+
+    def message(self):
+        database_name = "真实 SQLite 应用数据库" if self.config.database == "sqlite" else "真实 MySQL 5.7 应用数据库"
+        database_coverage = (
+            "SQLite 文件完整性和 Django migration 落库"
+            if self.config.database == "sqlite"
+            else "MySQL 5.7 版本和应用库连接"
+        )
+        with self.case("message", "message.database", database_name, database_coverage) as detail:
+            if self.config.database == "sqlite":
+                path = self.config.root / "dev/e2e/.runtime/agent.sqlite3"
+                if not path.is_file():
+                    raise AssertionError(f"SQLite database was not created: {path}")
+                connection = sqlite3.connect(path)
+                try:
+                    integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+                    migrations = connection.execute("SELECT COUNT(*) FROM django_migrations").fetchone()[0]
+                finally:
+                    connection.close()
+                if integrity != "ok" or migrations < 1:
+                    raise AssertionError(f"unexpected SQLite baseline: integrity={integrity}, migrations={migrations}")
+                detail.update(
+                    {
+                        "backend": "sqlite",
+                        "version": sqlite3.sqlite_version,
+                        "database": path.name,
+                        "integrity": integrity,
+                        "migrations": migrations,
+                    }
+                )
+            else:
+                python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+                script = """
+import json, os, pymysql
+connection = pymysql.connect(
+    host=os.environ['MYSQL_HOST'], port=int(os.environ['MYSQL_PORT']),
+    user=os.environ['MYSQL_USER'], password=os.environ['MYSQL_PASSWORD'],
+    database=os.environ['MYSQL_NAME'],
+)
+with connection.cursor() as cursor:
+    cursor.execute('SELECT VERSION(), DATABASE()')
+    version, database = cursor.fetchone()
+connection.close()
+print(json.dumps({'version': version, 'database': database}))
+"""
+                checked = subprocess.run(
+                    [str(python), "-c", script],
+                    env=os.environ.copy(),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                )
+                if checked.returncode:
+                    raise AssertionError(f"MySQL check failed: {checked.stderr[-500:]}")
+                mysql = json.loads(checked.stdout.splitlines()[-1])
+                if not mysql["version"].startswith("5.7.") or mysql["database"] != os.getenv("MYSQL_NAME"):
+                    raise AssertionError(f"unexpected MySQL baseline: {mysql}")
+                detail.update({"backend": "mysql", **mysql})
+
+        with self.case("message", "message.redis", "Redis 可用性", "真实 Redis 连接和 PING/PONG 往返") as detail:
+            parsed = urllib.parse.urlparse(os.getenv("MESSAGE_REDIS_URL", "redis://127.0.0.1:16379/0"))
+            with socket.create_connection((parsed.hostname or "127.0.0.1", parsed.port or 6379), timeout=5) as stream:
+                stream.sendall(b"*1\r\n$4\r\nPING\r\n")
+                reply = stream.recv(64)
+            if not reply.startswith(b"+PONG"):
+                raise AssertionError(f"unexpected Redis response: {reply!r}")
+            detail["response"] = reply.decode(errors="replace").strip()
+
+        with self.case(
+            "message", "message.rabbitmq", "RabbitMQ 消息往返", "真实队列创建、消息发布、消费确认和队列清理"
+        ) as detail:
+            user = os.getenv("RABBITMQ_USER", "aidev")
+            password = os.getenv("RABBITMQ_PASSWORD", "aidev-e2e")
+            host = os.getenv("RABBITMQ_HOST", "127.0.0.1")
+            port = int(os.getenv("RABBITMQ_MANAGEMENT_PORT", "15673"))
+            auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+            headers = {"Authorization": f"Basic {auth}"}
+            queue = f"aidev-agent-e2e-{int(time.time() * 1000)}"
+            queue_url = f"http://{host}:{port}/api/queues/%2F/{queue}"
+            self.require(
+                request(
+                    "PUT",
+                    queue_url,
+                    headers=headers,
+                    json_body={"auto_delete": True, "durable": False, "arguments": {}},
+                ),
+                (201, 204),
+            )
+            try:
+                published = self.require(
+                    request(
+                        "POST",
+                        f"http://{host}:{port}/api/exchanges/%2F/amq.default/publish",
+                        headers=headers,
+                        json_body={
+                            "properties": {},
+                            "routing_key": queue,
+                            "payload": "e2e-message",
+                            "payload_encoding": "string",
+                        },
+                    )
+                )
+                consumed = self.require(
+                    request(
+                        "POST",
+                        f"http://{host}:{port}/api/queues/%2F/{queue}/get",
+                        headers=headers,
+                        json_body={"count": 1, "ackmode": "ack_requeue_false", "encoding": "auto", "truncate": 50000},
+                    )
+                )
+                if (
+                    not published.body.get("routed")
+                    or not consumed.body
+                    or consumed.body[0].get("payload") != "e2e-message"
+                ):
+                    raise AssertionError("RabbitMQ round trip failed")
+                detail.update({"queue": queue, "payload": consumed.body[0]["payload"]})
+            finally:
+                request("DELETE", queue_url, headers=headers)
+
+    def metrics(self):
+        with self.case(
+            "metrics",
+            "metrics.local-config-priority",
+            "指标本地配置优先级",
+            "本地周期、推送方式、BKM 连接参数和 Celery TTL 覆盖平台下发值",
+        ) as detail:
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+            script = """
+import json
+from aidev_bkplugin.services.otel_metrics import MetricExportSettings
+
+platform = {"otel_info": {"metrics": {
+    "enabled": True,
+    "export_interval_millis": 1000,
+    "export_via_celery": True,
+    "push_mode": "celery",
+    "task_ttl_seconds": 7200,
+    "agent_data_id": 2002,
+    "agent_access_token": "platform-e2e-token",
+    "agent_push_url": "http://127.0.0.1:9/v2/push/",
+    "agent_target": "platform-target",
+}}}
+resolved = MetricExportSettings.from_agent_info(platform, default_enabled=False)
+print(json.dumps({
+    "export_interval_millis": resolved.export_interval_millis,
+    "push_mode": resolved.bkm_push_mode,
+    "data_id": resolved.bkm_data_id,
+    "token_is_local": resolved.bkm_access_token == "local-e2e-token",
+    "push_url": resolved.bkm_push_url,
+    "target": resolved.bkm_target,
+    "task_ttl_seconds": resolved.task_ttl_seconds,
+}))
+"""
+            resolved = subprocess.run(
+                [str(python), "-c", script],
+                cwd=project,
+                env=ManagedApp(self.config, self.identity).environment(),
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+            if resolved.returncode:
+                raise AssertionError(f"metric settings probe failed: {resolved.stderr[-1000:]}")
+            settings = json.loads(resolved.stdout.splitlines()[-1])
+            expected = {
+                "export_interval_millis": 10000,
+                "push_mode": "direct",
+                "data_id": 1001,
+                "token_is_local": True,
+                "push_url": self.config.mock_url + "/v2/push/",
+                "target": "local-e2e-target",
+                "task_ttl_seconds": 3600,
+            }
+            if settings != expected:
+                raise AssertionError(f"local metric settings did not override platform values: {settings}")
+            detail.update(settings)
+
+        with self.case(
+            "metrics",
+            "metrics.bkm-direct",
+            "BKM 指标实时上报",
+            "应用保持周期快照，并按本地 direct 配置绕过 Celery 上报到本地 BKM mock",
+        ) as detail:
+            self.require(request("DELETE", self.config.mock_url + "/e2e/bkm-pushes", timeout=5))
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+            script = """
+import time
+from opentelemetry import metrics
+from aidev_bkplugin.services.otel_metrics import BkPluginMetricService, MetricExportSettings
+
+platform = {"otel_info": {"metrics": {
+    "enabled": True,
+    "export_interval_millis": 1000,
+    "export_via_celery": True,
+    "push_mode": "celery",
+    "task_ttl_seconds": 7200,
+    "agent_data_id": 2002,
+    "agent_access_token": "platform-e2e-token",
+    "agent_push_url": "http://127.0.0.1:9/v2/push/",
+    "agent_target": "platform-target",
+}}}
+settings = MetricExportSettings.from_agent_info(platform, default_enabled=False)
+service = BkPluginMetricService(
+    service_name="e2e-direct-metrics",
+    endpoints=[],
+    agent_info=platform,
+    settings=settings,
+)
+assert service.start()
+metrics.get_meter("e2e-direct").create_counter("e2e.direct.count").add(1)
+time.sleep(20.5)
+assert service.provider is not None
+service.provider.shutdown()
+"""
+            emitted = subprocess.run(
+                [str(python), "-c", script],
+                cwd=project,
+                env=ManagedApp(self.config, self.identity).environment(),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if emitted.returncode:
+                raise AssertionError(f"direct BKM exporter probe failed: {emitted.stderr[-1000:]}")
+            deadline = time.monotonic() + 25
+            summary = None
+            probe_pushes = []
+            while time.monotonic() < deadline:
+                summary = self.require(request("GET", self.config.mock_url + "/e2e/bkm-pushes", timeout=5)).body
+                probe_pushes = [
+                    push
+                    for push in summary.get("pushes", [])
+                    if "e2e-direct-metrics" in push.get("services", [])
+                    and "e2e_direct_count_total" in push.get("metric_names", [])
+                ]
+                if len(probe_pushes) >= 2:
+                    break
+                time.sleep(1)
+            if len(probe_pushes) < 2:
+                raise AssertionError(f"expected two direct BKM snapshots, got: {summary}")
+            periodic_pushes = probe_pushes[:2]
+            periodic_interval = periodic_pushes[1]["received_at_millis"] - periodic_pushes[0]["received_at_millis"]
+            if periodic_interval < 9000:
+                raise AssertionError(f"BKM snapshot interval was below 10-second floor: {periodic_interval} ms")
+            if any(push.get("data_id") != 1001 for push in periodic_pushes):
+                raise AssertionError(f"BKM push did not use local data id: {periodic_pushes}")
+            targets = {target for push in periodic_pushes for target in push.get("targets", [])}
+            if "local-e2e-target" not in targets:
+                raise AssertionError(f"BKM push did not use local target: {periodic_pushes}")
+            detail.update(
+                {
+                    "snapshot_count": summary["count"],
+                    "periodic_interval_millis": periodic_interval,
+                    "data_id": 1001,
+                    "target": "local-e2e-target",
+                    "transport": "direct",
+                }
+            )
+
+        with self.case(
+            "metrics", "metrics.otel-export", "OTel 指标上报", "Agent 指标经真实 OTel exporter 发送到本地 Collector"
+        ) as detail:
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = ":".join(
+                (
+                    str(self.config.root / "src/agent"),
+                    str(self.config.root / "src/plugins/aidev_bkplugin"),
+                    str(self.config.root),
+                )
+            )
+            emitted = subprocess.run(
+                [
+                    str(python),
+                    str(self.config.root / "dev/otel/mock_agent_metrics.py"),
+                    "--handler",
+                    "redis",
+                    "--concurrency",
+                    "1",
+                    "--iterations",
+                    "15",
+                    "--interval",
+                    "0.1",
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if emitted.returncode:
+                raise AssertionError(f"metric exporter failed: {emitted.stderr[-1000:]}")
+            time.sleep(2)
+            detail["exporter"] = emitted.stdout.splitlines()[-1] if emitted.stdout else "completed"
+        with self.case(
+            "metrics", "metrics.prometheus", "Prometheus 指标查询", "Prometheus 就绪且可查询智能体 active 指标序列"
+        ) as detail:
+            health = self.require(request("GET", "http://127.0.0.1:9090/-/ready", timeout=8))
+            query = self.require(
+                request(
+                    "GET",
+                    with_query("http://127.0.0.1:9090/api/v1/query", query='{__name__=~"aidev_agent_active.*"}'),
+                    timeout=8,
+                )
+            )
+            if query.body.get("status") != "success":
+                raise AssertionError("Prometheus query failed")
+            if not query.body["data"]["result"]:
+                raise AssertionError("Prometheus has no aidev_agent_active series")
+            detail.update({"ready": health.body, "series": len(query.body["data"]["result"])})
+        with self.case(
+            "metrics", "metrics.grafana", "Grafana 仪表盘", "预置的 AIDev Agent Metrics 仪表盘可读取"
+        ) as detail:
+            result = self.require(
+                request("GET", "http://127.0.0.1:3000/api/dashboards/uid/aidev-agent-metrics", timeout=8)
+            )
+            detail.update({"title": result.body["dashboard"]["title"], "uid": result.body["dashboard"]["uid"]})
+
+    def wxbot(self):
+        with self.case(
+            "wxbot", "wxbot.callback", "企微签名回调", "企微消息加密签名、回调路由解密和真实 RabbitMQ 依赖"
+        ) as detail:
+            python = self.config.root / "template/builtin/{{cookiecutter.project_name}}/.venv/bin/python"
+            script = """
+import json
+from aidev_wxbot.wxaibot.decryption import WXBizJsonMsgCrypt
+crypt = WXBizJsonMsgCrypt('e2e-wxbot-token', 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG', '')
+ret, payload = crypt.EncryptMsg('e2e-echo', 'e2e-nonce', '1787900000')
+assert ret == 0
+print(json.dumps(json.loads(payload)))
+"""
+            generated = subprocess.run(
+                [str(python), "-c", script],
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(self.config.root / "src/plugins/aidev_wxbot"),
+                },
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if generated.returncode:
+                raise AssertionError(f"wxbot callback payload generation failed: {generated.stderr[-500:]}")
+            payload = json.loads(generated.stdout.splitlines()[-1])
+            result = self.require(
+                request(
+                    "GET",
+                    with_query(
+                        self.config.app_url + "/wxbot_callback",
+                        msg_signature=payload["msgsignature"],
+                        timestamp=payload["timestamp"],
+                        nonce=payload["nonce"],
+                        echostr=payload["encrypt"],
+                    ),
+                    timeout=10,
+                )
+            )
+            if result.body != "e2e-echo":
+                raise AssertionError(f"unexpected wxbot echo: {result.body!r}")
+            detail.update({"status": result.status, "response": result.body})
+
+        ws_mock = WeComWebSocketMock()
+        ws_process: subprocess.Popen | None = None
+        ws_log_handle = None
+        runtime = self.config.root / "dev/e2e/.runtime"
+        ws_log_path = runtime / "wxbot-ws.log"
+        project = self.config.root / "template/builtin/{{cookiecutter.project_name}}"
+
+        def start_ws_exchange(command: str):
+            started = time.monotonic()
+            call = API_TRACE.start_call(
+                source="test-runner",
+                method="WS",
+                url=ws_mock.url,
+                request_headers={"X-WeCom-Command": command},
+                request_body={"cmd": command, "state": "sending"},
+            )
+            return call, started
+
+        def finish_ws_exchange(call, callback: dict, replies: list[dict], started: float, *, status: int = 200) -> None:
+            call.request_headers = {"X-WeCom-Command": callback.get("cmd", "")}
+            call.request_body = callback
+            API_TRACE.finish_call(
+                call,
+                status=status,
+                response_headers={"X-WeCom-Frames": str(len(replies))},
+                response_body={"frames": replies},
+                duration_ms=round((time.monotonic() - started) * 1000),
+            )
+
+        def stream_messages(replies: list[dict]) -> list[dict]:
+            messages: list[dict] = []
+            for reply in replies:
+                stream = reply.get("body", {}).get("stream") or {}
+                content = stream.get("content", "")
+                if content:
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content,
+                            "finish": bool(stream.get("finish")),
+                            "stream_id": stream.get("id", ""),
+                        }
+                    )
+            return messages
+
+        try:
+            with self.case(
+                "wxbot",
+                "wxbot.long-connection",
+                "企微 WebSocket 长连接",
+                "本地模拟企微远端，真实官方 SDK 完成长连接认证、渠道配置读取和心跳 ACK",
+            ) as detail:
+                runtime.mkdir(parents=True, exist_ok=True)
+                ws_mock.start()
+                env = ManagedApp(self.config, self.identity).environment()
+                env.update(
+                    {
+                        "BKAPP_WXAIBOT_WS_ENABLED": "true",
+                        "BKAPP_WXAIBOT_WS_BOT_ID": "e2e-bot",
+                        "BKAPP_WXAIBOT_WS_SECRET": "e2e-ws-secret",
+                        "BKAPP_WXAIBOT_WS_URL": ws_mock.url,
+                        "BKAPP_WXAIBOT_WS_HEARTBEAT_INTERVAL_MS": "1000",
+                        "BKAPP_WXAIBOT_WS_RECONNECT_INTERVAL_MS": "200",
+                        "BKAPP_WXAIBOT_WS_MAX_RECONNECT_ATTEMPTS": "2",
+                        "BKAPP_WXAIBOT_WS_REQUEST_TIMEOUT_MS": "5000",
+                        "BKAPP_WXAIBOT_WS_STARTUP_TIMEOUT_SEC": "10",
+                        "BKAPP_WXAIBOT_WS_SHUTDOWN_GRACE_PERIOD_SEC": "3",
+                        "BKAPP_WXAIBOT_WS_SINGLE_INSTANCE_ENABLED": "false",
+                        "BKAPP_WAXIBOT_MAX_MESSAGE_TIME": "60",
+                    }
+                )
+                ws_log_handle = ws_log_path.open("w", encoding="utf-8")
+                ws_call, started = start_ws_exchange("aibot_subscribe")
+                ws_process = subprocess.Popen(
+                    [str(project / ".venv/bin/python"), "-m", "e2e.wxbot_runner"],
+                    cwd=project,
+                    env=env,
+                    stdout=ws_log_handle,
+                    stderr=subprocess.STDOUT,
+                )
+                auth_frame = ws_mock.wait_authenticated(timeout=15)
+                if ws_process.poll() is not None:
+                    raise AssertionError(f"wxbot long connection exited with {ws_process.returncode}: {ws_log_path}")
+                heartbeat = ws_mock.wait_heartbeat(timeout=5)
+                finish_ws_exchange(ws_call, auth_frame, [heartbeat], started, status=101)
+                detail.update(
+                    {
+                        "transport": ws_mock.url,
+                        "sdk_authenticated": True,
+                        "heartbeat": heartbeat.get("cmd"),
+                        "service_log": str(ws_log_path.relative_to(self.config.root)),
+                    }
+                )
+
+            with self.case(
+                "wxbot", "wxbot.help-command", "企微 /help 指令", "长连接接收 /help，并同步返回三条会话控制指令"
+            ) as detail:
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text("/help")
+                replies = ws_mock.wait_replies(req_id, until_finish=True, timeout=15)
+                content = (replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if not all(command in content for command in ("/help", "/new", "/stop")):
+                    raise AssertionError(f"unexpected /help response: {content!r}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.help-command",
+                        "case": "企微 /help 指令",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": "/help"}, *stream_messages(replies)],
+                    }
+                )
+                detail.update({"command": "/help", "response": content, "frames": len(replies)})
+
+            with self.case(
+                "wxbot", "wxbot.new-command", "企微 /new 指令", "长连接接收 /new，并在 SQLite 中创建或轮换会话"
+            ) as detail:
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text("/new")
+                replies = ws_mock.wait_replies(req_id, until_finish=True, timeout=15)
+                content = (replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "已创建新会话" not in content:
+                    raise AssertionError(f"unexpected /new response: {content!r}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.new-command",
+                        "case": "企微 /new 指令",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": "/new"}, *stream_messages(replies)],
+                    }
+                )
+                detail.update({"command": "/new", "response": content, "frames": len(replies)})
+
+            with self.case(
+                "wxbot",
+                "wxbot.stream-polling",
+                "企微长连接终态回复",
+                "服务从真实 Redis 消息处理器消费 Agent 输出，并通过同一 WebSocket 推送成功终态",
+            ) as detail:
+                prompt = "企业微信长连接轮询 E2E 测试"
+                ws_call, started = start_ws_exchange("aibot_msg_callback")
+                req_id, callback = ws_mock.send_text(prompt)
+                replies = ws_mock.wait_replies(req_id, min_count=1, until_finish=True, timeout=60)
+                streams = [(reply.get("body", {}).get("stream") or {}) for reply in replies]
+                if not streams[-1].get("finish") or "本地 mock LLM" not in streams[-1].get("content", ""):
+                    raise AssertionError(f"unexpected final stream frame: {streams[-1]}")
+                finish_ws_exchange(ws_call, callback, replies, started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.stream-polling",
+                        "case": "企微长连接终态回复",
+                        "conversation_id": req_id,
+                        "messages": [{"role": "user", "content": prompt}, *stream_messages(replies)],
+                    }
+                )
+                detail.update(
+                    {
+                        "frames": len(replies),
+                        "initial_finish": streams[0].get("finish"),
+                        "final_finish": streams[-1].get("finish"),
+                        "response": streams[-1].get("content", ""),
+                    }
+                )
+
+            with self.case(
+                "wxbot",
+                "wxbot.stop-command",
+                "企微 /stop 指令",
+                "生成中通过独立长连接消息发送 /stop，写入跨进程取消信号并收敛原流终态",
+            ) as detail:
+                prompt = "[E2E_SLOW_STREAM] 企业微信停止生成测试"
+                time.sleep(1)
+                stream_ws_call, stream_started = start_ws_exchange("aibot_msg_callback")
+                stream_req_id, stream_callback = ws_mock.send_text(prompt)
+                time.sleep(1.5)
+                initial_replies = ws_mock.replies(stream_req_id)
+                stop_ws_call, stop_started = start_ws_exchange("aibot_msg_callback")
+                stop_req_id, stop_callback = ws_mock.send_text("/stop")
+                stop_replies = ws_mock.wait_replies(stop_req_id, until_finish=True, timeout=15)
+                stop_content = (stop_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "已停止" not in stop_content:
+                    raise AssertionError(f"unexpected /stop response: {stop_content!r}")
+                stream_replies = ws_mock.wait_replies(stream_req_id, until_finish=True, timeout=45)
+                final_stream_content = (stream_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                if "停止" not in final_stream_content and "取消" not in final_stream_content:
+                    raise AssertionError(f"original stream did not end as cancelled: {final_stream_content!r}")
+                if "分段响应" in final_stream_content:
+                    raise AssertionError("/stop returned success but the slow generation still completed")
+                finish_ws_exchange(stream_ws_call, stream_callback, stream_replies, stream_started)
+                finish_ws_exchange(stop_ws_call, stop_callback, stop_replies, stop_started)
+                self.report.conversations.append(
+                    {
+                        "module": "wxbot",
+                        "scenario_id": "wxbot.stop-command",
+                        "case": "企微 /stop 指令",
+                        "conversation_id": stream_req_id,
+                        "messages": [
+                            {"role": "user", "content": prompt},
+                            *stream_messages(initial_replies),
+                            {"role": "user", "content": "/stop"},
+                            *stream_messages(stop_replies),
+                            *stream_messages(stream_replies[len(initial_replies) :]),
+                        ],
+                    }
+                )
+                detail.update(
+                    {
+                        "command": "/stop",
+                        "response": stop_content,
+                        "stream_frames": len(stream_replies),
+                        "stream_finished": bool((stream_replies[-1].get("body", {}).get("stream") or {}).get("finish")),
+                    }
+                )
+        finally:
+            if ws_process and ws_process.poll() is None:
+                ws_process.terminate()
+                try:
+                    ws_process.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    ws_process.kill()
+                    ws_process.wait(timeout=5)
+            if ws_log_handle:
+                ws_log_handle.close()
+            ws_mock.close()
+
+    def run(self):
+        self.auth()
+        handlers: dict[str, Callable[[], None]] = {
+            "api": self.api,
+            "ai-blueking": self.ai_blueking,
+            "message": self.message,
+            "metrics": self.metrics,
+            "wxbot": self.wxbot,
+        }
+        for module in self.config.modules:
+            handlers[module]()

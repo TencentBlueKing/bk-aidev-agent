@@ -42,8 +42,6 @@ class AgentInfoViewSet(PluginViewSet):
             "username": request.user.username,
         }
         prompt_setting = agent_info.get("prompt_setting", {})
-        prompt_setting["collection_content"] = []
-        prompt_setting["collection_variables"] = []
         prompt_setting["content"] = [
             content for content in prompt_setting["content"] if content.get("role") == PromptRole.PAUSE.value
         ]

@@ -41,6 +41,7 @@ from langchain_core.runnables import RunnableConfig
 from requests.exceptions import HTTPError
 
 from aidev_agent.config import settings
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
 from .types import (
     EditResult,
@@ -157,6 +158,34 @@ def _paas_retry_on_not_ready(func):
     return wrapper
 
 
+def _trace_sandbox_operation(operation: str):
+    """Trace one logical sandbox API operation, including all retries."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            with recording_span(
+                f"sandbox.{operation}",
+                kind=CLIENT_SPAN_KIND,
+                attributes={
+                    "sandbox.operation.name": operation,
+                    "sandbox.backend": "paas",
+                },
+            ):
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def _trace_request_kwargs() -> dict[str, dict[str, str]]:
+    """Build optional W3C trace headers for one sandbox HTTP request."""
+
+    headers = trace_headers()
+    return {"headers": headers} if headers else {}
+
+
 # ---------------------------------------------------------------------------
 # 数据结构
 # ---------------------------------------------------------------------------
@@ -270,6 +299,7 @@ class PaasSandboxBackend(RuntimeBackend):
 
     # ---- PaaS HTTP API（原 PaasSandboxClient 公开方法） ----
 
+    @_trace_sandbox_operation("create")
     @_paas_retry_on_not_ready
     def create_sandbox(
         self,
@@ -326,13 +356,18 @@ class PaasSandboxBackend(RuntimeBackend):
         # volume_mounts: 无实例默认值，仅使用方法参数
         if volume_mounts is not None:
             payload["volume_mounts"] = volume_mounts
-        response = self.client.create_sandbox.request(json=payload, path_params={"app_code": self._app_code})
+        response = self.client.create_sandbox.request(
+            json=payload,
+            path_params={"app_code": self._app_code},
+            **_trace_request_kwargs(),
+        )
         response.raise_for_status()
         data = response.json()
         if isinstance(data, dict) and data.get("uuid"):
             return str(data["uuid"])
         raise ValueError(f"创建沙箱返回格式异常: {data}")
 
+    @_trace_sandbox_operation("destroy")
     @_paas_retry_on_not_ready
     def destroy_sandbox(self, sandbox_id: str, *, timeout: int = 10) -> None:
         """销毁沙箱。
@@ -341,9 +376,14 @@ class PaasSandboxBackend(RuntimeBackend):
             sandbox_id: 沙箱 UUID。
             timeout: HTTP 请求超时秒数，默认 10 秒。防止进程退出时 HTTP 调用无限期挂起。
         """
-        response = self.client.delete_sandbox.request(path_params={"sandbox_id": sandbox_id}, timeout=timeout)
+        response = self.client.delete_sandbox.request(
+            path_params={"sandbox_id": sandbox_id},
+            timeout=timeout,
+            **_trace_request_kwargs(),
+        )
         response.raise_for_status()
 
+    @_trace_sandbox_operation("execute")
     @_paas_retry_on_not_ready
     def exec_command(
         self,
@@ -368,6 +408,7 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.exec_command.request(
             json={"cmd": cmd},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
         data = response.json()
@@ -380,6 +421,7 @@ class PaasSandboxBackend(RuntimeBackend):
         # 兼容：如果 data 不是 dict，将其作为 stdout
         return ExecResult(stdout=str(data or ""), stderr="", exit_code=None)
 
+    @_trace_sandbox_operation("upload_file")
     @_paas_retry_on_not_ready
     def upload_file(self, sandbox_id: str, path: str, content: bytes) -> None:
         """上传文件到沙箱。
@@ -398,9 +440,11 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.upload_file.request(
             files={"file": (filename, content), "path": (None, path)},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
 
+    @_trace_sandbox_operation("download_file")
     @_paas_retry_on_not_ready
     def download_file(self, sandbox_id: str, path: str) -> bytes:
         """从沙箱下载文件。
@@ -415,6 +459,7 @@ class PaasSandboxBackend(RuntimeBackend):
         response = self.client.download_file.request(
             params={"path": path},
             path_params={"sandbox_id": sandbox_id},
+            **_trace_request_kwargs(),
         )
         response.raise_for_status()
         return response.content
@@ -485,11 +530,17 @@ class PaasSandboxBackend(RuntimeBackend):
         return self.exec_command(sandbox_id, command, timeout=timeout)
 
     def _resolve_path(self, path: str, *, state: dict | None = None) -> str:
-        """将 ``~`` 展开为绝对路径。
+        """将 ``$STORAGE_PATH`` 或 ``~`` 展开为沙箱内绝对路径。
 
         在每个公开方法入口处调用，确保后续所有操作（shell 命令和 HTTP API）
         都只看到绝对路径。
         """
+        storage_path = str(self._env_vars.get("STORAGE_PATH") or "/app/storage").rstrip("/")
+        for prefix in ("$STORAGE_PATH", "${STORAGE_PATH}"):
+            if path == prefix:
+                return storage_path
+            if path.startswith(f"{prefix}/"):
+                return f"{storage_path}{path[len(prefix) :]}"
         if not path.startswith("~"):
             return path
         if self._home_dir is None:
@@ -615,9 +666,7 @@ class PaasSandboxBackend(RuntimeBackend):
         # 通过文件上传 API 写入
         file_bytes = content.encode("utf-8")
         if not file_bytes:
-            raise ValueError(
-                "Cannot write empty content. Provide non-empty content or use execute to create the file."
-            )
+            raise ValueError("Cannot write empty content. Provide non-empty content or use execute to create the file.")
         self.upload_file(sandbox_id, file_path, file_bytes)
 
         return WriteResult(path=file_path, files_update=None)

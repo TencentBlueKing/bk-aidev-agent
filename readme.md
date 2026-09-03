@@ -73,7 +73,7 @@ make dev
 
 > `make dev` 会把 `aidev_agent`、`aidev_bkplugin` 源码软链到模板目录，自动安装模板依赖，执行 `migrate`、`createcachetable`，并根据 `.env` 中的 `BKPAAS_BK_DOMAIN` 以 `local.<BKPAAS_BK_DOMAIN>:8000` 启动本地服务。
 > `.env` 请优先到 bkaidev 平台进入对应智能体，通过「下载源码」获取完整工程；源码包中已包含该智能体对应的 `.env` 文件。
-> 默认使用 `template/{{cookiecutter.project_name}}/.env`；也可以执行 `make dev env_file=/path/to/.env`，先复制指定环境文件再启动。
+> 默认使用 `template/builtin/{{cookiecutter.project_name}}/.env`；也可以执行 `make dev env_file=/path/to/.env`，先复制指定环境文件再启动。
 > 首次运行前请按模板说明完成本地域名 hosts 映射。
 
 ### 前端开发
@@ -119,7 +119,7 @@ pnpm prettier
 ```bash
 make release_versions VERSION=2.0.0b1
 ```
-> 该方式会同时更新 `template/{{cookiecutter.project_name}}/VERSION` 文件，但**不会**更新 `aidev-ai-blueking`（其版本节奏与其他组件解耦）。如需同时发布 `aidev-ai-blueking`，请走方式二或使用 `make release_ai_blueking VERSION=...`。
+> 该方式会同时更新 `template/builtin/{{cookiecutter.project_name}}/VERSION` 文件，但**不会**更新 `aidev-ai-blueking`（其版本节奏与其他组件解耦）。如需同时发布 `aidev-ai-blueking`，请走方式二或使用 `make release_ai_blueking VERSION=...`。
 
 **方式二：按组件分别指定版本**
 ```bash
@@ -159,15 +159,16 @@ bk-aidev-agent/
 │       ├── aidev_ai_blueking/ # AI小鲸页面插件：提供小鲸静态页入口和路由配置
 │       ├── aidev_bkplugin/    # 蓝鲸智能体插件：智能体开发管理后台服务，包含前端页面、Agent服务、权限管理等
 │       └── aidev_wxbot/       # 企业微信机器人插件：提供企微消息回调处理、自动化消息处理、RabbitMQ集成等
-├── template/             # 二开智能体模板
-│   └── {{cookiecutter.project_name}}/
-│       ├── bk_plugin/    # 插件核心代码
-│       │   ├── apis/     # API 接口
-│       │   ├── extend/   # 扩展模块（agent、config_manager）
-│       │   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
-│       │   ├── patch/    # 补丁模块
-│       │   └── versions/ # 【重要】智能体配置
-│       └── bin/          # 管理脚本
+├── template/             # 智能体模板集合
+│   └── builtin/          # 单智能体与 Flow 智能体共用模板
+│       └── {{cookiecutter.project_name}}/
+│           ├── bk_plugin/    # 插件核心代码
+│           │   ├── apis/     # API 接口
+│           │   ├── extend/   # 扩展模块（agent、config_manager）
+│           │   ├── openapi/  # 用于生成蓝鲸插件的应用态接口
+│           │   ├── patch/    # 补丁模块
+│           │   └── versions/ # 【重要】智能体配置
+│           └── bin/          # 管理脚本
 ├── docs/                 # 项目设计文档
 ├── assets/               # 项目资源文件
 ├── dist/                 # 构建产物

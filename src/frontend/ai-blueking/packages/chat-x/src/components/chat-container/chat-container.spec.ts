@@ -23,6 +23,10 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { type Ref, defineComponent, h, nextTick } from 'vue';
 
 import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
@@ -358,6 +362,7 @@ vi.mock('../../icons', () => ({
       return () => h('span', { class: 'mock-banner-icon' });
     },
   }),
+  // 文件产物 Tab 默认图标：设计稿 16×16 线性折角文档
   ArtifactTabIcon: defineComponent({
     name: 'ArtifactTabIcon',
     setup() {
@@ -482,6 +487,8 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       onUserInputConfirm: Function,
       onUserShortcutConfirm: Function,
       renderMode: String,
+      updateTools: Array,
+      userMessageTools: Array,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
     setup(props, { slots }) {
@@ -653,6 +660,11 @@ describe('ChatContainer', () => {
       });
 
       expect(wrapper.find('.ai-chat-container').exists()).toBe(true);
+    });
+
+    it('执行摘要 Tab 图标尺寸应为 16px', () => {
+      const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-container.vue'), 'utf-8');
+      expect(source).toMatch(/\.ai-execution-summary-icon[\s\S]*?width:\s*16px/);
     });
 
     it('chatLoading 为 true 时应该显示 loading', () => {
@@ -981,6 +993,16 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
     });
 
+    it('根节点不应通过 inline border-top 绘制顶部分割线（改由业务 Header 贯穿全宽）', async () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: false },
+      });
+      await nextTick();
+
+      const style = wrapper.find('.ai-chat-container').attributes('style') ?? '';
+      expect(style).not.toMatch(/border-top/i);
+    });
+
     it('外部切换 asideCollapsed 应触发 collapseChange', async () => {
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, asideCollapsed: true },
@@ -1015,6 +1037,34 @@ describe('ChatContainer', () => {
       await nextTick();
 
       expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
+    });
+  });
+
+  describe('commonTippyOptions 测试', () => {
+    const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+
+    it('非全屏未传 commonTippyOptions 时不应向子组件注入 appendTo', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('messageToolsTippyOptions')).not.toHaveProperty(
+        'appendTo',
+      );
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('tippyOptions')).not.toHaveProperty('appendTo');
+    });
+
+    it('非全屏应透传外部 commonTippyOptions.appendTo', () => {
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, commonTippyOptions: { appendTo: 'parent' } },
+      });
+
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('messageToolsTippyOptions')).toMatchObject({
+        appendTo: 'parent',
+      });
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('tippyOptions')).toMatchObject({
+        appendTo: 'parent',
+      });
     });
   });
 
@@ -1280,6 +1330,18 @@ describe('ChatContainer', () => {
 
       const mc = wrapper.findComponent({ name: 'MessageContainer' });
       expect(mc.attributes('data-render-mode')).toBe(RenderMode.Test);
+    });
+
+    it('传入 userMessageTools 应透传给 MessageContainer', () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      const userMessageTools = [{ id: 'edit', hidden: true }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, userMessageTools },
+      });
+
+      const mc = wrapper.findComponent({ name: 'MessageContainer' });
+      expect(mc.props('userMessageTools')).toEqual(userMessageTools);
     });
 
     it('应将 renderMode 提供给后代组件', () => {

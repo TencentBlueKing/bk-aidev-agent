@@ -27,12 +27,15 @@
 import { computed, ref } from 'vue';
 
 import type { IMediatorModule } from '../mediator';
+import { isPvFileUploadSupported } from './pv-file-upload';
 import type {
   GetPvFileDownloadUrlOptions,
+  IPvFileUploadItem,
   ISession,
   ISessionFeedback,
   ISessionListParams,
   ISessionListResult,
+  IUploadFileResult,
 } from './type';
 
 /** 会话列表默认每页条数 */
@@ -277,9 +280,35 @@ export const useSession = (mediator: IMediatorModule) => {
       });
   };
 
-  // 上传文件到会话
-  const uploadFile = (sessionCode: string, file: File) => {
-    return mediator.http?.session.uploadFile(sessionCode, file);
+  const resolvePvUploadItem = (item?: IPvFileUploadItem): IPvFileUploadItem => {
+    if (!item) {
+      throw new Error('Upload failed: empty results');
+    }
+    return item;
+  };
+
+  /**
+   * 上传文件到会话。
+   * 能解析且 agent_sdk_version < 2.2.2rc25 走旧 upload/{fileName}/；否则（含空字符串 / 缺省）走 pv_files/upload。
+   */
+  const uploadFile = (sessionCode: string, file: File): Promise<IUploadFileResult | undefined> => {
+    const sdkVersion = mediator.agent?.info.value?.agentSdkVersion;
+    if (isPvFileUploadSupported(sdkVersion)) {
+      return Promise.resolve(mediator.http?.session.uploadPvFiles(sessionCode, [file])).then(res =>
+        resolvePvUploadItem(res?.results?.[0]),
+      );
+    }
+    return Promise.resolve(mediator.http?.session.uploadFile(sessionCode, file));
+  };
+
+  const uploadFiles = async (sessionCode: string, files: File[]): Promise<IUploadFileResult[]> => {
+    const sdkVersion = mediator.agent?.info.value?.agentSdkVersion;
+    if (isPvFileUploadSupported(sdkVersion)) {
+      const res = await mediator.http?.session.uploadPvFiles(sessionCode, files);
+      return res?.results ?? [];
+    }
+    const results = await Promise.all(files.map(file => mediator.http?.session.uploadFile(sessionCode, file)));
+    return results.filter((item): item is IUploadFileResult => !!item);
   };
 
   const getPvFileDownloadUrl = (sessionCode: string, path: string, options?: GetPvFileDownloadUrlOptions) => {
@@ -331,6 +360,7 @@ export const useSession = (mediator: IMediatorModule) => {
     getSessionFeedbackReasons,
     renameSession,
     uploadFile,
+    uploadFiles,
     getPvFileDownloadUrl,
     reset,
   };

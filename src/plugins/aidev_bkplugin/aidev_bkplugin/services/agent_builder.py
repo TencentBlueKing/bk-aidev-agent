@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from logging import getLogger
 
-from aidev_agent.enums import AgentBuildType, PromptRole, SessionsStatus
+from aidev_agent.enums import AgentBuildType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
 from aidev_agent.pydantic_models import AgentConfig, ChatPrompt
@@ -21,6 +21,7 @@ from django.conf import settings
 
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
+from .event_resource_manager import with_database_events
 
 logger = getLogger(__name__)
 
@@ -61,6 +62,8 @@ class AgentBuilder:
         resource_manager: ResourceManagerProtocol | None = None,
         turn_id: str = "",
         model: str = "",
+        temperature: float | None = None,
+        retry_strategy: str | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -72,6 +75,8 @@ class AgentBuilder:
         self.turn_id = turn_id
         # 模型热更新：非空时覆盖 agent 配置的 chat_model
         self.model = model or ""
+        self.temperature = temperature
+        self.retry_strategy = retry_strategy
 
     def by_session_code(
         self,
@@ -91,7 +96,10 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
-        session_code = self.session_manager.get_or_create_by_thread_id(thread_id)
+        session_code = self.session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=channel_type or ChannelType.POPUP.value,
+        )
         if save_content and input_text:
             saved = self.session_manager.save_content(
                 session_code=session_code,
@@ -116,7 +124,10 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
-        session_code = self.session_manager.get_or_create_by_thread_id(thread_id)
+        session_code = self.session_manager.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=channel_type or ChannelType.POPUP.value,
+        )
         if chat_history and chat_history[-1].role == PromptRole.USER.value:
             # 最后一条 user 视为本轮新输入；历史消息不带 turn_id
             self.session_manager.save_chat_history(session_code, chat_history[:-1])
@@ -164,9 +175,10 @@ class AgentBuilder:
         elif self.model and isinstance(self.resource_manager, LLMOverrideResourceManager):
             # 注入的 rm 保留用户态认证，仅补上 model 覆盖能力
             self.resource_manager.model = self.model
+        execution_resource_manager = with_database_events(self.resource_manager, self.agent_code)
         event_handler = AGUISessionWriter(
             session_code=session_code,
-            client=AgentHelper.get_client(resource_manager=self.resource_manager),
+            client=AgentHelper.get_client(resource_manager=execution_resource_manager),
             username=self.username,
             turn_id=self.turn_id,
         )
@@ -177,8 +189,10 @@ class AgentBuilder:
             agent_cls=agent_cls,
             checkpointer=AgentHelper.get_checkpointer(),
             event_handler=event_handler,
-            resource_manager=self.resource_manager,
+            resource_manager=execution_resource_manager,
             username=self.username,
             version=version,
             channel_type=channel_type,
+            temperature=self.temperature,
+            retry_strategy=self.retry_strategy,
         )

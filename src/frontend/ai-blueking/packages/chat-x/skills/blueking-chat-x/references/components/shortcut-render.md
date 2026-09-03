@@ -23,10 +23,10 @@
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  .shortcut-render-header（渐变左边框）            │
+│  .ai-shortcut-render-header（渐变左边框）            │
 │  ✧ ThinkingIcon  快捷指令名称           ✕ Close  │
 ├─────────────────────────────────────────────────┤
-│  .shortcut-render-content（max-height: 424px，   │
+│  .ai-shortcut-render-content（max-height: 424px，   │
 │   overflow-y: auto）                             │
 │  ┌─────────────┬─────────────┐                   │
 │  │ FormItem    │ FormItem    │  ← 两列网格        │

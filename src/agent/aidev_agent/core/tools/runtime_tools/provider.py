@@ -294,7 +294,10 @@ def get_read_file_tool(resolver: RuntimeBackendResolver, custom_description: str
     tool_description = custom_description or READ_FILE_TOOL_DESCRIPTION
 
     def read_file(
-        file_path: Annotated[str, "Absolute path to the file to read. Must be absolute, not relative."],
+        file_path: Annotated[
+            str,
+            "Absolute path to the file to read. PaaS sandbox paths may start with $STORAGE_PATH/.",
+        ],
         target_runtime: str,
         config: RunnableConfig,
         state: Annotated[dict, InjectedState] = None,

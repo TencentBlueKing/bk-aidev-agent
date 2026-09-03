@@ -91,10 +91,13 @@ class SessionContentProperty(BaseModel):
     """会话内容的一些额外属性"""
 
     turn_id: str = Field(default="", description="同一次 user-ai 回复的轮次 ID")
+    trace_id: str = Field(default="", description="chat 入口 Trace ID；仅创建时传递，未提供时保持为空，更新时不修改")
     extra: SessionContentExtra | None = None
 
 
 class ChatPrompt(BaseModel):
+    model_config = ConfigDict(extra="allow")  # 透传任意非声明键（status/created_at/session_code/liked/property 原文等）
+
     id: str | None = None
     role: str
     content: str | list[str] | dict | list[dict]
@@ -142,6 +145,7 @@ class ModelContextSettings(BaseModel):
         default=None, description="模型类型（如 openai / deepseek_r1），从 intent_recognition 获取"
     )
     enable_judge_response: bool = Field(default=False, description="是否启用任务完成度评估")
+    context_window: int = Field(default=16, description="上下文窗口轮数上限（user 消息条数），超限在装配期截断")
 
 
 class KnowledgeSettings(BaseModel):

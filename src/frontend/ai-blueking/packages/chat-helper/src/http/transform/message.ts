@@ -363,6 +363,7 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
                   filename: binaryItem.filename,
                   id: binaryItem.id,
                   mimeType: binaryItem.mime_type,
+                  size: binaryItem.size,
                   type: binaryItem.type,
                   url: binaryItem.url,
                 } satisfies IBinaryInputContent;
@@ -665,6 +666,7 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
                   filename: binaryItem.filename,
                   id: binaryItem.id,
                   mime_type: binaryItem.mimeType,
+                  size: binaryItem.size,
                   type: binaryItem.type,
                   url: binaryItem.url,
                 } satisfies IBinaryInputContentApi;

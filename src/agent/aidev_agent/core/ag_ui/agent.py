@@ -2,6 +2,7 @@ import inspect
 import json
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from logging import getLogger
 from typing import Any, Callable, Literal
@@ -37,9 +38,15 @@ from langchain_core.runnables import RunnableConfig, ensure_config
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
+from aidev_agent.packages.interrupt_manager.types import ProcessorContext
 from aidev_agent.utils.event import RunId
 
-from .event_builders import build_model_end_payload, should_end_thinking, should_switch_thinking_step
+from .event_builders import (
+    build_model_end_payload,
+    should_end_thinking,
+    should_switch_thinking_step,
+)
 from .events import (
     ExtendThinkingEndEvent,
 )
@@ -65,7 +72,6 @@ from .utils import (
     filter_object_by_schema_keys,
     get_schema_keys,
     json_safe_stringify,
-    langchain_messages_to_agui,
     make_json_safe,
     resolve_message_content,
     resolve_reasoning_content,
@@ -92,6 +98,23 @@ ProcessedEvents = (
 logger = getLogger(__name__)
 
 
+@dataclass
+class ExitResult:
+    """退出原因定位纯函数返回值（D-07）。
+
+    携带 node_name / is_end_node / interrupt_values / state_values /
+    outcome，供调用方按事件顺序协议 yield。
+    三处副作用（processor.process 建单 / _dispatch_event 多态 DB 写 /
+    _emit_run_end_extras 子类 hook）均在调用方执行，本容器只产数据。
+    """
+
+    node_name: str
+    is_end_node: bool
+    interrupt_values: list[Interrupt]
+    state_values: dict[str, Any]
+    outcome: Any  # RunFinishedSuccessOutcome | RunFinishedInterruptOutcome
+
+
 class LangGraphAgent:
     def __init__(
         self,
@@ -101,6 +124,7 @@ class LangGraphAgent:
         description: str | None = None,
         config: RunnableConfig | None | dict = None,
         cancel_checker: Callable[[], bool] | None = None,
+        interrupt_processor: InterruptProcessor | None = None,
     ):
         self.name = name
         self.description = description
@@ -112,6 +136,10 @@ class LangGraphAgent:
         self.front_end_display = True
         # 取消检测回调，返回 True 表示应该取消
         self._cancel_checker = cancel_checker
+        # 构造注入（44 D-02/D-09）：InterruptProcessor 已由装配点（chat.py）实例化，
+        # 携带 resource_manager + username/session_code 静态 ctx。None 兜底裸
+        # processor（无 RM → collect + passthrough，D-01 不吞中断）。
+        self._interrupt_processor = interrupt_processor or InterruptProcessor()
 
     def _mark_cancel_run_error_emitted(self) -> bool:
         """标记本轮 cancel RUN_ERROR 已下发；若已下发则返回 False（调用方应跳过重复 emit）。"""
@@ -171,23 +199,9 @@ class LangGraphAgent:
         }
         self.active_run = INITIAL_ACTIVE_RUN
 
-        forwarded_props = input.forwarded_props
-        node_name_input = forwarded_props.get("node_name", None) if forwarded_props else None
-
         self.active_run["manually_emitted_state"] = None
 
         agent_state = await self.graph.aget_state(config)
-        resume_input = forwarded_props.get("command", {}).get("resume", None)
-
-        if (
-            resume_input is None
-            and thread_id
-            and self.active_run.get("node_name") != "__end__"
-            and self.active_run.get("node_name")
-        ):
-            self.active_run["mode"] = "continue"
-        else:
-            self.active_run["mode"] = "start"
 
         prepared_stream_response = await self.prepare_stream(input=input, agent_state=agent_state, config=config)
 
@@ -198,12 +212,6 @@ class LangGraphAgent:
                 run_id=self.active_run["id"],
             )
         )
-        self.handle_node_change(node_name_input)
-
-        # In case of resume (interrupt), re-start resumed step
-        if resume_input and self.active_run.get("node_name"):
-            for ev in self.handle_node_change(self.active_run.get("node_name")):
-                yield ev
 
         state = prepared_stream_response["state"]
         stream = prepared_stream_response["stream"]
@@ -215,7 +223,6 @@ class LangGraphAgent:
                 yield self._dispatch_event(event)
             return
 
-        should_exit = False
         current_graph_state = state
         # 标记是否被取消（用于后续发送正确的 RunFinishedEvent）
         _cancelled = False
@@ -248,8 +255,6 @@ class LangGraphAgent:
             if event_type == "on_chain_end" and isinstance(event.get("data", {}).get("output"), dict):
                 current_graph_state.update(event["data"]["output"])
                 exiting_node = self.active_run["node_name"] == current_node_name
-
-            should_exit = should_exit or (event_type == "on_custom_event" and event["name"] == "exit")
 
             if current_node_name and current_node_name != self.active_run.get("node_name"):
                 for ev in self.handle_node_change(current_node_name):
@@ -309,57 +314,51 @@ class LangGraphAgent:
         # Agent 已经退出，检查状态和退出原因
         state = await self.graph.aget_state(config)
 
-        tasks = state.tasks if len(state.tasks) > 0 else None
-        interrupts = tasks[0].interrupts if tasks else []
+        # 退出中断处理器（D-09 + D-10 内聚于 _resolve_exit）：dispatch（收集 + prepare
+        # 建单 + enrich）前置执行，enrich 先于 normalize；不带 terminal 防线——信任
+        # 「全就绪才拉图 + resume 后 interrupt 被 Command 消费」，尾部 pending 恒为
+        # 本次新抛。id 漂移/异常场景重复建单风险（盲区-2）已知并接受。
+        result = self._resolve_exit(state, self.active_run.get("node_name"))
 
-        writes = state.metadata.get("writes", {}) or {}
-        node_name = self.active_run["node_name"] if interrupts else next(iter(writes), None)
-        next_nodes = state.next or ()
-        is_end_node = len(next_nodes) == 0 and not interrupts
-
-        node_name = "__end__" if is_end_node else node_name
-
-        interrupt_values = [self._normalize_interrupt_value(interrupt.value) for interrupt in interrupts]
-
-        if self.active_run.get("node_name") != node_name:
-            for ev in self.handle_node_change(node_name):
+        if self.active_run.get("node_name") != result.node_name:
+            for ev in self.handle_node_change(result.node_name):
                 yield ev
 
-        state_values = state.values if state.values else state
         for ev in self.handle_node_change(None):
             yield ev
 
-        final_snapshot_events = self._build_terminal_snapshot_events(state_values)
-        yield self._dispatch_event(final_snapshot_events[0])
-
-        # 续流（resume）场景不再下发终态 MESSAGES_SNAPSHOT：
-        # resume 时 state["messages"] 仅来自中断点的 checkpoint，并非完整会话历史
-        if not resume_input:
-            yield self._dispatch_event(final_snapshot_events[1])
+        # 终态 STATE_SNAPSHOT 单事件（Phase 42 换源后终态 MESSAGES_SNAPSHOT 死信分支移除，
+        # 续流/中断出口的消息快照由 AidevAGUIAgent.run 首帧从 input.messages（DB 账本
+        # 经 contents_to_agui_messages 转换）统一下发）。
+        final_snapshot_event = self._build_terminal_snapshot_events(result.state_values)
+        yield self._dispatch_event(final_snapshot_event)
 
         # 本轮产物识别 hook（子类实现，默认 no-op）；异常内部兜底，不阻断 RUN_FINISHED
-        async for ev in self._emit_run_end_extras(state_values, thread_id):
+        async for ev in self._emit_run_end_extras(result.state_values, thread_id):
             yield ev
-
-        # 构造 outcome（使用官方类型）
-        if interrupt_values:
-            outcome = RunFinishedInterruptOutcome(interrupts=interrupt_values)
-        else:
-            outcome = RunFinishedSuccessOutcome()
 
         yield self._dispatch_event(
             RunFinishedEvent(
                 type=EventType.RUN_FINISHED,
                 thread_id=thread_id,
                 run_id=self.active_run["id"],
-                outcome=serialize_run_finished_outcome(outcome),
+                outcome=serialize_run_finished_outcome(result.outcome),
             )
         )
         # Reset active run to how it was before the stream started
         self.active_run = INITIAL_ACTIVE_RUN
 
     @staticmethod
-    def _normalize_interrupt_value(value: Any) -> Interrupt:
+    def _normalize_interrupt_value(interrupt: Any) -> Interrupt:
+        """将 intr 对象（或旧 dict 形态）归一为 AG-UI ``Interrupt`` 模型。
+
+        intr 对象为 LangGraph ``Interrupt`` 鸭子类型（``.id`` / ``.value``）。
+        interrupt_id 以 ``getattr(interrupt, "id")`` **优先**（真实 LangGraph
+        中断 id，replay 稳定），value 自身 id 仅兜底（旧记录兼容）；``getattr``
+        对 dict 入参返回 None（dict 无该属性），自然落到 ``value.get("id")``
+        分支——兼容旧形态。
+        """
+        value = getattr(interrupt, "value", interrupt)
         if isinstance(value, str):
             try:
                 value = json.loads(value)
@@ -370,7 +369,17 @@ class LangGraphAgent:
 
         _metadata = value.get("metadata")
         metadata = _metadata.copy() if isinstance(_metadata, dict) else {}
-        interrupt_id = value.get("id") or value.get("interruptId")
+        if not metadata and "questions" in value:
+            # target 形态（策略直抛 5 键：questions/interrupt_reason/message/toolCallId/
+            # expiresAt）无 metadata——合成标准 ask_user metadata（对齐 build_payload
+            # 形态）。否则落库元素缺 metadata.status，resume 一致性校验会误拒
+            # （UAT: 期望 status=pending，实际 status=None）。
+            metadata = {
+                "type": "ask_user_question",
+                "status": "pending",
+                "questions": value.get("questions") or [],
+            }
+        interrupt_id = getattr(interrupt, "id", None) or value.get("id") or value.get("interruptId")
         if not interrupt_id:
             logger.warning(
                 "Interrupt value missing id/interruptId, generated fallback. reason=%s, toolCallId=%s, message=%s",
@@ -381,10 +390,63 @@ class LangGraphAgent:
             interrupt_id = f"int-{uuid.uuid4().hex[:12]}"
         return Interrupt(
             id=interrupt_id,
-            reason=value.get("reason") or "tool_call",
+            # 兼容 target 形态（reason=None + interrupt_reason，真实图 ask_user 直抛；
+            # 与 processor._reason_of 的提取链对齐），最终回退 "tool_call"
+            reason=value.get("reason") or value.get("interrupt_reason") or "tool_call",
             message=value.get("message"),
-            toolCallId=value.get("toolCallId"),  # 驼峰命名
+            toolCallId=value.get("toolCallId") or value.get("tool_call_id"),  # 驼峰命名（容错 snake）
             metadata=metadata or None,
+        )
+
+    def _resolve_exit(self, state: Any, last_node_name: str | None) -> ExitResult:
+        """LangGraph Agent 退出时中断处理器：流结束 dispatch 与退出原因定位一体。
+
+        前段 dispatch（D-09）：经注入的 ``InterruptProcessor`` 全量收集 ``state.tasks``
+        的 pending interrupt 并执行 per-reason prepare（建单 + 就地 enrich
+        ``intr.value``），enrich 先于下方归一化——时序由方法内语句顺序保证。
+        ``InvalidApprovalInterruptError`` fail fast 从本方法直接上抛，发生在调用方
+        任何事件产出之前（时序与迁移前一致）。D-10：不带 terminal 防线——信任
+        「全就绪才拉图 + resume 后 interrupt 被 Command 消费」，尾部 pending 恒为
+        本次新抛；id 漂移/异常场景重复建单风险（盲区-2）已知并接受。
+
+        后段从 state/writes/tasks 推导 node_name/is_end_node/interrupt_values/outcome，
+        归一化为 AG-UI ``Interrupt`` 模型后仅返回纯数据容器 ``ExitResult``。剩余
+        副作用仍挡调用方：_dispatch_event（多态 DB 写）、_emit_run_end_extras（子类
+        hook）——本方法非生成器、不产出事件，事件派发由调用方按顺序协议执行。
+        """
+        # 流结束 dispatch 前段：拼装运行时 ctx 后交 processor 全量收集 + prepare
+        ctx = ProcessorContext(
+            thread_id=self.active_run.get("thread_id") if self.active_run else "",
+            run_id=self.active_run.get("id") if self.active_run else "",
+            session_code=self.active_run.get("thread_id") if self.active_run else "",
+        )
+        dispatch_result = self._interrupt_processor.dispatch_interrupts(state.tasks, ctx)
+        pending_intrs = [o.intr for o in dispatch_result.interrupts]
+
+        tasks = getattr(state, "tasks", None)
+        writes = getattr(getattr(state, "metadata", None), "get", lambda *a, **k: {})("writes", {}) or {}
+        node_name = last_node_name if tasks else next(iter(writes), None)
+        next_nodes = getattr(state, "next", None) or ()
+        is_end_node = len(next_nodes) == 0 and not tasks
+        node_name = "__end__" if is_end_node else node_name
+        interrupt_values = [LangGraphAGUIAgent._normalize_interrupt_value(intr) for intr in pending_intrs]
+        state_values = dict(
+            getattr(state, "values", None) or {}
+        )  # ← D-12 修正：空 values 用 {}，不传 StateSnapshot 对象
+        if interrupt_values:
+            # 串行语义（用户裁定 2026-08-31）：DB 与 SSE 均仅写当前活跃 interrupt。
+            # outcome.interrupts 单元素（首个活跃 pending），base.py handle_run_finished
+            # 以此为落库源只写 1 条；下一个 interrupt 在成为活跃时（未就绪经 chat 层
+            # D-09 直接构造 SSE / 流结束 dispatch 路径）才写入。
+            outcome = RunFinishedInterruptOutcome(interrupts=interrupt_values[:1])
+        else:
+            outcome = RunFinishedSuccessOutcome()
+        return ExitResult(
+            node_name=node_name,
+            is_end_node=is_end_node,
+            interrupt_values=interrupt_values,
+            state_values=state_values,
+            outcome=outcome,
         )
 
     async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
@@ -396,27 +458,40 @@ class LangGraphAgent:
         return
         yield  # pragma: no cover - 让本方法成为 async generator
 
-    def _build_terminal_snapshot_events(
-        self, state_values: State
-    ) -> tuple[StateSnapshotEvent, MessageSnapshotEventExtend]:
-        return (
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=self.get_state_snapshot(state_values),
-            ),
-            MessageSnapshotEventExtend(
-                type=EventType.MESSAGES_SNAPSHOT,
-                messages=langchain_messages_to_agui(state_values.get("messages", [])),
-            ),
+    def _build_terminal_snapshot_events(self, state_values: State) -> StateSnapshotEvent:
+        """构建终态 STATE_SNAPSHOT 事件（消息快照死信分支已移除，续流由首帧快照承担）。
+
+        Phase 42 换源后终态 MESSAGES_SNAPSHOT 不再从 checkpoint state values 派生
+        （``langchain_messages_to_agui`` 已随换源移除）——消息快照统一由
+        :meth:`AidevAGUIAgent.run` 首帧从 ``input.messages``（DB 账本经
+        ``contents_to_agui_messages`` 转换）下发，天然与 DB 展示同源，
+        无需 D-05 方向 a 的同源复算过滤。
+        """
+        return StateSnapshotEvent(
+            type=EventType.STATE_SNAPSHOT,
+            snapshot=self.get_state_snapshot(state_values),
         )
 
     async def prepare_stream(self, input: RunAgentInput, agent_state: State, config: RunnableConfig):
-        forwarded_props = input.forwarded_props
-        thread_id = input.thread_id
-        interrupts = agent_state.tasks[0].interrupts if agent_state.tasks and len(agent_state.tasks) > 0 else []
-        has_active_interrupts = len(interrupts) > 0
-        resume_input = forwarded_props.get("command", {}).get("resume", None)
+        """AG-UI 流启动前准备（D-08：Command/正常 payload 纯拉图，零中断下发编排）。
 
+        以 ``input.stream_input``（正常 payload 或 pre_run 产出的 Command）直接
+        ``astream_events`` 启动，**绝不**执行中断下发编排（D-08：prepare_stream 不再
+        承担任何中断下发，Command / payload 直接拉图）。
+
+        - **Command**（全就绪 / 拒绝 resume 的 pre_run 产出）：直接以 Command 拉图
+          统一启动（resume 侧绝不建单，D-08 防重复建单）。
+        - **正常 payload / 非 resume**：直接以 payload 拉图统一启动。
+        - **未就绪 resume**（lw4：``stream_input`` 为 None 且携带 ``next_interrupt``）：
+          经 ``events_to_dispatch`` 通道走快照-结束路径——返回预构造的
+          RUN_FINISHED(下一张 pending 卡)，``_handle_stream_events`` 在 RUN_STARTED
+          后派发即结束、不拉图（空 stream_input 拉图必然异常/空转）。中断卡片
+          （建单 + enrich）由 chat 层 get_resume_input 在进入 Agent 前完成，
+          本方法只消费现成 next_interrupt。
+
+        未就绪场景 ``AidevAGUIAgent.run`` 首帧 MESSAGES_SNAPSHOT 已在 super().run
+        之前下发，事件序列为 MESSAGES_SNAPSHOT → RUN_STARTED → RUN_FINISHED(卡)。
+        """
         state = input.state
 
         # 运行时状态设置（保留在 agent.py，供 _handle_stream_events / _handle_single_event 读取）
@@ -424,36 +499,23 @@ class LangGraphAgent:
         self.active_run["current_graph_state"].update(state)
         self.active_run["schema_keys"] = self.get_schema_keys(config)
 
-        # interrupt 事件构造（保留在 agent.py）
-        events_to_dispatch = []
-        if has_active_interrupts and not resume_input:
-            interrupt_values = [self._normalize_interrupt_value(interrupt.value) for interrupt in interrupts]
-            terminal_state = agent_state.values if agent_state.values else state
-            events_to_dispatch.extend(self._build_terminal_snapshot_events(terminal_state))
-
-            outcome = RunFinishedInterruptOutcome(interrupts=interrupt_values)
-            events_to_dispatch.append(
-                RunFinishedEvent(
-                    type=EventType.RUN_FINISHED,
-                    thread_id=thread_id,
-                    run_id=self.active_run["id"],
-                    outcome=serialize_run_finished_outcome(outcome),
-                )
+        # 未就绪 resume（lw4）快照-结束路径：消费 AgentInput.next_interrupt 构造结束
+        # 卡片，经父类 events_to_dispatch 通道派发（_handle_stream_events 在 RUN_STARTED
+        # 后派发即早退）。ready/普通路径 stream_input 非 None 绝不命中本分支；无
+        # next_interrupt 的裸 AgentInput（协议单测驱动）同样不命中。
+        if getattr(input, "stream_input", None) is None and getattr(input, "next_interrupt", None) is not None:
+            normalized = self._normalize_interrupt_value(getattr(input, "next_interrupt"))
+            card_event = RunFinishedEvent(
+                type=EventType.RUN_FINISHED,
+                thread_id=input.thread_id,
+                run_id=input.run_id,
+                outcome=serialize_run_finished_outcome(RunFinishedInterruptOutcome(interrupts=[normalized])),
             )
-            return {
-                "stream": None,
-                "state": None,
-                "config": None,
-                "events_to_dispatch": events_to_dispatch,
-            }
+            return {"stream": None, "state": state, "config": config, "events_to_dispatch": [card_event]}
 
-        # continue 模式 state 更新
-        if self.active_run["mode"] == "continue":
-            await self.graph.aupdate_state(config, state, as_node=self.active_run.get("node_name"))
-
-        # 统一 stream 启动
-        subgraphs_stream_enabled = forwarded_props.get("stream_subgraphs") if forwarded_props else False
-
+        # D-08：Command 或正常 payload 统一直接拉图，零中断下发编排（astream_events
+        # 启动点唯一，收敛于本方法尾部）。
+        subgraphs_stream_enabled = (input.forwarded_props or {}).get("stream_subgraphs") or False
         kwargs = self.get_stream_kwargs(
             input=input.stream_input,
             subgraphs=bool(subgraphs_stream_enabled),
@@ -461,7 +523,6 @@ class LangGraphAgent:
             config=config,
         )
         stream = self.graph.astream_events(**kwargs)
-
         return {"stream": stream, "state": state, "config": config}
 
     def get_message_in_progress(self, run_id: str) -> MessageInProgress | None:
@@ -826,6 +887,26 @@ class LangGraphAgent:
     async def _handle_on_tool_end_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
         tool_call_output = event["data"]["output"]
 
+        def _reverse_lookup_parent_message_id(tool_call_id: str) -> str | None:
+            """从 current_graph_state.messages 反查含该 tool_call_id 的 AIMessage.id（D-08）。
+
+            OnToolEnd 补发的 TOOL_CALL_START 其 parent_message_id 应为该 tool_call 所属
+            assistant 消息 id（对齐流式路径 agent.py:946 目标形态），而非误用 ToolMessage.id。
+            未命中返回 None（防御，由调用方回退原 id）。
+
+            Args:
+                tool_call_id: 目标工具调用 ID。
+
+            Returns:
+                含该 tool_call 的 AIMessage.id；未命中返回 None。
+            """
+            graph_state = self.active_run.get("current_graph_state") or {}
+            for msg in graph_state.get("messages") or []:
+                for tc in getattr(msg, "tool_calls", None) or []:
+                    if tc.get("id") == tool_call_id:
+                        return getattr(msg, "id", None)
+            return None
+
         if isinstance(tool_call_output, Command):
             # Extract ToolMessages from Command.update
             messages = tool_call_output.update.get("messages", [])
@@ -834,11 +915,12 @@ class LangGraphAgent:
             # Process each tool message
             for tool_msg in tool_messages:
                 if not self.active_run["has_function_streaming"]:
+                    parent_message_id = _reverse_lookup_parent_message_id(tool_msg.tool_call_id) or tool_msg.id
                     yield ToolCallStartEvent(
                         type=EventType.TOOL_CALL_START,
                         tool_call_id=tool_msg.tool_call_id,
                         tool_call_name=tool_msg.name,
-                        parent_message_id=tool_msg.id,
+                        parent_message_id=parent_message_id,
                         raw_event=event,
                     )
                     yield ToolCallArgsEvent(
@@ -856,11 +938,12 @@ class LangGraphAgent:
             return
 
         if not self.active_run["has_function_streaming"]:
+            parent_message_id = _reverse_lookup_parent_message_id(tool_call_output.tool_call_id) or tool_call_output.id
             yield ToolCallStartEvent(
                 type=EventType.TOOL_CALL_START,
                 tool_call_id=tool_call_output.tool_call_id,
                 tool_call_name=tool_call_output.name,
-                parent_message_id=tool_call_output.id,
+                parent_message_id=parent_message_id,
                 raw_event=event,
             )
             yield ToolCallArgsEvent(
@@ -992,8 +1075,16 @@ class LangGraphAGUIAgent(LangGraphAgent):
         description: str | None = None,
         config: RunnableConfig | None | dict = None,
         cancel_checker: Callable[[], bool] | None = None,
+        interrupt_processor: InterruptProcessor | None = None,
     ):
-        super().__init__(name=name, graph=graph, description=description, config=config, cancel_checker=cancel_checker)
+        super().__init__(
+            name=name,
+            graph=graph,
+            description=description,
+            config=config,
+            cancel_checker=cancel_checker,
+            interrupt_processor=interrupt_processor,
+        )
         self.constant_schema_keys = self.constant_schema_keys + ["copilotkit"]
 
     def _dispatch_event(self, event) -> str:

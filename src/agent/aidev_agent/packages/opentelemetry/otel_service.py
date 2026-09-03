@@ -34,8 +34,13 @@ from opentelemetry.sdk.metrics import Histogram, MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import ProcessResourceDetector, Resource, ResourceDetector, get_aggregated_resources
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 from opentelemetry.semconv.resource import ResourceAttributes
 from typing_extensions import assert_never
 
@@ -46,9 +51,36 @@ except ImportError:
 
 
 from .config import OTelConfig
+from .metrics import (
+    AGENT_ITERATION_HISTOGRAM_BOUNDARIES,
+    DURATION_HISTOGRAM_BOUNDARIES,
+    MESSAGE_SIZE_HISTOGRAM_BOUNDARIES,
+)
 from .utils import ExporterType
 
 logger = logging.getLogger(__name__)
+
+
+class LoggingSpanExporter(SpanExporter):
+    """将本地 span 以单行结构化事件写入应用日志，不输出 prompt/attributes。"""
+
+    def export(self, spans) -> SpanExportResult:
+        for span in spans:
+            context = span.get_span_context()
+            parent_span_id = f"{span.parent.span_id:016x}" if span.parent else ""
+            duration_ms = max(0, span.end_time - span.start_time) / 1_000_000
+            logger.info(
+                "event=aidev_otel_span trace_id=%032x span_id=%016x parent_span_id=%s "
+                "name=%s kind=%s status=%s duration_ms=%.3f",
+                context.trace_id,
+                context.span_id,
+                parent_span_id,
+                span.name,
+                span.kind.name,
+                span.status.status_code.name,
+                duration_ms,
+            )
+        return SpanExportResult.SUCCESS
 
 
 class BkAgentOTelService:
@@ -81,7 +113,7 @@ class BkAgentOTelService:
         # 设置 Traces
         if self.config.enable_traces:
             self._setup_traces(resource)
-        if self.config.enable_metrics:
+        if self.config.enable_metrics and not self.config.metric_provider_managed_externally:
             self._setup_metrics(resource)
         if self.config.enable_logs:
             self._setup_logs(resource)
@@ -123,7 +155,19 @@ class BkAgentOTelService:
             resource: Resource 实例
         """
         # 创建 TracerProvider
-        self.tracer_provider = TracerProvider(resource=resource)
+        # Enforce the configured limit in the SDK itself so every retained
+        # attribute is bounded, including legacy LLM/tool/root attributes and
+        # exception event attributes. Per-field truncation remains useful for
+        # recording original lengths, but it must not be the memory boundary.
+        self.tracer_provider = TracerProvider(
+            resource=resource,
+            span_limits=SpanLimits(max_attribute_length=self.config.span_attribute_length_limit),
+        )
+
+        if self.config.trace_exporter == "logging":
+            self.tracer_provider.add_span_processor(SimpleSpanProcessor(LoggingSpanExporter()))
+            logger.info("Trace logging exporter added; remote OTLP export disabled")
+            return
 
         # 为每个端点创建独立的 SpanProcessor
         for idx, endpoint_config in enumerate(self.config.otel_endpoints):
@@ -196,7 +240,11 @@ class BkAgentOTelService:
                 exporter = self._create_metric_exporter(endpoint_config)
 
                 # 创建 PeriodicExportingMetricReader
-                reader = PeriodicExportingMetricReader(exporter)
+                reader = PeriodicExportingMetricReader(
+                    exporter,
+                    export_interval_millis=self.config.metric_export_interval_millis,
+                    export_timeout_millis=self.config.metric_export_timeout_millis,
+                )
                 readers.append(reader)
 
                 logger.info(
@@ -209,16 +257,24 @@ class BkAgentOTelService:
                 # 某个端点失败不影响其他端点,继续处理
 
         # 配置 Histogram 视图
-        histogram_view = View(
-            instrument_type=Histogram,
-            instrument_unit="s",
-            aggregation=ExplicitBucketHistogramAggregation(
-                boundaries=[0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0]
+        histogram_views = [
+            View(
+                instrument_type=Histogram,
+                instrument_unit="s",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=DURATION_HISTOGRAM_BOUNDARIES),
             ),
-        )
+            View(
+                instrument_name="aidev.message.publish.size",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=MESSAGE_SIZE_HISTOGRAM_BOUNDARIES),
+            ),
+            View(
+                instrument_name="gen_ai.invoke_agent.iteration_count",
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=AGENT_ITERATION_HISTOGRAM_BOUNDARIES),
+            ),
+        ]
 
         # 创建 MeterProvider
-        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=[histogram_view])
+        self.meter_provider = MeterProvider(resource=resource, metric_readers=readers, views=histogram_views)
         metrics.set_meter_provider(self.meter_provider)
 
     def _create_metric_exporter(self, endpoint_config: dict):

@@ -71,8 +71,10 @@ vi.mock('../../../composables', () => ({
 // Mock common/constants
 vi.mock('../../../common/constants', () => ({
   CONST_USER_MESSAGE_TOOLS: [
-    { id: 'edit', name: '编辑', description: '编辑消息' },
     { id: 'copy', name: '复制', description: '复制消息' },
+    { id: 'cite', name: '引用', description: '引用消息' },
+    { id: 'edit', name: '编辑', description: '编辑消息' },
+    { id: 'delete', name: '删除', description: '删除消息' },
   ],
 }));
 
@@ -130,12 +132,13 @@ vi.mock('../../chat-content/file-content/file-content.vue', () => ({
     props: {
       files: { type: Array, default: () => [] },
       readonly: { type: Boolean, default: false },
+      variant: { type: String, default: 'input' },
     },
     setup(props) {
       return () =>
         h(
           'div',
-          { class: 'mock-file-content' },
+          { class: 'mock-file-content', 'data-variant': props.variant },
           (props.files as Array<{ filename?: string; url?: string }>).map((file, index) =>
             h('div', { class: 'mock-file-item', key: index }, file.filename || file.url || 'file'),
           ),
@@ -180,6 +183,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
             class: 'mock-message-tools',
             'data-message-tools-status': props.messageToolsStatus,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
+            'data-tools-json': JSON.stringify(props.messageTools ?? []),
           },
           [slots.prepend?.(), 'Message Tools', slots.append?.()],
         );
@@ -382,35 +386,19 @@ describe('UserMessage', () => {
       expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
 
-    it('图片类型的二进制文件应被归类为 binaryImageFiles', () => {
+    it('应该以消息态变体渲染附件', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: [
             { type: 'binary', url: 'http://example.com/photo.png', filename: 'photo.png', mimeType: 'image/png' },
-            { type: 'binary', url: 'http://example.com/pic.jpg', filename: 'pic.jpg', mimeType: 'image/jpeg' },
           ],
         } as any,
       });
 
-      const fileContents = wrapper.findAll('.mock-file-content');
-      expect(fileContents.length).toBe(1);
+      expect(wrapper.find('.mock-file-content').attributes('data-variant')).toBe('message');
     });
 
-    it('非图片二进制文件应该各自独立渲染', () => {
-      wrapper = mount(UserMessage, {
-        props: {
-          content: [
-            { type: 'binary', filename: 'doc.pdf', mimeType: 'application/pdf' },
-            { type: 'binary', filename: 'data.csv', mimeType: 'text/csv' },
-          ],
-        } as any,
-      });
-
-      const fileContents = wrapper.findAll('.mock-file-content');
-      expect(fileContents.length).toBe(2);
-    });
-
-    it('混合图片和非图片二进制文件应分别渲染', () => {
+    it('图片与非图片附件应交由同一个 FileContent 内部分组', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: [
@@ -421,19 +409,8 @@ describe('UserMessage', () => {
         } as any,
       });
 
-      const fileContents = wrapper.findAll('.mock-file-content');
-      expect(fileContents.length).toBe(2);
-    });
-
-    it('有 url 的文件应被识别为图片文件', () => {
-      wrapper = mount(UserMessage, {
-        props: {
-          content: [{ type: 'binary', url: 'http://example.com/file', filename: 'file' }],
-        } as any,
-      });
-
-      const fileContents = wrapper.findAll('.mock-file-content');
-      expect(fileContents.length).toBe(1);
+      expect(wrapper.findAll('.mock-file-content').length).toBe(1);
+      expect(wrapper.findAll('.mock-file-item').length).toBe(3);
     });
   });
 
@@ -591,6 +568,33 @@ describe('UserMessage', () => {
 
       const editBtn = wrapper.findAll('.mock-message-tools');
       expect(editBtn.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('messageTools 覆盖与隐藏', () => {
+    const readToolIds = () => {
+      const json = wrapper.find('.mock-message-tools').attributes('data-tools-json');
+      return (JSON.parse(json ?? '[]') as Array<{ id: string }>).map(tool => tool.id);
+    };
+
+    it('不传 messageTools 时应使用内置 copy/cite/edit/delete', () => {
+      wrapper = mount(UserMessage, {
+        props: { content: '消息' },
+      });
+      expect(readToolIds()).toEqual(['copy', 'cite', 'edit', 'delete']);
+    });
+
+    it('传入 hidden 的 edit/delete 后应只保留 copy/cite', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '消息',
+          messageTools: [
+            { id: 'edit', hidden: true },
+            { id: 'delete', hidden: true },
+          ],
+        },
+      });
+      expect(readToolIds()).toEqual(['copy', 'cite']);
     });
   });
 });

@@ -17,7 +17,13 @@ from contextvars import copy_context
 from logging import getLogger
 from typing import AsyncGenerator, Awaitable, Callable
 
+from aidev_agent.exceptions import AgentDeadlineExceededError
 from aidev_agent.utils import Empty
+
+try:
+    from aidev_agent.packages.opentelemetry.resilience import record_operation_timeout
+except ImportError:  # OpenTelemetry is an optional SDK extra.
+    record_operation_timeout = None
 
 logger = getLogger(__name__)
 
@@ -46,8 +52,14 @@ async def async_generator_with_timeout(
 def async_to_sync_generator(
     async_gen: AsyncGenerator,
     async_finalizer: Callable[[], Awaitable[None]] | None = None,
+    total_timeout: int | float | None = None,
 ):
-    """在独立 loop 中消费异步生成器，并在同一 loop 执行 finalizer。"""
+    """在独立 loop 中消费异步生成器，并在同一 loop 执行 finalizer。
+
+    ``total_timeout`` is a total Agent/session deadline, not a per-chunk or
+    tool timeout.  Expiry cancels the async graph before surfacing a typed
+    error to the producer so it can emit RUN_ERROR and RUN_FINISHED.
+    """
     data_queue = queue.Queue()
     end = object()
     error = None
@@ -59,9 +71,35 @@ def async_to_sync_generator(
 
     async def consume_async():
         nonlocal error
-        try:
+
+        async def _consume_items() -> None:
             async for item in async_gen:
                 data_queue.put(item)
+
+        try:
+            if total_timeout is None:
+                await _consume_items()
+            else:
+                deadline = asyncio.timeout(total_timeout)
+                try:
+                    async with deadline:
+                        await _consume_items()
+                except TimeoutError:
+                    if not deadline.expired():
+                        raise
+                    raise AgentDeadlineExceededError(
+                        f"Agent/session deadline exceeded after {float(total_timeout):g}s"
+                    ) from None
+        except AgentDeadlineExceededError as deadline_error:
+            if record_operation_timeout is not None:
+                record_operation_timeout(
+                    scope="session",
+                    outcome="cancelled",
+                    error=deadline_error,
+                    timeout_seconds=float(total_timeout),
+                )
+            logger.warning("[ASYNC] Agent/session deadline exceeded")
+            error = deadline_error
         except Exception as e:
             logger.warning(f"[ASYNC] consume_async error: {e}", exc_info=True)
             error = e

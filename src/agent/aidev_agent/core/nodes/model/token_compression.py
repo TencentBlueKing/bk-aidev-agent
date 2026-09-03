@@ -208,9 +208,7 @@ class BaseCompressionMiddleware:
         items: dict = ctx.metadata.pop("_compressed_items", None)
         if not items:
             return
-        parts = "、".join(items.keys())
-        total = sum(items.values())
-        text = f"已压缩上下文（{parts} {total} tokens）"
+        text = "上下文已自动压缩"
         msg_id = str(uuid.uuid4())
 
         # 1) 实时推送 CustomEvent（运行期间前端可收到）

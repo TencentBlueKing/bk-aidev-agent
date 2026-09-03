@@ -140,10 +140,14 @@ describe('useDraggable side panel geometry', () => {
     expect(api.left.value).toBe(100);
     expect(api.width.value).toBe(960);
 
+    await api.collapseSidePanel();
+    expect(api.left.value).toBe(100);
+    expect(api.width.value).toBe(400);
+
     wrapper.unmount();
   });
 
-  it('collapse keeps left edge and shrinks width from the right', async () => {
+  it('collapse shrinks width first then restores the pre-expand position', async () => {
     const { api, wrapper } = mountDraggable({
       initWidth: 400,
       defaultLeft: 1520,
@@ -159,9 +163,47 @@ describe('useDraggable side panel geometry', () => {
     expect(api.left.value).toBe(960);
 
     await promise;
-    expect(api.left.value).toBe(960);
+    expect(api.left.value).toBe(1520);
     expect(api.width.value).toBe(400);
     expect(api.isSidePanelExpanded.value).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it('collapse keeps left edge after user drag while expanded invalidates the snapshot', async () => {
+    const { api, wrapper } = mountDraggable({
+      initWidth: 400,
+      defaultLeft: 1520,
+      maxWidthPercent: 80,
+    });
+
+    await api.expandForSidePanel(560);
+    api.handleDragging(300, 0);
+    api.handleDragStop(300, 0);
+
+    await api.collapseSidePanel();
+    expect(api.left.value).toBe(300);
+    expect(api.width.value).toBe(400);
+    expect(api.isSidePanelExpanded.value).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it('collapse still restores docked-right position when clicking the toggle jitters the drag handle', async () => {
+    const { api, wrapper } = mountDraggable({
+      initWidth: 400,
+      defaultLeft: 1520,
+      maxWidthPercent: 80,
+    });
+
+    await api.expandForSidePanel(560);
+    // 侧栏开关画在拖拽手柄（Header）上，点击时鼠标抖几像素也会发出真实的 dragging/dragStop
+    api.handleDragging(962, 1);
+    api.handleDragStop(962, 1);
+
+    await api.collapseSidePanel();
+    expect(api.left.value).toBe(1520);
+    expect(api.width.value).toBe(400);
 
     wrapper.unmount();
   });

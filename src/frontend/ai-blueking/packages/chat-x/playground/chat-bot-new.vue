@@ -204,9 +204,10 @@
     MOCK_MODELS,
     MOCK_PROMPTS,
     MOCK_RESOURCES,
+    MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
-  import { uploadFileToSession } from './upload-file';
+  import { mockUploadFileToSession } from './upload-file';
 
   import type { CustomTab, IAiSlashMenuItem, Shortcut, TagSchema } from '../src/types';
   import type { IToolBtn } from '../src/types/tool';
@@ -229,6 +230,7 @@
   // Info 分隔提示 + ToolCall 各状态 + 含 toolCalls 的会话 mock + flow_agent 执行情况 + 待回答 UserQuestion
   const messages = deepRef<Message[]>([
     ...MOCK_INFO_MESSAGES,
+    ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
     ...MOCK_FLOW_AGENT_MESSAGES,
     // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
@@ -968,14 +970,17 @@
     }
   };
 
-  const handleUpload = async (file: File) => {
-    const response = await uploadFileToSession({
-      file,
-      sessionCode: 'demo_session',
-      accessToken: import.meta.env.VITE_ACCESS_TOKEN || '',
-    });
-    console.log('upload response:', response);
-    return response?.data as { download_url?: string };
+  // playground 走本地 mock，不依赖后端网关与 access_token；
+  // 真实接入示例见 ./upload-file 的 uploadFileToSession
+  const handleUpload = async (files: File[]) => {
+    const responses = await Promise.all(
+      files.map(async file => {
+        const response = await mockUploadFileToSession(file);
+        console.log('upload response:', file.name, file.type, response);
+        return response;
+      }),
+    );
+    return responses;
   };
 
   const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], docSchema: TagSchema) => {

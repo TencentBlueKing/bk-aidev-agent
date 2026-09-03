@@ -159,6 +159,7 @@ export interface IBinaryInputContent {
   filename?: string;
   id?: string;
   mimeType: string;
+  size?: number;
   type: MessageType.Binary;
   url?: string;
 }
@@ -168,6 +169,7 @@ export interface IBinaryInputContentApi {
   filename?: string;
   id?: string;
   mime_type: string;
+  size?: number;
   type: MessageType.Binary;
   url?: string;
 }

@@ -914,10 +914,11 @@ export const MOCK_INFO_MESSAGES = [
 ] as Message[];
 
 /**
- * ToolCallRender 状态 mock：一条 assistant 内多个 toolCall，覆盖
- * Pending / Streaming（Loading）与 Success / Complete / Completed（成功）以及 Error（失败）
+ * 第 1 组：调用状态
+ * 覆盖 Pending / Streaming（「正在调用」+ 文字渐变闪动）、Success / Complete / Completed（成功）、
+ * Error（失败，含 string 与 boolean 两种 error），以及有无耗时的文案差异
  */
-export const MOCK_TOOLCALL_STATUS_MESSAGES = [
+const MOCK_TOOLCALL_STATE_MESSAGES = [
   {
     id: 'mock-toolcall-status-user',
     role: MessageRole.User,
@@ -930,13 +931,13 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
   {
     id: 'mock-toolcall-status-assistant',
     role: MessageRole.Assistant,
-    content: '以下为 ToolCallRender 各状态示例：',
+    content: '以下演示调用状态：进行中（文字渐变闪动、无折叠箭头）、成功、失败，以及有无耗时的文案差异。',
     name: 'react_agent',
     status: MessageStatus.Complete,
     messageId: 'mock-toolcall-status-assistant',
     createdAt: mockCreatedAt(0, 10, 3, 1),
     toolCalls: [
-      // Pending：无 toolMessage → Loading「调用中」
+      // Pending：无 toolMessage → 「正在调用」+ 文字渐变闪动
       {
         id: 'mock-tc-pending',
         type: 'function',
@@ -946,7 +947,7 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
           arguments: '{"service": "chat-x"}',
         },
       },
-      // Streaming：Loading「调用中」
+      // Streaming：同 Pending，展示「正在调用」
       {
         id: 'mock-tc-streaming',
         type: 'function',
@@ -1010,7 +1011,7 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
           duration: 2100,
         },
       },
-      // Error：失败图标
+      // Error：状态文案标红
       {
         id: 'mock-tc-error',
         type: 'function',
@@ -1027,8 +1028,285 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
           duration: 430,
         },
       },
+      // error 为 boolean：无错误文案，返回内容面板走空态
+      {
+        id: 'mock-tc-error-boolean',
+        type: 'function',
+        function: {
+          name: 'rollback_release',
+          description: '回滚版本（error 为 boolean true）',
+          arguments: '{"release_id": "r-2026-0831"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-error-boolean',
+          status: MessageStatus.Error,
+          error: true,
+          content: '',
+          duration: 620,
+        },
+      },
+      // 无耗时：状态段只显示「（成功）」，不带「耗时：」
+      {
+        id: 'mock-tc-success-no-duration',
+        type: 'function',
+        function: {
+          name: 'ping_gateway',
+          description: '网关连通性探测（成功但无耗时）',
+          arguments: '{"host": "bk-gateway"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-success-no-duration',
+          status: MessageStatus.Success,
+          content: '{"reachable": true}',
+          duration: 0,
+        },
+      },
     ],
   },
+] as Message[];
+
+/**
+ * 第 2 组：调用类型前缀与重试
+ * 覆盖 function.type 为 skill / function / mcp 的三种前缀、无 type 时按 mcpName 的旧版兼容判定，
+ * 以及设计标注「同一个工具执行 2 次则有 2 行记录」的失败 + 重试成功场景
+ */
+const MOCK_TOOLCALL_TYPE_MESSAGES = [
+  {
+    id: 'mock-toolcall-type-user',
+    role: MessageRole.User,
+    content: '解释下这几个 skill 的功能',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-type-user',
+    createdAt: mockCreatedAt(0, 10, 5, 1),
+  },
+  {
+    id: 'mock-toolcall-type-assistant',
+    role: MessageRole.Assistant,
+    content: '以下演示三种调用类型前缀，以及同一工具失败后重试成功产生的两行记录。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-type-assistant',
+    createdAt: mockCreatedAt(0, 10, 6, 1),
+    toolCalls: [
+      // function.type = 'skill'：前缀显示「读取 Skill」
+      {
+        id: 'mock-tc-skill',
+        type: 'function',
+        function: {
+          name: 'knowlege-ba1',
+          type: 'skill',
+          description: '基于 AIDEV 产品知识手册模板，为新产品产出完整手册并发布到 iWiki。',
+          arguments: '{"template": "aidev", "publish": true}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-skill',
+          status: MessageStatus.Success,
+          content: '{"doc_id": "iwiki-8821", "published": true}',
+          duration: 150000,
+        },
+      },
+      // function.type = 'function'：前缀显示「调用工具」
+      {
+        id: 'mock-tc-plain-tool',
+        type: 'function',
+        function: {
+          name: 'knowlege-ba2',
+          type: 'function',
+          description: '把 Markdown / HTML 通过 CDP 写进 iWiki 编辑页并发布。',
+          arguments: '{"doc": "release-note.md"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-plain-tool',
+          status: MessageStatus.Success,
+          content: '{"injected": true}',
+          duration: 150000,
+        },
+      },
+      // function.type = 'mcp'：前缀显示「调用 MCP」，标题带 mcpName
+      {
+        id: 'mock-tc-mcp',
+        type: 'function',
+        function: {
+          name: 'query_table',
+          type: 'mcp',
+          mcpName: 'bk-data-server',
+          description: '通过 MCP 查询数据表。',
+          arguments: '{"table": "bkdata_result", "limit": 10}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-mcp',
+          status: MessageStatus.Success,
+          content: '{"rows": 10}',
+          duration: 3200,
+        },
+      },
+      // 旧版数据兼容：无 type、仅靠 mcpName 判定为 MCP 调用
+      {
+        id: 'mock-tc-mcp-legacy',
+        type: 'function',
+        function: {
+          name: 'query_metric',
+          mcpName: 'bk-monitor-server',
+          description: '旧版数据：未下发 function.type，应按 mcpName 兼容判定为「调用 MCP」。',
+          arguments: '{"metric": "cpu_usage"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-mcp-legacy',
+          status: MessageStatus.Success,
+          content: '{"value": 42}',
+          duration: 1800,
+        },
+      },
+      // 重试第 1 次：失败
+      {
+        id: 'mock-tc-retry-1',
+        type: 'function',
+        function: {
+          name: 'sync_config',
+          description: '同步配置到目标集群（第 1 次执行）',
+          arguments: '{"cluster_id": "bk-prod", "attempt": 1}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-retry-1',
+          status: MessageStatus.Error,
+          error: '同步失败：目标集群连接超时',
+          content: '',
+          duration: 30000,
+        },
+      },
+      // 重试第 2 次：同名工具再执行一次并成功，渲染为独立的第 2 行
+      {
+        id: 'mock-tc-retry-2',
+        type: 'function',
+        function: {
+          name: 'sync_config',
+          description: '同步配置到目标集群（第 2 次执行，重试）',
+          arguments: '{"cluster_id": "bk-prod", "attempt": 2}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-retry-2',
+          status: MessageStatus.Success,
+          content: '{"synced": true, "attempt": 2}',
+          duration: 4800,
+        },
+      },
+    ],
+  },
+] as Message[];
+
+/** 超长参数：20 组键值对，展开后超过面板 300px 限高，用于验证滚动与标题吸顶 */
+const MOCK_LONG_ARGUMENTS = JSON.stringify({
+  path: '/app',
+  target_runtime: 'paas_sandbox_file-kit',
+  namespace: 'default',
+  cluster_id: 'bk-prod',
+  timeout: 30000,
+  retry: 3,
+  encoding: 'utf-8',
+  follow_symlinks: false,
+  max_depth: 10,
+  include_hidden: true,
+  pattern: '*.py',
+  exclude: '__pycache__',
+  sort_by: 'mtime',
+  order: 'desc',
+  limit: 200,
+  offset: 0,
+  with_metadata: true,
+  checksum: 'sha256',
+  dry_run: false,
+  verbose: true,
+});
+
+/** 超长返回内容：纯文本文件列表，用于验证长文本换行与面板滚动 */
+const MOCK_LONG_CONTENT = Array.from(
+  { length: 30 },
+  (_, index) => `/app/scripts/module_${index}/write_report_${index}.py`,
+).join(' ');
+
+/**
+ * 第 3 组：内容边界
+ * 覆盖超长参数 / 超长返回内容（300px 限高滚动 + 标题吸顶 + 复制）、
+ * 超长工具名（单行省略号 + tooltip），以及无描述 / 无参数的空态
+ */
+const MOCK_TOOLCALL_OVERFLOW_MESSAGES = [
+  {
+    id: 'mock-toolcall-overflow-user',
+    role: MessageRole.User,
+    content: '把 /app 下的脚本都列出来，参数给全一点',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-overflow-user',
+    createdAt: mockCreatedAt(0, 10, 10, 1),
+  },
+  {
+    id: 'mock-toolcall-overflow-assistant',
+    role: MessageRole.Assistant,
+    content: '以下演示内容边界：超长参数与返回内容触发限高滚动与标题吸顶、超长工具名省略、空描述与空参数。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-toolcall-overflow-assistant',
+    createdAt: mockCreatedAt(0, 10, 11, 1),
+    toolCalls: [
+      // 超长参数 + 超长返回内容：两个面板都应各自滚动，标题吸顶
+      {
+        id: 'mock-tc-overflow',
+        type: 'function',
+        function: {
+          name: 'list_files',
+          description:
+            '递归列出目标目录下的全部文件，支持按修改时间排序、按 glob 过滤、跳过隐藏文件与缓存目录，并可附带校验和等元数据。这是一段较长的描述，用于验证描述面板的换行表现。',
+          arguments: MOCK_LONG_ARGUMENTS,
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-overflow',
+          status: MessageStatus.Success,
+          content: MOCK_LONG_CONTENT,
+          duration: 2100,
+        },
+      },
+      // 超长工具名：头部单行省略并由 tooltip 展示完整文案
+      {
+        id: 'mock-tc-long-name',
+        type: 'function',
+        function: {
+          name: 'query_extremely_long_tool_name_for_single_line_overflow_ellipsis_validation',
+          mcpName: 'bk-observability-data-platform-gateway',
+          description: '超长工具名 + 超长 MCP 名，验证头部单行省略号与 tooltip。',
+          arguments: '{"scope": "all"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-long-name',
+          status: MessageStatus.Success,
+          content: '{"ok": true}',
+          duration: 900,
+        },
+      },
+      // 无描述 + 无参数：两个面板均为空态
+      {
+        id: 'mock-tc-empty',
+        type: 'function',
+        function: {
+          name: 'noop',
+          arguments: '',
+        },
+        toolMessage: {
+          toolCallId: 'mock-tc-empty',
+          status: MessageStatus.Success,
+          content: '',
+          duration: 12,
+        },
+      },
+    ],
+  },
+] as Message[];
+
+/** ToolCallRender 调试数据总入口：调用状态 / 调用类型与重试 / 内容边界三组 */
+export const MOCK_TOOLCALL_STATUS_MESSAGES = [
+  ...MOCK_TOOLCALL_STATE_MESSAGES,
+  ...MOCK_TOOLCALL_TYPE_MESSAGES,
+  ...MOCK_TOOLCALL_OVERFLOW_MESSAGES,
 ] as Message[];
 
 /**

@@ -128,3 +128,20 @@ describe('useSessionHandlers error reporting', () => {
     expect(payload.action).toBe('historyRename');
   });
 });
+
+  describe('handleNewChat', () => {
+    it('should clear cite when creating a new session', async () => {
+      const params = createParams();
+      const setCiteText = vi.fn();
+      params.chatBotRef.value = {
+        exitShareMode: vi.fn(),
+        setCiteText,
+      } as unknown as typeof params.chatBotRef.value;
+      params.forwarders.newChat = vi.fn();
+
+      const { handleNewChat } = useSessionHandlers(params);
+      await handleNewChat();
+
+      expect(setCiteText).toHaveBeenCalledWith('');
+    });
+  });

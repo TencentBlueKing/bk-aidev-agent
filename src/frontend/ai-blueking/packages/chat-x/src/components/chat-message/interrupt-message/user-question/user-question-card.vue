@@ -480,11 +480,20 @@
       width: 14px;
       height: 14px;
       margin-right: 4px;
-      color: rgb(151 155 165 / 100%);
+      color: currentColor; // 跟随按钮文字色，提交禁用时同步变灰
     }
 
     &__skip {
       color: #4d4f56;
+
+      &.is-disabled,
+      &[disabled] {
+        color: #c4c6cc;
+
+        .ai-user-question-card__skip-icon {
+          color: #c4c6cc;
+        }
+      }
     }
   }
 </style>

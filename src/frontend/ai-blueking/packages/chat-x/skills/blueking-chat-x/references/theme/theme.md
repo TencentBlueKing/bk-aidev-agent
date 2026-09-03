@@ -128,7 +128,7 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 
 ```scss
 // 覆盖输入框容器样式
-.chat-input-container {
+.ai-chat-input-container {
   .chat-input {
     min-height: 120px; // 自定义最小高度
     max-height: 250px; // 自定义最大高度
@@ -167,7 +167,7 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 
 ```scss
 // 快捷指令按钮
-.shortcut-btns {
+.ai-shortcut-btns {
   &-item {
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: #fff;
@@ -242,7 +242,7 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 // 暗色主题变量
 .dark-theme {
   // 输入框
-  .chat-input-container .chat-input {
+  .ai-chat-input-container .chat-input {
     background: #2d2d2d;
 
     &::before {
@@ -285,7 +285,7 @@ $selection-z-index: $shortcut-menu-z-index + 1;
   }
 
   // 快捷指令
-  .shortcut-btns-item {
+  .ai-shortcut-btns-item {
     background: #3d3d3d;
     color: #e0e0e0;
 
@@ -404,12 +404,12 @@ $selection-z-index: $shortcut-menu-z-index + 1;
 ```scss
 // 移动端适配
 @media (max-width: 768px) {
-  .chat-input-container .chat-input {
+  .ai-chat-input-container .chat-input {
     min-width: 100%;
     max-width: 100%;
   }
 
-  .shortcut-btns {
+  .ai-shortcut-btns {
     min-width: 100%;
     max-width: 100%;
   }

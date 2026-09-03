@@ -28,8 +28,13 @@ def test_generate_session_code_is_stable_md5(username, agent_code, thread_id, ex
     assert SessionManager.generate_session_code(username, agent_code, thread_id) == code
 
 
-def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manager, mock_plugin_rm_client):
-    result = session_manager.get_or_create_by_thread_id("t-1")
+@pytest.mark.parametrize("channel_type", ["popup", "rtx"])
+def test_get_or_create_by_thread_id_delegates_to_resource_manager(
+    session_manager,
+    mock_plugin_rm_client,
+    channel_type,
+):
+    result = session_manager.get_or_create_by_thread_id("t-1", channel_type=channel_type)
 
     expected = session_manager.generate_session_code("alice", "bk-aidev", "t-1")
     assert result == expected
@@ -38,7 +43,7 @@ def test_get_or_create_by_thread_id_delegates_to_resource_manager(session_manage
         session_name="新会话",
         protocol_version=AGUI_PROTOCOL_VERSION,
         is_temporary=None,
-        channel_type="popup",
+        channel_type=channel_type,
         headers={"X-BKAIDEV-USER": "alice"},
     )
 
@@ -50,6 +55,32 @@ def test_get_or_create_by_session_code_passes_options(session_manager, mock_plug
     call = mock_plugin_rm_client.resource_manager_mock.get_or_create_session.call_args
     assert call.kwargs["session_name"] == "demo"
     assert call.kwargs["is_temporary"] is True
+
+
+def test_update_title_only_writes_name_with_user_identity(session_manager, mock_plugin_rm_client):
+    api = mock_plugin_rm_client.api
+    api.update_chat_session.return_value = {"data": {"session_name": "日志查询"}}
+    session_manager.update_session_name("sc-1", "日志查询")
+    api.update_chat_session.assert_called_once_with(
+        path_params={"session_code": "sc-1"}, json={"session_name": "日志查询"}, headers={"X-BKAIDEV-USER": "alice"}
+    )
+    api.rename_chat_session.assert_not_called()
+    mock_plugin_rm_client.resource_manager_mock.get_or_create_session.assert_not_called()
+
+
+def test_ai_rename_calls_platform_with_user_identity(session_manager, mock_plugin_rm_client):
+    session_manager.ai_rename("sc-1")
+    mock_plugin_rm_client.api.rename_chat_session.assert_called_once_with(
+        path_params={"session_code": "sc-1"}, headers={"X-BKAIDEV-USER": "alice"}
+    )
+    mock_plugin_rm_client.api.retrieve_chat_session.assert_not_called()
+
+
+@pytest.mark.parametrize("result", [{}, {"data": None}, {"data": {"session_name": "old"}}])
+def test_update_title_requires_platform_confirmation(session_manager, mock_plugin_rm_client, result):
+    mock_plugin_rm_client.api.update_chat_session.return_value = result
+    with pytest.raises(ValueError, match="not confirmed"):
+        session_manager.update_session_name("sc-1", "new")
 
 
 @pytest.mark.parametrize(
@@ -78,6 +109,20 @@ def test_save_content_generates_turn_id_for_user(session_manager, mock_plugin_rm
     payload = mock_plugin_rm_client.api.create_chat_session_content.call_args.kwargs["json"]
     assert payload["property"]["turn_id"]
     assert saved["property"]["turn_id"] == payload["property"]["turn_id"]
+
+
+def test_save_content_keeps_entry_trace(mock_plugin_rm_client, mocker):
+    from aidev_bkplugin.services.agent_session import SessionManager
+
+    current = mocker.patch("aidev_bkplugin.services.agent_session.get_current_trace_id", return_value="a" * 32)
+    manager = SessionManager("test")
+    current.return_value = "b" * 32
+    mock_plugin_rm_client.api.create_chat_session_content.return_value = {"data": {"id": 1}}
+
+    manager.save_content("sc-1", "user", "hello", turn_id="turn-1")
+
+    payload = mock_plugin_rm_client.api.create_chat_session_content.call_args.kwargs["json"]
+    assert payload["property"] == {"turn_id": "turn-1", "trace_id": "a" * 32}
 
 
 def test_set_flow_resume_pending_preserves_existing_fields(session_manager, mock_plugin_rm_client):
@@ -143,10 +188,11 @@ def test_prepare_session_turn_inherits_user_turn_id_without_input(session_manage
         ],
     )
 
-    session_code, turn_id = session_manager.prepare_session_turn("thread-1", input_text="")
+    session_code, turn_id = session_manager.prepare_session_turn("thread-1", input_text="", channel_type="rtx")
 
     assert session_code
     assert turn_id == "turn-existing"
+    assert mock_plugin_rm_client.resource_manager_mock.get_or_create_session.call_args.kwargs["channel_type"] == "rtx"
     mock_plugin_rm_client.api.create_chat_session_content.assert_not_called()
 
 

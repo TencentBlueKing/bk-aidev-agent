@@ -2,9 +2,9 @@
 
 > 能力域：工具与反馈 ｜ 导入：`import { MessageTools } from '@blueking/chat-x'` ｜ since 1.0.0
 
-消息悬浮工具栏，组合复制、删除、反馈等工具按钮。 源码位置：src/components/message-tools/message-tools.vue。
+消息悬浮工具栏，组合复制、删除、反馈等工具按钮；提供 prepend / append 两端插槽承载消息时间等附加内容。 源码位置：src/components/message-tools/message-tools.vue。
 
-**关联**：tool-btn（普通工具项由 ToolBtn 渲染）、user-feedback（like/unlike 时弹出反馈表单）、delete-tool（id 为 delete 时替换为带确认的删除按钮）
+**关联**：tool-btn（普通工具项由 ToolBtn 渲染）、user-feedback（like/unlike 时弹出反馈表单）、delete-tool（id 为 delete 时替换为带确认的删除按钮）、message-time（通过 prepend / append 插槽嵌入消息时间）
 
 ---
 
@@ -17,22 +17,22 @@
 
 > **能力域**：工具与反馈
 
-AI 消息的操作工具栏组件，由**左侧消息工具区**和**右侧更新工具区**两部分组成，中间以分隔线分隔。仅 `like` / `unlike` 按钮会弹出反馈表单（`UserFeedback`），其余按钮直接触发 `onAction`。
+AI 消息的操作工具栏组件，由**左侧消息工具区**和**右侧更新工具区**两部分组成，中间以分隔线分隔；两端另有 `prepend` / `append` 插槽用于挂载消息时间等附加内容。仅 `like` / `unlike` 按钮会弹出反馈表单（`UserFeedback`），其余按钮直接触发 `onAction`。
 
 ## 组件结构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  .message-tools-container                           │
-│  ┌─────────────────────┐  │  ┌───────────────────┐ │
-│  │  messageTools        │  │  │  updateTools      │ │
-│  │  copy cite rebuild…  │  │  │  like unlike del  │ │
-│  └─────────────────────┘  │  └───────────────────┘ │
-│             左侧区域      分隔线   右侧区域          │
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│  .ai-message-tools-container（display: flex，gap: 4px）                 │
+│  ┌────────┐  ┌─────────────────────┐  │  ┌───────────────┐  ┌───────┐ │
+│  │#prepend│  │  messageTools        │  │  │  updateTools  │  │#append│ │
+│  │        │  │  copy cite rebuild…  │  │  │ like unlike…  │  │       │ │
+│  └────────┘  └─────────────────────┘  │  └───────────────┘  └───────┘ │
+│    插槽区          左侧区域         分隔线    右侧区域          插槽区   │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-- 分隔线（`.ai-divider`）仅在 `updateTools` 非空时显示
+- 分隔线（`.ai-divider`）与**右侧更新工具区**均仅在 `updateTools` 非空时渲染
 - `updateTools` 中 `id` 为 `like` / `unlike` 的按钮被 `Tippy` 弹窗包裹，点击后展示 `UserFeedback` 反馈表单
 - `updateTools` 中 `id` 为 `delete` 的按钮使用 `DeleteTool` 组件，点击后展示**确认删除弹窗**（含"删除"/"取消"按钮），确认后触发 `onAction`
 - `updateTools` 中其他按钮直接触发 `onAction`，不弹表单
@@ -221,6 +221,32 @@ const CONST_UPDATE_TOOLS = [
 
 **渲染效果**
 
+## 两端插槽（prepend / append）
+
+`prepend`（工具图标左侧）与 `append`（工具图标右侧）用于在工具栏两端挂载附加内容，项目内用于放置 [MessageTime 消息时间](/components/feedback/message-time)：
+
+| 场景      | 使用插槽  | 效果                                    |
+| --------- | --------- | --------------------------------------- |
+| 用户消息  | `prepend` | 时间显示在工具图标左侧                  |
+| AI 消息组 | `append`  | 时间显示在工具图标右侧                  |
+
+```vue
+<template>
+  <MessageTools :on-action="handleAction">
+    <template #append>
+      <MessageTime :created-at="createdAt" />
+    </template>
+  </MessageTools>
+</template>
+
+<script setup lang="ts">
+  import { MessageTime, MessageTools } from '@blueking/chat-x';
+</script>
+```
+
+- 插槽包裹容器（`.ai-message-tools-prepend` / `.ai-message-tools-append`）仅在对应插槽传入时渲染
+- 插槽内容为空时（如消息无 `createdAt`，`MessageTime` 不渲染任何 DOM），包裹容器命中 `:empty` 被收起，不会留下多余间距
+
 ## 工具栏状态控制
 
 `messageToolsStatus` 控制工具栏整体状态：
@@ -354,15 +380,26 @@ const CONST_UPDATE_TOOLS = [
 | -------- | ------------------------------------------------------------- | ------------------------------------------ |
 | feedback | `(tool: IToolBtn, reasonList: string[], otherReason: string)` | 用户在反馈表单点击"提交"后触发（not 取消） |
 
+### Slots
+
+| 插槽名  | 作用域参数 | 说明                                             |
+| ------- | ---------- | ------------------------------------------------ |
+| prepend | —          | 工具图标左侧的附加内容，如用户消息的时间         |
+| append  | —          | 工具图标右侧的附加内容，如 AI 消息组的时间       |
+
 ## 类型定义
 
 ```typescript
 import { MessageToolsStatus, type IToolBtn } from '@blueking/chat-x';
+import type { Component, VNode } from 'vue';
 
 interface IToolBtn {
-  id?: keyof typeof ToolIconsMap; // 工具唯一标识；与 ToolIconsMap 匹配时显示内置图标，否则显示 name 文本
+  id?: (string & {}) | ToolIcons; // 工具唯一标识；命中 ToolIconsMap 显示内置图标，否则显示 name 文本；支持业务自定义字符串
   name?: string; // 工具名称，无对应图标时显示；也用作 tooltip fallback
   description?: string; // tooltip 文本
+  icon?: Component | VNode; // 自定义图标（组件/VNode），优先级高于内置 ToolIconsMap[id]
+  hidden?: boolean; // 按 id 合并时隐藏该按钮（仅在 MessageContainer/ChatContainer 合并语义下生效）
+  triggerSelection?: boolean; // 标记点击后进入多选态（复用 share 选择流程），确认走 confirmShare
 }
 
 enum MessageToolsStatus {
@@ -376,3 +413,4 @@ enum MessageToolsStatus {
 - [ToolBtn](/components/feedback/tool-btn) — 单项工具按钮
 - [UserFeedback](/components/feedback/user-feedback) — 点赞/踩反馈面板
 - [DeleteTool](/components/feedback/delete-tool) — 删除二次确认
+- [MessageTime](/components/feedback/message-time) — 两端插槽内的消息时间

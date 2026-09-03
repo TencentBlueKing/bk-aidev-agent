@@ -23,13 +23,6 @@ from typing import Any, Callable
 from ag_ui.core import BaseEvent, CustomEvent, EventType, RunErrorEvent
 from ag_ui.core.events import RawEvent, TextMessageContentEvent, TextMessageEndEvent, TextMessageStartEvent
 
-from aidev_agent.core.ag_ui.ask_user_question import (
-    ASK_USER_QUESTION_REASON,
-    AskUserQuestionHandler,
-    InterruptStatus,
-    build_updated_builtin_property,
-    extract_message_id,
-)
 from aidev_agent.core.ag_ui.event_builders import build_model_end_payload, should_switch_thinking_step
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
@@ -37,11 +30,36 @@ from aidev_agent.core.ag_ui.types import (
     LangGraphEventTypes,
     SessionPersistenceEventNames,
 )
-from aidev_agent.core.ag_ui.utils import camel_to_snake, get_interrupt_value, unwrap_interrupt_source
+from aidev_agent.core.ag_ui.utils import camel_to_snake
 from aidev_agent.enums import ActivityType, PromptRole
+from aidev_agent.packages.interrupt_manager import (
+    InterruptStatus,
+    build_updated_builtin_property,
+    extract_message_id,
+    get_interrupt_value,
+    unwrap_interrupt_source,
+)
+from aidev_agent.packages.interrupt_manager.approval import (
+    extract_builtin_property as _approval_extract,
+)
+from aidev_agent.packages.interrupt_manager.ask_user_question import (
+    extract_builtin_property as _ask_user_extract,
+)
+from aidev_agent.packages.interrupt_manager.types import InterruptReason
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.tracing import get_current_trace_id
 
 logger = getLogger(__name__)
+
+# 模块级局部路由（D-02）：reason → extract_builtin_property 纯函数。
+# 不再经 registry 查表——writer 不感知 handler 生命周期。
+_INTERRUPT_EXTRACTORS: dict[str, Any] = {
+    # 键用 reason 的**值**字符串（str-enum 的 str() 返回枚举名而非值——运行时
+    # serialized_reason 为值字符串，键必须与之 hash 等价，否则 extract 路由全 miss
+    # → 卡片降级 4 键兜底）。
+    InterruptReason.TOOL_APPROVAL.value: _approval_extract,
+    InterruptReason.USER_QUESTION.value: _ask_user_extract,
+}
 
 # Flow Agent 结果中 duration 的默认值
 DEFAULT_FLOW_AGENT_DURATION = 0.0
@@ -114,6 +132,8 @@ class BaseSessionWriter(ABC):
         self.session_code: str = session_code
         self.username: str = username
         self.turn_id: str = turn_id or ""
+        # Writer 在 chat 入口构造；异步回写时的当前 Span 可能已经属于另一条链路。
+        self.trace_id: str = get_current_trace_id() or ""
         self._tools_mapping: dict[str, Any] = {}
         if tools:
             self.set_tools(tools)
@@ -428,22 +448,6 @@ class BaseSessionWriter(ABC):
             }
         }
 
-    def _build_interrupt_builtin_property(
-        self, interrupt_id: str, interrupt: Any, graph_thread_id: str | None = None
-    ) -> dict[str, Any]:
-        ticket = self._get_interrupt_value(interrupt, "ticket")
-        return {
-            "message_id": interrupt_id,
-            "type": self._get_interrupt_value(interrupt, "type") or "tool_approval",
-            "interrupt_id": interrupt_id,
-            "reason": self._get_interrupt_value(interrupt, "reason"),
-            "tool_call_id": self._get_interrupt_value(interrupt, "toolCallId", "tool_call_id"),
-            "tool_name": self._get_interrupt_value(interrupt, "toolName", "tool_name", "display_name", "name"),
-            "callback_token": self._get_interrupt_value(interrupt, "callbackToken", "callback_token"),
-            "ticket_sn": ticket.get("sn") if isinstance(ticket, dict) else None,
-            "graph_thread_id": graph_thread_id or self._get_interrupt_value(interrupt, "threadId", "thread_id"),
-        }
-
     def _upsert_interrupt_session_content(
         self,
         *,
@@ -586,17 +590,21 @@ class BaseSessionWriter(ABC):
         outcome_type = (
             outcome.get("type") if isinstance(outcome, dict) else getattr(outcome, "type", None) if outcome else None
         )
+        # WR-05 脱敏（T-43-06-02）：不整体输出 outcome（含每条 interrupt 的
+        # metadata.callbackToken / metadata.ticket），只记结构摘要。
         logger.info(
-            "[ToolApproval] handle_run_finished outcome check: outcome=%s, outcome_type=%s, outcome_type_attr=%s",
-            outcome,
-            type(outcome).__name__ if outcome else None,
+            "[ToolApproval] handle_run_finished outcome check: outcome_type=%s",
             outcome_type,
         )
         if outcome and outcome_type == "interrupt":
-            # 读取 interrupts 数据
+            # 串行语义（用户裁定 2026-08-31）：写入侧保证只落当前活跃 interrupt 的
+            # message（DB 一次只写一个）。源头 _resolve_exit / 分支 A 已单元素，此处
+            # [:1] 为防御其他路径多元素再犯；_build_interrupt_run_finished_content
+            # 与逐条 upsert 均用裁剪后的单元素列表。
             interrupts = (
                 outcome.get("interrupts") if isinstance(outcome, dict) else getattr(outcome, "interrupts", [])
             ) or []
+            interrupts = interrupts[:1]
             # 防御性检查：如果任何 interrupt_id 已在 _written_message_ids 中，说明已写入过，跳过整个 interrupt 分支
             already_written = any(
                 self._get_interrupt_id(interrupt) in self._written_message_ids
@@ -633,53 +641,27 @@ class BaseSessionWriter(ABC):
                 serialized = serialized_interrupts[idx] if idx < len(serialized_interrupts) else {}
                 serialized_reason = serialized.get("reason")
 
-                if serialized_reason == ASK_USER_QUESTION_REASON:
-                    # ask_user_question 路径：启用 extract_builtin_property
-                    # 字段集：questions/options/answers/multiSelect（无 callback_token/ticket_sn/tool_name）
-                    builtin_property = AskUserQuestionHandler().extract_builtin_property(
-                        interrupt_id, interrupt, graph_thread_id=getattr(event, "thread_id", "")
-                    )
-                    logger.info(
-                        "[AskUserQuestion] handle_run_finished interrupt builtin_property: "
-                        "interrupt_id=%s, reason=%s, keys=%s",
-                        interrupt_id,
-                        serialized_reason,
-                        list(builtin_property.keys()),
-                    )
-                else:
-                    # approval 路径：现有逻辑零改动（base.py 原 L543-562）
-                    metadata = serialized.get("metadata") or {}
-                    ticket = metadata.get("ticket") or {}
-                    # 工具入参：优先取 metadata.toolArgs，兜底取 serialized.toolArgs
-                    tool_args = metadata.get("toolArgs")
-                    if not isinstance(tool_args, dict):
-                        tool_args = serialized.get("toolArgs")
-                    if not isinstance(tool_args, dict):
-                        tool_args = {}
-                    builtin_property = {
+                # D-02 局部 dict 路由：逐 interrupt 按 reason 查 _INTERRUPT_EXTRACTORS
+                # （approval / ask_user 各为模块级纯函数 extract_builtin_property）。
+                # 未命中 reason → 兜底最小字段集（对齐原 DefaultStreamInterruptHandler
+                # 四键：message_id / interrupt_id / graph_thread_id / tool_call_id）。
+                extract = _INTERRUPT_EXTRACTORS.get(serialized_reason)
+                builtin_property = (
+                    extract(interrupt_id, serialized, graph_thread_id=getattr(event, "thread_id", ""))
+                    if extract is not None
+                    else {
                         "message_id": interrupt_id,
-                        "type": metadata.get("type") or serialized.get("type") or "tool_approval",
                         "interrupt_id": interrupt_id,
-                        "reason": serialized.get("reason"),
-                        "tool_call_id": serialized.get("toolCallId") or serialized.get("tool_call_id"),
-                        "tool_name": metadata.get("toolName")
-                        or serialized.get("toolName")
-                        or serialized.get("toolName"),
-                        "tool_args": tool_args,
-                        "callback_token": metadata.get("callbackToken") or serialized.get("callbackToken"),
-                        "ticket_sn": ticket.get("sn") or metadata.get("ticketSn") or serialized.get("ticketSn"),
-                        "graph_thread_id": getattr(event, "thread_id", ""),
+                        "graph_thread_id": getattr(event, "thread_id", "") or "",
+                        "tool_call_id": serialized.get("toolCallId") if isinstance(serialized, dict) else "",
                     }
-                    # 记录从 outcome.interrupts 提取的字段，方便排查是否完整
-                    logger.info(
-                        "[ToolApproval] handle_run_finished interrupt builtin_property: "
-                        "interrupt_id=%s, callback_token=%s, ticket_sn=%s, tool_name=%s, keys=%s",
-                        interrupt_id,
-                        builtin_property.get("callback_token"),
-                        builtin_property.get("ticket_sn"),
-                        builtin_property.get("tool_name"),
-                        list(builtin_property.keys()),
-                    )
+                )
+                logger.info(
+                    "[handle_run_finished] interrupt builtin_property: interrupt_id=%s, reason=%s, keys=%s",
+                    interrupt_id,
+                    serialized_reason,
+                    list(builtin_property.keys()),
+                )
 
                 self._upsert_interrupt_session_content(
                     message_id=interrupt_id,
@@ -928,8 +910,9 @@ class BaseSessionWriter(ABC):
         platform_status = "error" if is_error else "complete"
 
         # 补充写入延迟的 tool_calls 到对应的 assistant 消息
+        # D-06: 透传事件工具名（ToolMessage.name），修复续流审批回填 name=tool_call_id（根因 A）
         if not is_error:
-            self._flush_deferred_tool_call(tool_call_id, tool_name=None)
+            self._flush_deferred_tool_call(tool_call_id, tool_name=getattr(event, "tool_call_name", None))
 
         # additional_metadata 携带完整 additional_kwargs dict
         additional_metadata = getattr(event, "additional_metadata", None) or {}
@@ -1203,7 +1186,7 @@ class BaseSessionWriter(ABC):
         else:
             event_data = event.event.get("data", {})
 
-        task_id = event_data.get("task_id", "")
+        task_id = event_data.get("task_id")
         task_outputs = event_data.get("task_outputs")
 
         # 1. 回写 assistant 消息（task_outputs 作为 AI 回复内容）
@@ -1252,9 +1235,9 @@ class BaseSessionWriter(ABC):
         else:
             event_data = event.event.get("data", {})
 
-        task_id = event_data.get("task_id", "")
+        task_id = event_data.get("task_id")
         if task_id:
-            self.update_flow_agent_info(task_id=str(task_id))
+            self.update_flow_agent_info(task_id=task_id)
         else:
             logger.warning("handle_flow_agent_start: task_id 为空，跳过持久化: event_data=%s", event_data)
 
@@ -1371,7 +1354,6 @@ class BaseSessionWriter(ABC):
                     break
             if matched_assistant_id:
                 break
-
         if matched_tool_call:
             # 从延迟列表中移除已处理的 tool_call
             remaining = [
@@ -1416,17 +1398,17 @@ class BaseSessionWriter(ABC):
             self._flush_deferred_tool_call_fallback(tool_call_id, tool_name)
 
     def _flush_deferred_tool_call_fallback(self, tool_call_id: str, tool_name: str | None = None) -> None:
-        """续流场景下补充写入审批 tool_call 的 fallback 方法
+        """续流场景下补充审批 tool_call 的 fallback 钩子（默认空操作）。
 
-        当 _deferred_approval_tool_calls 为空（续流时新实例）时调用，
-        子类可覆写此方法通过数据库查询等方式定位 assistant 消息并补充 tool_call。
-
-        默认实现为空操作。
+        当 _deferred_approval_tool_calls 为空（续流时新实例，内存无延迟记录）时调用。
+        基类无 DB 回写能力，保持空操作（不丢数据、不抛错）；
+        子类（如 :class:`AGUISessionWriter`）覆写以从数据库定位并回写。
 
         Args:
             tool_call_id: 工具调用 ID
             tool_name: 工具名称
         """
+        return None
 
     # ---------- 底层回写方法 ----------
 
@@ -1489,6 +1471,8 @@ class BaseSessionWriter(ABC):
         }
         if self.turn_id:
             payload["property"]["turn_id"] = self.turn_id
+        if self.trace_id:
+            payload["property"]["trace_id"] = self.trace_id
         content_id = self._safe_call(
             self._do_create_content, message_id, "create", payload=payload, headers=self._get_headers()
         )
@@ -1576,7 +1560,7 @@ class BaseSessionWriter(ABC):
         以便前端正确展示暂停/取消状态。
         """
 
-    def update_flow_agent_info(self, task_id: str) -> None:
+    def update_flow_agent_info(self, task_id: int | str) -> None:
         """更新 session 中的 Flow Agent task_id
 
         子类应覆盖此方法来将 task_id 持久化到 session_property.flow_info 元数据。

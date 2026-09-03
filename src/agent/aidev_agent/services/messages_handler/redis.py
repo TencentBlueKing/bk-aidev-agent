@@ -18,6 +18,7 @@ from redis.exceptions import RedisError
 from .base import BaseMessageQueueHandler
 from .constants import EOD_CHUNK, EnvVarNames, QueueTTLConfig
 from .replay_buffer_mixin import ReplayBufferMixin
+from .telemetry import record_message_publish_metrics
 
 logger = logging.getLogger(__name__)
 env = Env()
@@ -369,18 +370,37 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
 
             published_messages = self._coalesce_sse_messages(messages)
             stream_key = self._stream_key(thread_id)
+            message_sizes: list[int] = []
+            publish_started_at = time.monotonic()
             try:
                 pipeline = self._client.pipeline(transaction=True)
                 for message in published_messages:
                     payload = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                    message_sizes.append(len(payload))
                     pipeline.xadd(stream_key, {b"data": payload})
                 pipeline.expire(stream_key, self._queue_ttl_seconds)
                 pipeline.execute()
-            except Exception:
+            except Exception as error:
+                record_message_publish_metrics(
+                    handler_type="redis",
+                    messaging_system="redis",
+                    event_count=len(messages),
+                    message_sizes=message_sizes,
+                    started_at=publish_started_at,
+                    error=error,
+                )
                 with self._buffer_lock:
                     self._message_buffer[thread_id] = messages + self._message_buffer.get(thread_id, [])
                 logger.exception("Failed to flush Redis messages for thread_id=%s", thread_id)
                 raise
+
+            record_message_publish_metrics(
+                handler_type="redis",
+                messaging_system="redis",
+                event_count=len(messages),
+                message_sizes=message_sizes,
+                started_at=publish_started_at,
+            )
 
             if EOD_CHUNK in messages:
                 logger.info(

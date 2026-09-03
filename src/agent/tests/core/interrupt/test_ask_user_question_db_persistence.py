@@ -9,13 +9,18 @@ import json
 
 import pytest
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.ask_user_question import ASK_USER_QUESTION_REASON
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
 )
 from aidev_agent.core.ag_ui.utils import get_schema_keys
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.enums import PromptRole
+from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_REASON
+from aidev_agent.packages.interrupt_manager.ask_user_question import (
+    AskUserQuestionHandler,
+    AskUserQuestionOutcomeBuilder,
+)
+from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -92,6 +97,30 @@ class _RecordingSessionWriter(BaseSessionWriter):
 
     def set_streaming_finished(self):
         self.streaming_finished_count += 1
+
+
+def _noop_dispatch(result: dict) -> None:
+    """no-op dispatch：本测试驱动 AidevAGUIAgent.run() 只走 dispatch 路径，不经 chat.py
+    装配层派发 skip/answer 事件，故注入空实现（D-16 bound method）。"""
+
+
+def _simulate_ask_user_answer_persisted(writer, answers):
+    """模拟 chat.py resolve_resumes 的 ask_user DB 改写：把 interrupt content 升级为 resolved。
+
+    串行门禁（GATE-01）下 ask_user pending 走 ``query_answered_status`` 只读判已答，
+    读记录 ``content.outcome.type`` / ``result.payload.answers``（DB 权威源）。测试仅
+    模拟 SSE 层（不经 chat.py execute()），故只升级 content 为终态形态（供门禁判定），
+    不改写记录顶层 status。
+    """
+    interrupt_recs = [rec for rec in writer._db_records.values() if rec.get("role") == PromptRole.INTERRUPT.value]
+    assert interrupt_recs, "无 interrupt 记录可升级"
+    rec = interrupt_recs[0]
+    upgraded = AskUserQuestionOutcomeBuilder.upgrade_content_to_success(
+        rec.get("content"), "resolved", resume_answers=answers
+    )
+    assert upgraded is not None, "interrupt content 升级为 resolved 失败"
+    rec["content"] = upgraded
+    return rec
 
 
 def _extract_ask_user_question_interrupts(graph, config) -> list[dict]:
@@ -312,6 +341,19 @@ async def test_resume_preserves_prior_messages_and_writes_final_reply():
     roles_after_interrupt = [c["payload"].get("role") for c in writer.created]
     print(f"After interrupt — Created roles: {roles_after_interrupt}")
 
+    # 串行门禁（GATE-01）下 ask_user pending 走 query_answered_status 只读判已答，
+    # DB 必须先含该已答记录（模拟生产 chat.py resolve_resumes 的 DB 改写前置）。
+    # 测试绕过 chat.py 直调 AidevAGUIAgent.run()，故在此模拟持久化。
+    _simulate_ask_user_answer_persisted(
+        writer,
+        [
+            {
+                "question": "请选择部署环境",
+                "answer": [{"label": "生产环境", "description": "prod"}],
+            }
+        ],
+    )
+
     # 第二次调用 — 续流（复用 writer，模拟同 session）
     agent_input2 = AgentInput(
         thread_id="test-db-write-2",
@@ -373,6 +415,18 @@ async def test_resume_preserves_prior_messages_and_writes_final_reply():
         event_handler=writer,
         config=merged_cfg2,
         tools={},
+        # 串行门禁（GATE-01）：ask_user pending 走 query_resume_status 只读门禁判已答。
+        # D-03（48）：processor 构造参数改为 handlers dict 注入（移除 resource_manager=）。
+        # 本测试驱动 AidevAGUIAgent.run() 只走 dispatch_interrupts（建单/enrich 路径，
+        # 不经 chat.py get_resume_input 门禁），ask_user handler 无需 resource_manager 读 DB。
+        interrupt_processor=InterruptProcessor(
+            handlers={
+                str(ASK_USER_QUESTION_REASON.value): AskUserQuestionHandler(
+                    dispatch_skip=_noop_dispatch,
+                    dispatch_answer=_noop_dispatch,
+                )
+            }
+        ),
         # 与 chat.py 主流程对称：从 graph state 查 ask_user_question interrupts，
         # 使 _build_resume_ask_user_question_finished_event 能触发 ACTIVITY_SNAPSHOT 事件，
         # 经 _dispatch_event 派发给 writer 的 handle_activity_snapshot

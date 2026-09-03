@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import sys
+from pathlib import Path
 
 from aidev_agent.utils.module_loading import import_string
 from django.apps import AppConfig
 from django.conf import settings
+
+from aidev_bkplugin.services.metric_runtime import set_metric_service
 
 try:
     import bkoauth
@@ -16,9 +20,34 @@ except ImportError:
 try:
     from aidev_agent.packages.opentelemetry import BkAidevAgentInstrumentor
     from aidev_agent.packages.opentelemetry.config import OTelConfig
+    from aidev_agent.packages.opentelemetry.utils import (
+        get_otel_endpoint_by_agent_info,
+        get_otel_endpoint_by_env,
+        get_otel_endpoint_by_json_str,
+    )
 except ImportError:
     BkAidevAgentInstrumentor = None
     OTelConfig = None
+    get_otel_endpoint_by_agent_info = None
+    get_otel_endpoint_by_env = None
+    get_otel_endpoint_by_json_str = None
+
+try:
+    from aidev_agent.packages.opentelemetry.metrics import configure_metric_identity
+
+    from aidev_bkplugin.services.otel_metrics import (
+        BkPluginMetricService,
+        MetricExportSettings,
+    )
+except ImportError:
+    configure_metric_identity = None
+    BkPluginMetricService = None
+    MetricExportSettings = None
+
+try:
+    from aidev_bkplugin.tasks import enqueue_bkm_metrics_task
+except ImportError:
+    enqueue_bkm_metrics_task = None
 
 try:
     from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
@@ -31,6 +60,31 @@ except ImportError:
     ThreadingInstrumentor = None
 
 logger = logging.getLogger(__name__)
+
+
+def _deduplicate_otel_endpoints(endpoints: list[dict]) -> list[dict]:
+    """Keep the highest-priority config for each effective OTLP destination."""
+    deduplicated = []
+    seen = set()
+    for endpoint in endpoints:
+        exporter_type = endpoint.get("exporter_type")
+        exporter_type = getattr(exporter_type, "value", exporter_type)
+        identity = (
+            str(endpoint.get("url", "")).rstrip("/"),
+            str(exporter_type),
+            str(endpoint.get("token", "")),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduplicated.append(endpoint)
+    return deduplicated
+
+
+def _is_one_off_management_command() -> bool:
+    if not sys.argv or Path(sys.argv[0]).name not in {"manage.py", "django-admin", "django-admin.py"}:
+        return False
+    return sys.argv[1:2] not in (["runserver"], ["celery"], ["run_wxaibot_ws"])
 
 
 def init_bk_aidev_agent_otel() -> None:
@@ -51,11 +105,32 @@ def init_bk_aidev_agent_otel() -> None:
         )
         return
 
-    from aidev_agent.packages.opentelemetry.utils import (
-        get_otel_endpoint_by_agent_info,
-        get_otel_endpoint_by_env,
-        get_otel_endpoint_by_json_str,
-    )
+    # 先解析全局开关，避免本地评测或显式关闭 OTel 的进程仍为 endpoint/identity
+    # 发起 Agent 配置远程请求。默认值保持开启，不改变线上既有初始化行为。
+    otel_config = OTelConfig(otel_endpoints=[])
+    if not getattr(otel_config, "enabled", True):
+        logger.info("[aidev_bkplugin] OpenTelemetry disabled; remote initialization skipped")
+        set_metric_service(None)
+        return
+
+    if _is_one_off_management_command():
+        # 一次性命令不采集指标或 Trace，避免退出时等待上报；无需获取远程 OT 配置。
+        otel_config.enable_metrics = False
+        otel_config.enable_traces = False
+        set_metric_service(None)
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        logger.info("[aidev_bkplugin] metrics and traces disabled for one-off management command")
+        return
+
+    if getattr(otel_config, "trace_exporter", "otlp") == "logging":
+        # 本地评测只需要 trace/span，禁用远程 endpoint 探测和指标上报，
+        # 由 Agent SDK 的 LoggingSpanExporter 写入应用日志。
+        otel_config.enable_metrics = False
+        otel_config.enable_logs = False
+        set_metric_service(None)
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        logger.info("[aidev_bkplugin] OpenTelemetry local logging export enabled")
+        return
 
     from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 
@@ -73,8 +148,55 @@ def init_bk_aidev_agent_otel() -> None:
     endpoints.extend(get_otel_endpoint_by_agent_info(agent_info=agent_info))
     # 3. 从 OTEL_GRPC_URL 和 OTEL_BK_DATA_TOKEN 获取单地址
     endpoints.extend(get_otel_endpoint_by_env())
+    deduplicated_endpoints = _deduplicate_otel_endpoints(endpoints)
+    if len(deduplicated_endpoints) != len(endpoints):
+        logger.info(
+            "[aidev_bkplugin] removed %d duplicate OpenTelemetry endpoint(s)",
+            len(endpoints) - len(deduplicated_endpoints),
+        )
+    endpoints = deduplicated_endpoints
 
-    otel_config = OTelConfig(otel_endpoints=endpoints)
+    otel_config.otel_endpoints = endpoints
+    if configure_metric_identity is None or BkPluginMetricService is None or MetricExportSettings is None:
+        logger.info("[aidev_bkplugin] metric OpenTelemetry extras unavailable; metric export skipped")
+        otel_config.enable_metrics = False
+        BkAidevAgentInstrumentor(config=otel_config).instrument()
+        return
+    try:
+        metric_settings = MetricExportSettings.from_agent_info(
+            agent_info,
+            default_enabled=otel_config.enable_metrics,
+        )
+        otel_config.enable_metrics = metric_settings.enabled
+        otel_config.metric_export_interval_millis = metric_settings.export_interval_millis
+        otel_config.metric_export_timeout_millis = metric_settings.export_timeout_millis
+        configure_metric_identity(
+            agent_info.get("agent_code") or otel_config.service_name,
+            agent_info.get("agent_name"),
+            agent_info.get("agent_sdk_version"),
+        )
+        if metric_settings.has_bkm_config:
+            metric_service = BkPluginMetricService(
+                service_name=otel_config.service_name,
+                endpoints=endpoints,
+                agent_info=agent_info,
+                settings=metric_settings,
+                enqueue_bkm_metrics=enqueue_bkm_metrics_task,
+            )
+            set_metric_service(metric_service)
+            otel_config.enable_metrics = metric_service.start()
+            otel_config.metric_provider_managed_externally = otel_config.enable_metrics
+            if not otel_config.enable_metrics:
+                set_metric_service(None)
+        else:
+            # 直连 OTLP 继续复用 Agent SDK 原有的 MetricProvider / MetricExporter；
+            # bkplugin 只负责根据 agent_info 选择该路径并传入配置。
+            set_metric_service(None)
+            otel_config.metric_provider_managed_externally = False
+    except Exception:  # noqa: BLE001
+        logger.exception("[aidev_bkplugin] metric export initialization failed; continuing without metrics")
+        set_metric_service(None)
+        otel_config.enable_metrics = False
     BkAidevAgentInstrumentor(config=otel_config).instrument()
 
 
@@ -84,7 +206,10 @@ class AgentConfig(AppConfig):
 
     def ready(self) -> None:
         from aidev_agent.packages.resource_manager import resource_manager
-        from aidev_agent.services.common_agent import CommonQAAgent, common_agent_factory
+        from aidev_agent.services.common_agent import (
+            CommonQAAgent,
+            common_agent_factory,
+        )
 
         if bkoauth:
             bkoauth._init_function()

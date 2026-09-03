@@ -59,3 +59,10 @@ describe('formatElapsedTime', () => {
     expect(formatElapsedTime(86400)).toBe('1d');
   });
 });
+
+describe('index 再导出', () => {
+  it('应导出 mergeToolsById', async () => {
+    const barrel = await import('.');
+    expect(typeof barrel.mergeToolsById).toBe('function');
+  });
+});

@@ -29,5 +29,6 @@ class LLMViewSet(PluginViewSet):
             llm_type=data.get("llm_type", ""),
             fuzzy=data.get("fuzzy", ""),
             supports=data.get("supports", ""),
+            resource_manager=self.get_resource_manager(),
         )
         return Response(data=llms)

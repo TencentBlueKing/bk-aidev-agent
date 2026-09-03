@@ -12,13 +12,12 @@
 | alwaysCreateNewSession | `boolean`     | `false` | 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） |
 | sessionCode     | `string`             | -       | 指定初始会话编码                               |
 | shortcuts       | `Shortcut[]`         | `[]`    | 快捷指令列表                                   |
-| shortcutLimit   | `number`             | `10`    | 快捷指令显示上限                               |
 | resources       | `IAiSlashMenuItem[]` | `[]`    | 资源列表（@ 触发）                             |
 | skills          | `ISkillListItem[]`   | -       | 技能列表（/ 触发）                             |
 | prompts         | `string[]`           | -       | 预设提示词                                     |
 | helloText       | `string`             | -       | 欢迎语                                         |
 | useAgentName    | `boolean`            | `false` | 使用 agentName 作为欢迎标题                     |
-| placeholder     | `string`             | -       | 输入框占位符                                   |
+| placeholder     | `string`             | -       | 输入框占位符；未传时按 Skill / Prompt / 资源列表动态生成 |
 | renderMode      | `RenderMode`         | `chat`  | 渲染模式：`chat`(默认) / `share`(分享只读) / `test`（详见「渲染模式 renderMode」） |
 | enableSelection | `boolean`            | `false` | 是否启用多选模式（分享用；新代码推荐用 `renderMode="share"`） |
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
@@ -29,8 +28,8 @@
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
-| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；headers/data 支持对象、函数、ref、computed） |
-| messageToolsTippyOptions | `MessageToolsTippyOptions` | - | MessageTools tippy 弹窗配置（如 `appendTo`，控制弹窗挂载位置和层级） |
+| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；`headers` / `data` / `context` 支持对象、函数、ref、computed） |
+| messageToolsTippyOptions | `MessageToolsTippyOptions` | `appendTo` 默认挂 ChatBot 根节点 | MessageTools tippy 弹窗配置（控制弹窗挂载位置和层级）。未传 `appendTo` 时浮层挂到 `.ai-chatbot` 根节点，避免挂 `body` 时被外层弹窗/抽屉遮挡；传入 `appendTo` 则以外部为准 |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement`。**嵌入模式须业务 Header 提供开关**，见下节 |
@@ -125,6 +124,13 @@
 - `triggerSelection: true`：点击进入多选，确认走 `confirm-share(messages, source)`（**不**进 `onAgentAction`）
 - 其它自定义按钮：走 `agent-action`
 - 仅 builtin share（`!source || source.id === 'share'`）执行内置分享；自定义 source 只向外 emit
+
+**Claw 智能体**：当 `agent/info` 返回 `agent_type: 'claw'`（映射为 `IAgentInfo.agentType`）时，ChatBot 自动在工具列表前叠加 `{ id, hidden: true }`，隐藏：
+
+- 用户消息：`edit`、`delete`（保留 copy / cite）
+- AI 消息：`rebuild`（重新生成）、反馈组 `delete`（保留 copy / cite / share / like / unlike）
+
+`single`、缺省或未知 `agentType` 不做特殊处理。消费方无需新增 prop；Claw 隐藏优先于同 id 的消费方配置。
 
 ```vue
 <ChatBot
@@ -273,9 +279,9 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | title | `string` | `''` | 组件标题 |
 | helloText | `string` | `你好，我是小鲸` | 欢迎语 |
 | useAgentName | `boolean` | `false` | 使用 agentName 作为欢迎标题 |
-| placeholder | `string` | - | 输入框占位文本 |
+| placeholder | `string` | - | 输入框占位文本；未传时按 Skill / Prompt / 资源列表动态生成 |
 | renderMode | `RenderMode` | `chat` | 渲染模式：`chat` / `share`（只读）/ `test` |
-| requestOptions | `MaybeRefOrGetter<IRequestOptions>` | `{}` | 请求配置（支持 ref/computed，替换后后续请求自动生效） |
+| requestOptions | `MaybeRefOrGetter<IRequestOptions>` | `{}` | 请求配置（`headers` / `data` / `context` 支持 ref/computed，替换后后续请求自动生效） |
 | shortcuts | `IShortcut[]` | `[]` | 快捷操作列表 |
 | shortcutLimit | `number` | `3` | 快捷操作显示数量限制 |
 | shortcutFilter | `(shortcut, selectedText) => boolean` | - | 快捷操作过滤函数 |
@@ -403,8 +409,9 @@ interface SdkErrorPayload {
 
 ### Vue2 兼容层注意事项
 
-`@blueking/ai-blueking/vue2` 通过 `createVue2Wrapper` 包装 Vue3 组件，存在以下差异：
+`@blueking/ai-blueking/vue2` 通过 `createVue2Wrapper` 包装 Vue3 组件，存在以下差异（以 `src/vue2.ts` 为准）：
 
-- **`updateAgentInfo` 在 Vue2 下不可用**：该方法已在 Vue3 组件（AIBlueking / ChatBot）上 expose，但**未**注册进 Vue2 wrapper 的 `exposeKeys`，因此 Vue2 消费方无法调用。需要刷新 agentInfo 时请改用 `getChatHelper()?.agent.getAgentInfo()`。
-- **插槽注册**：Vue2 的 `AIBluekingV2` 注册 `['codeHeader', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 注册 `['codeHeader', 'message', 'welcome']`。HITL 场景下 `#message` 仍须透传 `onInterruptResume`。
-- **`skills` prop 未在 `ChatBotV2` 注册**。
+- **Expose 缺口**：`updateAgentInfo`（AIBlueking / ChatBot）与 `selectedLlmCode`（ChatBot）未进 Vue2 `exposeKeys`。刷新 agentInfo 请用 `getChatHelper()?.agent.getAgentInfo()`。
+- **`ChatBotV2` 未注册的 props**：`asideCollapsed`、`enableModelSelect`、`models`、`renderMode`、`errorToast`、`skills`。因此 Vue2 嵌入模式无法 `v-model:asideCollapsed`，也无法走组件内模型选择。
+- **`AIBluekingV2` 未注册的 props**：`enableModelSelect`、`models`、`renderMode`、`errorToast`、`ignoreErrors`。
+- **插槽注册**：`AIBluekingV2` 为 `['codeHeader', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 为 `['codeHeader', 'message', 'welcome']`。HITL 场景下 `#message` 仍须透传 `onInterruptResume`。

@@ -56,3 +56,13 @@ def test_update_chat_session_sandbox_pv_id_passes_kwargs():
         json={"session_property": {"sandbox_pv_id": "pv-1"}},
         headers={"X-Test": "1"},
     )
+
+
+def test_get_chat_session_contents_uses_query_params():
+    rm = _StubResourceManager()
+    rm.client.api.get_chat_session_contents.return_value = {"data": [{"id": 1, "role": "user", "content": "hi"}]}
+
+    result = rm.get_chat_session_contents("session-1")
+
+    assert result == [{"id": 1, "role": "user", "content": "hi"}]
+    rm.client.api.get_chat_session_contents.assert_called_once_with(params={"session_code": "session-1"})

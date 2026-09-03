@@ -191,6 +191,7 @@ vi.mock('./constants', () => ({
   tagSchema: {},
 }));
 
+// style-note: chat-x PR4 — wrapper min-height:0 配合父级 max-height 内部滚动
 describe('AiSlashInput', () => {
   let wrapper: VueWrapper;
 

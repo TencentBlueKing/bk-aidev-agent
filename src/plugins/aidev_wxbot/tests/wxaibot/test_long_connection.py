@@ -1,0 +1,1781 @@
+# -*- coding: utf-8 -*-
+"""企微机器人 WebSocket 长连接服务单元测试。"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import sys
+import threading
+import time
+import types
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "aidev_wxbot.settings")
+
+try:
+    import django
+    from django.apps import apps
+    from django.conf import settings
+
+    settings.SECRET_KEY = "test-secret-key"
+    settings.AIDEV_AGENT = "aidev_agent.services.common_agent.CommonQAAgent"
+    try:
+        settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "aidev_bkplugin"]
+    except RuntimeError:
+        pass
+    # 根 conftest 已 configure 时 setup 会 RuntimeError；吞掉会导致整文件被 skip。
+    if not apps.ready:
+        django.setup()
+
+    # long_connection 只需持有 ViewSet；将重量级业务视图替换为测试桩，避免加载
+    # bk-plugin-framework 和真实 Agent 执行链。
+    views_stub = types.ModuleType("aidev_wxbot.wxaibot.views")
+    views_stub.WxAiBotViewSet = type("WxAiBotViewSet", (), {})
+    views_stub.WxBotAgentRequest = type("WxBotAgentRequest", (), {})
+    sys.modules["aidev_wxbot.wxaibot.views"] = views_stub
+    from aidev_wxbot.wxaibot import long_connection as long_connection_module
+    from aidev_wxbot.wxaibot.constants import (
+        BUSY_BY_OTHERS_REPLY,
+        BUSY_REPLY,
+        PREPARING_REPLY,
+        SESSION_SWITCHED_REPLY,
+        STOP_NO_ACTIVE_REPLY,
+        STOP_NOTICE,
+        STOP_REPLY,
+        STREAM_ERROR_REPLY,
+        STREAM_TIMEOUT_REPLY,
+    )
+    from aidev_wxbot.wxaibot.long_connection import (
+        ActiveStream,
+        LongConnectionConfigError,
+        ServiceState,
+        StreamDrain,
+        StreamMetrics,
+        WxAiBotLongConnectionConfig,
+        WxAiBotLongConnectionService,
+        _LongConnectionViewSet,
+    )
+    from aidev_wxbot.wxaibot.once import BoundedOnceRegistry
+
+    sys.modules.pop("aidev_wxbot.wxaibot.views", None)
+
+    _wxbot_available = True
+except (ImportError, ModuleNotFoundError, RuntimeError):
+    _wxbot_available = False
+
+
+pytestmark = pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
+
+if _wxbot_available:
+    from aidev_wxbot.wxaibot.direct_stream import AgentStream
+    from aidev_wxbot.wxaibot.strategies import ChatAgentStrategy, FlowAgentStrategy
+
+
+class FakeClient:
+    def __init__(self, failures: int = 0):
+        self.is_connected = True
+        self.failures = failures
+        self.reply_stream_calls: list[tuple[str, bool]] = []
+        self.reply_stream_with_card_calls: list[tuple[str, bool, dict]] = []
+        self.send_message_calls: list[tuple[str, dict]] = []
+        self.update_template_card_calls: list[dict] = []
+        self.disconnected = False
+
+    async def reply_stream(self, _frame, _stream_id, content, finish):
+        self.reply_stream_calls.append((content, finish))
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("temporary websocket failure")
+
+    async def reply_stream_with_card(self, _frame, _stream_id, content, finish, *, template_card):
+        self.reply_stream_with_card_calls.append((content, finish, template_card))
+
+    async def send_message(self, target, body):
+        self.send_message_calls.append((target, body))
+
+    async def update_template_card(self, _frame, template_card):
+        self.update_template_card_calls.append(template_card)
+
+    def disconnect(self):
+        self.disconnected = True
+        self.is_connected = False
+
+
+class ThreadExecutor:
+    def submit(self, fn, *args):
+        threading.Thread(target=fn, args=args, daemon=True).start()
+        return True
+
+
+class InlineExecutor:
+    def submit(self, fn, *args):
+        fn(*args)
+        return True
+
+
+def _service(client: FakeClient | None = None) -> WxAiBotLongConnectionService:
+    service = object.__new__(WxAiBotLongConnectionService)
+    service._client = client or FakeClient()
+    service._config = SimpleNamespace(shutdown_grace_period_sec=1)
+    service._shutdown_requested = False
+    service._accepting_messages = True
+    service._loop = None
+    service._active_streams = {}
+    service._group_streams = {}
+    service._draining_streams = {}
+    service._drain_lock = threading.Lock()
+    service._metrics = StreamMetrics()
+    service._view = MagicMock()
+    service._frame_semaphore = asyncio.Semaphore(16)
+    service._side_tasks = set()
+    service._approval_polls = set()
+    service._ai_renamed_sessions = BoundedOnceRegistry(16)
+    # 现有 consume 单测不跑副作用；覆盖 rename / 审批轮询的用例会重新绑定真方法。
+    service._schedule_ai_rename = MagicMock()
+    service._schedule_approval_poll = MagicMock()
+    return service
+
+
+@pytest.fixture
+def question_callback(question_case):
+    from aidev_wxbot.wxaibot.question_cards import encode_question_key, question_task_id
+
+    case = question_case
+    card_event = {
+        "event_key": encode_question_key(case.action),
+        "task_id": question_task_id(case.action),
+        "selected_items": case.selected,
+    }
+    body = {
+        "msgtype": "event",
+        "from": {"userid": "alice-wx"},
+        "event": {"eventtype": "template_card_event", "template_card_event": card_event},
+    }
+    return body
+
+
+@pytest.mark.parametrize("content", ["你好", "华南", "1. 华南\n2. 按默认设置继续", "1A；2B；3AC", "A、C"])
+async def test_all_text_goes_directly_to_llm_without_question_lookup(content):
+    from aidev_wxbot.wxaibot import question_resume
+
+    service = _service()
+    service._view._get_or_create_thread_id.return_value = "existing-thread"
+    request = SimpleNamespace(content=content, stream_id="text-direct", username="alice", group_id="g1")
+    strategy = MagicMock()
+    strategy.open_stream.return_value = AgentStream("chat", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+    with (
+        patch.object(
+            question_resume, "SessionManager", side_effect=AssertionError("Unexpected question lookup")
+        ) as lookup,
+        patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+        patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+    ):
+        await service._start_direct_stream({}, request)
+        await service._active_streams[request.stream_id].task
+    lookup.assert_not_called()
+    assert strategy.open_stream.call_args.kwargs["content"] == content
+    assert strategy.open_stream.call_args.kwargs["thread_id"] == "existing-thread"
+    assert service._metrics.completed == 1
+
+
+@pytest.mark.parametrize("kind", ["chat", "flow"])
+async def test_database_route_is_bound_before_chat_output_but_not_for_flow(kind):
+    service = _service()
+    request = SimpleNamespace(content="query", stream_id="bind-original", username="alice", group_id="g1")
+    strategy = MagicMock()
+    with patch.object(service, "_bind_resume_route") as bind:
+
+        def output():
+            assert bind.called == (kind == "chat")
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy.open_stream.return_value = AgentStream(kind, output(), "original-session")
+        with (
+            patch.object(service, "_database_events_enabled", return_value=True),
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({"body": {"from": {"userid": "original-user"}}}, request)
+            await service._active_streams[request.stream_id].task
+        if kind == "chat":
+            bind.assert_called_once_with("original-session", "alice", "original-user")
+        else:
+            bind.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["accepted", "duplicate", "busy"])
+async def test_question_click_updates_only_accepted_card(question_case, question_callback, status):
+    service = _service()
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[{"answer": [{"label": "华南"}]}])
+    with (
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission) as prepare,
+        patch.object(long_connection_module, "submit_question_resume", return_value=status) as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    assert len(service._client.update_template_card_calls) == int(status != "busy")
+    assert prepare.call_args.args[0] == question_case.action
+    if status != "busy":
+        result_card = service._client.update_template_card_calls[-1]
+        assert ("你的答案：华南" in result_card["sub_title_text"]) == (status == "accepted")
+    if status == "accepted":
+        delivery = submit.call_args.args[1]
+        delivery.failed()
+        delivery.finish()
+        await delivery.task
+        assert service._client.send_message_calls[-1][0] == "alice-wx"
+
+
+async def test_database_question_click_binds_route_without_local_delivery(question_case, question_callback):
+    service = _service()
+    service._view.resolve_event_username.return_value = "alice"
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[{"answer": [{"label": "华南"}]}])
+    with (
+        patch.object(service, "_database_events_enabled", return_value=True),
+        patch.object(service, "_bind_resume_route") as bind,
+        patch.object(service, "_new_resume_delivery") as local_delivery,
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission),
+        patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    bind.assert_called_once_with("session-1", "alice", "alice-wx")
+    assert submit.call_args.args == (submission, None)
+    local_delivery.assert_not_called()
+    assert len(service._client.update_template_card_calls) == 1
+
+
+async def test_question_card_rejects_when_session_rotated(question_callback, question_case):
+    """本地 thread 已换（空闲轮换或 /new）时旧卡不再续流。"""
+    service = _service()
+    service._view.is_live_session_code.return_value = False
+    service._view.resolve_event_username.return_value = "alice"
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[])
+    with (
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission) as prepare,
+        patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,
+    ):
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    submit.assert_not_called()
+    assert service._client.send_message_calls[0][1]["markdown"]["content"] == SESSION_SWITCHED_REPLY
+
+
+async def test_stale_question_signature_is_ignored(question_callback):
+    service = _service()
+    with (
+        patch.object(long_connection_module, "decode_question_key", return_value=None),
+        patch.object(long_connection_module, "prepare_question_submission") as prepare,
+    ):
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    assert service._client.update_template_card_calls == []
+    assert service._client.send_message_calls == []
+
+
+@pytest.mark.parametrize("failure", ["missing_url", "build_error", "update_error"])
+async def test_question_result_card_failure_does_not_block_resume(question_case, question_callback, failure):
+    service = _service()
+    submission = SimpleNamespace(interrupt=question_case.interrupt, answers=[])
+    with (
+        patch.object(long_connection_module, "prepare_question_submission", return_value=submission),
+        patch.object(long_connection_module, "submit_question_resume", return_value="accepted") as submit,
+        patch.object(
+            long_connection_module,
+            "submitted_question_card",
+            return_value=None if failure == "missing_url" else {"card_type": "text_notice"},
+            side_effect=RuntimeError("build failed") if failure == "build_error" else None,
+        ),
+        patch.object(
+            service,
+            "_update_interaction_card",
+            side_effect=RuntimeError("update failed") if failure == "update_error" else None,
+        ) as update,
+    ):
+        await service._handle_frame({"body": question_callback})
+    assert update.call_count == int(failure == "update_error")
+    delivery = submit.call_args.args[1]
+    delivery.failed()
+    delivery.finish()
+    await asyncio.wait_for(delivery.task, timeout=1)
+    assert service._client.send_message_calls[-1][0] == "alice-wx"
+
+
+@pytest.mark.parametrize("changed", ["signature", "task", "target"])
+async def test_question_click_rejects_modified_binding(question_callback, changed):
+    service = _service()
+    event = question_callback["event"]["template_card_event"]
+    if changed == "signature":
+        event["event_key"] += "tampered"
+    elif changed == "task":
+        event["task_id"] = "other-task"
+    else:
+        question_callback["from"]["userid"] = "other-user"
+    with patch.object(long_connection_module, "prepare_question_submission") as prepare:
+        await service._handle_frame({"body": question_callback})
+    prepare.assert_not_called()
+    assert service._client.update_template_card_calls == []
+
+
+async def test_question_card_is_bound_to_original_group(question_case):
+    from aidev_wxbot.wxaibot.question_cards import build_pending_question_card, decode_question_key
+
+    service = _service()
+    card = build_pending_question_card(question_case.event, "session-1")
+    await service._send_template_card({"body": {"chattype": "group", "chatid": "group-1"}}, card)
+    target, body = service._client.send_message_calls[0]
+    assert target == "group-1"
+    assert decode_question_key(body["template_card"]["submit_button"]["key"]).target == "group-1"
+    assert not service._client.reply_stream_calls
+
+
+async def test_expired_card_callback_is_not_retried():
+    service = _service()
+    await service._update_interaction_card({"_wxbot_received_at": time.monotonic() - 6}, {}, "test.update")
+    assert not service._client.update_template_card_calls
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_database_events_use_agent_config(monkeypatch, enabled):
+    monkeypatch.setattr(long_connection_module.agent_settings, "BKAI_EVENT_DATABASE_ENABLED", enabled, raising=False)
+    assert WxAiBotLongConnectionService._database_events_enabled() is enabled
+
+
+class TestAgentStreamDrain:
+    """收尾只排空 Agent 统一流接口，不由长连接操作消息缓存。"""
+
+    def test_remaining_frames_are_drained(self):
+        service = _service()
+        consumed = 0
+
+        def generator():
+            nonlocal consumed
+            for _ in range(6):
+                consumed += 1
+                yield "frame"
+
+        with patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()):
+            drain = service._schedule_stream_drain(generator(), "stream-1")
+
+        assert consumed == 6
+        assert drain.completed.is_set()
+        assert not service._draining_streams
+
+    async def test_blocking_next_is_cancelled_after_drain_timeout(self, monkeypatch):
+        """即使 next() 永久阻塞，等待也有上限，并向 Agent run 发出取消。"""
+        service = _service()
+        monkeypatch.setattr(long_connection_module, "AGENT_STREAM_DRAIN_TIMEOUT", 0.01)
+        entered = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+
+        def blocking_generator():
+            try:
+                entered.set()
+                release.wait()
+                yield "frame"
+            finally:
+                finished.set()
+
+        with (
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            drain = service._schedule_stream_drain(blocking_generator(), "stream-1")
+            started = time.monotonic()
+            await service._wait_for_stream_drain(drain)
+            elapsed = time.monotonic() - started
+
+        assert entered.is_set()
+        assert elapsed < 0.2
+        cancel.assert_called_once_with("stream-1")
+        assert service._metrics.drain_timeouts == 1
+        release.set()
+        assert finished.wait(timeout=1)
+
+    async def test_stream_timeout_during_drain_still_cancels_agent_run(self):
+        service = _service()
+        drain = StreamDrain("stream-1")
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+            task = asyncio.create_task(service._wait_for_stream_drain(drain))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        cancel.assert_called_once_with("stream-1")
+
+    def test_drain_failure_does_not_propagate(self):
+        """上游收尾异常不能再打断 wxbot worker。"""
+        service = _service()
+
+        def exploding():
+            yield "frame"
+            raise RuntimeError("upstream reset")
+
+        with patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()):
+            drain = service._schedule_stream_drain(exploding(), "stream-1")
+
+        assert drain.completed.is_set()
+
+    def test_cleanup_capacity_rejection_cancels_and_closes_stream(self):
+        service = _service()
+        closed = threading.Event()
+
+        def generator():
+            try:
+                yield "frame"
+            finally:
+                closed.set()
+
+        frames = generator()
+        next(frames)
+        rejecting_executor = MagicMock()
+        rejecting_executor.submit.return_value = False
+        with (
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=rejecting_executor),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            drain = service._schedule_stream_drain(frames, "stream-1")
+
+        cancel.assert_called_once_with("stream-1")
+        assert closed.is_set()
+        assert drain.completed.is_set()
+        assert service._metrics.drain_rejected == 1
+        assert not service._draining_streams
+
+    def test_long_connection_does_not_import_message_handler_factory(self):
+        assert not hasattr(long_connection_module, "message_handler_factory")
+
+    async def test_worker_drains_the_unified_stream_when_it_ends(self):
+        """接线检查：worker 的 finally 只排空统一帧迭代器。"""
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+        request = SimpleNamespace(content="q", stream_id="stream-1", username="u", group_id="group-1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=InlineExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-1"].task
+
+        assert not service._draining_streams
+
+    async def test_terminal_frame_releases_executor_when_upstream_drain_blocks(self, monkeypatch):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        entered = threading.Event()
+        release = threading.Event()
+
+        def source():
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+            entered.set()
+            release.wait()
+            yield "data: [DONE]\n"
+
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", source(), "session-1")
+        request = SimpleNamespace(content="q", stream_id="stream-1", username="u", group_id="group-1")
+        monkeypatch.setattr(long_connection_module, "AGENT_STREAM_DRAIN_TIMEOUT", 0.01)
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module, "get_agent_cleanup_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            await service._start_direct_stream({}, request)
+            try:
+                await asyncio.wait_for(service._active_streams["stream-1"].task, timeout=0.2)
+                assert entered.is_set()
+                cancel.assert_called_with("stream-1")
+            finally:
+                release.set()
+
+
+class TestStopCommand:
+    """/stop 必须真正停掉在跑的流，而不只是回一句话。"""
+
+    @staticmethod
+    async def _wait_for_replies(client: FakeClient) -> None:
+        for _ in range(100):
+            if client.reply_stream_calls:
+                return
+            await asyncio.sleep(0.01)
+
+    async def test_request_stop_keeps_what_was_already_delivered(self):
+        """企微 stream 是全量快照，终态帧必须带上已输出内容，否则半截回答会被抹掉。"""
+        service = _service()
+        service._loop = asyncio.get_running_loop()
+        cancel_event = threading.Event()
+        task = asyncio.create_task(asyncio.sleep(60))
+        active = ActiveStream({}, "group-1", "u", task, cancel_event, 0)
+        active.last_content = "已经输出的半截回答"
+        service._active_streams["stream-1"] = active
+        service._group_streams["group-1"] = "stream-1"
+
+        with patch.object(long_connection_module, "stream_registry") as registry:
+            # 解析在 to_thread 里跑，这里同样跨线程调用，覆盖真实调用姿势
+            stopped = await asyncio.to_thread(service.request_stop, "group-1", "u", reason="user_stop")
+            # 取消位与 Agent 侧通知都必须在返回前完成，否则 /stop 回执发出后旧回复还会继续刷
+            assert cancel_event.is_set()
+            registry.cancel.assert_called_with("stream-1")
+            await self._wait_for_replies(service._client)
+
+        assert stopped is True
+        assert service._client.reply_stream_calls == [(f"已经输出的半截回答\n\n{STOP_NOTICE}", True)]
+        assert service._metrics.cancelled == 1
+
+    async def test_stop_mid_stream_keeps_the_partial_answer(self):
+        """端到端：推送路径必须把快照记到 ActiveStream 上，/stop 才有内容可带。
+
+        前两个用例是直接给 last_content 赋值的，只有本用例能证明记账这一步真的接上了。
+        """
+
+        class PauseOnSecondFrameClient(FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.paused = asyncio.Event()
+                self.release = asyncio.Event()
+
+            async def reply_stream(self, frame, stream_id, content, finish):
+                await super().reply_stream(frame, stream_id, content, finish)
+                # 卡在第二帧：此时第一帧的发送已经返回并完成记账，正是 /stop 落下的时机。
+                # 若卡在第一帧，发送尚未返回，记账那行还没执行，测不到真实场景。
+                if len(self.reply_stream_calls) == 2:
+                    self.paused.set()
+                    await self.release.wait()
+
+        client = PauseOnSecondFrameClient()
+        service = _service(client)
+        service._loop = asyncio.get_running_loop()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+
+        def generator():
+            for _ in range(4):
+                yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{"答" * 60}"}}\n'
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", generator(), "session-1")
+        request = SimpleNamespace(content="q", stream_id="stream-1", username="u", group_id="group-1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            # 只挡住通往 Agent 框架的那一步，注册表本身要用真的：
+            # 换成 MagicMock 会让 is_cancel_requested 恒为真值，生产者一开始就退出
+            patch("aidev_wxbot.wxaibot.stream_registry.GeneratorStreamingHelper.cancel", return_value=True),
+        ):
+            await service._start_direct_stream({}, request)
+            try:
+                await asyncio.wait_for(client.paused.wait(), timeout=2)
+                delivered = client.reply_stream_calls[0][0]
+                await asyncio.to_thread(service.request_stop, "group-1", "u", reason="user_stop")
+            finally:
+                client.release.set()
+            for _ in range(200):
+                if client.reply_stream_calls[-1][1]:
+                    break
+                await asyncio.sleep(0.01)
+
+        assert delivered
+        assert client.reply_stream_calls[-1] == (f"{delivered}\n\n{STOP_NOTICE}", True)
+
+    async def test_request_stop_before_any_output_falls_back_to_a_placeholder(self):
+        """一帧都没推出去就被停掉时，终态帧要有占位文案，不能只剩一个孤零零的括号。"""
+        service = _service()
+        service._loop = asyncio.get_running_loop()
+        task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["stream-1"] = ActiveStream({}, "group-1", "u", task, threading.Event(), 0)
+        service._group_streams["group-1"] = "stream-1"
+
+        with patch.object(long_connection_module, "stream_registry"):
+            await asyncio.to_thread(service.request_stop, "group-1", "u", reason="user_stop")
+            await self._wait_for_replies(service._client)
+
+        assert service._client.reply_stream_calls == [(f"{PREPARING_REPLY}\n\n{STOP_NOTICE}", True)]
+
+    async def test_request_stop_without_active_stream(self):
+        service = _service()
+        service._loop = asyncio.get_running_loop()
+
+        stopped = await asyncio.to_thread(service.request_stop, "group-1", "u", reason="user_stop")
+
+        assert stopped is False
+        assert service._client.reply_stream_calls == []
+
+    async def test_request_stop_only_touches_its_own_group(self):
+        service = _service()
+        service._loop = asyncio.get_running_loop()
+        other_event = threading.Event()
+        other_task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["stream-other"] = ActiveStream({}, "group-other", "u", other_task, other_event, 0)
+        service._group_streams["group-other"] = "stream-other"
+
+        stopped = await asyncio.to_thread(service.request_stop, "group-1", "u", reason="user_stop")
+
+        assert stopped is False
+        assert not other_event.is_set()
+        other_task.cancel()
+
+    async def test_request_stop_refuses_to_touch_someone_elses_stream(self):
+        """群里每个人的上下文各自独立，谁都能掐掉别人的回复不合理。"""
+        service = _service()
+        service._loop = asyncio.get_running_loop()
+        cancel_event = threading.Event()
+        task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["stream-1"] = ActiveStream({}, "g", "alice", task, cancel_event, 0)
+        service._group_streams["g"] = "stream-1"
+
+        stopped = await asyncio.to_thread(service.request_stop, "g", "bob", reason="user_stop")
+
+        assert stopped is False
+        assert not cancel_event.is_set()
+        assert service._client.reply_stream_calls == []
+        task.cancel()
+
+    def test_viewset_reports_whether_anything_was_stopped(self):
+        service = MagicMock()
+        view = object.__new__(_LongConnectionViewSet)
+        view._service = service
+
+        service.request_stop.return_value = True
+        assert view.stop_generation("group-1", "u", "s1")["stream"]["content"] == STOP_REPLY
+
+        service.request_stop.return_value = False
+        assert view.stop_generation("group-1", "u", "s1")["stream"]["content"] == STOP_NO_ACTIVE_REPLY
+
+
+class TestSessionScope:
+    """会话轮换的粒度必须和上下文的粒度对齐。
+
+    上下文本来就是每人一份（session_code 由 username 参与哈希），但 thread_id 原先
+    按群存一行，于是 /new 和 24 小时超时都成了全群连坐。
+    """
+
+    @staticmethod
+    def _view() -> _LongConnectionViewSet:
+        return object.__new__(_LongConnectionViewSet)
+
+    def test_group_members_rotate_their_sessions_independently(self):
+        view = self._view()
+
+        assert view._session_scope("chat-1", "alice") != view._session_scope("chat-1", "bob")
+
+    def test_single_chat_scope_stays_the_bare_user_id(self):
+        # 单聊的 group_id 就是发起人，再拼一次只会让升级后的老会话平白失效
+        assert self._view()._session_scope("alice", "alice") == "alice"
+
+    @pytest.mark.parametrize(
+        ("exists", "session_code", "expected"),
+        [
+            (True, "session-1", True),
+            (True, "other-session", False),
+            (False, "session-1", False),
+            (True, "", False),
+        ],
+    )
+    def test_is_live_session_code_requires_current_thread(self, exists, session_code, expected):
+        from aidev_wxbot.wxaibot.models import AgentSession
+
+        view = self._view()
+        record = SimpleNamespace(thread_id="thread-1")
+
+        def _get(**_):
+            if not exists:
+                raise AgentSession.DoesNotExist
+            return record
+
+        with (
+            patch.object(long_connection_module.AgentSession.objects, "get", side_effect=_get),
+            patch.object(long_connection_module.SessionManager, "generate_session_code", return_value="session-1"),
+        ):
+            assert view.is_live_session_code("group-1", "alice", session_code) is expected
+
+
+class TestLongConnectionConfig:
+    def test_validates_required_credentials(self):
+        with pytest.raises(LongConnectionConfigError, match="BKAPP_WXAIBOT_WS_BOT_ID"):
+            WxAiBotLongConnectionConfig(bot_id="", secret="secret").validate()
+
+        with pytest.raises(LongConnectionConfigError, match="BKAPP_WXAIBOT_WS_SECRET"):
+            WxAiBotLongConnectionConfig(bot_id="bot", secret="").validate()
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "reconnect_interval_ms",
+            "heartbeat_interval_ms",
+            "request_timeout_ms",
+            "startup_timeout_sec",
+            "shutdown_grace_period_sec",
+        ],
+    )
+    def test_rejects_non_positive_timing_values(self, field):
+        config = WxAiBotLongConnectionConfig(bot_id="bot", secret="secret")
+        setattr(config, field, 0)
+
+        with pytest.raises(LongConnectionConfigError):
+            config.validate()
+
+
+@pytest.mark.asyncio
+class TestLongConnectionStreaming:
+    async def test_chat_sends_preparing_placeholder_before_first_agent_frame(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        started = threading.Event()
+        release = threading.Event()
+
+        def generator():
+            started.set()
+            release.wait(timeout=2)
+            yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{"a" * 50}"}}\n'
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy = ChatAgentStrategy()
+        strategy.open_stream = MagicMock(
+            return_value=AgentStream("chat", generator(), "session-1")
+        )
+        request = SimpleNamespace(content="q", stream_id="chat-placeholder", username="u", group_id="g1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            assert service._client.reply_stream_calls == [(PREPARING_REPLY, False)]
+            assert service._active_streams[request.stream_id].last_content == PREPARING_REPLY
+            for _ in range(200):
+                if started.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert started.is_set()
+            release.set()
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls == [
+            (PREPARING_REPLY, False),
+            ("a" * 50, False),
+            ("a" * 50, True),
+        ]
+
+    async def test_flow_does_not_send_preparing_placeholder(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = FlowAgentStrategy()
+        strategy.open_stream = MagicMock(
+            return_value=AgentStream("flow", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+        )
+        request = SimpleNamespace(content="q", stream_id="flow-no-placeholder", username="u", group_id="g1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams[request.stream_id].task
+
+        assert all(content != PREPARING_REPLY for content, _finish in service._client.reply_stream_calls)
+
+    async def test_stream_timeout_gets_explicit_terminal_reply(self, monkeypatch):
+        service = _service()
+        request = SimpleNamespace(content="q", stream_id="stream-timeout", username="u", group_id="g")
+
+        def block_after_started(_request, loop, output_queue, cancel_event):
+            service._put_from_worker(loop, output_queue, long_connection_module._PRODUCER_STARTED, cancel_event)
+            cancel_event.wait(timeout=2)
+
+        service._produce_direct_stream = block_after_started
+        monkeypatch.setattr(settings, "WXAIBOT_WS_STREAM_TIMEOUT_SEC", 1)
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=MagicMock()),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls == [(STREAM_TIMEOUT_REPLY, True)]
+        cancel.assert_called_with(request.stream_id)
+        assert service._metrics.failed == 1
+
+    async def test_chat_sse_is_pushed_directly_without_legacy_execute(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            kind="chat",
+            session_code="session-1",
+            generator=iter(
+                [
+                    f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{"a" * 50}"}}\n',
+                    'data: {"type":"RUN_FINISHED","run_id":"run-1"}\n',
+                ]
+            ),
+        )
+        request = SimpleNamespace(
+            content="query",
+            stream_id="stream-direct",
+            username="user-1",
+            group_id="group-1",
+        )
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            task = service._active_streams["stream-direct"].task
+            await task
+
+        strategy.open_stream.assert_called_once_with(
+            content="query",
+            username="user-1",
+            thread_id="thread-1",
+            group_id="group-1",
+            retry_strategy="sdk",
+        )
+        strategy.execute.assert_not_called()
+        assert service._client.reply_stream_calls == [("a" * 50, False), ("a" * 50, True)]
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
+        service._schedule_approval_poll.assert_not_called()
+
+    async def test_request_starts_independent_trace_and_propagates_traceparent(self, monkeypatch):
+        from aidev_agent.utils import tracing
+        from aidev_bkplugin.services.agent_execution import build_execute_kwargs
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer(__name__)
+        monkeypatch.setattr(tracing, "_agent_tracer", tracer)
+        captured = {}
+
+        def open_stream(**_kwargs):
+            execute_kwargs = build_execute_kwargs({"stream": True}, "user-1")
+            captured.update(execute_kwargs.caller_trace_context)
+            return AgentStream("chat", iter(['data: {"type":"RUN_FINISHED"}\n']), "session-1")
+
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        request = SimpleNamespace(content="q", stream_id="stream-1", username="user-1", group_id="group-1")
+        strategy = MagicMock(open_stream=open_stream)
+
+        with (
+            tracer.start_as_current_span("unrelated-parent") as parent,
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-1"].task
+
+        main_span = next(span for span in exporter.get_finished_spans() if span.name == "wxbot.long_connection.session")
+        assert main_span.context.trace_id != parent.get_span_context().trace_id
+        assert captured["traceparent"].split("-")[1] == f"{main_span.context.trace_id:032x}"
+
+    async def test_agent_run_error_is_counted_as_failed_stream(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            kind="chat",
+            session_code="session-1",
+            generator=iter(['data: {"type":"RUN_ERROR","message":"upstream timeout"}\n']),
+        )
+        request = SimpleNamespace(
+            content="query",
+            stream_id="stream-error",
+            username="user-1",
+            group_id="group-1",
+        )
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-error"].task
+
+        assert service._client.reply_stream_calls == [(STREAM_ERROR_REPLY, True)]
+        assert service._metrics.failed == 1
+        assert service._metrics.completed == 0
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
+        service._schedule_approval_poll.assert_not_called()
+
+    async def test_ai_rename_is_scheduled_when_session_is_opened(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", iter(()), "session-1")
+        request = SimpleNamespace(content="query", stream_id="stream-trigger", username="user-1", group_id="group-1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams["stream-trigger"].task
+
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
+
+    async def test_pending_approval_is_not_counted_as_completed(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        strategy = MagicMock()
+        approval = (
+            'data: {"type":"RUN_FINISHED","outcome":{"type":"interrupt","interrupts":'
+            '[{"id":"int-approval-call-1-DE001","reason":"aidev:tool_approval",'
+            '"metadata":{"ticket":{"sn":"DE001","url":"https://itsm.example.com/DE001"}}}]}}\n'
+        )
+        strategy.open_stream.return_value = AgentStream("chat", iter([approval]), "session-1")
+        request = SimpleNamespace(content="query", stream_id="approval", username="user-1", group_id="group-1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch("aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url", return_value=""),
+        ):
+            frame = {"body": {"chattype": "single", "from": {"userid": "wecom-user-1"}}}
+            await service._start_direct_stream(frame, request)
+            await service._active_streams["approval"].task
+
+        assert service._metrics.approval_pending == 1
+        assert service._metrics.completed == 0
+        assert service._client.reply_stream_calls == [("等待工具审批", True)]
+        assert service._client.reply_stream_with_card_calls == []
+        assert len(service._client.send_message_calls) == 1
+        target, body = service._client.send_message_calls[0]
+        assert target == "wecom-user-1"
+        card = body["template_card"]
+        assert body["msgtype"] == "template_card"
+        assert card["button_list"][0]["text"] == "取消审批"
+        assert service._metrics.approval_cards_sent == 1
+        service._schedule_approval_poll.assert_called_once()
+        service._schedule_ai_rename.assert_called_once_with("user-1", "session-1")
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"chattype": "single", "from": {"userid": "user-1"}}, "user-1"),
+            ({"chattype": "group", "chatid": "chat-1"}, "chat-1"),
+        ],
+    )
+    async def test_template_card_is_pushed_to_original_conversation(self, payload, expected):
+        service = _service()
+
+        await service._send_template_card({"body": payload}, {"card_type": "text_notice"})
+
+        assert service._client.send_message_calls == [
+            (expected, {"msgtype": "template_card", "template_card": {"card_type": "text_notice"}})
+        ]
+
+    @pytest.mark.parametrize(
+        ("status", "ok", "label"),
+        [
+            ("cancelled", True, "已取消"),
+            ("cancelled", False, "已取消"),
+            ("approved", False, "审批已通过"),
+            ("rejected", False, "审批已拒绝"),
+        ],
+    )
+    async def test_approval_cancel_card_event_dispatches_operation_and_updates_card(
+        self, approval_card_case, status, ok, label
+    ):
+        case = approval_card_case
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        case.result["approve_result"] = status
+        case.envelope["ok"] = ok
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope) as dispatch,
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+        assert resume.call_count == int(ok)
+        dispatch.assert_called_once_with(
+            "approval_cancel",
+            "alice",
+            {
+                "session_code": "session-1",
+                "operation": "approval_cancel",
+                "payload": {"interrupt_id": case.action.interrupt_id},
+                "request_id": case.task_id,
+            },
+        )
+        expected = {key: value for key, value in case.card.items() if key != "button_list"}
+        expected.update(card_type="text_notice", jump_list=[{"type": 0, "title": label}])
+        assert service._client.update_template_card_calls == [expected]
+        for delivery in tuple(getattr(service, "_resume_deliveries", ())):
+            delivery.finish()
+            await delivery.task
+
+    @pytest.mark.parametrize("status,label", [("approved", "审批已通过"), ("rejected", "审批已拒绝")])
+    async def test_repeated_old_card_click_only_updates_actual_terminal_result(self, approval_card_case, status, label):
+        case = approval_card_case
+        service = _service()
+        case.result["approve_result"] = status
+        case.envelope.update(ok=False, already_finalized=True)
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume") as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+            await service._handle_frame({"body": case.event})
+        resume.assert_not_called()
+        assert service._client.send_message_calls == []
+        cards = service._client.update_template_card_calls
+        assert len(cards) == 2 and cards[0] == cards[1]
+        assert cards[0]["jump_list"] == [{"type": 0, "title": label}]
+        assert cards[0]["task_id"] == case.task_id
+        assert "button_list" not in cards[0]
+
+    @pytest.mark.parametrize("envelope", [None, {}, {"ok": True}, {"ok": False}])
+    async def test_cancel_missing_result_preserves_card(self, approval_card_case, envelope):
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation", return_value=envelope):
+            await service._handle_frame({"body": approval_card_case.event})
+        assert service._client.update_template_card_calls == []
+
+    async def test_cancel_exception_preserves_card(self, approval_card_case):
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation", side_effect=RuntimeError("failed")):
+            await service._handle_frame({"body": approval_card_case.event})
+        assert service._client.update_template_card_calls == []
+
+    async def test_approval_card_rejects_when_session_rotated(self, approval_card_case):
+        """本地 thread 已换（空闲轮换或 /new）时旧卡不再续流。"""
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(
+                long_connection_module, "dispatch_user_operation", return_value=approval_card_case.envelope
+            ) as dispatch,
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True),
+        ):
+            await service._handle_frame({"body": approval_card_case.event})
+        dispatch.assert_not_called()
+        assert service._client.send_message_calls[0][1]["markdown"]["content"] == SESSION_SWITCHED_REPLY
+
+    async def test_stale_approval_signature_is_ignored(self, approval_card_case):
+        service = _service()
+        with (
+            patch.object(long_connection_module, "decode_cancel_event_key", return_value=None),
+            patch.object(long_connection_module, "dispatch_user_operation") as dispatch,
+        ):
+            await service._handle_frame({"body": approval_card_case.event})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls == []
+
+    async def test_forwarded_cancel_card_cannot_change_reply_target(self, approval_card_case):
+        case = approval_card_case
+        case.event.update(chattype="group", chatid="different-group")
+        service = _service()
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": case.event})
+        dispatch.assert_not_called()
+        assert service._client.send_message_calls == []
+
+    async def test_legacy_cancel_card_resumes_web_without_new_message(self, approval_card_case):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction, encode_cancel_event_key
+
+        case = approval_card_case
+        action = ApprovalCancelAction(case.action.session_code, case.action.interrupt_id)
+        case.event["event"]["template_card_event"]["event_key"] = encode_cancel_event_key(action)
+        service = _service()
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+        assert resume.call_args.args[3] is None
+        assert service._client.send_message_calls == []
+
+    @pytest.mark.parametrize("update_fails", [False, True])
+    async def test_cancel_resumes_even_when_card_update_fails(self, approval_card_case, update_fails):
+        case = approval_card_case
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        if update_fails:
+            service._client.update_template_card = AsyncMock(side_effect=RuntimeError("failed"))
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": case.event})
+        assert resume.call_args.args[:3] == (case.action, "alice", case.envelope)
+        delivery = resume.call_args.args[3]
+        delivery.finish()
+        await delivery.task
+
+    @pytest.mark.parametrize("raises", [False, True])
+    async def test_resume_capacity_failure_keeps_cancelled_state_and_web_link(self, approval_card_case, raises):
+        case = approval_card_case
+        service = _service()
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value=case.envelope),
+            patch.object(long_connection_module, "submit_cancelled_approval_resume", return_value=False) as resume,
+        ):
+            if raises:
+                resume.side_effect = RuntimeError("executor unavailable")
+            await service._handle_frame({"body": case.event})
+        card = service._client.update_template_card_calls[0]
+        assert card["jump_list"] == [{"type": 0, "title": "已取消"}]
+        assert card["card_action"] == case.card["card_action"]
+        assert card["sub_title_text"] == case.card["sub_title_text"]
+        await asyncio.gather(*(d.task for d in service._resume_deliveries))
+        assert "返回原会话" in service._client.send_message_calls[-1][1]["markdown"]["content"]
+
+    async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
+        class SlowClient(FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.sending = asyncio.Event()
+                self.release = asyncio.Event()
+
+            async def reply_stream(self, _frame, _stream_id, content, finish):
+                self.reply_stream_calls.append((content, finish))
+                self.sending.set()
+                await self.release.wait()
+
+        client = SlowClient()
+        service = _service(client)
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        yielded = 0
+
+        def generator():
+            nonlocal yielded
+            for index in range(20):
+                yielded += 1
+                yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{index:02d}{"x" * 48}"}}\n'
+            yield 'data: {"type":"RUN_FINISHED"}\n'
+
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream("chat", generator(), "session-1")
+        request = SimpleNamespace(content="query", stream_id="slow", username="user-1", group_id="group-1")
+        monkeypatch.setattr(long_connection_module.settings, "WXAIBOT_WS_STREAM_BUFFER_SIZE", 1)
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+        ):
+            await service._start_direct_stream({}, request)
+            task = service._active_streams["slow"].task
+            try:
+                await client.sending.wait()
+                await asyncio.sleep(0.05)
+                assert yielded < 20
+            finally:
+                client.release.set()
+                await task
+
+        assert service._metrics.completed == 1
+
+    async def test_retries_stream_reply_after_temporary_failure(self, monkeypatch):
+        client = FakeClient(failures=1)
+        service = _service(client)
+        monkeypatch.setattr(long_connection_module.asyncio, "sleep", AsyncMock())
+
+        await service._send_stream_reply({}, "stream-1", "answer", True)
+
+        assert client.reply_stream_calls == [("answer", True), ("answer", True)]
+
+    async def test_waits_for_reconnection_before_stream_reply(self, monkeypatch):
+        client = FakeClient()
+        client.is_connected = False
+        service = _service(client)
+
+        async def reconnect(_delay):
+            client.is_connected = True
+
+        monkeypatch.setattr(long_connection_module.asyncio, "sleep", reconnect)
+
+        await service._send_stream_reply({}, "stream-1", "answer", False)
+
+        assert client.reply_stream_calls == [("answer", False)]
+
+    async def test_long_connection_does_not_poll_legacy_rabbitmq_stream(self):
+        service = _service()
+        sent = AsyncMock()
+        service._send_stream_reply = sent
+
+        frame = {"body": {"msgtype": "stream", "stream": {"id": "stream-1"}}}
+        await service._handle_frame(frame)
+
+        service._view._reply_wxaibot.assert_not_called()
+        sent.assert_awaited_once_with(frame, "stream-1", "长连接模式无需轮询流式结果", True)
+
+    async def test_same_group_second_request_is_rejected_with_a_stop_hint(self):
+        """同会话只允许一条流：直接拒绝并告诉用户怎么办，不排队也不抢占。"""
+        service = _service()
+        release = asyncio.Event()
+
+        async def consume(*_args):
+            await release.wait()
+
+        service._consume_direct_stream = consume
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+            await service._start_direct_stream(
+                {}, SimpleNamespace(stream_id="active", username="u", group_id="group-1")
+            )
+            await service._start_direct_stream(
+                {}, SimpleNamespace(stream_id="second", username="u", group_id="group-1")
+            )
+
+        # 拒绝不是抢占：正在跑的那条不能被顺手停掉
+        cancel.assert_not_called()
+        assert list(service._active_streams) == ["active"]
+        assert service._metrics.rejected_busy == 1
+        # 必须是终态帧，否则企微会一直等这条流的后续内容
+        assert service._client.reply_stream_calls == [(BUSY_REPLY, True)]
+        release.set()
+        await service._cancel_stream_tasks()
+
+    async def test_busy_hint_does_not_tell_you_to_stop_someone_elses_reply(self):
+        """名额被别人占着时不能提示 /stop：/stop 只作用于自己，照做也停不掉。"""
+        service = _service()
+        release = asyncio.Event()
+
+        async def consume(*_args):
+            await release.wait()
+
+        service._consume_direct_stream = consume
+        await service._start_direct_stream({}, SimpleNamespace(stream_id="active", username="alice", group_id="g"))
+        await service._start_direct_stream({}, SimpleNamespace(stream_id="second", username="bob", group_id="g"))
+
+        assert service._client.reply_stream_calls == [(BUSY_BY_OTHERS_REPLY, True)]
+        release.set()
+        await service._cancel_stream_tasks()
+
+    async def test_group_accepts_a_new_request_after_the_active_stream_ends(self):
+        """拒绝模式下没有出队动作，会话占用只能靠流结束时清理，漏了就会永久锁死该会话。"""
+        service = _service()
+        releases = {"first": asyncio.Event(), "second": asyncio.Event()}
+
+        async def consume(_frame, request, _cancel_event):
+            await releases[request.stream_id].wait()
+
+        service._consume_direct_stream = consume
+        await service._start_direct_stream({}, SimpleNamespace(stream_id="first", username="u", group_id="group-1"))
+        first_task = service._active_streams["first"].task
+
+        releases["first"].set()
+        await first_task
+        await asyncio.sleep(0)  # 让 done callback 完成清理
+        assert not service._group_streams
+
+        await service._start_direct_stream({}, SimpleNamespace(stream_id="second", username="u", group_id="group-1"))
+
+        assert list(service._active_streams) == ["second"]
+        assert service._metrics.rejected_busy == 0
+        assert service._client.reply_stream_calls == []
+        releases["second"].set()
+        await service._cancel_stream_tasks()
+
+    async def test_different_groups_start_concurrently(self):
+        service = _service()
+        started = {group_id: asyncio.Event() for group_id in ("group-1", "group-2")}
+        release = asyncio.Event()
+
+        async def consume(_frame, request, _cancel_event):
+            started[request.group_id].set()
+            await release.wait()
+
+        service._consume_direct_stream = consume
+        for group_id in started:
+            request = SimpleNamespace(stream_id=f"stream-{group_id}", username="u", group_id=group_id)
+            await service._start_direct_stream({}, request)
+
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started.values())), timeout=1)
+        assert len(service._active_streams) == 2
+        await service._cancel_stream_tasks()
+
+    async def test_cancel_stream_tasks_on_shutdown(self):
+        service = _service()
+        task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["stream-1"] = ActiveStream({}, "group-1", "u", task, __import__("threading").Event(), 0)
+        service._group_streams["group-1"] = "stream-1"
+        service._active_streams["stream-1"].last_content = "半截回答"
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True):
+            await service._cancel_stream_tasks(notice="（服务正在停机，本次回复已中断）")
+
+        assert task.cancelled()
+        # 停机同样不能抹掉用户已经看到的内容
+        assert service._client.reply_stream_calls == [("半截回答\n\n（服务正在停机，本次回复已中断）", True)]
+
+    async def test_shutdown_cancels_and_waits_for_tracked_drains(self):
+        service = _service()
+        drain = StreamDrain("stream-1")
+        service._draining_streams[drain.stream_id] = drain
+
+        def complete_after_cancel(stream_id):
+            assert stream_id == "stream-1"
+            service._finish_stream_drain(drain)
+            return True
+
+        with patch.object(
+            long_connection_module.stream_registry,
+            "cancel",
+            side_effect=complete_after_cancel,
+        ) as cancel:
+            await asyncio.wait_for(service._cancel_stream_drains(), timeout=0.2)
+
+        cancel.assert_called_once_with("stream-1")
+        assert drain.completed.is_set()
+        assert not service._draining_streams
+
+
+class TestFlowNodeCard:
+    @staticmethod
+    def _event(action, *, userid="alice-wx"):
+        from aidev_wxbot.wxaibot.flow_cards import encode_flow_event_key, flow_card_task_id
+
+        return {
+            "msgtype": "event",
+            "from": {"userid": userid},
+            "event": {
+                "eventtype": "template_card_event",
+                "template_card_event": {
+                    "event_key": encode_flow_event_key(action),
+                    "task_id": flow_card_task_id(action),
+                },
+            },
+        }
+
+    async def test_click_dispatches_operation_updates_card_and_submits_resume(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction, flow_card_task_id
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}) as dispatch,
+            patch.object(long_connection_module, "submit_flow_node_resume", return_value=True) as resume,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+
+        dispatch.assert_called_once_with(
+            "flow_node_retry",
+            "alice",
+            {
+                "session_code": "session-1",
+                "operation": "flow_node_retry",
+                "payload": {"task_id": "42", "node_id": "n2"},
+                "request_id": flow_card_task_id(action),
+            },
+        )
+        assert service._client.update_template_card_calls
+        assert service._client.update_template_card_calls[0]["jump_list"] == [{"type": 0, "title": "已重试"}]
+        resume.assert_called_once()
+        assert resume.call_args.args[:2] == (action, "alice")
+        assert resume.call_args.args[2] is not None
+        assert not service._client.reply_stream_calls
+        for delivery in tuple(getattr(service, "_resume_deliveries", ())):
+            delivery.finish()
+            await delivery.task
+
+    async def test_flow_card_rejects_when_session_rotated(self):
+        """本地 thread 已换（空闲轮换或 /new）时旧卡不再续流。"""
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}) as dispatch,
+            patch.object(long_connection_module, "submit_flow_node_resume", return_value=True),
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_not_called()
+        assert service._client.send_message_calls[0][1]["markdown"]["content"] == SESSION_SWITCHED_REPLY
+
+    async def test_stale_flow_signature_is_ignored(self):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        with (
+            patch.object(long_connection_module, "decode_flow_event_key", return_value=None),
+            patch.object(long_connection_module, "dispatch_user_operation") as dispatch,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_not_called()
+        assert service._client.update_template_card_calls == []
+        assert service._client.send_message_calls == []
+
+    async def test_click_rejects_modified_binding(self):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        action = FlowNodeAction("session-1", "42", "n2", "retry", "HTTP请求", "alice-wx")
+        service = _service()
+        event = self._event(action)
+        event["from"]["userid"] = "other-user"
+        with patch.object(long_connection_module, "dispatch_user_operation") as dispatch:
+            await service._handle_frame({"body": event})
+        dispatch.assert_not_called()
+
+    async def test_failed_operation_updates_card_and_does_not_resume(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "skip", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": False}) as dispatch,
+            patch.object(long_connection_module, "resolve_strategy") as resolve,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        dispatch.assert_called_once()
+        resolve.assert_not_called()
+        assert service._client.update_template_card_calls[0]["jump_list"] == [{"type": 0, "title": "操作失败"}]
+        # 卡片已原地改成「操作失败」，不再另发一条 markdown 重复提示
+        assert service._client.send_message_calls == []
+
+    async def test_failed_operation_falls_back_to_markdown_when_card_update_fails(self, monkeypatch):
+        from aidev_wxbot.wxaibot.constants import FLOW_NODE_ACTION_FAILED_REPLY
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "skip", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        monkeypatch.setattr(
+            service._client, "update_template_card", AsyncMock(side_effect=RuntimeError("wecom rejected"))
+        )
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": False}),
+            patch.object(long_connection_module, "resolve_strategy") as resolve,
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        resolve.assert_not_called()
+        assert service._client.send_message_calls[-1][1]["markdown"]["content"] == FLOW_NODE_ACTION_FAILED_REPLY
+
+    async def test_resume_capacity_failure_sends_markdown_not_stream(self, monkeypatch):
+        from aidev_wxbot.wxaibot.flow_cards import FlowNodeAction
+
+        monkeypatch.setattr(
+            "aidev_wxbot.wxaibot.flow_cards.AgentHelper.build_session_detail_url",
+            lambda _session: "https://agent.example.com/session-1",
+        )
+        action = FlowNodeAction("session-1", "42", "n2", "skip", "HTTP请求", "alice-wx")
+        service = _service()
+        service._view.resolve_event_username.return_value = "alice"
+        with (
+            patch.object(long_connection_module, "dispatch_user_operation", return_value={"ok": True}),
+            patch.object(long_connection_module, "submit_flow_node_resume", return_value=False),
+        ):
+            await service._handle_frame({"body": self._event(action)})
+        await asyncio.gather(*(d.task for d in getattr(service, "_resume_deliveries", ())))
+        assert not service._client.reply_stream_calls
+        assert service._client.send_message_calls[-1][1]["msgtype"] == "markdown"
+        assert "返回原会话" in service._client.send_message_calls[-1][1]["markdown"]["content"]
+
+
+class TestLongConnectionLifecycle:
+    @staticmethod
+    def _service_with_registered_callbacks():
+        class CallbackClient:
+            def __init__(self):
+                self.handlers = {}
+
+            def on(self, event_name):
+                def decorator(callback):
+                    self.handlers[event_name] = callback
+                    return callback
+
+                return decorator
+
+        service = object.__new__(WxAiBotLongConnectionService)
+        service._client = CallbackClient()
+        service._authenticated_event = MagicMock()
+        service._authenticated_event.is_set.return_value = False
+        service._mark_startup_failure = MagicMock()
+        service._set_service_state = MagicMock()
+        service._set_async_event = MagicMock()
+        service._ensure_health_task = MagicMock()
+        service._handle_frame = AsyncMock()
+        service._register_handlers()
+        return service
+
+    def test_transient_startup_error_keeps_sdk_reconnect_alive(self):
+        service = self._service_with_registered_callbacks()
+
+        service._client.handlers["error"](RuntimeError("temporary websocket failure"))
+
+        service._mark_startup_failure.assert_not_called()
+        service._set_service_state.assert_called_once_with(
+            ServiceState.RECONNECTING,
+            "transient_startup_error=temporary websocket failure",
+        )
+
+    def test_reauthentication_restores_running_state(self):
+        service = self._service_with_registered_callbacks()
+        service._authenticated_event.is_set.return_value = True
+
+        service._client.handlers["authenticated"]()
+
+        service._set_service_state.assert_called_once_with(ServiceState.RUNNING)
+
+    @pytest.mark.parametrize("message", ["Authentication failed: bad secret", "Max reconnect attempts exceeded"])
+    def test_terminal_sdk_error_marks_startup_failure(self, message):
+        service = self._service_with_registered_callbacks()
+
+        service._client.handlers["error"](RuntimeError(message))
+
+        service._mark_startup_failure.assert_called_once()
+
+    def test_shutdown_request_stops_accepting_messages_and_disconnects(self):
+        service = _service()
+        service._service_state = ServiceState.RUNNING
+        service._state_lock = __import__("threading").Lock()
+        service._health_task = None
+
+        service._request_shutdown("test")
+
+        assert service._client.disconnected
+        assert service._shutdown_requested
+        assert not service._accepting_messages
+        assert service._service_state == ServiceState.STOPPING
+
+    def test_health_log_exposes_stream_metrics(self, caplog):
+        service = _service()
+        service._service_state = ServiceState.RUNNING
+        service._metrics.started = 3
+        service._metrics.rejected_busy = 2
+        executor = SimpleNamespace(
+            active=1,
+            pending=0,
+            max_workers=16,
+            max_pending=32,
+            capacity=48,
+            submitted=2,
+            rejected=0,
+            peak_active=2,
+            peak_pending=1,
+        )
+        cleanup_executor = SimpleNamespace(
+            active=1,
+            pending=2,
+            max_workers=2,
+            max_pending=32,
+            capacity=34,
+            submitted=4,
+            rejected=1,
+            peak_active=2,
+            peak_pending=3,
+        )
+        service._draining_streams["stream-1"] = StreamDrain("stream-1")
+        service._metrics.drain_timeouts = 2
+
+        with (
+            patch.object(long_connection_module, "get_agent_executor_snapshot", return_value=executor),
+            patch.object(long_connection_module, "get_agent_cleanup_executor_snapshot", return_value=cleanup_executor),
+            caplog.at_level(logging.INFO, logger=long_connection_module.__name__),
+        ):
+            service._log_health()
+
+        assert "streams_started=3" in caplog.text
+        assert "streams_approval_pending=0" in caplog.text
+        assert "approval_cards_sent=0" in caplog.text
+        assert "approval_cards_failed=0" in caplog.text
+        # 被拒次数是判断「用户是不是一直在撞正在生成」的唯一线索
+        assert "streams_rejected_busy=2" in caplog.text
+        assert "draining_streams=1" in caplog.text
+        assert "cleanup_active=1" in caplog.text
+        assert "drain_timeouts=2" in caplog.text
+
+    async def test_waits_for_client_disconnect_without_sdk_wait_method(self):
+        service = _service()
+
+        service._client.disconnect()
+        await service._wait_for_client_disconnected()
+
+        assert service._client.disconnected
+
+    async def test_shutdown_grace_period_covers_terminal_reply(self):
+        class HangingClient(FakeClient):
+            async def reply_stream(self, _frame, _stream_id, content, finish):
+                self.reply_stream_calls.append((content, finish))
+                await asyncio.Event().wait()
+
+        service = _service(HangingClient())
+        service._config.shutdown_grace_period_sec = 0.01
+        service._health_task = None
+        service._state_lock = threading.Lock()
+        service._service_state = ServiceState.STOPPING
+        service._loop = MagicMock()
+        service._loop.is_running.return_value = True
+        task = asyncio.create_task(asyncio.sleep(60))
+        service._active_streams["stream-1"] = ActiveStream({}, "group-1", "u", task, threading.Event(), 0)
+
+        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True):
+            started = time.monotonic()
+            await service._shutdown_async("test")
+
+        assert time.monotonic() - started < 0.2
+        assert service._client.disconnected
+        service._loop.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+class TestLongConnectionSideEffects:
+    async def test_ai_rename_delegates_to_session_manager(self):
+        service = _service()
+        with patch.object(long_connection_module, "_run_ai_rename") as rename:
+            await WxAiBotLongConnectionService._ai_rename(service, "alice", "sc-1")
+        rename.assert_called_once_with("alice", "sc-1")
+
+    async def test_ai_rename_runs_once_per_session(self):
+        service = _service()
+        created = []
+
+        def create_task(coro):
+            created.append(coro)
+            coro.close()
+            return MagicMock()
+
+        with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "")
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-1")
+            WxAiBotLongConnectionService._schedule_ai_rename(service, "alice", "sc-2")
+        assert len(created) == 2
+        assert "sc-1" in service._ai_renamed_sessions
+        assert "sc-2" in service._ai_renamed_sessions
+        assert len(service._ai_renamed_sessions) == 2
+
+    async def test_poll_approval_submits_resume_without_updating_card(self):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        frame = {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}
+        delivery = MagicMock()
+        with (
+            patch.object(
+                long_connection_module,
+                "wait_for_approval_result",
+                AsyncMock(return_value={"approve_result": "approved"}),
+            ),
+            patch.object(long_connection_module, "submit_polled_approval_resume", return_value=True) as submit,
+            patch.object(service, "_new_resume_delivery", return_value=delivery),
+        ):
+            await WxAiBotLongConnectionService._poll_approval(service, frame, action, "alice")
+        submit.assert_called_once()
+        assert submit.call_args.args[0] == action
+        assert submit.call_args.args[1] == "alice"
+        assert submit.call_args.args[2] is delivery
+        assert service._client.send_message_calls == []
+
+    async def test_poll_approval_hands_liveness_check_to_the_backoff_loop(self):
+        """会话存活校验必须在轮询循环内，/new 之后不能把剩下的退避表跑完。"""
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        service._view.is_live_session_code.return_value = False
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        waiter = AsyncMock(return_value=None)
+        with (
+            patch.object(long_connection_module, "wait_for_approval_result", waiter),
+            patch.object(long_connection_module, "submit_polled_approval_resume") as submit,
+        ):
+            await WxAiBotLongConnectionService._poll_approval(
+                service, {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}, action, "alice"
+            )
+        submit.assert_not_called()
+        assert service._client.send_message_calls == []
+        assert await waiter.call_args.kwargs["is_live"]() is False
+
+    async def test_approval_poll_concurrency_is_capped(self, monkeypatch):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        del service._schedule_approval_poll
+        monkeypatch.setattr(long_connection_module, "APPROVAL_POLL_MAX_CONCURRENT", 1)
+        monkeypatch.setattr(
+            long_connection_module, "approval_action_from_card", lambda _card: ApprovalCancelAction("s", "i", "t")
+        )
+        created = []
+
+        def create_task(coro):
+            created.append(coro)
+            coro.close()
+            return MagicMock(done=lambda: False)
+
+        frame = {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}
+        with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            for _ in range(3):
+                WxAiBotLongConnectionService._schedule_approval_poll(service, frame, {}, "alice")
+        assert len(created) == 1
+
+    async def test_poll_approval_timeout_does_not_resume(self):
+        from aidev_wxbot.wxaibot.approval_cards import ApprovalCancelAction
+
+        service = _service()
+        action = ApprovalCancelAction("session-1", "int-1", "alice-wx")
+        with (
+            patch.object(long_connection_module, "wait_for_approval_result", AsyncMock(return_value=None)),
+            patch.object(long_connection_module, "submit_polled_approval_resume") as submit,
+        ):
+            await WxAiBotLongConnectionService._poll_approval(
+                service, {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}, action, "alice"
+            )
+        submit.assert_not_called()
+
+    async def test_schedule_approval_poll_binds_target_from_card(self, approval_card_case):
+        service = _service()
+        created = []
+
+        def create_task(coro):
+            created.append(coro)
+            coro.close()
+            task = MagicMock()
+            return task
+
+        frame = {"body": {"chattype": "single", "from": {"userid": "alice-wx"}}}
+        with patch.object(long_connection_module.asyncio, "create_task", side_effect=create_task):
+            WxAiBotLongConnectionService._schedule_approval_poll(service, frame, approval_card_case.card, "alice")
+        assert len(created) == 1
+        assert service._side_tasks
+
+    async def test_shutdown_cancels_side_tasks(self):
+        service = _service()
+        service._health_task = None
+        service._state_lock = threading.Lock()
+        service._service_state = ServiceState.STOPPING
+        service._loop = MagicMock()
+        service._loop.is_running.return_value = False
+        blocked = asyncio.Event()
+        task = asyncio.create_task(blocked.wait())
+        service._side_tasks.add(task)
+        await service._cancel_side_tasks()
+        assert task.cancelled()

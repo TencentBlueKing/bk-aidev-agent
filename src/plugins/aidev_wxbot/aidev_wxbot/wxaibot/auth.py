@@ -12,6 +12,7 @@ from logging import getLogger
 
 from aidev_bkplugin.views.base import PluginResourceManager
 
+from .channel_config import get_channel_contact
 from ..api.bkaidev import BkAiDevApi
 
 logger = getLogger(__name__)
@@ -30,7 +31,7 @@ def resolve_channel_admin_rtx(fallback_username: str) -> str:
             logger.warning("[resolve_rtx] 渠道配置返回空列表，请确认智能体已启用企微渠道")
         else:
             for cfg in configs:
-                contact = (cfg.get("config") or {}).get("contact", "")
+                contact = get_channel_contact(cfg)
                 if contact:
                     logger.info(f"[resolve_rtx] 使用渠道管理员 RTX: {contact}")
                     return contact

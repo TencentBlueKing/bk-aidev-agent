@@ -61,8 +61,8 @@ sinceVersion: 1.0.0
     console.log('停止发送');
   };
 
-  const handleUploadDemo = async (file) => {
-    return { download_url: URL.createObjectURL(file) };
+  const handleUploadDemo = async (files) => {
+    return files.map(file => ({ download_url: URL.createObjectURL(file) }));
   };
 
   const prompts = [
@@ -105,7 +105,7 @@ sinceVersion: 1.0.0
 ## 组件结构
 
 ```
-ai-chat-input-container
+ai-chat-input-container（padding: 0 16px 16px，底部间距 16px）
 ├── slot#top（容器顶部，在输入框框体外侧）
 ├── slot#interrupt（容器顶部，在输入框框体外侧，通常展示中断/审批提示）
 └── chat-input（框体，受 inputMaxHeight 控制）
@@ -173,15 +173,17 @@ ai-chat-input-container
 
 ## 发送状态（messageStatus）
 
-`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
+`messageStatus` 控制底部工具栏的按钮渲染，但**输入框为空且没有附件时始终自动置灰禁用**，无论 `messageStatus` 传入什么值。
 
-| `messageStatus`               | 输入框有内容时按钮表现                                 | 输入框空时               |
+| `messageStatus`               | 输入框有内容或已有附件时按钮表现                       | 输入框空且无附件时       |
 | ----------------------------- | ------------------------------------------------------ | ------------------------ |
 | `complete` / `stop` / `error` | 蓝色发送按钮，点击触发 `onSendMessage`                 | 灰色禁用                 |
 | `streaming` / `pending` / `fetching` | 蓝色停止按钮（Loading 图标），点击触发 `onStopSending` | 蓝色停止按钮（仍可点击） |
 | `disabled`                    | 灰色禁用，点击无效                                     | 灰色禁用                 |
 
-> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+> **实现细节**：组件内部用 `messageState` 计算属性决定实际按钮状态：当 `messageStatus` 为 `pending`、`streaming` 或 `fetching` 时直接使用该状态（确保停止按钮始终可用）；否则**已有上传附件时视为可发送**（纯附件消息无需输入文字）；再否则当输入为空或仅含空白字符时强制为 `disabled`，其余情况使用 `messageStatus` 的值。`fetching` 时按 Enter **不会**触发发送（避免请求中与 Loading 占位阶段重复提交）。
+
+> **纯附件消息**：只上传附件不输入文字时，`onSendMessage` 的 `content` 只含 `binary` 项，**不会**附带空文本段。
 
 ### onSendMessage 第三参数 options（UserQuestion 上下文）
 
@@ -481,15 +483,17 @@ const handleSendMessage = async (
 
 - 底部工具栏出现文件上传按钮（在快捷指令左侧）
 - 支持**点击选择**、**拖拽上传**、**粘贴上传**（Ctrl+V）
-- `onUpload` 每次传入**单个** `File`，返回 `{ download_url?: string }`
+- `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
+- **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 发送成功后，`uploadFiles` 自动清空
 
-**个数与大小校验（与 `FileUploadBtn` 分工）**：
+**个数、大小与格式校验（与 `FileUploadBtn` 分工）**：
 
-- 列表最多保留 **`MAX_UPLOAD_FILES`（3）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
-- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）**、或与已有文件重复的项会被跳过；若本轮有任意文件因此未加入列表，会在处理结束后弹出**同一条文案风格**的错误提示，汇总未成功添加的数量。
-- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限与重复校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
+- 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
+- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
+- **文件类型**：默认使用 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名列表）。系统文件选择框带 `accept` 过滤；选择后、拖拽、粘贴仍会再按扩展名校验，不支持的格式弹出「因格式不支持未添加」并不会入队。可通过 `accept` prop 覆盖（空字符串表示不限制）。
+- `FileUploadBtn` 仅在按钮层过滤**空文件与单文件超大**，把合法文件以数组形式 `upload` 上来；**个数上限、重复校验与类型校验**在 `ChatInput` 的 `handleUpload` 中统一处理，避免与按钮层各弹一条提示。
 
 **发送内容格式**（有文件时）：
 
@@ -538,12 +542,12 @@ const handleSendMessage = async (
     messageStatus.value = MessageStatus.Stop;
   };
 
-  // 每次传入单个 File，需返回 { download_url: string }
-  const handleUpload = async (file: File) => {
+  // 一次选择多个文件只回调一次，按文件顺序返回结果
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json(); // ChatInputUploadResult[]
   };
 </script>
 ```
@@ -584,7 +588,7 @@ const handleSendMessage = async (
 
 ## 自定义占位符
 
-通过 `placeholder` 自定义占位符文案，支持多行（换行用 `\n`）：
+未传入 `placeholder` 时，组件会按 `skills` / `prompts` / `resources` 是否非空动态生成提示行。传入后完全覆盖，支持多行（换行用 `\n`）：
 
 ```vue
 <template>
@@ -807,24 +811,29 @@ const handleSendMessage = async (
 | shortcuts          | `Shortcut[]`                                                               | -        | -    | 快捷指令列表，显示在底部工具栏                          |
 | models             | `IModelOption[]`                                                           | -        | -    | 可选模型列表，传入后在发送按钮左侧展示模型选择器        |
 | shortcutId         | `string`                                                                   | -        | -    | 当前选中的快捷指令 ID，匹配时列表收起为已选样式         |
-| placeholder        | `string`                                                                   | 见默认值 | -    | 编辑器占位符，支持多行                                  |
-| inputMaxHeight     | `number`                                                                   | `200`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
+| placeholder        | `string`                                                                   | 动态默认 | -    | 编辑器占位符，支持多行；未传时按 skills/prompts/resources 动态拼接 |
+| inputMaxHeight     | `number`                                                                   | `280`    | -    | 框体最大高度（px），有文件时自动加上文件预览区高度      |
 | defaultUploadFiles | `UploadFile[]`                                                             | -        | -    | 预设已上传的文件列表                                    |
 | sendDisabledTip    | `string`                                                                   | -        | -    | 业务阻塞发送时的 tooltip 提示；传入后发送按钮置灰，点击、Enter 与 `triggerSendMessage()` 均不会发送 |
 | supportUpload      | `boolean`                                                                  | `true`   | -    | 是否显示文件上传按钮                                    |
+| accept             | `string`                                                                   | `DEFAULT_UPLOAD_ACCEPT` | - | 文件选择框过滤类型，同时用于选择/拖拽/粘贴后的扩展名校验；空字符串表示不限制 |
 | tippyOptions       | `AITippyProps`                                                             | —        | -    | 透传给 FileUploadBtn 和 InputAttachment 的 tooltip 配置 |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | -        | -    | 发送消息回调，无文件时 content 为字符串，有文件时为数组；经 [ChatContainer](/components/setup/chat-container) 使用时，存在待回答 UserQuestion 会传入第三参数 `options` |
 | onStopSending      | `() => Promise<void>`                                                      | -        | -    | 停止发送回调，点击停止按钮时触发                        |
-| onUpload           | `(file: File) => Promise<{ download_url?: string }>`                       | -        | -    | 文件上传回调（每次单文件）                              |
+| onUpload           | `(files: File[]) => Promise<ChatInputUploadResult \| ChatInputUploadResult[]>` | -        | -    | 文件上传回调（一次选择批量传入）；上传中/失败附件会阻塞发送 |
 
 ### 默认占位符
 
+未传入 `placeholder` 时，根据当前 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
+
 ```
-输入 "/" 唤出 Skill
-输入 "\" 唤出 Prompt
-输入 "@" 唤出 工具和 MCP
-通过 Shift + Enter 进行换行输入
+输入 "/" 唤出 Skill          // 仅当 skills 非空
+输入 "\" 唤出 Prompt         // 仅当 prompts 非空
+输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+通过 Shift + Enter 进行换行输入  // 始终显示
 ```
+
+显式传入 `placeholder`（含空字符串）时完全覆盖上述默认文案。三种列表都为空时，只显示换行提示。
 
 ### Events
 
@@ -964,11 +973,11 @@ type OnSendMessage = (
     abortAICall();
   };
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    return res.json(); // { download_url: '...' }
+    return res.json();
   };
 </script>
 ```
