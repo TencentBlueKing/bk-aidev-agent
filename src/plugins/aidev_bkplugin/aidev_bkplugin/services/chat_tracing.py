@@ -26,6 +26,7 @@ def chat_request_span(function):
                 "bkplugin.chat.request",
                 kind=SpanKind.INTERNAL if SpanKind else None,
                 record_exception=False,
+                use_global_tracer=True,
             ),
         ):
             return function(self, request, *args, **kwargs)

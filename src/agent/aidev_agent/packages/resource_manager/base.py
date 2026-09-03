@@ -617,6 +617,7 @@ class BaseResourceManager(abc.ABC):
                     with recording_span(
                         "mcp.tools.list",
                         kind=CLIENT_SPAN_KIND,
+                        use_global_tracer=True,
                         attributes={
                             "rpc.system": "mcp",
                             "mcp.operation.name": "tools/list",

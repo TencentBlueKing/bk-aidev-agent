@@ -35,11 +35,61 @@ def test_recording_span_can_force_a_new_root(monkeypatch):
     tracer.start_as_current_span.assert_called_once_with("entrypoint", attributes={}, context=context)
 
 
+def test_recording_span_can_use_global_tracer(monkeypatch):
+    agent_tracer = MagicMock()
+    global_tracer = MagicMock()
+    trace_api = MagicMock()
+    trace_api.get_tracer.return_value = global_tracer
+    monkeypatch.setattr(tracing, "_agent_tracer", agent_tracer)
+    monkeypatch.setattr(tracing, "trace", trace_api)
+
+    with tracing.recording_span("application-module", use_global_tracer=True):
+        pass
+
+    trace_api.get_tracer.assert_called_once_with(tracing.__name__)
+    global_tracer.start_as_current_span.assert_called_once_with("application-module", attributes={})
+    agent_tracer.start_as_current_span.assert_not_called()
+
+
+def test_global_tracer_changes_only_selected_span_service(monkeypatch):
+    agent_provider, agent_exporter = _memory_provider("ai-skill-stag")
+    module_provider, module_exporter = _memory_provider("ai-skill-stag-default")
+    monkeypatch.setattr(tracing, "_agent_tracer", agent_provider.get_tracer("agent"))
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: module_provider.get_tracer("module"))
+    try:
+        with tracing.recording_span("parent") as parent:
+            with tracing.recording_span("selected", use_global_tracer=True):
+                pass
+            with tracing.recording_span("unchanged"):
+                pass
+        selected = module_exporter.get_finished_spans()[0]
+        unchanged = next(span for span in agent_exporter.get_finished_spans() if span.name == "unchanged")
+        assert selected.resource.attributes["service.name"] == "ai-skill-stag-default"
+        assert unchanged.resource.attributes["service.name"] == "ai-skill-stag"
+        assert selected.parent.span_id == unchanged.parent.span_id == parent.context.span_id
+    finally:
+        agent_provider.shutdown()
+        module_provider.shutdown()
+
+
 # ---------------------------------------------------------------------- #
 # propagated_trace_context / trace_headers（原 test_approval_trace.py 并入；
 # 其 test 1 依赖的 _create_approval_from_target 已随 43-04 建单迁移删除，
 # X-BKAIDEV-USER 头注入由 test_approval_methods.py 覆盖）
 # ---------------------------------------------------------------------- #
+
+
+def _memory_provider(service_name):
+    pytest.importorskip("opentelemetry.sdk")
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    return provider, exporter
 
 
 def _install_memory_tracer(monkeypatch):

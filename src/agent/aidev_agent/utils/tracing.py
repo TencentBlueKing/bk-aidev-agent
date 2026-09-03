@@ -93,15 +93,20 @@ def recording_span(
     kind: Any = None,
     root: bool = False,
     record_exception: bool = True,
+    use_global_tracer: bool = False,
 ) -> Iterator[Any]:
-    """Create a span with the Agent tracer, or safely no-op without OTel.
+    """Create a span with the selected tracer, or safely no-op without OTel.
+
+    ``use_global_tracer=True`` keeps application-module spans on the global
+    provider and its ``service.name`` resource. The default remains the Agent
+    provider so existing SDK spans keep their current service identity.
 
     ``root=True`` starts a new trace even when the caller happens to have an
     active context. This is intended for protocol entrypoints that represent a
     new inbound request rather than a child operation of a long-lived client.
     """
 
-    tracer = get_agent_tracer(__name__)
+    tracer = trace.get_tracer(__name__) if use_global_tracer and trace is not None else get_agent_tracer(__name__)
     if tracer is None:
         yield _NoOpSpan()
         return
