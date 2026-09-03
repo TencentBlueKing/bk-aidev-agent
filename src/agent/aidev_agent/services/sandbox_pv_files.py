@@ -18,14 +18,17 @@ from __future__ import annotations
 
 import logging
 import posixpath
+import re
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import NotRequired, Optional, TypedDict
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 from bkapi_client_core.exceptions import HTTPResponseError
+from requests import HTTPError as RequestsHTTPError
 
 from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
@@ -133,6 +136,12 @@ SESSION_UPLOAD_FILE_EXTENSIONS = (
     )
     | SESSION_UPLOAD_IMAGE_EXTENSIONS
 )
+# PaaS download_url 等接口解码后校验 path：空格、`&`、括号等会 VALIDATION_ERROR。
+# 只改落盘文件名，展示仍用原始 name。
+# 正则保留 \w（含 Unicode 字母，如中文已验证通过）与 . - ，只把空格、`&`、括号等 ASCII 标点替换为 `_`；
+# PaaS 接受 Unicode 字母（中文已验证），仅拒绝字典/路径中的非法字符，故中文文件名原样保留。
+_UNSAFE_FILE_NAME_RE = re.compile(r"[^\w.\-]+", flags=re.UNICODE)
+_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
 
 # PaaS 沙箱文件接口错误码 → 语义分组
 PV_PAAS_ERROR_NOT_FOUND_CODES = frozenset({"AGENT_SANDBOX_FILE_NOT_FOUND", "VOLUME_NOT_FOUND"})
@@ -219,6 +228,15 @@ class SandboxUploadFile(TypedDict):
     name: str
     content: bytes
     mime_type: NotRequired[str]
+
+
+def encode_paas_query_params(params: dict) -> str:
+    """把 query 编成 RFC 3986 形式，空格为 `%20` 而不是 form 的 `+`。
+
+    bkapi / requests 默认 `quote_plus`，PaaS agent-sandbox 的 path 校验不认 `+`。
+    预编码成字符串再传给 client，避免 dict params 被二次 `quote_plus`。
+    """
+    return urlencode(params, doseq=True, safe="", quote_via=quote)
 
 
 def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
@@ -411,17 +429,24 @@ class SandboxPvFileService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_paas_code(exc: HTTPResponseError) -> str:
+    def _parse_paas_body(exc: Exception) -> dict:
         response = getattr(exc, "response", None)
         if response is None:
-            return ""
+            return {}
         try:
             body = response.json()
         except Exception:  # noqa: BLE001 - 响应体可能不是 JSON
-            return ""
-        if not isinstance(body, dict):
-            return ""
-        return str(body.get("code") or "")
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    @classmethod
+    def _parse_paas_code(cls, exc: Exception) -> str:
+        return str(cls._parse_paas_body(exc).get("code") or "")
+
+    @classmethod
+    def _parse_paas_message(cls, exc: Exception) -> str:
+        body = cls._parse_paas_body(exc)
+        return str(body.get("message") or body.get("detail") or "")
 
     @classmethod
     def _is_sandbox_gone(cls, exc: HTTPResponseError) -> bool:
@@ -435,7 +460,7 @@ class SandboxPvFileService:
         return cls._parse_paas_code(exc) in PV_PAAS_SANDBOX_GONE_CODES
 
     @classmethod
-    def _map_paas_error(cls, exc: HTTPResponseError) -> SandboxFileError:
+    def _map_paas_error(cls, exc: Exception) -> SandboxFileError:
         """PaaS HTTP 错误 → 沙箱文件业务异常（表驱动）。
 
         规则：(match_status_code, matched_paas_codes, exception_cls)
@@ -446,6 +471,9 @@ class SandboxPvFileService:
         status_code = getattr(getattr(exc, "response", None), "status_code", 0) or 0
         paas_code = cls._parse_paas_code(exc)
         message = f"PaaS 沙箱文件接口调用失败: status={status_code} code={paas_code or '-'}"
+        extra = cls._parse_paas_message(exc)
+        if extra:
+            message = f"{message}; {extra}"
 
         rules: tuple[tuple[Optional[int], frozenset[str], type[SandboxFileError]], ...] = (
             (404, PV_PAAS_ERROR_NOT_FOUND_CODES, SandboxFileNotFoundError),
@@ -459,7 +487,7 @@ class SandboxPvFileService:
         return SandboxFileServerError(message)
 
     @classmethod
-    def _raise_mapped_paas_error(cls, action: str, exc: HTTPResponseError) -> None:
+    def _raise_mapped_paas_error(cls, action: str, exc: Exception) -> None:
         mapped = cls._map_paas_error(exc)
         logger.warning("call paas sandbox file api failed: action=%s error=%s", action, mapped, exc_info=True)
         raise mapped from exc
@@ -481,21 +509,23 @@ class SandboxPvFileService:
             raise SandboxFileInvalidArgumentError("since/until 必须是 tz-aware datetime（含时区信息）")
         return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _call_single(self, action: str, session_code: str, params: dict):
+    def _call_single(self, action: str, session_code: str, params: dict, *, volume_id=None, client=None):
         """调用 PaaS 单个操作（非分页），返回原始 Response。
 
         `action` 同时用作 Client 属性名与错误日志 tag（当前所有单请求方法都对齐）。
+        `volume_id` / `client` 可选：调用方已算好的可传入，避免分页等循环场景重复
+        `_get_volume_id`（一次会话 HTTP 查询）与 `_get_client` 构造。
         """
-        volume_id = self._get_volume_id(session_code)
-        client = self._get_client()
+        volume_id = volume_id or self._get_volume_id(session_code)
+        client = client or self._get_client()
         try:
             resp = getattr(client, action).request(
                 path_params=self._build_path_params(volume_id),
-                params=params,
+                params=encode_paas_query_params(params),
             )
             resp.raise_for_status()
             return resp
-        except HTTPResponseError as exc:
+        except (HTTPResponseError, RequestsHTTPError) as exc:
             self._raise_mapped_paas_error(action, exc)
 
     # ------------------------------------------------------------------
@@ -507,7 +537,13 @@ class SandboxPvFileService:
         file_name = PurePosixPath(name.replace("\\", "/")).name
         if not file_name or file_name in {".", ".."}:
             raise SandboxFileInvalidArgumentError("文件名不能为空")
-        return file_name
+        stem, suffix = posixpath.splitext(file_name)
+        # 只剥尾部点/下划线：前导点文件（如 .gitignore）与「...png」这类多点名要保留，
+        # 否则会吃掉扩展名（...png -> png）或把隐藏文件改成普通文件。
+        safe_stem = _REPEAT_UNDERSCORE_RE.sub("_", _UNSAFE_FILE_NAME_RE.sub("_", stem)).strip("_").rstrip(".")
+        if not safe_stem:
+            safe_stem = "file"
+        return f"{safe_stem}{suffix}"
 
     def _resolve_upload_snapshot(self) -> str:
         """读取平台注入的 snapshot；未注入则报错。"""
@@ -697,8 +733,8 @@ class SandboxPvFileService:
                 created_at=sandbox_created_at,
             )
 
-        succeeded = sum(item["status"] == "success" for item in results)
         self._attach_image_download_urls(session_code, results)
+        succeeded = sum(item["status"] == "success" for item in results)
         return {
             "count": len(results),
             "succeeded": succeeded,
@@ -707,7 +743,10 @@ class SandboxPvFileService:
         }
 
     def _attach_image_download_urls(self, session_code: str, results: list[dict]) -> None:
-        """给成功上传的图片签发 download_url，供输入框和首条 user 消息展示。"""
+        """给成功上传的图片签发 download_url，供输入框和首条 user 消息展示。
+
+        签发失败不得打垮整批：该文件改为 failed 并写入原因，其它已成功文件不受影响。
+        """
         for item in results:
             if item.get("status") != "success":
                 continue
@@ -720,8 +759,16 @@ class SandboxPvFileService:
                 url_data = self.get_download_url(
                     session_code, path, expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN
                 )
-            except SandboxFileError:
-                logger.exception("签发上传图片 URL 失败: session=%s path=%s", session_code, path)
+            except (SandboxFileError, HTTPResponseError, RequestsHTTPError) as exc:
+                # 文件已成功写入 PV，失败的只是「签发展示用临时 URL」；保留 status=success，
+                # 仅记 download_url_error，避免前端把「已落盘但缺 URL」误判为上传失败。
+                logger.warning(
+                    "签发上传图片 URL 失败（文件已落 PV，仅缺可访问 URL）: session=%s path=%s",
+                    session_code,
+                    path,
+                    exc_info=True,
+                )
+                item["download_url_error"] = str(exc)
                 continue
             url = url_data.get("download_url")
             if url:
@@ -750,7 +797,6 @@ class SandboxPvFileService:
         """
         volume_id = self._get_volume_id(session_code)
         client = self._get_client()
-        path_params = self._build_path_params(volume_id)
 
         base_params: dict = {
             "path": path or "",
@@ -771,12 +817,10 @@ class SandboxPvFileService:
                 time.sleep(PV_LIST_PAGE_SLEEP_SECONDS)
 
             params = dict(base_params, page=page)
-            try:
-                resp = client.list_files.request(path_params=path_params, params=params)
-                resp.raise_for_status()
-                data = resp.json() or {}
-            except HTTPResponseError as exc:
-                self._raise_mapped_paas_error("list_files", exc)
+            # 走 _call_single：统一接住 HTTPResponseError 与 requests.HTTPError，
+            # 避免 PaaS 返回 4xx/5xx 时 raise_for_status 抛出的 requests.HTTPError 冒泡成整次 500。
+            resp = self._call_single("list_files", session_code, params, volume_id=volume_id, client=client)
+            data = resp.json() or {}
 
             page_items = data.get("results") or []
             all_results.extend(page_items)

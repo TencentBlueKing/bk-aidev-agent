@@ -6,8 +6,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qsl
 
 import pytest
+from bkapi_client_core.exceptions import HTTPResponseError
+from requests import HTTPError as RequestsHTTPError
+
 from aidev_agent.services import sandbox_pv_files as module
 from aidev_agent.services.sandbox_pv_files import (
     MAX_SESSION_UPLOAD_FILE_SIZE,
@@ -20,24 +24,52 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileNotFoundError,
     SandboxFileServerError,
     SandboxPvFileService,
+    encode_paas_query_params,
     fill_user_image_urls,
     validate_session_upload_files,
 )
-from bkapi_client_core.exceptions import HTTPResponseError
 
 # ---------------------------------------------------------------------------
 # 工具函数 & fixture
 # ---------------------------------------------------------------------------
 
 
-def _mock_http_error(status_code: int, code: str = "") -> HTTPResponseError:
+def _query_params(raw) -> dict[str, str]:
+    """解析 client.request 的 params（预编码字符串或 dict）。"""
+    if isinstance(raw, str):
+        return dict(parse_qsl(raw, keep_blank_values=True))
+    return {str(key): str(value) for key, value in raw.items()}
+
+
+def _mock_http_error(status_code: int, code: str = "", message: str = "") -> HTTPResponseError:
     """构造 PaaS HTTPResponseError（携带 status_code + JSON body 里的 code）。"""
     mock_response = MagicMock()
     mock_response.status_code = status_code
-    mock_response.json.return_value = {"code": code} if code else {}
+    body: dict = {}
+    if code:
+        body["code"] = code
+    if message:
+        body["message"] = message
+    mock_response.json.return_value = body
     exc = HTTPResponseError()
     exc.response = mock_response
     return exc
+
+
+def _mock_raise_for_status_error(status_code: int = 400, code: str = "", message: str = ""):
+    """模拟线上路径：request() 返回 4xx Response，raise_for_status 抛 requests.HTTPError。"""
+    resp = MagicMock()
+    resp.ok = False
+    resp.status_code = status_code
+    body: dict = {}
+    if code:
+        body["code"] = code
+    if message:
+        body["message"] = message
+    resp.json.return_value = body
+    http_error = RequestsHTTPError(f"{status_code} Client Error", response=resp)
+    resp.raise_for_status.side_effect = http_error
+    return resp
 
 
 def _mock_paas_response(json_data=None, headers=None, content: bytes = b""):
@@ -436,8 +468,8 @@ class TestUploadFiles:
 
         assert "download_url" not in result["results"][0]
         assert result["results"][1]["download_url"] == "https://cdn/image.png"
-        params = mock_client.get_download_url.request.call_args.kwargs["params"]
-        assert params == {"path": "files/image.png", "expires_in": 3600}
+        params = _query_params(mock_client.get_download_url.request.call_args.kwargs["params"])
+        assert params == {"path": "files/image.png", "expires_in": "3600"}
 
     @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
     def test_does_not_fallback_to_preview_url(self, mock_backend_cls, service, mock_client):
@@ -460,15 +492,45 @@ class TestUploadFiles:
         backend = mock_backend_cls.return_value
         backend.create_sandbox.return_value = "sandbox-upload"
         backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
-        mock_client.get_download_url.request.side_effect = _mock_http_error(500, "UNKNOWN_XYZ")
+        mock_client.get_download_url.request.side_effect = _mock_http_error(
+            400, "AGENT_SANDBOX_FILE_OPERATION_FAILED", "路径不合法"
+        )
+
+        result = service.upload_files(
+            "s1",
+            [
+                {"name": "note.txt", "content": b"txt", "mime_type": "text/plain"},
+                {"name": "image.png", "content": b"png", "mime_type": "image/png"},
+            ],
+        )
+
+        # 两张都成功落 PV：note.txt 非图片本就 success，image.png 写盘成功仅缺可访问 URL。
+        assert result["succeeded"] == 2
+        assert result["failed"] == 0
+        assert result["results"][0]["status"] == "success"
+        image = result["results"][1]
+        assert image["status"] == "success"
+        assert "路径不合法" in image["download_url_error"]
+        assert "download_url" not in image
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_image_url_http_error_records_download_url_error(self, mock_backend_cls, service, mock_client):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+        mock_client.get_download_url.request.return_value = _mock_raise_for_status_error(
+            400, message="路径不合法"
+        )
 
         result = service.upload_files(
             "s1",
             [{"name": "image.png", "content": b"png", "mime_type": "image/png"}],
         )
 
-        assert result["succeeded"] == 1
-        assert "download_url" not in result["results"][0]
+        # 文件已落 PV：status 仍为 success，仅记录 download_url_error，failed 不计。
+        assert result["failed"] == 0
+        assert result["results"][0]["status"] == "success"
+        assert "路径不合法" in result["results"][0]["download_url_error"]
 
     @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
     def test_uses_executor_info_snapshot(self, mock_backend_cls, resource_manager, _no_sleep):
@@ -531,10 +593,10 @@ class TestListFiles:
         # 调 PaaS 参数：硬编码 is_recursive=True + page_size + page=1
         req_kwargs = mock_client.list_files.request.call_args.kwargs
         assert req_kwargs["path_params"] == {"app_code": "test-app", "volume_id": "vol-abc"}
-        params = req_kwargs["params"]
-        assert params["is_recursive"] is True
-        assert params["page_size"] == PV_LIST_PAGE_SIZE
-        assert params["page"] == 1
+        params = _query_params(req_kwargs["params"])
+        assert params["is_recursive"] == "True"
+        assert params["page_size"] == str(PV_LIST_PAGE_SIZE)
+        assert params["page"] == "1"
         assert "since" not in params
         assert "until" not in params
 
@@ -545,14 +607,14 @@ class TestListFiles:
 
         service.list_files(session_code="s1", since=since, until=until)
 
-        params = mock_client.list_files.request.call_args.kwargs["params"]
+        params = _query_params(mock_client.list_files.request.call_args.kwargs["params"])
         assert params["since"] == "2026-06-24T10:23:11Z"
         assert params["until"] == "2026-06-25T10:23:11Z"
 
     def test_path_forwarded(self, service, mock_client):
         mock_client.list_files.request.return_value = _mock_paas_response({"count": 0, "results": []})
         service.list_files(session_code="s1", path="sub/dir")
-        assert mock_client.list_files.request.call_args.kwargs["params"]["path"] == "sub/dir"
+        assert _query_params(mock_client.list_files.request.call_args.kwargs["params"])["path"] == "sub/dir"
 
     def test_multi_page_accumulates_and_sleeps(self, service, mock_client, _no_sleep):
         page1 = {
@@ -598,6 +660,16 @@ class TestListFiles:
         with pytest.raises(SandboxFileNotFoundError):
             service.list_files(session_code="s1")
 
+    def test_raise_for_status_http_error_maps(self, service, mock_client):
+        """线上真实路径：request 返回 4xx Response，raise_for_status 抛 requests.HTTPError，
+        list_files 必须接住并映射为 SandboxFileError，而非冒泡成整次 500。"""
+        mock_client.list_files.request.return_value = _mock_raise_for_status_error(
+            400, code="AGENT_SANDBOX_FILE_OPERATION_FAILED", message="路径不合法"
+        )
+        with pytest.raises(SandboxFileError) as exc_info:
+            service.list_files(session_code="s1")
+        assert "路径不合法" in str(exc_info.value)
+
 
 # ---------------------------------------------------------------------------
 # delete_file / stat_file / preview_file / get_download_url
@@ -609,7 +681,7 @@ class TestOtherServiceMethods:
         mock_client.delete_file.request.return_value = _mock_paas_response()
         service.delete_file(session_code="s1", path="x.txt")
         kwargs = mock_client.delete_file.request.call_args.kwargs
-        assert kwargs["params"] == {"path": "x.txt"}
+        assert _query_params(kwargs["params"]) == {"path": "x.txt"}
         assert kwargs["path_params"]["volume_id"] == "vol-abc"
 
     def test_delete_file_maps_404(self, service, mock_client):
@@ -642,7 +714,7 @@ class TestOtherServiceMethods:
     def test_preview_file_max_bytes_forwarded(self, service, mock_client):
         mock_client.preview_file.request.return_value = _mock_paas_response(content=b"")
         service.preview_file(session_code="s1", path="x.txt", max_bytes=1024)
-        assert mock_client.preview_file.request.call_args.kwargs["params"]["max_bytes"] == 1024
+        assert _query_params(mock_client.preview_file.request.call_args.kwargs["params"])["max_bytes"] == "1024"
 
     def test_preview_file_maps_415(self, service, mock_client):
         mock_client.preview_file.request.side_effect = _mock_http_error(415, "AGENT_SANDBOX_FILE_NOT_PREVIEWABLE")
@@ -655,8 +727,64 @@ class TestOtherServiceMethods:
         )
         result = service.get_download_url(session_code="s1", path="x.txt", expires_in=300)
         assert result == {"download_url": "https://cdn/x", "preview_url": "https://cdn/x"}
-        params = mock_client.get_download_url.request.call_args.kwargs["params"]
-        assert params["expires_in"] == 300
+        params = _query_params(mock_client.get_download_url.request.call_args.kwargs["params"])
+        assert params["expires_in"] == "300"
+
+
+class TestEncodePaasQueryParams:
+    def test_space_is_percent20_not_plus(self):
+        encoded = encode_paas_query_params({"path": "files/保存 & 归档的会话 (1).png"})
+        assert "+" not in encoded
+        assert "%20" in encoded
+        assert "%26" in encoded
+
+    def test_roundtrip_keeps_filename(self):
+        path = "files/保存 & 归档的会话 (1).png"
+        encoded = encode_paas_query_params({"path": path, "expires_in": 3600})
+        assert dict(parse_qsl(encoded, keep_blank_values=True))["path"] == path
+
+    def test_download_url_passes_preencoded_query(self, service, mock_client):
+        mock_client.get_download_url.request.return_value = _mock_paas_response({})
+        path = "files/保存 & 归档的会话 (1).png"
+        service.get_download_url(session_code="s1", path=path)
+        raw = mock_client.get_download_url.request.call_args.kwargs["params"]
+        assert isinstance(raw, str)
+        assert "+" not in raw
+        assert dict(parse_qsl(raw, keep_blank_values=True))["path"] == path
+
+
+class TestSafeFileName:
+    def test_strips_ampersand_and_spaces(self):
+        assert SandboxPvFileService._safe_file_name("保存 & 归档的会话.png") == "保存_归档的会话.png"
+
+    def test_keeps_plain_chinese_name(self):
+        assert SandboxPvFileService._safe_file_name("报告.pdf") == "报告.pdf"
+
+    def test_preserves_leading_dots_and_extension(self):
+        # 前导多点名保留扩展名：...png -> ...png（不再被 .strip 吃掉成 png）
+        assert SandboxPvFileService._safe_file_name("...png") == "...png"
+        # 隐藏文件（无扩展名）保留前导点：.gitignore -> .gitignore
+        assert SandboxPvFileService._safe_file_name(".gitignore") == ".gitignore"
+
+    def test_upload_uses_sanitized_path_for_download_url(self, service, mock_client):
+        mock_client.get_download_url.request.return_value = _mock_paas_response(
+            {"download_url": "https://cdn/x.png"}
+        )
+        with patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend") as mock_backend_cls:
+            backend = mock_backend_cls.return_value
+            backend.create_sandbox.return_value = "sandbox-upload"
+            backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+            result = service.upload_files(
+                "s1",
+                [{"name": "保存 & 归档的会话.png", "content": b"png", "mime_type": "image/png"}],
+            )
+        item = result["results"][0]
+        assert item["name"] == "保存 & 归档的会话.png"
+        assert item["path"] == "files/保存_归档的会话.png"
+        assert item["status"] == "success"
+        assert _query_params(mock_client.get_download_url.request.call_args.kwargs["params"])["path"] == (
+            "files/保存_归档的会话.png"
+        )
 
 
 class TestValidateSessionUploadFiles:
