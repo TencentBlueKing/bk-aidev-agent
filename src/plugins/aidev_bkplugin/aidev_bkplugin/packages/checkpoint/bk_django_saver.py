@@ -19,15 +19,17 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any, Callable, Optional, Tuple, cast
 
 from asgiref.sync import sync_to_async
-from django.db import OperationalError, close_old_connections, connections, router, transaction
+from django.conf import settings
+from django.db import InterfaceError, OperationalError, close_old_connections, connections, router, transaction
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     WRITES_IDX_MAP,
@@ -43,7 +45,11 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.serde.types import ChannelProtocol
 
+logger = logging.getLogger(__name__)
+
 RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
+# 服务端或中间代理关闭连接后，客户端要到下一次使用时才发现；语句本身没有问题，重建连接即可恢复。
+CONNECTION_LOST_DATABASE_ERROR_CODES = {2006, 2013, 2055}
 CHECKPOINT_WRITE_MAX_RETRIES = 3
 CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
 _SQLITE_WRITE_LOCKS: dict[str, threading.RLock] = {}
@@ -69,23 +75,63 @@ def _database_write_lock(model):
         yield
 
 
-def _is_retryable_database_error(exc: OperationalError, model) -> bool:
+def _is_connection_lost_error(exc: Exception) -> bool:
+    """判断异常是否来自已经失效的数据库连接。
+
+    ``InterfaceError`` 表示驱动层连接已不可用（例如 socket 已被置空），
+    ``CONNECTION_LOST_DATABASE_ERROR_CODES`` 表示连接在使用中被对端关闭。
+    """
+    if isinstance(exc, InterfaceError):
+        return True
+    error_code = exc.args[0] if exc.args else None
+    return error_code in CONNECTION_LOST_DATABASE_ERROR_CODES
+
+
+def _is_retryable_database_error(exc: Exception, model) -> bool:
     error_code = exc.args[0] if exc.args else None
     if error_code in RETRYABLE_DATABASE_ERROR_CODES:
+        return True
+    if _is_connection_lost_error(exc):
         return True
     _, vendor = _database_vendor(model)
     return vendor == "sqlite" and "database is locked" in str(exc).lower()
 
 
-def _run_database_write_with_retry(operation: Callable[[], None], model) -> None:
+def _discard_connection(model) -> None:
+    """丢弃写库当前线程持有的连接，确保重试不会复用同一个坏 socket。
+
+    只靠 ``close_old_connections()`` 不够：它依赖 ``CONN_MAX_AGE`` 是否到期以及驱动 ping 的结果，
+    而 pymysql 的 ``ping()`` 默认会自动重连并把连接判定为可用。
+    """
+    alias, _ = _database_vendor(model)
+    with suppress(Exception):
+        connections[alias].close()
+
+
+def _is_best_effort_write() -> bool:
+    """连接持续不可用时，是否放弃本次写入而不是让整轮会话失败。"""
+    return bool(getattr(settings, "CHECKPOINT_WRITE_BEST_EFFORT", True))
+
+
+def _run_database_write_with_retry(operation: Callable[[], None], model, description: str = "") -> None:
     for attempt in range(CHECKPOINT_WRITE_MAX_RETRIES):
         try:
             operation()
             return
-        except OperationalError as exc:
+        except (OperationalError, InterfaceError) as exc:
+            connection_lost = _is_connection_lost_error(exc)
             exhausted = attempt == CHECKPOINT_WRITE_MAX_RETRIES - 1
-            if not _is_retryable_database_error(exc, model) or exhausted:
+            if not _is_retryable_database_error(exc, model):
                 raise
+            if exhausted:
+                if not (connection_lost and _is_best_effort_write()):
+                    raise
+                # 推理结果由平台侧单独持久化，这里放弃写入只影响 interrupt / resume 的可恢复性，
+                # 比让已经产出回答的会话整体失败更可接受。
+                logger.exception("放弃 checkpoint 写入，数据库连接持续不可用：%s", description)
+                return
+            if connection_lost:
+                _discard_connection(model)
             close_old_connections()
             time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
 
@@ -687,7 +733,11 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
 
         # SQLite 只允许单写者；跨 saver 实例串行本进程写入，MySQL 等数据库仍保持并行。
         with self.lock, _database_write_lock(self.checkpoint_model):
-            _run_database_write_with_retry(save_checkpoint, self.checkpoint_model)
+            _run_database_write_with_retry(
+                save_checkpoint,
+                self.checkpoint_model,
+                f"checkpoint thread_id={thread_id} checkpoint_id={checkpoint['id']}",
+            )
 
         return {
             "configurable": {
@@ -750,7 +800,11 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
                 )
 
         with self.lock, _database_write_lock(self.writes_model):
-            _run_database_write_with_retry(save_writes, self.writes_model)
+            _run_database_write_with_retry(
+                save_writes,
+                self.writes_model,
+                f"writes thread_id={thread_id} checkpoint_id={checkpoint_id} task_id={task_id}",
+            )
 
     def delete_thread(self, thread_id: str) -> None:
         """删除与线程ID关联的所有检查点和写入记录

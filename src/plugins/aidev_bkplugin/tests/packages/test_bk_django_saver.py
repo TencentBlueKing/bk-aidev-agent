@@ -4,7 +4,7 @@ import threading
 
 import pytest
 from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver, _database_write_lock, bulk_upsert
-from django.db import OperationalError, connection, models
+from django.db import InterfaceError, OperationalError, connection, models
 
 
 class WriteForTest(models.Model):
@@ -59,7 +59,7 @@ def test_put_retries_transient_database_lock_error(mocker, saver, checkpoint_arg
 
 
 def test_put_does_not_retry_other_database_error(mocker, saver, checkpoint_args):
-    error = OperationalError(2006, "server has gone away")
+    error = OperationalError(1146, "table doesn't exist")
     saver.checkpoint_model.objects.update_or_create.side_effect = error
     sleep = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.time.sleep")
 
@@ -69,6 +69,58 @@ def test_put_does_not_retry_other_database_error(mocker, saver, checkpoint_args)
     assert exc_info.value is error
     assert saver.checkpoint_model.objects.update_or_create.call_count == 1
     sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError(2013, "Lost connection to MySQL server during query"),
+        OperationalError(2006, "MySQL server has gone away"),
+        InterfaceError(0, ""),
+    ],
+)
+def test_put_retries_lost_database_connection(mocker, saver, checkpoint_args, error):
+    saver.checkpoint_model.objects.update_or_create.side_effect = [error, (mocker.Mock(), True)]
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    close_old_connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.close_old_connections")
+    sleep = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.time.sleep")
+
+    saver.put(*checkpoint_args)
+
+    assert saver.checkpoint_model.objects.update_or_create.call_count == 2
+    # 失效连接必须被显式关闭，否则重试会继续复用同一个坏 socket
+    connections.__getitem__.return_value.close.assert_called_once_with()
+    close_old_connections.assert_called_once_with()
+    sleep.assert_called_once_with(0.05)
+
+
+def test_put_gives_up_when_database_connection_stays_unavailable(mocker, saver, checkpoint_args):
+    saver.checkpoint_model.objects.update_or_create.side_effect = OperationalError(2013, "lost connection")
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.close_old_connections")
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.time.sleep")
+    logger = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.logger")
+
+    saved = saver.put(*checkpoint_args)
+
+    assert saved["configurable"]["checkpoint_id"] == "checkpoint-id"
+    assert saver.checkpoint_model.objects.update_or_create.call_count == 3
+    logger.exception.assert_called_once()
+
+
+def test_put_raises_lost_connection_when_best_effort_disabled(mocker, saver, checkpoint_args, settings):
+    settings.CHECKPOINT_WRITE_BEST_EFFORT = False
+    error = OperationalError(2013, "lost connection")
+    saver.checkpoint_model.objects.update_or_create.side_effect = error
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.close_old_connections")
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.time.sleep")
+
+    with pytest.raises(OperationalError) as exc_info:
+        saver.put(*checkpoint_args)
+
+    assert exc_info.value is error
+    assert saver.checkpoint_model.objects.update_or_create.call_count == 3
 
 
 def test_put_raises_after_database_lock_retries_exhausted(mocker, saver, checkpoint_args):

@@ -17,6 +17,7 @@ import uuid
 import pytest
 from aidev_bkplugin.models import Checkpoint, Write
 from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver
+from django.db import OperationalError
 from langgraph.checkpoint.base import empty_checkpoint
 
 # transaction=True：a* 方法在别的线程/连接里读写，数据必须真实提交才可见
@@ -61,6 +62,24 @@ async def test_aput_then_aget_tuple_roundtrips_through_real_orm(saver, thread_id
 
 async def test_aget_tuple_returns_none_for_unknown_thread(saver, thread_id):
     assert await saver.aget_tuple(_config(thread_id)) is None
+
+
+async def test_aput_recovers_from_lost_database_connection(mocker, saver, thread_id):
+    """连接中断只应触发重建连接后的重试，不能让已经完成推理的会话失败。"""
+    config = _config(thread_id)
+    checkpoint = empty_checkpoint()
+    update_or_create = mocker.patch.object(
+        Checkpoint.objects,
+        "update_or_create",
+        wraps=Checkpoint.objects.update_or_create,
+        side_effect=[OperationalError(2013, "Lost connection to MySQL server during query"), mocker.DEFAULT],
+    )
+
+    saved = await saver.aput(config, checkpoint, {"source": "input"}, {})
+
+    assert update_or_create.call_count == 2
+    assert saved["configurable"]["checkpoint_id"] == checkpoint["id"]
+    assert await Checkpoint.objects.filter(thread_id=thread_id).acount() == 1
 
 
 async def test_aput_writes_are_visible_through_aget_tuple(saver, thread_id):

@@ -16,6 +16,10 @@ AIDEV_AGENT_MAX_PENDING = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_PENDING", 32
 AIDEV_AGENT_CLEANUP_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_CLEANUP_MAX_WORKERS", 2))
 AIDEV_AGENT_CLEANUP_MAX_PENDING = int(os.environ.get("BKAPP_AIDEV_AGENT_CLEANUP_MAX_PENDING", 32))
 
+# checkpoint 写入重试耗尽且连接仍不可用时，放弃本次写入而不是让整轮会话失败。
+# 关闭后连接抖动会重新变成会话级错误，只在需要严格保证 interrupt / resume 可恢复时使用。
+CHECKPOINT_WRITE_BEST_EFFORT = os.environ.get("BKAPP_CHECKPOINT_WRITE_BEST_EFFORT", "1") == "1"
+
 # 客服渠道
 CHAT_GROUP_ENABLED = os.environ.get("CHAT_GROUP_ENABLED") == "1"
 CHAT_GROUP_STAFF = os.environ.get("CHAT_GROUP_STAFF")
