@@ -718,11 +718,28 @@ class _RabbitMQConsumerMixin:
             with self._with_channel() as channel:
                 stopped_queue = self._get_stopped_queue_name(thread_id)
 
-                # 先被动声明检查队列是否存在
+                # 先被动声明检查队列是否存在。404 表示用户未点 Stop，队列从未创建。
                 try:
                     channel.queue_declare(queue=stopped_queue, passive=True)
+                except pika.exceptions.ChannelClosedByBroker as e:
+                    if e.reply_code == 404:
+                        logger.debug(
+                            "Stopped queue not found for thread_id=%s, treat as not stopped",
+                            thread_id,
+                        )
+                        return False
+                    logger.warning(
+                        "Unexpected broker error while probing stopped queue for thread_id=%s: %s",
+                        thread_id,
+                        e,
+                    )
+                    return False
                 except Exception as e:
-                    logger.warning(f"Error declaring stopped queue for thread_id={thread_id}: {e}")
+                    logger.warning(
+                        "Failed to probe stopped queue for thread_id=%s: %s",
+                        thread_id,
+                        e,
+                    )
                     return False
 
                 # peek：取出后放回
