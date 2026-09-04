@@ -24,9 +24,10 @@ Craw 仍需要 OpenClaw/Hermes 内核，因此部署侧在共用插件代码外�
 - `BKAI_CRAW_BACKEND=openclaw` 等 loopback 配置；
 - 用户 token → MCP 的本机 egress。
 
-这是构建形态差异，不是第二套业务模板。PaaS 的 Dockerfile 构建必须使用 Git 源，不能使用
-源码包来源；平台因此让隔离应用指向受管共享运行时 Git 目录。普通智能体继续使用源码包 +
-buildpack。
+这是构建形态差异，不是第二套业务模板。可直接部署的公共运行时位于 `runtime/craw/`，与
+SDK 和 `template/builtin/` 同仓交付。PaaS 从该仓库的内部镜像克隆此目录；基础镜像由
+`create_ai_agent_app` 通过 `docker_build_args.CRAW_BASE_IMAGE` 注入，公开源码不保存内部地址。
+普通智能体继续使用源码包 + buildpack。
 
 ## 配置与身份
 
