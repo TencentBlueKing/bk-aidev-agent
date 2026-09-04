@@ -404,6 +404,9 @@ class ChatCompletionAgent(BaseModel):
         # D-13：resume dict→list 归一化前移到 execute() 最前（消除 R1/R2 双重兼容逻辑）
         if isinstance(execute_kwargs.resume, dict):
             execute_kwargs.resume = [execute_kwargs.resume]
+        # 审批 / ask_user resume 与 chat 对齐 caller_/executor，供 Trace 与 LLM header 使用。
+        # 须在 ItsmTicketCreator 读取 executor 之前补齐。
+        execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
         # D-11：processor 惰性构造（execute 入口，非 build 期——ItsmTicketCreator 需
         # execute_kwargs.executor/session_code，build 期拿不到）。
         # D-03（48）：构造参数改为 handlers dict 显式注入（U-01，移除 resource_manager /

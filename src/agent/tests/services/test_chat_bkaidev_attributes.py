@@ -400,3 +400,53 @@ class TestUpdateBkaidevSessionHeaderFallback:
         agent._update_aidev_agent_header(ExecuteKwargs(stream=False, caller_bk_app_code="app-x", session_code="snap-1"))
 
         assert primary.default_headers["X-BKAIDEV-Attributes"] == fallback.default_headers["X-BKAIDEV-Attributes"]
+
+
+class TestExecuteFillsSessionCallerDefaults:
+    """execute() 在审批 / ask_user resume 入口补齐 chat 同款 caller_/executor。"""
+
+    def _execute_and_capture(self, execute_kwargs, *, username="bennychen"):
+        from langchain_core.messages import HumanMessage
+
+        agent = ChatCompletionAgent()
+        agent.resource_manager = MagicMock(username=username)
+        agent.chat_model = MagicMock()
+        agent.chat_model_non_thinking = None
+        agent.interrupt_processor = MagicMock()
+        agent.messages = [HumanMessage(content="hi")]
+        captured = {}
+
+        def _execute(messages, kwargs):
+            captured["kwargs"] = kwargs
+            return "ok"
+
+        agent._execute = _execute
+        agent.execute(execute_kwargs)
+        return captured["kwargs"]
+
+    def test_approval_resume_fills_from_resource_manager_username(self):
+        kwargs = self._execute_and_capture(
+            ExecuteKwargs(stream=True, resume=[{"interruptId": "approval-1"}]),
+        )
+        assert kwargs.caller_bk_app_code == "bkaidev"
+        assert kwargs.caller_bk_biz_env == "domestic_biz"
+        assert kwargs.caller_order_type == "ai_chat"
+        assert kwargs.executor == "bennychen"
+        assert kwargs.caller_executor == "bennychen"
+
+    def test_ask_user_resume_fills_from_resource_manager_username(self):
+        kwargs = self._execute_and_capture(
+            ExecuteKwargs(
+                stream=True,
+                resume=[
+                    {
+                        "interruptId": "ask-1",
+                        "status": "resolved",
+                        "payload": {"answers": [{"question": "q", "answer": "a"}]},
+                    }
+                ],
+            ),
+        )
+        assert kwargs.caller_bk_app_code == "bkaidev"
+        assert kwargs.executor == "bennychen"
+        assert kwargs.caller_executor == "bennychen"

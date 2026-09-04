@@ -260,3 +260,36 @@ def test_execute_kwargs_input_assignment_and_serialization():
     kwargs = ExecuteKwargs(input="hi")
     assert kwargs.input == "hi"
     assert kwargs.model_dump()["input"] == "hi"
+
+
+def test_apply_session_caller_defaults_fills_chat_like_fields():
+    kwargs = ExecuteKwargs().apply_session_caller_defaults("bennychen")
+    assert kwargs.caller_bk_app_code == "bkaidev"
+    assert kwargs.caller_bk_biz_env == "domestic_biz"
+    assert kwargs.caller_order_type == "ai_chat"
+    assert kwargs.executor == "bennychen"
+    assert kwargs.caller_executor == "bennychen"
+
+
+def test_apply_session_caller_defaults_keeps_explicit_values():
+    kwargs = ExecuteKwargs(
+        caller_bk_app_code="other-app",
+        caller_bk_biz_env="public",
+        caller_order_type="ai-auto",
+        executor="user-b",
+        caller_executor="user-a",
+    ).apply_session_caller_defaults("ignored")
+    assert kwargs.caller_bk_app_code == "other-app"
+    assert kwargs.caller_bk_biz_env == "public"
+    assert kwargs.caller_order_type == "ai-auto"
+    assert kwargs.executor == "user-b"
+    assert kwargs.caller_executor == "user-a"
+
+
+def test_apply_session_caller_defaults_without_username_still_fills_constants():
+    kwargs = ExecuteKwargs().apply_session_caller_defaults(None)
+    assert kwargs.caller_bk_app_code == "bkaidev"
+    assert kwargs.caller_bk_biz_env == "domestic_biz"
+    assert kwargs.caller_order_type == "ai_chat"
+    assert kwargs.executor is None
+    assert kwargs.caller_executor is None

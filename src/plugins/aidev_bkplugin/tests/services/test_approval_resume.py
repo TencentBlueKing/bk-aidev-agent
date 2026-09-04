@@ -23,3 +23,11 @@ def test_polling_does_not_duplicate_explicit_cancellation(monkeypatch, status):
     )
     assert builder.call_count == (0 if status == "cancelled" else 1)
     assert executor.return_value.execute_with_save.call_count == (0 if status == "cancelled" else 1)
+    if status == "cancelled":
+        return
+    kwargs = executor.return_value.execute_with_save.call_args.args[1]
+    assert kwargs.caller_bk_app_code == "bkaidev"
+    assert kwargs.caller_bk_biz_env == "domestic_biz"
+    assert kwargs.caller_order_type == "ai_chat"
+    assert kwargs.executor == "alice"
+    assert kwargs.caller_executor == "alice"
