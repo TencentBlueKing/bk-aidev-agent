@@ -56,15 +56,12 @@ class ExecuteKwargs(BaseModel):
     sandbox_pv_id: str | None = Field(default=None, description="父 Agent 的沙箱 PV ID，子 Agent 通过此字段复用父 PV")
 
     def apply_session_caller_defaults(self, username: str | None = None) -> ExecuteKwargs:
-        """补齐与 chat 入口一致的 caller_/executor 字段，已有值不覆盖。
+        """仅补齐 ``executor`` / ``caller_executor``，已有值不覆盖。
 
-        审批 / ask_user resume 常手搓 ``ExecuteKwargs`` 且省略这些字段，
-        ``agent.execution`` 与 ``X-BKAIDEV-Attributes`` 会缺
-        ``agent.session.caller_*`` / ``executor``。
+        ``caller_bk_app_code`` / ``caller_bk_biz_env`` / ``caller_bk_biz_id`` /
+        ``caller_order_type`` 来自调用方入参（HTTP ``execute_kwargs``、BKFlow 工单表单、
+        A2A ``spec.params``），此处不填默认值。
         """
-        self.caller_bk_biz_env = self.caller_bk_biz_env or "domestic_biz"
-        self.caller_bk_app_code = self.caller_bk_app_code or "bkaidev"
-        self.caller_order_type = self.caller_order_type or "ai_chat"
         resolved = self.executor or self.caller_executor or username or None
         if resolved:
             self.executor = self.executor or resolved

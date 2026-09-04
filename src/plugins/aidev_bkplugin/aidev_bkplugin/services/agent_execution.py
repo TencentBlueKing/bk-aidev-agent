@@ -34,7 +34,7 @@ logger = getLogger(__name__)
 
 
 def build_execute_kwargs(_execute_kwargs: dict, username: str | None = None) -> ExecuteKwargs:
-    """``dict`` → ``ExecuteKwargs``，并补齐 caller_/executor 等字段；按需注入 OTel trace context。"""
+    """``dict`` → ``ExecuteKwargs``，补齐 executor / caller_executor；按需注入 OTel trace context。"""
     execute_kwargs = ExecuteKwargs.model_validate(_execute_kwargs)
     execute_kwargs.apply_session_caller_defaults(username or "anonymous")
     if not execute_kwargs.caller_trace_context and trace is not None:
