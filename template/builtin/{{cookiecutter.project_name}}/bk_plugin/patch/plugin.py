@@ -40,8 +40,27 @@ for _setting in dir(_module):
     if _setting == _setting.upper():
         locals()[_setting] = getattr(_module, _setting)
 
+{% if cookiecutter.agent_runtime == "craw" %}
+# Craw is single-replica and does not provision MySQL by default.
+_default_database = (locals().get("DATABASES") or {}).get("default") or {}
+if not _default_database.get("ENGINE"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": os.getenv("BKAI_DJANGO_DB_PATH", "/tmp/craw.sqlite3"),
+        }
+    }
+{% endif %}
+
 # 日志
 if locals().get("LOGGING"):
+    {% if cookiecutter.agent_runtime == "craw" %}
+    _log_dir = os.getenv("AIDEV_LOG_DIR", "/tmp/v3logs")
+    os.makedirs(_log_dir, exist_ok=True)
+    for _handler in locals()["LOGGING"].get("handlers", {}).values():
+        if _handler.get("filename"):
+            _handler["filename"] = os.path.join(_log_dir, os.path.basename(_handler["filename"]))
+    {% endif %}
     locals()["LOGGING"]["loggers"]["bkapi_client_core"] = {"handlers": ["root"], "level": "DEBUG", "propagate": True}
 
 ROOT_URLCONF = "bk_plugin.patch.urls"

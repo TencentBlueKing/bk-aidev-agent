@@ -107,29 +107,6 @@ def create_repo_fixture(repo_root: Path) -> None:
         repo_root / "template/builtin/{{cookiecutter.project_name}}/VERSION",
         """2.0.0rc12""",
     )
-    write_file(
-        repo_root / "runtime/craw/pyproject.toml",
-        """
-        [project]
-        version = "1.1.0b13"
-        dependencies = [
-            "aidev-agent[opentelemetry]==1.1.0b13",
-            "aidev-bkplugin==1.1.0b9",
-            "aidev-wxbot==1.1.0b2",
-            "aidev-ai-blueking==2.0.0.dev31",
-        ]
-        """,
-    )
-    write_file(
-        repo_root / "runtime/craw/requirements.txt",
-        """
-        aidev-agent==1.1.0b13
-        aidev-ai-blueking==2.0.0.dev31
-        aidev-bkplugin==1.1.0b9
-        aidev-wxbot==1.1.0b2
-        """,
-    )
-    write_file(repo_root / "runtime/craw/VERSION", """1.1.0b13""")
 
 
 def test_update_repo_versions_updates_all_target_files(tmp_path):
@@ -148,9 +125,6 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
         "template/builtin/{{cookiecutter.project_name}}/pyproject.toml",
         "template/builtin/{{cookiecutter.project_name}}/requirements.txt",
         "template/builtin/{{cookiecutter.project_name}}/VERSION",
-        "runtime/craw/pyproject.toml",
-        "runtime/craw/requirements.txt",
-        "runtime/craw/VERSION",
     }
     assert 'version = "2.0.0b1"' in (repo_root / "src/agent/pyproject.toml").read_text(encoding="utf-8")
     assert '"aidev-agent>=2.0.0b1"' in (repo_root / "src/plugins/aidev_bkplugin/pyproject.toml").read_text(
@@ -176,16 +150,6 @@ def test_update_repo_versions_updates_all_target_files(tmp_path):
     # assert "aidev-ai-blueking==2.0.0b1" in requirements_text
     assert "aidev-bkplugin==2.0.0b1" in requirements_text
     assert "aidev-wxbot==2.0.0b1" in requirements_text
-    runtime_pyproject = (repo_root / "runtime/craw/pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "2.0.0b1"' in runtime_pyproject
-    assert '"aidev-agent[opentelemetry]==2.0.0b1"' in runtime_pyproject
-    assert '"aidev-bkplugin==2.0.0b1"' in runtime_pyproject
-    assert '"aidev-wxbot==2.0.0b1"' in runtime_pyproject
-    runtime_requirements = (repo_root / "runtime/craw/requirements.txt").read_text(encoding="utf-8")
-    assert "aidev-agent==2.0.0b1" in runtime_requirements
-    assert "aidev-bkplugin==2.0.0b1" in runtime_requirements
-    assert "aidev-wxbot==2.0.0b1" in runtime_requirements
-    assert (repo_root / "runtime/craw/VERSION").read_text(encoding="utf-8") == "2.0.0b1"
     assistant_text = (
         repo_root / "template/builtin/{{cookiecutter.project_name}}/bk_plugin/versions/assistant.py"
     ).read_text(encoding="utf-8")
@@ -228,8 +192,4 @@ def test_main_updates_only_specified_component_versions(tmp_path, monkeypatch, c
     )
     assert "aidev-agent[opentelemetry]==1.1.0b13" in requirements_text
     assert "aidev-ai-blueking==3.0.0rc1" in requirements_text
-    runtime_pyproject = (repo_root / "runtime/craw/pyproject.toml").read_text(encoding="utf-8")
-    assert '"aidev-ai-blueking==3.0.0rc1"' in runtime_pyproject
-    runtime_requirements = (repo_root / "runtime/craw/requirements.txt").read_text(encoding="utf-8")
-    assert "aidev-ai-blueking==3.0.0rc1" in runtime_requirements
     assert "Error:" not in capsys.readouterr().out
