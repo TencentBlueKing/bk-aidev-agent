@@ -73,6 +73,24 @@ VERSION_RULES: list[tuple[str, str, str]] = [
         r"^.+$",
         "template",
     ),
+    ("runtime/craw/pyproject.toml", r'^version = "[^"]*"$', "agent"),
+    (
+        "runtime/craw/pyproject.toml",
+        r'"aidev-agent(?P<agent_extras>\[[^"]+\])?==[^"]*"',
+        "agent",
+    ),
+    ("runtime/craw/pyproject.toml", r'"aidev-bkplugin==[^"]*"', "bkplugin"),
+    ("runtime/craw/pyproject.toml", r'"aidev-wxbot==[^"]*"', "wxbot"),
+    ("runtime/craw/pyproject.toml", r'"aidev-ai-blueking==[^"]*"', "ai_blueking"),
+    (
+        "runtime/craw/requirements.txt",
+        r'^"?aidev-agent(?P<agent_extras>\[[^\]"]+\])?==.*"?$',
+        "agent",
+    ),
+    ("runtime/craw/requirements.txt", r'^"?aidev-ai-blueking==.*"?$', "ai_blueking"),
+    ("runtime/craw/requirements.txt", r'^"?aidev-bkplugin==.*"?$', "bkplugin"),
+    ("runtime/craw/requirements.txt", r'^"?aidev-wxbot==.*"?$', "wxbot"),
+    ("runtime/craw/VERSION", r"^.+$", "agent"),
 ]
 
 SOURCE_PACKAGE_VERSION_FILES: dict[str, str] = {
@@ -82,9 +100,11 @@ SOURCE_PACKAGE_VERSION_FILES: dict[str, str] = {
     "ai_blueking": "src/plugins/aidev_ai_blueking/pyproject.toml",
 }
 
-TEMPLATE_VERSION_TARGETS = {
+DEPENDENCY_VERSION_TARGETS = {
     Path("template/builtin/{{cookiecutter.project_name}}/pyproject.toml"),
     Path("template/builtin/{{cookiecutter.project_name}}/requirements.txt"),
+    Path("runtime/craw/pyproject.toml"),
+    Path("runtime/craw/requirements.txt"),
 }
 
 # `make release_versions VERSION=...` 统一版本时不会触达的组件；
@@ -191,7 +211,7 @@ def get_repo_sdk_versions(repo_root: Path) -> dict[str, str]:
 def sync_template_sdk_versions(repo_root: Path) -> tuple[dict[str, str], list[Path]]:
     versions = get_repo_sdk_versions(repo_root)
     file_rules = build_file_rules(
-        repo_root, versions, allowed_paths={repo_root / path for path in TEMPLATE_VERSION_TARGETS}
+        repo_root, versions, allowed_paths={repo_root / path for path in DEPENDENCY_VERSION_TARGETS}
     )
     updated_files = apply_file_rules(repo_root, file_rules)
     return versions, updated_files
