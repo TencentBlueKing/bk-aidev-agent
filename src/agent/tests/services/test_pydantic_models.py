@@ -263,12 +263,12 @@ def test_execute_kwargs_input_assignment_and_serialization():
 
 
 def test_apply_session_caller_defaults_fills_chat_like_fields():
-    kwargs = ExecuteKwargs().apply_session_caller_defaults("bennychen")
+    kwargs = ExecuteKwargs().apply_session_caller_defaults("user")
     assert kwargs.caller_bk_app_code == "bkaidev"
     assert kwargs.caller_bk_biz_env == "domestic_biz"
     assert kwargs.caller_order_type == "ai_chat"
-    assert kwargs.executor == "bennychen"
-    assert kwargs.caller_executor == "bennychen"
+    assert kwargs.executor == "user"
+    assert kwargs.caller_executor == "user"
 
 
 def test_apply_session_caller_defaults_keeps_explicit_values():

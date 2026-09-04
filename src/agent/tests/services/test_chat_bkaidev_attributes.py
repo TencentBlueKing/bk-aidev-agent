@@ -405,7 +405,7 @@ class TestUpdateBkaidevSessionHeaderFallback:
 class TestExecuteFillsSessionCallerDefaults:
     """execute() 在审批 / ask_user resume 入口补齐 chat 同款 caller_/executor。"""
 
-    def _execute_and_capture(self, execute_kwargs, *, username="bennychen"):
+    def _execute_and_capture(self, execute_kwargs, *, username="user"):
         from langchain_core.messages import HumanMessage
 
         agent = ChatCompletionAgent()
@@ -431,8 +431,8 @@ class TestExecuteFillsSessionCallerDefaults:
         assert kwargs.caller_bk_app_code == "bkaidev"
         assert kwargs.caller_bk_biz_env == "domestic_biz"
         assert kwargs.caller_order_type == "ai_chat"
-        assert kwargs.executor == "bennychen"
-        assert kwargs.caller_executor == "bennychen"
+        assert kwargs.executor == "user"
+        assert kwargs.caller_executor == "user"
 
     def test_ask_user_resume_fills_from_resource_manager_username(self):
         kwargs = self._execute_and_capture(
@@ -448,5 +448,5 @@ class TestExecuteFillsSessionCallerDefaults:
             ),
         )
         assert kwargs.caller_bk_app_code == "bkaidev"
-        assert kwargs.executor == "bennychen"
-        assert kwargs.caller_executor == "bennychen"
+        assert kwargs.executor == "user"
+        assert kwargs.caller_executor == "user"

@@ -18,9 +18,7 @@ def test_polling_does_not_duplicate_explicit_cancellation(monkeypatch, status):
     monkeypatch.setattr(mod, "AgentBuilder", builder)
     monkeypatch.setattr(mod, "AgentExecutor", executor)
     monkeypatch.setattr(mod, "SessionManager", MagicMock())
-    mod._approval_resume_worker(
-        "session-1", "alice", "graph-1", [{"id": "approval-1", "reason": "aidev:tool_approval"}]
-    )
+    mod._approval_resume_worker("session-1", "user", "graph-1", [{"id": "approval-1", "reason": "aidev:tool_approval"}])
     assert builder.call_count == (0 if status == "cancelled" else 1)
     assert executor.return_value.execute_with_save.call_count == (0 if status == "cancelled" else 1)
     if status == "cancelled":
@@ -29,5 +27,5 @@ def test_polling_does_not_duplicate_explicit_cancellation(monkeypatch, status):
     assert kwargs.caller_bk_app_code == "bkaidev"
     assert kwargs.caller_bk_biz_env == "domestic_biz"
     assert kwargs.caller_order_type == "ai_chat"
-    assert kwargs.executor == "alice"
-    assert kwargs.caller_executor == "alice"
+    assert kwargs.executor == "user"
+    assert kwargs.caller_executor == "user"
