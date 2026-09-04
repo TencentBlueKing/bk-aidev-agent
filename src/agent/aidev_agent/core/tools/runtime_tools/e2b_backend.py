@@ -26,6 +26,7 @@ E2BSandboxBackend: 基于 E2B Code Interpreter 的远程沙箱后端实现。
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -33,7 +34,14 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from e2b.api.client.types import Unset
+from e2b.connection_config import ConnectionConfig
+from e2b.exceptions import SandboxNotFoundException
+from e2b.sandbox.commands.command_handle import CommandExitException
+from e2b.sandbox.filesystem.filesystem import FileType
+from e2b_code_interpreter import Sandbox  # type: ignore
 from langchain_core.runnables import RunnableConfig
+from packaging.version import Version
 
 from .types import (
     EditResult,
@@ -45,7 +53,7 @@ from .types import (
     RuntimeBackend,
     WriteResult,
 )
-from .utils import check_empty_content, perform_string_replacement
+from .utils import check_empty_content, package_dir, perform_string_replacement
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +99,7 @@ class E2BSandboxBackend(RuntimeBackend):
     设计要点：
     - 与 `FilesystemBackend` 保持相同的方法签名和返回类型
     - 惰性创建沙箱实例（首次调用任一方法时创建）
-    - 支持通过 ``from_sandbox_info()`` 从已有连接信息重建实例（绕过 connect API）
+    - 支持通过实例方法 ``load(sandbox_info)`` 挂载已有沙箱（绕过 connect API）
     - 提供 `kill()` 方法显式销毁沙箱
 
     Args:
@@ -159,14 +167,30 @@ class E2BSandboxBackend(RuntimeBackend):
         Returns:
             已连接到指定沙箱的 E2BSandboxBackend 实例。
         """
-        from e2b.api.client.types import Unset
-        from e2b.connection_config import ConnectionConfig
-        from e2b_code_interpreter import Sandbox  # type: ignore
-        from packaging.version import Version
+        instance = cls.__new__(cls)
+        instance._template = ""
+        instance._timeout = 0
+        instance._api_key = api_key or os.getenv("E2B_API_KEY")
+        instance._domain = domain or os.getenv("E2B_DOMAIN")
+        instance._pending_sandbox_env = None
+        instance._sandbox = cls._build_sandbox_from_info(
+            sandbox_info, api_key=instance._api_key, domain=instance._domain
+        )
+        return instance
 
-        resolved_api_key = api_key or os.getenv("E2B_API_KEY")
-        resolved_domain = domain or os.getenv("E2B_DOMAIN")
+    @staticmethod
+    def _build_sandbox_from_info(
+        sandbox_info: Dict[str, str],
+        *,
+        api_key: str | None = None,
+        domain: str | None = None,
+    ):
+        """由 sandbox_info 构造 ``Sandbox`` 实例（复现 ``Sandbox._create`` 的头信息逻辑）。
 
+        自定义 E2B 部署可能未实现 ``/sandboxes/{id}/connect`` 端点，
+        直接使用 sandbox_info 导出的连接信息构造 ``Sandbox``，
+        无需调用 connect API。
+        """
         sandbox_id = sandbox_info["sandbox_id"]
         sandbox_domain = sandbox_info["sandbox_domain"]
         envd_access_token = sandbox_info.get("envd_access_token")
@@ -181,14 +205,14 @@ class E2BSandboxBackend(RuntimeBackend):
         extra_sandbox_headers["E2b-Sandbox-Port"] = str(ConnectionConfig.envd_port)
 
         config_kwargs: Dict[str, Any] = {"extra_sandbox_headers": extra_sandbox_headers}
-        if resolved_api_key:
-            config_kwargs["api_key"] = resolved_api_key
-        if resolved_domain:
-            config_kwargs["domain"] = resolved_domain
+        if api_key:
+            config_kwargs["api_key"] = api_key
+        if domain:
+            config_kwargs["domain"] = domain
 
         connection_config = ConnectionConfig(**config_kwargs)
 
-        sandbox = Sandbox(
+        return Sandbox(
             sandbox_id=sandbox_id,
             sandbox_domain=sandbox_domain,
             connection_config=connection_config,
@@ -196,22 +220,6 @@ class E2BSandboxBackend(RuntimeBackend):
             envd_access_token=envd_access_token,
             traffic_access_token=traffic_access_token,
         )
-
-        instance = cls.__new__(cls)
-        instance._template = ""
-        instance._timeout = 0
-        instance._api_key = resolved_api_key
-        instance._domain = resolved_domain
-        instance._sandbox = sandbox
-        instance._pending_sandbox_env = None
-
-        logger.info(
-            "E2B sandbox reconnected | sandbox_id=%s, domain=%s, envd_api_url=%s",
-            sandbox_id,
-            sandbox_domain,
-            sandbox.envd_api_url,
-        )
-        return instance
 
     def _ensure_sandbox(self):
         """确保沙箱实例已创建（惰性初始化）。
@@ -221,8 +229,6 @@ class E2BSandboxBackend(RuntimeBackend):
         - 若 ``envs`` 中包含 ``SKILL_DIR`` 和 ``SKILL_NAME``，沙箱创建后
           会自动打包上传解压 skill 目录，完成 runtime 环境准备。
         """
-        from e2b_code_interpreter import Sandbox  # type: ignore
-
         if self._sandbox is not None:
             return self._sandbox
 
@@ -258,7 +264,7 @@ class E2BSandboxBackend(RuntimeBackend):
 
     @property
     def sandbox_info(self) -> Dict[str, Any] | None:
-        """返回当前沙箱的连接信息，可用于 ``from_sandbox_info()`` 重建实例。
+        """返回当前沙箱的连接信息，可用于实例方法 ``load()`` 挂载复用。
 
         Returns:
             包含 sandbox_id、sandbox_domain、envd_access_token、envd_version、
@@ -266,8 +272,6 @@ class E2BSandboxBackend(RuntimeBackend):
         """
         if self._sandbox is None:
             return None
-
-        from e2b.api.client.types import Unset
 
         traffic_token = self._sandbox.traffic_access_token
         if isinstance(traffic_token, Unset):
@@ -280,6 +284,51 @@ class E2BSandboxBackend(RuntimeBackend):
             "envd_version": str(self._sandbox._envd_version),
             "traffic_access_token": traffic_token,
         }
+
+    # ---- 沙箱复用序列化 ----
+
+    def save(self) -> dict:
+        """导出 E2B 沙箱挂载 payload（写入共享存储用）。
+
+        即「保存 sandbox_info 的内容」：返回 ``sandbox_info`` 字典，
+        由实例方法 ``load`` 就地挂载复用。沙箱未创建时 ``sandbox_info`` 为
+        None，默认导出 ``{}``（不抛异常），表示该槽位此前没有真正拉起过沙箱。
+
+        Returns:
+            sandbox_info 字典（sandbox_id/sandbox_domain/envd_access_token/
+            envd_version/traffic_access_token），未创建沙箱时为 ``{}``。
+        """
+        info = self.sandbox_info
+        if info is None:
+            return {}
+        return info
+
+    def load(self, payload: dict) -> None:
+        """挂载到既有 E2B 沙箱（实例方法，就地覆盖 ``self._sandbox``）。
+
+        CR：payload 即 sandbox_info（save 导出内容），经
+        ``_build_sandbox_from_info`` 用连接信息直接构造 ``Sandbox``（跳过
+        ``Sandbox.create``）；client/凭据保持本实例构造时来源。
+        payload 为 ``{}`` 说明原沙箱之前没有真正拉起来过，保持 lazy（不创建沙箱）。
+
+        Args:
+            payload: 由 ``save()`` 导出的 sandbox_info 字典。
+        """
+        if not payload:
+            return
+        self._sandbox = self._build_sandbox_from_info(payload, api_key=self._api_key, domain=self._domain)
+        # 已挂载既有沙箱，构造时预留的创建参数不再适用
+        self._pending_sandbox_env = None
+        # 挂载即续期：远端沙箱生命周期从创建时刻起算，续期到本 backend 配置的
+        # timeout，保证复用期间远端存活；失败不阻断挂载，交由自愈兜底
+        try:
+            self._sandbox.set_timeout(self._timeout)
+        except Exception:  # noqa: BLE001
+            logger.warning("E2B sandbox set_timeout 失败（挂载继续）", exc_info=True)
+        logger.info(
+            "E2B sandbox reattached | sandbox_id=%s",
+            payload.get("sandbox_id"),
+        )
 
     def _log_sandbox_info(self) -> None:
         """输出沙箱连接信息到日志（INFO 级别）。
@@ -313,8 +362,6 @@ class E2BSandboxBackend(RuntimeBackend):
         Returns:
             skill scripts 在远程沙箱中的路径。
         """
-        from .utils import package_dir
-
         zip_data = package_dir(skill_dir)
         remote_base = "/home/user"
         remote_zip = f"{remote_base}/{skill_name}.zip"
@@ -329,18 +376,30 @@ class E2BSandboxBackend(RuntimeBackend):
         E2B SDK 在命令以非零退出码结束时会抛出 ``CommandExitException``，
         本方法会捕获该异常并将其转换为 ``_CommandResult``，使调用方可以
         通过 ``exit_code`` 字段判断命令执行结果，而非面临未处理的异常。
+
+        挂载复用的原沙箱可能已被平台 TTL / 外部销毁（记录仍 ACTIVE）：
+        首次执行遇到 ``SandboxNotFoundException`` 时丢弃失效沙箱引用并重建，
+        重试一次（CR-A 首用失败自愈）。重建的新沙箱经 release save() 重新登记。
         """
 
-        from e2b.sandbox.commands.command_handle import CommandExitException
-
-        sandbox = self._ensure_sandbox()
-        try:
+        def _exec() -> _CommandResult:
+            sandbox = self._ensure_sandbox()
             res = (
                 sandbox.commands.run(command, timeout=timeout) if timeout is not None else sandbox.commands.run(command)
             )
+            return _normalize_command_result(res)
+
+        try:
+            return _exec()
+        except SandboxNotFoundException:
+            logger.warning(
+                "E2B sandbox 已失效（NotFound），丢弃并重建后重试一次",
+                exc_info=True,
+            )
+            self._sandbox = None  # 丢弃死沙箱引用，_ensure_sandbox 走全新创建
+            return _exec()
         except CommandExitException as exc:
             return _CommandResult(stdout=exc.stdout, stderr=exc.stderr, exit_code=exc.exit_code)
-        return _normalize_command_result(res)
 
     def kill(self) -> None:
         """销毁沙箱实例。
@@ -362,8 +421,6 @@ class E2BSandboxBackend(RuntimeBackend):
 
     def ls_info(self, path: str, *, config: RunnableConfig | None = None, state: dict | None = None) -> list[FileInfo]:
         """列出目录中的文件和目录（非递归）。"""
-
-        from e2b.sandbox.filesystem.filesystem import FileType
 
         sandbox = self._ensure_sandbox()
         try:
@@ -632,7 +689,5 @@ class E2BSandboxBackend(RuntimeBackend):
         state: dict | None = None,
     ) -> ExecuteResult:
         """异步执行 shell 命令。"""
-
-        import asyncio
 
         return await asyncio.to_thread(self.execute, command, timeout, max_output_size)

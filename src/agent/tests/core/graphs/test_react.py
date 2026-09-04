@@ -15,6 +15,7 @@ from aidev_agent.core.graphs.react.team_middleware import TeamPromptMiddleware
 from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings
 from aidev_agent.core.nodes.tool import ToolNodeSettings
 from aidev_agent.core.tools.a2a_tools.types import AgentSpec
+from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
@@ -226,36 +227,74 @@ class TestReActAgentBuilder:
     def test_register_runtime_type(self):
         builder = ReActAgentBuilder()
         fake_cls = type("FakeBackend", (), {})
-        result = builder.register_runtime_type("custom", fake_cls)
-        assert builder._runtime_types["custom"] is fake_cls
+        resolver = RuntimeBackendResolver()
+        result = builder.set_runtime_backend_resolver(resolver).register_runtime_type("custom", fake_cls)
+        assert resolver._backend_cls["custom"] is fake_cls
         assert result is builder
+        # 注销分支：cls=None 时 pop 静默
+        builder.register_runtime_type("custom", None)
+        assert "custom" not in resolver._backend_cls
+
+    def test_register_runtime_type_conflict_raises(self):
+        builder = ReActAgentBuilder()
+        fake_cls_a = type("FakeBackendA", (), {})
+        fake_cls_b = type("FakeBackendB", (), {})
+        resolver = RuntimeBackendResolver()
+        builder.set_runtime_backend_resolver(resolver).register_runtime_type("custom", fake_cls_a)
+        with pytest.raises(ValueError):
+            builder.register_runtime_type("custom", fake_cls_b)
+        # 同名同类幂等
+        builder.register_runtime_type("custom", fake_cls_a)
+        assert resolver._backend_cls["custom"] is fake_cls_a
+
+    def test_enable_runtime_requires_resolver(self):
+        """未注入 resolver 时 enable_runtime_* 应抛异常（_require_runtime_backend_resolver 生效）。"""
+        builder = ReActAgentBuilder()
+        with pytest.raises(RuntimeError, match="runtime_backend_resolver"):
+            builder.enable_runtime_local(True)
+        with pytest.raises(RuntimeError, match="runtime_backend_resolver"):
+            builder.enable_runtime_agent_run(True)
+        with pytest.raises(RuntimeError, match="runtime_backend_resolver"):
+            builder.enable_runtime_paas(True)
 
     def test_enable_runtime_local_registers_and_removes(self):
         builder = ReActAgentBuilder()
+        resolver = RuntimeBackendResolver()
+        builder.set_runtime_backend_resolver(resolver)
         result = builder.enable_runtime_local(True)
-        assert "local" in builder._runtime_types
+        assert resolver.have_runtime_cls("local")
+        assert "local" in resolver._backend_cls
         assert "local" in builder._runtime_param_with_skill
         assert result is builder
         builder.enable_runtime_local(False)
-        assert "local" not in builder._runtime_types
+        assert not resolver.have_runtime_cls("local")
+        assert "local" not in resolver._backend_cls
 
     def test_enable_runtime_agent_run_registers_and_removes(self):
         builder = ReActAgentBuilder()
+        resolver = RuntimeBackendResolver()
+        builder.set_runtime_backend_resolver(resolver)
         result = builder.enable_runtime_agent_run(True)
-        assert "agent_run" in builder._runtime_types
+        assert resolver.have_runtime_cls("agent_run")
+        assert "agent_run" in resolver._backend_cls
         assert "agent_run" in builder._runtime_param_with_skill
         assert result is builder
         builder.enable_runtime_agent_run(False)
-        assert "agent_run" not in builder._runtime_types
+        assert not resolver.have_runtime_cls("agent_run")
+        assert "agent_run" not in resolver._backend_cls
 
     def test_enable_runtime_paas_registers_and_removes(self):
         builder = ReActAgentBuilder()
+        resolver = RuntimeBackendResolver()
+        builder.set_runtime_backend_resolver(resolver)
         result = builder.enable_runtime_paas(True)
-        assert "paas_sandbox" in builder._runtime_types
+        assert resolver.have_runtime_cls("paas_sandbox")
+        assert "paas_sandbox" in resolver._backend_cls
         assert "paas_sandbox" in builder._runtime_param_with_skill
         assert result is builder
         builder.enable_runtime_paas(False)
-        assert "paas_sandbox" not in builder._runtime_types
+        assert not resolver.have_runtime_cls("paas_sandbox")
+        assert "paas_sandbox" not in resolver._backend_cls
 
     def test_enable_security_runtime_default_true(self):
         """测试默认情况下 _enable_security_runtime 为 True"""
@@ -496,9 +535,9 @@ class TestReActAgentBuilder:
             .set_enable_skills(True)
             .set_enable_runtime_tool(True)
             .set_skill_sources([str(skills_root)])
+            .set_runtime_backend_resolver(resolver)
             .enable_runtime_local(True)
         )
-        builder._runtime_backend_resolver = resolver
 
         with (
             patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node),
@@ -526,8 +565,13 @@ class TestReActAgentBuilder:
 
         resolver = MagicMock()
         resolver.runtime_param_description.return_value = "runtime target"
-        builder = ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True).enable_runtime_local(True)
-        builder._runtime_backend_resolver = resolver
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(llm)
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(resolver)
+            .enable_runtime_local(True)
+        )
 
         with (
             patch("aidev_agent.core.graphs.react.graph.std_make_model_node", new=_fake_make_model_node),
@@ -577,8 +621,9 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            builder = ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True)
-            builder._runtime_backend_resolver = resolver
+            builder = (
+                ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True).set_runtime_backend_resolver(resolver)
+            )
             builder.build()
 
         assert builder._runtime_backend_resolver is resolver
@@ -662,7 +707,7 @@ class TestReActAgentBuilder:
             assert kwargs["llm"] is llm
 
     def test_build_skill_runtime_registers_backend(self, tmp_path, monkeypatch):
-        """skill 的 runtime 匹配已注册类型时，应为该 skill 创建并注册独立 backend"""
+        """skill 的 runtime 匹配已注册类型时，复用沙箱经 resolver.get_or_create_backend 获取（路由名 {runtime}_{skill}）。"""
         monkeypatch.chdir(tmp_path)
         skills_root = tmp_path / ".agent" / "skills"
         _write_skill(skills_root, name="my-skill", description="d", body="b", runtime="sandbox")
@@ -670,8 +715,7 @@ class TestReActAgentBuilder:
         llm = MagicMock()
         llm.model_name = "gpt-4o"
 
-        mock_backend_instance = MagicMock()
-        MockBackendCls = MagicMock(return_value=mock_backend_instance)
+        MockBackendCls = MagicMock()
         MockBackendCls.__name__ = "MockBackend"
 
         with (
@@ -691,15 +735,54 @@ class TestReActAgentBuilder:
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
                 .set_skill_sources([str(skills_root)])
+                .set_runtime_backend_resolver(mock_resolver_instance)
                 .register_runtime_type("sandbox", MockBackendCls)
             )
-            builder._runtime_backend_resolver = mock_resolver_instance
             builder.build()
 
-        MockBackendCls.assert_called_once()
-        builder._runtime_backend_resolver.register_runtime.assert_called_once_with(
-            "sandbox_my-skill", mock_backend_instance
+        # runtime_id 由 resolver 内部 compose_runtime_id 幂等推导，调用方只传 runtime_name
+        builder._runtime_backend_resolver.get_or_create_backend.assert_called_once_with(
+            runtime_name="sandbox_my-skill",
+            runtime_cls_name="sandbox",
+            construct_params={},
         )
+
+    def test_build_local_skill_runtime_also_uses_get_or_create(self, tmp_path, monkeypatch):
+        """runtime=local 的 skill 也统一走 resolver.get_or_create_backend（无独立分支）。"""
+        monkeypatch.chdir(tmp_path)
+        skills_root = tmp_path / ".agent" / "skills"
+        _write_skill(skills_root, name="local-skill", description="d", body="b", runtime="local")
+
+        llm = MagicMock()
+        llm.model_name = "gpt-4o"
+
+        with (
+            patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
+            patch(
+                "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph",
+                return_value=(MagicMock(), {}),
+            ),
+        ):
+            mock_resolver_instance = MagicMock()
+            mock_resolver_instance._backends = {}
+            mock_resolver_instance.runtime_param_description.return_value = "runtime target"
+
+            builder = (
+                ReActAgentBuilder()
+                .set_llm(llm)
+                .set_enable_skills(True)
+                .set_enable_runtime_tool(True)
+                .set_skill_sources([str(skills_root)])
+                .set_runtime_backend_resolver(mock_resolver_instance)
+                .enable_runtime_local(True)
+            )
+            builder.build()
+
+        call = builder._runtime_backend_resolver.get_or_create_backend.call_args
+        assert call.kwargs["runtime_name"] == "local_local-skill"
+        assert call.kwargs["runtime_cls_name"] == "local"
+        # local 不再走独立注册分支
+        builder._runtime_backend_resolver.register_runtime.assert_not_called()
 
     def test_build_skill_unknown_runtime_skipped(self, tmp_path, monkeypatch):
         """skill 声明的 runtime 未注册时应跳过并记录警告"""
@@ -720,15 +803,16 @@ class TestReActAgentBuilder:
         ):
             resolver = MagicMock()
             resolver.runtime_param_description.return_value = "runtime target"
+            resolver.have_runtime_cls.side_effect = lambda name: name == "local"
             builder = (
                 ReActAgentBuilder()
                 .set_llm(llm)
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
                 .set_skill_sources([str(skills_root)])
+                .set_runtime_backend_resolver(resolver)
                 .enable_runtime_local(True)
             )
-            builder._runtime_backend_resolver = resolver
             builder.build()
 
         mock_logger.warning.assert_called()
@@ -752,8 +836,9 @@ class TestReActAgentBuilder:
             resolver = MagicMock()
             resolver._backends = {}
             resolver.runtime_param_description.return_value = "runtime target"
-            builder = ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True)
-            builder._runtime_backend_resolver = resolver
+            builder = (
+                ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True).set_runtime_backend_resolver(resolver)
+            )
             builder.build()
 
         assert builder._runtime_backend_resolver._backends.get("local") is None
@@ -846,8 +931,12 @@ class TestReActAgentBuilder:
     def test_prepare_agent_options_runtime_tool_passes_with_resolver(self):
         """enable_runtime_tool=True 且提供了 runtime_backend_resolver 时应通过校验"""
         resolver = MagicMock()
-        builder = ReActAgentBuilder().set_llm(MagicMock(model_name="gpt-4o")).set_enable_runtime_tool(True)
-        builder._runtime_backend_resolver = resolver
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(resolver)
+        )
         # 不应抛出异常
         builder._prepare_agent_options()
         assert builder._runtime_backend_resolver is resolver
@@ -880,14 +969,24 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_pv_node_paas_sandbox_without_app_code(self):
         """启用 paas_sandbox runtime 但 executor_info 无 app_code 时不应注入 client"""
-        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder = (
+            ReActAgentBuilder()
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(RuntimeBackendResolver())
+            .enable_runtime_paas(True)
+        )
         builder._executor_info = {}  # 无 app_code
         pv_node = builder._prepare_agent_pv_node()
         assert callable(pv_node)
 
     def test_prepare_agent_pv_node_paas_sandbox_with_app_code_and_resource_manager(self):
         """启用 paas_sandbox runtime 且有 app_code + resource_manager 时应注入 client"""
-        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder = (
+            ReActAgentBuilder()
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(RuntimeBackendResolver())
+            .enable_runtime_paas(True)
+        )
         builder._executor_info = {"app_code": "test-app"}
         resource_manager = MagicMock()
         expected_client = MagicMock()
@@ -905,7 +1004,12 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_pv_node_paas_sandbox_with_app_code_but_no_resource_manager(self):
         """启用 paas_sandbox runtime 有 app_code 但无 resource_manager 时 client 应为 None"""
-        builder = ReActAgentBuilder().set_enable_runtime_tool(True).enable_runtime_paas(True)
+        builder = (
+            ReActAgentBuilder()
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(RuntimeBackendResolver())
+            .enable_runtime_paas(True)
+        )
         builder._executor_info = {"app_code": "test-app"}
         # _resource_manager 默认为 None
         with patch("aidev_agent.core.graphs.react.graph.make_pv_node") as mock_make_pv_node:
@@ -956,9 +1060,9 @@ class TestReActAgentBuilder:
             .enable_a2a_tool(True)
             .enable_a2a_backend_local(True)
             .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(MagicMock())
             .enable_runtime_paas(True)
         )
-        builder._runtime_backend_resolver = MagicMock()
         with (
             patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
             patch(
@@ -975,15 +1079,18 @@ class TestReActAgentBuilder:
         """启用 A2A 但未启用 PaaS 沙箱 runtime 时应抛 ValueError（PV 缺失会崩溃）"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
+        mock_resolver = MagicMock()
+        # 仅 local 视为已注册：have_runtime_cls("paas_sandbox") 返回 False，恢复抛错
+        mock_resolver.have_runtime_cls.side_effect = lambda name: name == "local"
         builder = (
             ReActAgentBuilder()
             .set_llm(llm)
             .enable_a2a_tool(True)
             .enable_a2a_backend_local(True)
             .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(mock_resolver)
             .enable_runtime_local(True)  # 仅启用 local，未启用 paas_sandbox
         )
-        builder._runtime_backend_resolver = MagicMock()
         with pytest.raises(ValueError, match="未启用 PaaS 沙箱 runtime"):
             builder.build()
 
@@ -1206,18 +1313,20 @@ class TestReActAgentBuilder:
         opts = AgentExecutorKwargs(
             resource_manager=rm,
             skills=[{"skill_name": "demo", "id": 1}],
+            runtime_backend_resolver=RuntimeBackendResolver(),
         )
         builder = ReActAgentBuilder().set_bkai_options(opts)
         assert builder._enable_skills is True
         assert builder._enable_runtime_tool is True
-        assert "paas_sandbox" in builder._runtime_types
+        assert "paas_sandbox" in builder._runtime_backend_resolver._backend_cls
+        assert builder._runtime_backend_resolver.have_runtime_cls("paas_sandbox")
         # skill_sources 应包含一个 BkAiBackend 实例
         assert len(builder._skill_sources) == 1
 
     def test_set_bkai_options_subagent_specs_chain_enables_a2a_team_task(self):
         """set_bkai_options 收到 subagent_specs 时应启用 a2a_tool/team/task 并注册后端"""
         specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
-        opts = AgentExecutorKwargs(subagent_specs=specs)
+        opts = AgentExecutorKwargs(subagent_specs=specs, runtime_backend_resolver=RuntimeBackendResolver())
         builder = ReActAgentBuilder().set_bkai_options(opts)
         assert builder._enable_a2a_tool is True
         assert builder._enable_team is True
@@ -1288,7 +1397,7 @@ class TestReActAgentBuilder:
     # ----------------------------------------------------------------
 
     def test_prepare_skills_paas_sandbox_with_resource_manager(self, tmp_path, monkeypatch):
-        """paas_sandbox runtime skill + resource_manager 时应注入 client 到 params"""
+        """paas_sandbox runtime skill + resource_manager 时应注入 client 到 construct_params"""
         monkeypatch.chdir(tmp_path)
         skills_root = tmp_path / ".agent" / "skills"
         _write_skill(skills_root, name="paas-skill", description="d", body="b", runtime="paas_sandbox")
@@ -1297,27 +1406,27 @@ class TestReActAgentBuilder:
         expected_client = MagicMock()
         rm.get_paas_sbx_client.return_value = expected_client
 
+        mock_resolver = MagicMock()
         builder = (
             ReActAgentBuilder()
             .set_llm(MagicMock(model_name="gpt-4o"))
             .set_enable_skills(True)
             .set_skill_sources([str(skills_root)])
             .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(mock_resolver)
             .enable_runtime_paas(True)
         )
         builder._resource_manager = rm
-        builder._runtime_backend_resolver = MagicMock()
-
-        # 捕获 register_runtime 收到的 params
-        captured_params = {}
-        builder._runtime_backend_resolver.register_runtime = lambda key, backend: captured_params.__setitem__(
-            key, backend
-        )
 
         builder._prepare_skills()
-        # paas_sandbox_{skill_name} 应被注册，且 backend 持有 client
-        registered_key = next((k for k in captured_params if k.startswith("paas_sandbox_")), None)
-        assert registered_key is not None
+
+        # paas_sandbox（非 local）走 get_or_create_backend，construct_params 注入 client
+        call = builder._runtime_backend_resolver.get_or_create_backend.call_args
+        assert call is not None
+        assert call.kwargs.get("runtime_name") == "paas_sandbox_paas-skill"
+        assert call.kwargs.get("runtime_cls_name") == "paas_sandbox"
+        params = call.kwargs.get("construct_params") or {}
+        assert params.get("client") is expected_client
         rm.get_paas_sbx_client.assert_called_once()
 
     # ----------------------------------------------------------------

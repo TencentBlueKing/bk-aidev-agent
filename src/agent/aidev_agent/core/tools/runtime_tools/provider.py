@@ -43,7 +43,7 @@ from langgraph.prebuilt import InjectedState
 
 from aidev_agent.config import settings
 
-from .security import redact_output, validate_path
+from .security import redact_output, validate_command, validate_path
 from .types import RuntimeBackend
 from .utils import format_grep_matches, truncate_if_too_long
 
@@ -165,23 +165,63 @@ EXECUTE_TOOL_DESCRIPTION = """执行 shell 命令。
 
 
 class RuntimeBackendResolver:
-    """运行时中间件（运行时解析器）。
+    """运行时中间件（运行时解析器）—— 纯路由层 + 沙箱挂载协调（CR4/CR5）。
 
-    该类负责运行时的注册与解析：
-    - 注册多个命名运行时后端（register_runtime）
+    该类负责运行时的注册与解析，并把沙箱复用交给所持有的 RuntimeBackendDeferManager：
+    - 注册多个命名运行时后端（register_runtime，同名同实例幂等 / 异实例抛错）
     - 根据 runtime 参数解析 backend（resolve_backend / _resolve_backend）
     - 提供 runtime 参数描述文本（runtime_param_description / _runtime_param_description）
+    - 沙箱 get_or_create：先构造全新实例，原沙箱未销毁时经实例 ``load`` 挂载（CR）；
+      runtime_id 由 ``compose_runtime_id`` 从 runtime_name 幂等推导（同一 name 恒为
+      同一 runtime_id）；延迟销毁策略在 ``__init__`` 由 defer_manager + agent_code/
+      session_code 一次性判定。
 
-    注意：本类不负责构造工具集合；工具构造由本模块的 get_xxx_tool / get_client_tools 等函数承担。
+    三个名字的语义边界（不要混淆）：
+    - ``runtime 类型名``：运行时类型标识（如 ``local`` / ``sandbox`` / ``paas_sandbox``），注册到 ``_backend_cls``
+    （类型名 -> backend 类，运行时 **类型注册唯一事实源**）
+    由 builder 的 ``enable_runtime_*`` 经 ``register_runtime_cls`` 注册
+    ``get_or_create_backend`` 按此名查类构造实例
+    - ``runtime_name``：模型可见的路由名（``{runtime}_{skill}``），注册到 ``_backends``（实例注册表），供工具 ``target_runtime`` 解析。
+    - ``runtime_id``：沙箱生命周期标识（``{agent_code}:{session_code}:{runtime}_{skill}``，
+      由 ``compose_runtime_id(runtime_name)`` 幂等产出），provider/lifecycle 层用它识别沙箱（get_runtime / defer 延迟销毁）。
+
+    类型注册表与实例注册表解耦：``_backend_cls`` 只管「类型名 -> 类」的映射（builder 配置期注册）
+    ``_backends`` 只管「runtime_name -> backend 实例」的实例路由（``_prepare_skills`` 运行时按需构造挂载）
+
+    注意：本类不负责构造工具集合；工具构造由本模块的 get_xxx_tool / get_client_tools 等函数承担
 
     Args:
         default_runtime: 当未指定 runtime 参数时使用的默认运行时名称。
+        defer_manager: RuntimeBackendDeferManager 实例（延迟销毁 + 会话级复用），可选。
+        agent_code: 智能体代码（runtime_id 的 scoping 维度，由装配层构造时注入）。
+        session_code: 会话代码（同上）。延迟销毁策略要求两者齐备 —— 无 scoping 的
+            复用会命中其他会话/智能体的沙箱，实质导致越权。
     """
 
-    def __init__(self, default_runtime: str = "local") -> None:
+    def __init__(
+        self,
+        default_runtime: str = "local",
+        *,
+        defer_manager=None,
+        agent_code: str | None = None,
+        session_code: str | None = None,
+    ) -> None:
         self._backends: dict[str, RuntimeBackend] = {}
+        self._backend_cls: dict[str, type] = {}  # runtime 类型名 -> backend 类（唯一事实源）
         self._default_runtime = default_runtime
         self._exit_stack = contextlib.ExitStack()
+        # scoping 维度（CR：仅经构造参数注入，禁止外部改写内部变量）；
+        # 供 compose_runtime_id 幂等组合沙箱生命周期标识 runtime_id
+        self._agent_code = agent_code
+        self._session_code = session_code
+        # CR：初始化时确定是否开启延迟销毁策略 —— defer_manager 就绪且
+        # agent_code/session_code 齐备才开启；否则 close 立即销毁全部
+        if defer_manager is not None and agent_code and session_code:
+            self._defer_manager = defer_manager
+            self._enable_deferred_destroy = True
+        else:
+            self._defer_manager = None
+            self._enable_deferred_destroy = False
 
     @property
     def default_runtime(self) -> str:
@@ -196,18 +236,80 @@ class RuntimeBackendResolver:
     ) -> "RuntimeBackendResolver":
         """注册一个命名运行时后端。
 
+        同一 name 不允许注册不同 backend 实例（沙箱复用语义下同一 runtime 槽位始终指向同一沙箱）：
+        已注册同实例时幂等返回；已注册不同实例时抛出``ValueError``。
+
         Args:
-            name: 运行时名称（如 "local"、"sandbox_1"）
+            name: 运行时名称（模型可见路由名，``{runtime}_{skill}``； 工具 ``target_runtime`` 传该值解析 backend）
             backend: 对应运行时的后端实例
 
         Returns:
             self（便于链式调用）
+
+        Raises:
+            ValueError: name 为空，或该 name 已注册了不同的 backend 实例。
         """
 
         if not name:
             raise ValueError("runtime name must be non-empty")
+        existing = self._backends.get(name)
+        if existing is not None:
+            if existing is backend:
+                return self  # 幂等：同一实例重复注册
+            raise ValueError(f"runtime '{name}' 已注册不同的 backend 实例")
         self._backends[name] = backend
+        # 统一注册到 ExitStack，未启用延迟销毁时 resolver.close() 立即关闭全部
+        if isinstance(backend, RuntimeBackend):
+            self._exit_stack.enter_context(backend)
         return self
+
+    def register_runtime_cls(
+        self,
+        name: str,
+        cls: type | None,
+    ) -> "RuntimeBackendResolver":
+        """注册一个 runtime 类型名到 backend 类的映射（类型注册唯一事实源）。
+
+        builder 配置期经 ``enable_runtime_*``/``register_runtime_type`` 调用
+        把 runtime 类型名（如 ``local``/``sandbox``/``paas_sandbox``）映射到 backend类，供 ``get_or_create_backend`` 按名查类构造实例
+
+        - ``cls`` 非 None：同名已注册**同一**类时幂等返回 self；已注册**不同**类时抛出 ``ValueError``（文案带当前冲突类名，便于定位）
+        - ``cls`` 为 None：注销该类型名（``pop``，name 不存在时静默，无副作用）
+
+        Args:
+            name: runtime 类型名（非空）。
+            cls: backend 类；None 表示注销该类型名。
+
+        Returns:
+            self（便于链式调用）
+
+        Raises:
+            ValueError: name 为空，或该 name 已注册了不同的 backend 类。
+        """
+        if not name:
+            raise ValueError("runtime name must be non-empty")
+        if cls is None:
+            self._backend_cls.pop(name, None)  # 注销：pop 不存在的 name 静默
+            return self
+        existing = self._backend_cls.get(name)
+        if existing is not None:
+            if existing is cls:
+                return self  # 幂等：同一类重复注册
+            raise ValueError(f"runtime '{name}' 已注册不同的 backend 类 {existing.__name__}（现注册 {cls.__name__}）")
+        self._backend_cls[name] = cls
+        return self
+
+    def have_runtime_cls(self, name: str) -> bool:
+        """判断某 runtime 类型名是否已注册（替代 builder 侧 ``name in _runtime_types``）。
+
+        Args:
+            name: runtime 类型名（如 ``paas_sandbox``）。
+
+        Returns:
+            已注册返回 True，否则 False。
+        """
+
+        return name in self._backend_cls
 
     def runtime_param_description(self) -> str:
         """返回 runtime 参数的描述文本（用于工具 schema）。"""
@@ -232,29 +334,101 @@ class RuntimeBackendResolver:
             raise ValueError(f"Unknown runtime '{resolved_runtime}'. Available runtimes: {available or '(none)'}")
 
         backend = self._backends[resolved_runtime]
-        # 若后端尚未注册到 ExitStack，则注册以便统一关闭
-        if isinstance(backend, RuntimeBackend):
-            self._exit_stack.enter_context(backend)
         return backend
 
-    def close(self) -> None:
-        """关闭所有已解析后端的远程资源。
+    def get_or_create_backend(
+        self,
+        runtime_name: str,
+        runtime_cls_name: str,
+        construct_params: dict | None = None,
+    ) -> RuntimeBackend:
+        """获取/创建沙箱 backend（CR：先构造再挂载）。
 
-        通过 ExitStack 统一关闭所有注册的 RuntimeBackend 实例。
-        对于 RuntimeBackend 子类，将调用其 ``close()`` 方法
-        （PaasSandboxBackend 和 E2BSandboxBackend 的 ``close()`` 委托给 ``kill()``）。
-        FilesystemBackend 的 ``close()`` 为空操作。
+        runtime_id 由 ``compose_runtime_id(runtime_name)`` 幂等推导（同一 name 恒为同一 runtime_id），不由外部传入。
+
+        流程：
+        1. 先按 ``runtime_cls_name`` 从 ``_backend_cls`` 查到 backend 类，再``backend_cls(**construct_params)`` 构造全新实例
+            lazy： 后端此时尚无远端沙箱，client/凭据全部来自本次请求的构造参数
+        2. 延迟销毁策略启用时（``__init__`` 判定），
+            若原沙箱未被销毁，调用实例方法``backend.load(payload)`` 挂载到原沙箱，后续首次使用跳过创建；
+           原沙箱已销毁/无记录时保持全新实例
+           close 移交所有权后由 defer_manager``defer`` 登记新沙箱
+
+        Args:
+            runtime_name: 模型可见的路由名（``{runtime}_{skill}``），注册到 ``_backends`` 供工具 ``target_runtime`` 解析；runtime_id 由此幂等推导
+            runtime_cls_name: runtime 类型名，须先经 ``register_runtime_cls`` 注册；内部据此从 ``_backend_cls`` 查类构造实例
+            construct_params: 传给查到的 ``backend_cls(**construct_params)`` 的参数（含本次请求的 client/凭据）。
+
+        Returns:
+            已挂载原沙箱或全新待用的 backend 实例（注册到 self._backends[runtime_name]）。
+
+        Raises:
+            ValueError: ``runtime_cls_name`` 未注册（带当前注册表内容，便于定位
+                误传的类名/未注册类型）。
+        """
+        construct_params = construct_params or {}
+        backend_cls = self._backend_cls.get(runtime_cls_name)
+        if backend_cls is None:
+            raise ValueError(
+                f"unknown runtime class '{runtime_cls_name}'. registered classes: {sorted(self._backend_cls)}"
+            )
+        runtime_id = self.compose_runtime_id(runtime_name)
+        # 1. 先构造全新实例（lazy，不创建远端沙箱）
+        backend = backend_cls(**construct_params)
+        if self._enable_deferred_destroy:
+            original = self._defer_manager.get_runtime(runtime_id=runtime_id)
+            if original is not None:
+                # 2a. 原沙箱未被销毁：挂载到原沙箱（payload 为 {} 表示原沙箱从未
+                # 真正拉起过，load 为 no-op，backend 保持 lazy）；get 读即续期，
+                # sweep 在 idle_ttl 内抢不到销毁权
+                backend.load(original)
+            # 2b. 原沙箱已销毁/无记录：保持全新实例，close 移交所有权后由
+            # defer_manager defer 登记新沙箱
+        self.register_runtime(runtime_name, backend)
+        return backend
+
+    def compose_runtime_id(self, name: str) -> str:
+        """组合沙箱生命周期标识 runtime_id：``{agent_code}:{session_code}:{name}``。
+
+        幂等：同一 name 恒产出同一 runtime_id。内部维度缺失（测试/CLI 未注入 agent_code/session_code）时回退原名
+        此时延迟销毁策略在 ``__init__``已关闭
+
+        Args:
+            name: 模型可见路由名（``{runtime}_{skill}``）。
+
+        Returns:
+            完整沙箱生命周期标识。
+        """
+        if self._agent_code and self._session_code and name:
+            return f"{self._agent_code}:{self._session_code}:{name}"
+        return name
+
+    def close(self) -> None:
+        """关闭/移交所有已注册后端（语义随延迟销毁策略分流）。
+
+        - 未启用延迟销毁：立即销毁全部（ExitStack 依次 ``close()``）。
+        - 启用延迟销毁：所有权整体移交给 RuntimeBackendDeferManager（``defer``）
+          save() 登记记录供后续请求挂载复用，实例由 defer_manager 持有TTL 到期或进程退出时才真实销毁
+          移交后 ``_backends`` 清空
 
         此方法是幂等的 — 多次调用不会产生副作用。
-        适用于会话结束、进程退出前等需要显式释放远程沙箱资源的场景。
         """
-        try:
-            self._exit_stack.close()
-        except Exception:
-            logger.warning("RuntimeBackendResolver.close: 关闭后端资源失败", exc_info=True)
-        finally:
-            # 关闭后重建 ExitStack，使 close() 幂等
-            self._exit_stack = contextlib.ExitStack()
+        if not self._enable_deferred_destroy:
+            try:
+                self._exit_stack.close()
+            except Exception:
+                logger.warning("RuntimeBackendResolver.close: 关闭后端资源失败", exc_info=True)
+            finally:
+                # 关闭后重建 ExitStack，使 close() 幂等
+                self._exit_stack = contextlib.ExitStack()
+            return
+        # 延迟销毁：所有权整体移交 defer_manager（含 lazy 未创建的 backend，save() 导出 {} 照常登记），之后本 resolver 不再持有任何沙箱
+        pending = self._backends
+        self._backends = {}
+        # ExitStack 不执行 close（所有权已移交），重建使 close() 幂等
+        self._exit_stack = contextlib.ExitStack()
+        runtime_id_map = {self.compose_runtime_id(name): backend for name, backend in pending.items()}
+        self._defer_manager.defer(runtime_id_map)
 
 
 # ========== 工具生成器函数 ==========
@@ -483,8 +657,6 @@ def get_execute_tool(
             默认为 None 时启用校验（True）。
             设为 False 可完全跳过安全校验（仅用于测试或迁移过渡期）。
     """
-
-    from .security import validate_command
 
     # 确定是否启用安全校验（默认启用）
     if enable_security is None:

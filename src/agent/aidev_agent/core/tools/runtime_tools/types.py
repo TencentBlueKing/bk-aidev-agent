@@ -23,6 +23,7 @@ to the current version of the project delivered to anyone in the future.
 - grep 返回的 GrepMatch
 - write/edit/execute 返回的结果结构
 - upload/download 返回的结构
+- 延迟销毁记录共享存储抽象契约 RuntimeBackendDeferStore（内存实现见 defer_manager）
 
 注意：该模块不包含任何具体后端实现。
 """
@@ -30,6 +31,7 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from langchain_core.runnables import RunnableConfig
 from typing_extensions import NotRequired, TypedDict
@@ -235,6 +237,38 @@ class RuntimeBackend:
         """
         self.close()
 
+    # --- 沙箱复用序列化契约（save/load） ---
+
+    def save(self) -> dict:
+        """导出当前 backend 挂载所需 payload（写入共享存储，不含任何凭据）。
+
+        子类必须重写。调用时机：请求结束时由 resolver 的 close 经 defer →
+        store.put 登记沙箱（token 由 defer 管理器生成并持有）；lazy 后端在远端
+        沙箱尚未创建时应抛异常（无沙箱可登记）。
+
+        Returns:
+            JSON 可序列化的挂载 payload 字典（如 sandbox_id / sandbox_info）。
+
+        Raises:
+            NotImplementedError: 子类未重写时抛出。
+        """
+        raise NotImplementedError
+
+    def load(self, payload: dict) -> None:
+        """挂载到 ``save()`` 导出的既有沙箱（实例方法，就地覆盖内部沙箱引用）。
+
+        调用时机：``backend_cls(**construct_params)`` 先构造全新实例（lazy，
+        尚无远端沙箱），原沙箱未被销毁时由 resolver 调 ``backend.load(payload)``
+        挂载到原沙箱，后续首次使用跳过创建。client/凭据保持本实例构造时来源。
+
+        Args:
+            payload: 由 ``save()`` 产出的 dict。
+
+        Raises:
+            NotImplementedError: 子类未重写时抛出。
+        """
+        raise NotImplementedError
+
     def __enter__(self) -> "RuntimeBackend":
         return self
 
@@ -248,6 +282,62 @@ class RuntimeBackend:
         await self.aclose()
 
 
+class RuntimeBackendDeferStore(Protocol):
+    """沙箱延迟销毁记录共享存储抽象契约（4 原语 token 化，跨 pod 复用）。
+
+    供上层应用（django cache / MySQL / Redis）实现；内存实现
+    ``RuntimeBackendDeferInMemoryStore`` 见 ``defer_manager`` 模块。
+
+    记录 schema 统一为 ``{"payload": dict, "token": str | None, "last_access_at": float}``。
+    payload 为 ``backend.save()`` 产出的 JSON 可序列化挂载 dict（如
+    ``{"sandbox_id": ...}``），不含任何凭据；token 由调用方（DeferManager 用
+    ``uuid4()`` 生成）经 ``put`` 写入，store 保持哑存储、不自行生成 token。
+    调用方（defer_manager/provider）不做任何状态判断，仅通过四个语义化原语交互：
+
+    - ``get``：记录存在则返回 payload 并**原子摘除 token**（置 None）+ 刷新
+      last_access_at；token 已为 None 时照常返回 payload；不创建记录；
+    - ``put``：upsert 整体覆盖记录（payload + token + last_access_at=now）；
+    - ``delete_if_token``：**原子 compare-and-delete**——仅当记录存在且记录内
+      token 与参数相等才删记录返回 True，否则不动记录返回 False；
+    - ``delete_expired``：GC 直接删除超 max_age 的记录（不 close 实例
+      —— 超过阈值的记录其远端沙箱早已被平台 TTL 回收）。
+
+    原子性硬契约：``get`` 的摘 token 与 ``delete_if_token`` 的比较删除必须在
+    store 内部串行。InMemory 实现用 ``threading.Lock`` 保证；将来接入 Redis /
+    SQL 时分别用 Lua 脚本 / 条件 UPDATE 复刻，不可拆分到应用层。
+    """
+
+    def get(self, key: str) -> dict | None:
+        """记录存在则返回 payload（深拷贝），不存在返回 None；**不创建记录**。
+
+        ``get`` 表示有 Agent 复用该沙箱：返回 payload 的同时**原子摘除记录内
+        token**（置 None）+ 刷新 last_access_at=now。token 被摘除后，任何旧 entry
+        的 ``delete_if_token`` 必失败（token 已为 None），旧记录永远无法被 close
+        销毁 —— 这彻底关闭「turn 时长超 idle_ttl 被误杀」窗口，无需心跳。
+        token 已为 None（并发挂载场景）时照常返回 payload。
+        """
+        ...
+
+    def put(self, key: str, payload: dict, token: str) -> None:
+        """upsert：整体覆盖记录（payload + token + last_access_at=now）。
+
+        token 由调用方生成（DeferManager 用 ``uuid4()`` 生成后传入），store 保持
+        哑存储、不自行生成 token。同 key 再次 put 用新 token/payload 覆盖旧记录
+        （旧 token 失效 —— 旧 entry 的 delete_if_token 因此必失败）。"""
+        ...
+
+    def delete_if_token(self, key: str, token: str) -> bool:
+        """原子 compare-and-delete：仅当记录存在且记录内 token 与参数相等时删除
+        记录返回 True；否则（记录不存在 / 记录内 token 与参数不等 / token 已摘除
+        为 None / 已被新 put 覆盖）不动记录返回 False。"""
+        ...
+
+    def delete_expired(self, max_age: float) -> int:
+        """GC：直接删除 now-last_access_at > max_age 的记录（不做二阶段、不 close
+        实例 —— 超过阈值的记录其远端沙箱早已被平台 TTL 回收）。返回删除条数。"""
+        ...
+
+
 __all__ = [
     "FileInfo",
     "GrepMatch",
@@ -257,4 +347,5 @@ __all__ = [
     "FileUploadResponse",
     "FileDownloadResponse",
     "RuntimeBackend",
+    "RuntimeBackendDeferStore",
 ]

@@ -40,6 +40,7 @@ from aidev_agent.core.ag_ui.utils import (
 from aidev_agent.core.nodes.model import convert_chat_history_to_messages
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
+from aidev_agent.core.tools.runtime_tools.defer_manager import default_runtime_backend_defer_manager
 from aidev_agent.enums import AgentType, PromptRole
 from aidev_agent.exceptions import AgentDeadlineExceededError, AgentException
 from aidev_agent.packages.interrupt_manager import (
@@ -521,8 +522,11 @@ class ChatCompletionAgent(BaseModel):
     def release_resources(self) -> None:
         """释放 agent 持有的资源（沙箱后端等）。
 
-        调用 RuntimeBackendResolver.close() 关闭所有已解析的沙箱后端。
-        此方法是幂等的 — 多次调用不会产生副作用。
+        统一走 ``resolver.close()``，销毁语义由 resolver 按延迟销毁策略分流：
+        - 未启用延迟销毁：立即销毁全部；
+        - 启用延迟销毁：所有权移交 LifecycleManager（``defer``）
+        —— save() 登记记录供后续请求挂载复用，实例由 defer_manager 持有，TTL 到期或进程退出时真实销毁
+        此方法是幂等的 — 多次调用不会产生副作用
         """
         if self.runtime_backend_resolver is not None:
             try:
@@ -1642,12 +1646,25 @@ class ChatAgentBuilder:
         return list(self._file_resources)
 
     def build_runtime_backend_resolver(self) -> RuntimeBackendResolver:
-        """构造 RuntimeBackendResolver。
+        """构造 RuntimeBackendResolver（每会话一个，scoping 归 RuntimeBackendDeferManager，决策 1）。
 
-        resolver 将通过 AgentExecutorKwargs 传入 ReActAgentBuilder。
+        功能开关 ``BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED``：
+            开启时使用``defer_manager`` 模块的进程级默认单例 ``default_runtime_backend_defer_manager``（延迟销毁 + 会话级复用，start 幂等多请求安全）；
+            关闭时构造纯路由 resolver（release 立即销毁）
+        agent_code/session_code 经构造参数注入
+        任一为空时 resolver 内部强制 create-only —— 无 scoping 的复用会命中其他会话/智能体的沙箱，实质导致越权。
         """
-        self._runtime_backend_resolver = RuntimeBackendResolver(default_runtime="local")
-        return self._runtime_backend_resolver
+        defer_manager = None
+        if settings.BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED and self.ctx.agent_code and self.ctx.session_code:
+            defer_manager = default_runtime_backend_defer_manager
+        resolver = RuntimeBackendResolver(
+            default_runtime="local",
+            defer_manager=defer_manager,
+            agent_code=self.ctx.agent_code,
+            session_code=self.ctx.session_code,
+        )
+        self._runtime_backend_resolver = resolver
+        return resolver
 
     # ---------- 公共：装配方法（被 ChatCompletionAgent.build 调用） ----------
 

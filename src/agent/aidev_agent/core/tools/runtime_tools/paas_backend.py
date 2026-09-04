@@ -27,6 +27,7 @@ PaasSandboxBackend: 基于蓝鲸 PaaS 平台 Agent Sandbox HTTP API 的远程沙
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -524,10 +525,37 @@ class PaasSandboxBackend(RuntimeBackend):
         return mounts or None
 
     def _run(self, command: str | list, timeout: int | None = None, *, state: dict | None = None) -> ExecResult:
-        """在远程沙箱中执行 shell 命令并返回结果。"""
+        """在远程沙箱中执行 shell 命令。
 
-        sandbox_id = self._ensure_sandbox(state=state)
-        return self.exec_command(sandbox_id, command, timeout=timeout)
+        挂载复用的原沙箱可能已被平台 TTL / 外部销毁（记录仍 ACTIVE）：
+        首次执行遇到 404（沙箱不存在）时丢弃失效沙箱引用并重建，重试一次
+        （CR-A 首用失败自愈）。重建的新沙箱经 release save() 重新登记。
+        """
+
+        def _exec() -> ExecResult:
+            sandbox_id = self._ensure_sandbox(state=state)
+            return self.exec_command(sandbox_id, command, timeout=timeout)
+
+        try:
+            return _exec()
+        except Exception as exc:  # noqa: BLE001
+            if not self._is_sandbox_gone_error(exc):
+                raise
+            logger.warning(
+                "PaaS sandbox %s 已失效（404），丢弃并重建后重试一次",
+                self._sandbox_id,
+                exc_info=True,
+            )
+            # 远端已不存在，直接置空引用（无需调 destroy）；home 目录一并失效
+            self._sandbox_id = None
+            self._home_dir = None
+            return _exec()
+
+    @staticmethod
+    def _is_sandbox_gone_error(exc: Exception) -> bool:
+        """判定异常是否为「沙箱不存在」（HTTP 404，平台 TTL/外部销毁所致）。"""
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        return status_code == 404
 
     def _resolve_path(self, path: str, *, state: dict | None = None) -> str:
         """将 ``$STORAGE_PATH`` 或 ``~`` 展开为沙箱内绝对路径。
@@ -547,6 +575,39 @@ class PaasSandboxBackend(RuntimeBackend):
             res = self._run(["bash", "-c", "echo $HOME"], state=state)
             self._home_dir = res.stdout.strip() or "/root"  # PaaS 沙箱默认以 root 用户运行
         return self._home_dir + path[1:] if len(path) > 1 else self._home_dir
+
+    # ---- 沙箱复用序列化 ----
+
+    def save(self) -> dict:
+        """导出 PaaS 沙箱挂载 payload（写入共享存储用）。
+
+        CR：只保存 sandbox_id —— executor_info / construct_params 含凭据与
+        连接参数，不允许写入共享存储；client 由每请求 construct_params 全新注入。
+        沙箱未创建（sandbox_id 为 None，本次请求未实际用到）时导出 ``{}``，
+        表示该槽位此前没有真正拉起过沙箱。
+
+        Returns:
+            dict（仅含 sandbox_id，未创建时为 ``{}``）。
+        """
+        if self._sandbox_id is None:
+            return {}
+        return {"sandbox_id": self._sandbox_id}
+
+    def load(self, payload: dict) -> None:
+        """挂载到既有 PaaS 沙箱（实例方法，就地覆盖 ``self._sandbox_id``）。
+
+        CR：仅从 payload 取 sandbox_id；client/凭据保持本实例构造时来源
+        （construct_params 注入），后续 ``_ensure_sandbox`` 跳过创建直接复用。
+
+        Args:
+            payload: 由 ``save()`` 导出的 dict。为空（``{}``）说明原沙箱之前
+                没有真正拉起来过，保持 lazy（不创建沙箱），不做任何覆盖。
+        """
+        sandbox_id = payload.get("sandbox_id")
+        if not sandbox_id:
+            return
+        self._sandbox_id = sandbox_id
+        self._home_dir = None  # 原沙箱 home 目录未知，待首次使用时重新获取
 
     def kill(self) -> None:
         """销毁沙箱实例。
@@ -863,7 +924,5 @@ class PaasSandboxBackend(RuntimeBackend):
         state: dict | None = None,
     ) -> ExecuteResult:
         """异步执行 shell 命令。"""
-
-        import asyncio
 
         return await asyncio.to_thread(self.execute, command, timeout, max_output_size, state=state)

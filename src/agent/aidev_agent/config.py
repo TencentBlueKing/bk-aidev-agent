@@ -148,6 +148,16 @@ SBX_PAAS_NOT_READY_MAX_RETRIES = env.int("SBX_PAAS_NOT_READY_MAX_RETRIES", 5)
 SBX_PAAS_NOT_READY_SLEEP_SECONDS = env.int("SBX_PAAS_NOT_READY_SLEEP_SECONDS", 2)
 SBX_SENSITIVE_VALUES: list[str] = [v.strip() for v in env.str("SBX_SENSITIVE_VALUES", "").split(",") if v.strip()]
 
+# 沙箱延迟销毁与会话级复用配置
+BKAI_RUNTIME_SANDBOX_IDLE_TTL = env.int("BKAI_RUNTIME_SANDBOX_IDLE_TTL", 300)
+BKAI_RUNTIME_SANDBOX_SWEEP_INTERVAL = env.int("BKAI_RUNTIME_SANDBOX_SWEEP_INTERVAL", 60)
+# 超级过期记录 GC 阈值（秒）：超过该值的共享存储记录由 sweep 末尾 delete_expired 直接删除
+# （其远端沙箱早已被平台 TTL 回收，不再做二阶段销毁）。
+BKAI_RUNTIME_SANDBOX_RECORD_MAX_AGE = env.int("BKAI_RUNTIME_SANDBOX_RECORD_MAX_AGE", 3 * 24 * 3600)
+# 功能开关：启用延迟销毁 RuntimeBackendResolver（RuntimeBackendDeferManager 装配 + 会话级复用）
+# 关闭时 resolver 为纯路由，release 立即销毁。原 RUNTIME_SANDBOX_REUSE_ENABLED 已由本开关取代
+BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED = env.bool("BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED", True)
+
 # SSM相关配置
 BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa
 

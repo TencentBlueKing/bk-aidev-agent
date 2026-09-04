@@ -194,7 +194,6 @@ class ReActAgentBuilder:
         self._extra_tools: list[BaseTool] = []
         self._enable_runtime_tool: bool = False
         self._runtime_backend_resolver = None
-        self._runtime_types: dict[str, type] = {}  # runtime_name -> backend_class
         self._enable_security_runtime: bool = True  # 默认启用安全校验
         self._enable_ask_user_question_tool: bool = True
         # Graph 运行时参数设置
@@ -434,20 +433,25 @@ class ReActAgentBuilder:
         self._enable_ask_user_question_tool = bool(enable)
         return self
 
-    def register_runtime_type(self, name: str, cls: type) -> "ReActAgentBuilder":
-        """注册 runtime 名称到 backend 类的映射。
+    def register_runtime_type(self, name: str, cls: type | None) -> "ReActAgentBuilder":
+        """注册 runtime 类型名到 backend 类的映射（委托 RuntimeBackendResolver）。
 
-        skill 的 ``runtime`` frontmatter 字段引用此处注册的名称。
-        ``build()`` 时会根据映射实例化对应 backend。
+        skill 的 ``runtime`` frontmatter 字段引用此处注册的类型名。类型注册表（``_backend_cls``）唯一归属 RuntimeBackendResolver
+        本方法仅委托其``register_runtime_cls`` 维护，使 resolver 成为运行时类型注册+实例注册+沙箱生命周期的唯一事实源
 
         Args:
-            name: runtime 名称（如 ``"sandbox"``）。
-            cls: 对应的 backend 类（如 ``E2BSandboxBackend``）。
+            name: runtime 类型名（如 ``"sandbox"``）。
+            cls: 对应的 backend 类（如 ``E2BSandboxBackend``）；None 表示注销该类型名（pop 静默）
 
         Returns:
             self（支持链式调用）。
+
+        Raises:
+            RuntimeError: 未注入 runtime_backend_resolver（先经
+                set_bkai_options/set_runtime_backend_resolver 注入）。
         """
-        self._runtime_types[name] = cls
+        self._require_runtime_backend_resolver()
+        self._runtime_backend_resolver.register_runtime_cls(name, cls)
         return self
 
     def enable_runtime_local(self, enable: bool = True) -> "ReActAgentBuilder":
@@ -455,39 +459,74 @@ class ReActAgentBuilder:
 
         - enable=True：注册 runtime type `local` -> `FilesystemBackend`，并注册参数提取函数
         - enable=False：移除 runtime type `local`
+
+        Raises:
+            RuntimeError: 未注入 runtime_backend_resolver（经 ``register_runtime_type``转发校验，要求 resolver 已存在）。
         """
         if enable:
             self._runtime_param_with_skill["local"] = _extract_local_params
             return self.register_runtime_type("local", FilesystemBackend)
 
-        self._runtime_types.pop("local", None)
-        return self
+        return self.register_runtime_type("local", None)
 
     def enable_runtime_agent_run(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用 agent_run 沙箱运行时类型（sandbox）。
 
         - enable=True：注册 runtime type `sandbox` -> `E2BSandboxBackend`，并注册参数提取函数
         - enable=False：移除 runtime type `sandbox`
+
+        Raises:
+            RuntimeError: 未注入 runtime_backend_resolver（经 ``register_runtime_type``转发校验，要求 resolver 已存在）。
         """
         if enable:
             self._runtime_param_with_skill["agent_run"] = _extract_e2b_params
             return self.register_runtime_type("agent_run", E2BSandboxBackend)
 
-        self._runtime_types.pop("agent_run", None)
-        return self
+        return self.register_runtime_type("agent_run", None)
 
     def enable_runtime_paas(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用蓝鲸 PaaS 沙箱运行时类型（paas_sandbox）。
 
         - enable=True：注册 runtime type `paas_sandbox` -> `PaasSandboxBackend`，并注册参数提取函数
         - enable=False：移除 runtime type `paas_sandbox`
+
+        Raises:
+            RuntimeError: 未注入 runtime_backend_resolver（经 ``register_runtime_type``转发校验，要求 resolver 已存在）。
         """
         if enable:
             self._runtime_param_with_skill["paas_sandbox"] = _extract_paas_params
             return self.register_runtime_type("paas_sandbox", PaasSandboxBackend)
 
-        self._runtime_types.pop("paas_sandbox", None)
+        return self.register_runtime_type("paas_sandbox", None)
+
+    def set_runtime_backend_resolver(self, resolver) -> "ReActAgentBuilder":
+        """注入 RuntimeBackendResolver（公开 setter，链式调用风格）。
+
+        供测试与装配层注入 resolver，避免直捅私有属性。
+        运行时类型注册（``register_runtime_type``/``enable_runtime_*``）要求 resolver 已存在
+        须先调用本方法（或经 ``set_bkai_options`` 注入）再启用运行时类型。
+
+        Args:
+            resolver: RuntimeBackendResolver 实例。
+
+        Returns:
+            self（支持链式调用）。
+        """
+        self._runtime_backend_resolver = resolver
         return self
+
+    def _require_runtime_backend_resolver(self) -> None:
+        """校验已注入 runtime_backend_resolver，缺失则抛异常。
+
+        enable_runtime_* 在 ``build()`` 前的配置期即须把 runtime 类型注册到 resolver
+        因此要求 resolver 已经存在，否则抛 ``RuntimeError``
+        提示先经``set_bkai_options``/``set_runtime_backend_resolver`` 注入
+        """
+        if self._runtime_backend_resolver is None:
+            raise RuntimeError(
+                "ReActAgentBuilder 启用了 runtime 注册，但未提供 runtime_backend_resolver，"
+                "请先经 set_bkai_options/set_runtime_backend_resolver 注入"
+            )
 
     def enable_security_runtime(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用运行时命令安全校验。
@@ -562,6 +601,11 @@ class ReActAgentBuilder:
         if options.model_context_options is not None:
             self._model_context_options = options.model_context_options
 
+        # RuntimeBackendResolver（由调用方构造并注入）——必须先于 skills 块内
+        # enable_runtime_paas/local（新方案下这些调用要求 resolver 已存在）
+        if options.runtime_backend_resolver is not None:
+            self._runtime_backend_resolver = options.runtime_backend_resolver
+
         # Skills（从配置链路传入的关联技能配置 list）
         # options.skills 允许混合两种元素：
         #   1. 满足 SkillProviderBackend 协议的后端实例（如 LocalSkillBackend）——直接作为 source 注册
@@ -592,10 +636,6 @@ class ReActAgentBuilder:
             # 存在本地技能后端时才启用 local runtime（LocalSkillBackend 的技能默认 runtime="local"）
             if any(isinstance(s, LocalSkillBackend) for s in skill_backends):
                 self.enable_runtime_local(True)
-
-        # RuntimeBackendResolver（由调用方构造并注入）
-        if options.runtime_backend_resolver is not None:
-            self._runtime_backend_resolver = options.runtime_backend_resolver
 
         # Subagents（子 Agent 规格，注册后端 + 注入 A2A 工具）
         if options.subagent_specs is not None and options.subagent_specs:
@@ -684,7 +724,11 @@ class ReActAgentBuilder:
 
         # A2A 依赖 PaaS 沙箱：子 Agent PV 创建需要 paas_client，仅启用 A2A 而未启用
         # paas_sandbox runtime 时，paas_client 为 None，调用 Agent/sendMessages 会触发崩溃
-        if self._enable_a2a_tool and not (self._enable_runtime_tool and "paas_sandbox" in self._runtime_types):
+        if self._enable_a2a_tool and not (
+            self._enable_runtime_tool
+            and self._runtime_backend_resolver is not None
+            and self._runtime_backend_resolver.have_runtime_cls("paas_sandbox")
+        ):
             raise ValueError(
                 "ReActAgentBuilder 构建失败：启用了 A2A 工具但未启用 PaaS 沙箱 runtime，"
                 "请同时调用 set_enable_runtime_tool(True) 和 enable_runtime_paas(True)"
@@ -846,7 +890,11 @@ class ReActAgentBuilder:
 
         - 初始化 SkillRegistry
         - 将 activate_skill 工具与 prompt middleware 所需的 registry 写入 self._skill_registry
-        - 为每个 skill 根据其 runtime 创建并注册独立 backend 到 self._runtime_backend_resolver
+        - 为每个 skill 根据其 runtime 创建并注册 backend 到 self._runtime_backend_resolver。
+
+        所有 runtime（含 local）统一经 ``resolver.get_or_create_backend`` 获取/复用。
+        模型可见路由名（runtime_name）为 ``{skill_runtime}_{skill_name}``（与 skill 提示/工具 target_runtime 一致）
+        runtime_id 由 resolver 内部 ``compose_runtime_id`` 幂等推导（``{agent_code}:{session_code}:{runtime}_{skill}``）
         """
         registry = SkillRegistry(self._skill_sources or [])
         self._skill_registry = registry
@@ -855,12 +903,14 @@ class ReActAgentBuilder:
         for skill in registry.list_skills():
             skill_name = skill["name"]
             skill_runtime = skill.get("runtime")
-            logger.debug(f"ReActBuilderSkill {skill_runtime} {self._runtime_types}")
-            if skill_runtime is None or skill_runtime not in self._runtime_types:
+            logger.debug(f"ReActBuilderSkill {skill_runtime} {sorted(resolver._backend_cls) if resolver else None}")
+            # 预检：runtime 类型须已注册到 resolver。resolver 为 None（未启用
+            # runtime_tool 的 skills 场景）时视作无任何类型注册，跳过所有带
+            # runtime 的 skill（与旧实现空 _runtime_types 的跳过语义一致）。
+            if skill_runtime is None or resolver is None or not resolver.have_runtime_cls(skill_runtime):
                 logger.warning(f"Skill '{skill_name}' 声明 runtime='{skill_runtime}' 但未注册对应类型，跳过该 skill")
                 continue
-            # 实例化独立 backend
-            backend_cls = self._runtime_types[skill_runtime]
+            # 实例化独立 backend 所需构造参数
             extractor = self._runtime_param_with_skill.get(skill_runtime)
             params = extractor(skill, self._executor_info or {}) if extractor is not None else {}
             if skill_runtime == "paas_sandbox" and self._resource_manager is not None:
@@ -871,13 +921,17 @@ class ReActAgentBuilder:
                 f"executor_info_keys={list((self._executor_info or {}).keys())}, "
                 f"has_app_code={bool((self._executor_info or {}).get('app_code'))}, "
                 f"has_access_token={bool((self._executor_info or {}).get('access_token'))}, "
-                f"backend_cls={backend_cls.__name__}"
+                f"runtime_cls_name={skill_runtime}"
             )
-            skill_backend = backend_cls(**params)
-            # 注册这个 backend
-            resolver.register_runtime(
-                f"{skill_runtime}_{skill_name}",
-                skill_backend,
+            # 所有 runtime（含 local）统一走 get_or_create_backend：
+            # runtime_name = {runtime}_{skill}（模型可见路由名，注册 _backends 供 target_runtime 解析）；
+            # runtime_id 由 resolver 内部 compose_runtime_id 幂等推导（{agent_code}:{session_code}:{runtime}_{skill}），
+            # resolver 内部按 runtime_cls_name 从 _backend_cls 查类构造实例。
+            runtime_name = f"{skill_runtime}_{skill_name}"
+            resolver.get_or_create_backend(
+                runtime_name=runtime_name,
+                runtime_cls_name=skill_runtime,  # resolver 内部按名查 _backend_cls
+                construct_params=params,
             )
 
     def _prepare_a2a(self) -> None:
@@ -905,7 +959,11 @@ class ReActAgentBuilder:
         """
         paas_client = None
         paas_app_code = ""
-        if self._enable_runtime_tool and "paas_sandbox" in self._runtime_types:
+        if (
+            self._enable_runtime_tool
+            and self._runtime_backend_resolver is not None
+            and self._runtime_backend_resolver.have_runtime_cls("paas_sandbox")
+        ):
             executor_info = self._executor_info or {}
             paas_app_code = executor_info.get("app_code", "")
             if paas_app_code and self._resource_manager is not None:
