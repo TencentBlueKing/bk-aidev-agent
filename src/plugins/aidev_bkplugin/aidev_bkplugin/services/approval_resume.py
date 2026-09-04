@@ -155,9 +155,9 @@ def _resume_approval(
         builder = AgentBuilder(username=username)
         agent_instance = builder.by_session_code(session_code)
 
-        # 与 chat 一样走 build_execute_kwargs：用 username 补齐 executor / caller_executor。
-        # caller_bk_* 只保留入参（本路径未传则保持空）。审批人仍来自工具配置
-        # target.approval.approvers，不会把调用人当成审批人。
+        # 与 chat 一样走 build_execute_kwargs。executor / caller_bk_* 由 execute()
+        # 从 session.property.caller_context 回填；此处 username 只作空字段兜底。
+        # 审批人仍来自工具配置 target.approval.approvers。
         execute_kwargs = build_execute_kwargs(
             {
                 "stream": True,

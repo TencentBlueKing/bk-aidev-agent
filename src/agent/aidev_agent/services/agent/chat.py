@@ -399,14 +399,63 @@ class ChatCompletionAgent(BaseModel):
         if isinstance(self.event_handler, BaseSessionWriter):
             self.event_handler(event)
 
+    def _session_code_for_caller_context(self, execute_kwargs: ExecuteKwargs) -> str:
+        return (execute_kwargs.session_code or self.thread_id or "").strip()
+
+    @staticmethod
+    def _caller_context_from_session(session: Any) -> dict[str, Any]:
+        if not isinstance(session, dict):
+            return {}
+        prop = session.get("session_property") or {}
+        if not isinstance(prop, dict):
+            return {}
+        data = prop.get("caller_context") or {}
+        return data if isinstance(data, dict) else {}
+
+    def _restore_session_caller_context(self, execute_kwargs: ExecuteKwargs, session_code: str) -> None:
+        retrieve = getattr(self.resource_manager, "retrieve_chat_session", None)
+        if not callable(retrieve):
+            return
+        try:
+            execute_kwargs.apply_caller_context(
+                self._caller_context_from_session(retrieve(session_code)),
+                overwrite=bool(execute_kwargs.resume),
+            )
+        except Exception:
+            logger.warning("restore session caller_context failed: session_code=%s", session_code, exc_info=True)
+
+    def _persist_session_caller_context(self, execute_kwargs: ExecuteKwargs, session_code: str) -> None:
+        update = getattr(self.resource_manager, "update_chat_session_caller_context", None)
+        current = execute_kwargs.to_caller_context()
+        if not current or not callable(update):
+            return
+        retrieve = getattr(self.resource_manager, "retrieve_chat_session", None)
+        try:
+            stored = self._caller_context_from_session(retrieve(session_code) if callable(retrieve) else {})
+            merged = {**current, **stored}
+            if merged == stored:
+                return
+            update(session_code, merged)
+        except Exception:
+            logger.warning("persist session caller_context failed: session_code=%s", session_code, exc_info=True)
+
+    def _sync_session_caller_context(self, execute_kwargs: ExecuteKwargs) -> None:
+        """resume 读回 ``caller_context``，非 resume 把当次调用方字段写回会话（已有键不覆盖）。"""
+        session_code = self._session_code_for_caller_context(execute_kwargs)
+        if session_code:
+            self._restore_session_caller_context(execute_kwargs, session_code)
+        execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
+        if session_code:
+            self._persist_session_caller_context(execute_kwargs, session_code)
+
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
         self.migration_v1()
         # D-13：resume dict→list 归一化前移到 execute() 最前（消除 R1/R2 双重兼容逻辑）
         if isinstance(execute_kwargs.resume, dict):
             execute_kwargs.resume = [execute_kwargs.resume]
-        # 审批 / ask_user resume 常省略 executor；用当前 username 补齐，供 Trace 与建单使用。
-        # 须在 ItsmTicketCreator 读取 executor 之前补齐。caller_bk_* 只保留调用方入参。
-        execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
+        # 审批 / ask_user resume 常省略 executor；优先从 session.property.caller_context
+        # 回填首次调用身份，再用当前 username 补齐空字段。须在 ItsmTicketCreator 之前。
+        self._sync_session_caller_context(execute_kwargs)
         # D-11：processor 惰性构造（execute 入口，非 build 期——ItsmTicketCreator 需
         # execute_kwargs.executor/session_code，build 期拿不到）。
         # D-03（48）：构造参数改为 handlers dict 显式注入（U-01，移除 resource_manager /
