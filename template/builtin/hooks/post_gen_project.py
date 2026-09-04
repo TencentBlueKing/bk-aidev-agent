@@ -7,6 +7,7 @@ Updates pyproject.toml to use the actual project name.
 
 import os
 import re
+import shutil
 
 
 def update_pyproject_toml():
@@ -42,5 +43,15 @@ def update_pyproject_toml():
         print("Warning: Could not find 'name = \"ai-plugin\"' in pyproject.toml")
 
 
+def remove_unused_craw_runtime():
+    """Keep normal buildpack packages unchanged; Craw retains Docker assets."""
+    if "{{ cookiecutter.agent_runtime }}" == "craw":
+        return
+    if os.path.exists("Dockerfile"):
+        os.remove("Dockerfile")
+    shutil.rmtree("deploy", ignore_errors=True)
+
+
 if __name__ == "__main__":
     update_pyproject_toml()
+    remove_unused_craw_runtime()

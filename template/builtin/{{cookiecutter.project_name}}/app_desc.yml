@@ -6,7 +6,11 @@ modules:
     spec:
       hooks:
         preRelease:
+          {% if cookiecutter.agent_runtime == "craw" %}
+          procCommand: "/app/.venv/bin/python /app/deploy/craw-pre-release.py"
+          {% else %}
           procCommand: "bash bin/pre_release.sh"
+          {% endif %}
       configuration:
         env:
           - name: PYTHONPATH
@@ -58,7 +62,7 @@ modules:
             value: "True"
             description: enable metrics
           - name: BKAI_AGENT_APM_OTEL_ENABLED
-            value: "True"
+            value: "{{ 'False' if cookiecutter.agent_runtime == 'craw' else 'True' }}"
             description: enable apm otel
           {% if cookiecutter.model_management_ns_host %}
           - name: MODEL_MANAGEMENT_NS_HOST
@@ -85,15 +89,55 @@ modules:
             value: "{{ cookiecutter.bkpaas_grant_apps }}"
             description: bkpaas grant apps
           {% endif %}
+          {% if cookiecutter.agent_runtime == "craw" %}
+          - name: BKAI_AIDEV_APP_UPSTREAM_ORIGIN
+            value: "{{ cookiecutter.aidev_app_upstream_origin }}"
+            description: AIDEV application gateway origin
+          - name: MESSAGE_HANDLER_TYPE
+            value: "inmemory"
+            description: single-replica craw runtime
+          - name: BKAI_CRAW_BACKEND
+            value: "openclaw"
+            description: enable Craw chat takeover
+          - name: BKAI_CRAW_API_URL
+            value: "http://127.0.0.1:18789"
+            description: local Craw gateway
+          - name: BKAI_OPENCLAW_MODE
+            value: "paas"
+            description: OpenClaw PaaS mode
+          - name: BKAI_OPENCLAW_HTTP_API
+            value: "1"
+            description: enable OpenAI-compatible endpoint
+          - name: BKAI_OPENCLAW_TRANSPORT
+            value: "ws"
+            description: preserve AG-UI tool events
+          - name: OPENCLAW_GATEWAY_PORT
+            value: "18789"
+            description: OpenClaw gateway port
+          - name: BKAI_MCP_EGRESS_PORT
+            value: "18787"
+            description: per-user MCP egress port
+          - name: BKAI_MCP_EGRESS_URL
+            value: "http://127.0.0.1:18787"
+            description: per-user MCP egress URL
+          - name: BKAI_BKAPI_USE_USER_TOKEN
+            value: "0"
+            description: user token is reserved for MCP egress
+          {% else %}
           - name: MESSAGE_HANDLER_TYPE
             value: "rabbitmq"
             description: message handler type for multi-process mode
           - name: BKAPP_WXAIBOT_WS_ENABLED
             value: "true"
             description: enable wecom websocket worker
+          {% endif %}
       processes:
         - name: web
+          {% if cookiecutter.agent_runtime == "craw" %}
+          procCommand: tini -- bash /app/deploy/craw-supervisor.sh /app/.venv/bin/gunicorn bk_plugin_runtime.wsgi --bind 0.0.0.0:5000 --timeout 300 -k gthread -w 1 --threads 32 --max-requests 512 --max-requests-jitter 50 --backlog 512
+          {% else %}
           procCommand: gunicorn bk_plugin_runtime.wsgi --timeout 300 -k gthread -w 2 --max-requests 512 --max-requests-jitter 50 --threads 32 --backlog 512
+          {% endif %}
           resQuotaPlan: 4C4G
           replicas: 1
           services:
@@ -103,6 +147,7 @@ modules:
                 name: bk/http
               targetPort: 5000
               port: 80
+        {% if cookiecutter.agent_runtime != "craw" %}
         - name: celery
           procCommand: celery -A blueapps.core.celery worker -P threads -Q plugin_schedule,bkai_agent_task,bkai_agent_metric -l INFO -c 2 --max-tasks-per-child 256
           resQuotaPlan: 4C4G
@@ -111,3 +156,4 @@ modules:
           procCommand: /bin/bash bin/start_wxaibot.sh
           resQuotaPlan: 4C4G
           replicas: {{ cookiecutter.wxaibot_replicas }}
+        {% endif %}

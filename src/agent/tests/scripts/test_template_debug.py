@@ -37,3 +37,15 @@ def test_template_celery_worker_listens_to_plugin_agent_and_metric_queues():
     app_desc = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}" / "app_desc.yml"
 
     assert "-Q plugin_schedule,bkai_agent_task,bkai_agent_metric" in app_desc.read_text(encoding="utf-8")
+
+
+def test_builtin_template_can_render_craw_dockerfile_package():
+    repo_root = Path(__file__).resolve().parents[4]
+    project = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}"
+    dockerfile = (project / "Dockerfile").read_text(encoding="utf-8")
+    app_desc = (project / "app_desc.yml").read_text(encoding="utf-8")
+
+    assert "ARG CRAW_BASE_IMAGE\nFROM ${CRAW_BASE_IMAGE}" in dockerfile
+    assert (project / "deploy" / "craw-supervisor.sh").is_file()
+    assert 'cookiecutter.agent_runtime == "craw"' in app_desc
+    assert "craw-supervisor.sh" in app_desc
