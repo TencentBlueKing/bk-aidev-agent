@@ -339,6 +339,15 @@ class BaseResourceManager(abc.ABC):
             **kwargs,
         ).get("data", {})
 
+    def update_chat_session_caller_context(self, session_code: str, caller_context: dict, **kwargs) -> dict:
+        """更新会话 ``session_property.caller_context`` 并返回后端 ``data`` 字段。"""
+        client = self.get_client()
+        return client.api.update_chat_session(
+            path_params={"session_code": session_code},
+            json={"session_property": {"caller_context": caller_context}},
+            **kwargs,
+        ).get("data", {})
+
     def retrieve_agent_config(self, agent_code: str, version: Optional[str] = None, **kwargs) -> dict:
         agent_code = agent_code or self.app_code
         params = kwargs.pop("params", None) or {}

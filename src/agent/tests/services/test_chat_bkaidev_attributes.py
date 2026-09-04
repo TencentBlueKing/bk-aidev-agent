@@ -400,3 +400,96 @@ class TestUpdateBkaidevSessionHeaderFallback:
         agent._update_aidev_agent_header(ExecuteKwargs(stream=False, caller_bk_app_code="app-x", session_code="snap-1"))
 
         assert primary.default_headers["X-BKAIDEV-Attributes"] == fallback.default_headers["X-BKAIDEV-Attributes"]
+
+
+class TestExecuteFillsSessionCallerDefaults:
+    """execute() 从 session.property.caller_context 回填，再用 username 补齐空的 executor。"""
+
+    def _execute_and_capture(self, execute_kwargs, *, username="user", resource_manager=None):
+        from langchain_core.messages import HumanMessage
+
+        agent = ChatCompletionAgent()
+        agent.resource_manager = resource_manager or MagicMock(username=username)
+        if resource_manager is None:
+            agent.resource_manager.retrieve_chat_session.return_value = {"session_property": {}}
+        agent.chat_model = MagicMock()
+        agent.chat_model_non_thinking = None
+        agent.interrupt_processor = MagicMock()
+        agent.messages = [HumanMessage(content="hi")]
+        captured = {}
+
+        def _execute(messages, kwargs):
+            captured["kwargs"] = kwargs
+            return "ok"
+
+        agent._execute = _execute
+        agent.execute(execute_kwargs)
+        return captured["kwargs"], agent.resource_manager
+
+    def test_approval_resume_fills_from_resource_manager_username(self):
+        kwargs, _ = self._execute_and_capture(
+            ExecuteKwargs(stream=True, resume=[{"interruptId": "approval-1"}]),
+        )
+        assert kwargs.caller_bk_app_code is None
+        assert kwargs.caller_bk_biz_env is None
+        assert kwargs.caller_order_type is None
+        assert kwargs.executor == "user"
+        assert kwargs.caller_executor == "user"
+
+    def test_ask_user_resume_fills_from_resource_manager_username(self):
+        kwargs, _ = self._execute_and_capture(
+            ExecuteKwargs(
+                stream=True,
+                resume=[
+                    {
+                        "interruptId": "ask-1",
+                        "status": "resolved",
+                        "payload": {"answers": [{"question": "q", "answer": "a"}]},
+                    }
+                ],
+            ),
+        )
+        assert kwargs.caller_bk_app_code is None
+        assert kwargs.executor == "user"
+        assert kwargs.caller_executor == "user"
+
+    def test_first_call_persists_caller_context(self):
+        kwargs, rm = self._execute_and_capture(
+            ExecuteKwargs(
+                stream=True,
+                session_code="sess-1",
+                caller_bk_app_code="app-001",
+                caller_bk_biz_env="public",
+                executor="user-a",
+            ),
+        )
+        assert kwargs.caller_bk_app_code == "app-001"
+        rm.update_chat_session_caller_context.assert_called_once_with(
+            "sess-1",
+            {
+                "caller_bk_app_code": "app-001",
+                "caller_bk_biz_env": "public",
+                "caller_executor": "user-a",
+                "executor": "user-a",
+            },
+        )
+
+    def test_resume_restores_caller_context_over_worker_username(self):
+        rm = MagicMock(username="approver")
+        stored = {
+            "caller_bk_app_code": "app-001",
+            "caller_bk_biz_env": "public",
+            "caller_executor": "user-a",
+            "caller_order_type": "ai-auto",
+            "executor": "user-a",
+        }
+        rm.retrieve_chat_session.return_value = {"session_property": {"caller_context": stored}}
+        kwargs, _ = self._execute_and_capture(
+            ExecuteKwargs(stream=True, session_code="sess-1", resume=[{"interruptId": "approval-1"}]),
+            resource_manager=rm,
+        )
+        assert kwargs.caller_bk_app_code == "app-001"
+        assert kwargs.caller_bk_biz_env == "public"
+        assert kwargs.caller_order_type == "ai-auto"
+        assert kwargs.executor == "user-a"
+        assert kwargs.caller_executor == "user-a"

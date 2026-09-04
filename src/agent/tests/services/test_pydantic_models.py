@@ -260,3 +260,79 @@ def test_execute_kwargs_input_assignment_and_serialization():
     kwargs = ExecuteKwargs(input="hi")
     assert kwargs.input == "hi"
     assert kwargs.model_dump()["input"] == "hi"
+
+
+def test_apply_session_caller_defaults_fills_executor_from_username():
+    kwargs = ExecuteKwargs().apply_session_caller_defaults("user")
+    assert kwargs.caller_bk_app_code is None
+    assert kwargs.caller_bk_biz_env is None
+    assert kwargs.caller_order_type is None
+    assert kwargs.executor == "user"
+    assert kwargs.caller_executor == "user"
+
+
+def test_apply_session_caller_defaults_keeps_explicit_values():
+    kwargs = ExecuteKwargs(
+        caller_bk_app_code="other-app",
+        caller_bk_biz_env="public",
+        caller_order_type="ai-auto",
+        executor="user-b",
+        caller_executor="user-a",
+    ).apply_session_caller_defaults("ignored")
+    assert kwargs.caller_bk_app_code == "other-app"
+    assert kwargs.caller_bk_biz_env == "public"
+    assert kwargs.caller_order_type == "ai-auto"
+    assert kwargs.executor == "user-b"
+    assert kwargs.caller_executor == "user-a"
+
+
+def test_apply_session_caller_defaults_without_username_leaves_caller_fields_unset():
+    kwargs = ExecuteKwargs().apply_session_caller_defaults(None)
+    assert kwargs.caller_bk_app_code is None
+    assert kwargs.caller_bk_biz_env is None
+    assert kwargs.caller_order_type is None
+    assert kwargs.executor is None
+    assert kwargs.caller_executor is None
+
+
+def test_to_caller_context_skips_empty_and_trace_headers():
+    kwargs = ExecuteKwargs(
+        caller_bk_app_code="app-001",
+        caller_bk_biz_env="public",
+        caller_bk_biz_id=100,
+        caller_executor="user-a",
+        executor="user-a",
+        caller_order_type="ai-auto",
+        caller_trace_context={"traceparent": "00-abc"},
+    )
+    assert kwargs.to_caller_context() == {
+        "caller_bk_app_code": "app-001",
+        "caller_bk_biz_env": "public",
+        "caller_bk_biz_id": 100,
+        "caller_executor": "user-a",
+        "caller_order_type": "ai-auto",
+        "executor": "user-a",
+    }
+
+
+def test_apply_caller_context_fills_empty_and_keeps_explicit():
+    kwargs = ExecuteKwargs(executor="user-b").apply_caller_context(
+        {
+            "caller_bk_app_code": "app-001",
+            "executor": "user-a",
+            "caller_executor": "user-a",
+        }
+    )
+    assert kwargs.caller_bk_app_code == "app-001"
+    assert kwargs.executor == "user-b"
+    assert kwargs.caller_executor == "user-a"
+
+
+def test_apply_caller_context_overwrite_on_resume():
+    kwargs = ExecuteKwargs(executor="approver").apply_caller_context(
+        {"executor": "user-a", "caller_executor": "user-a", "caller_bk_app_code": "app-001"},
+        overwrite=True,
+    )
+    assert kwargs.executor == "user-a"
+    assert kwargs.caller_executor == "user-a"
+    assert kwargs.caller_bk_app_code == "app-001"

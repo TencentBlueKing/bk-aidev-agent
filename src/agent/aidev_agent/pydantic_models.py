@@ -55,6 +55,52 @@ class ExecuteKwargs(BaseModel):
     # A2A PV 共享
     sandbox_pv_id: str | None = Field(default=None, description="父 Agent 的沙箱 PV ID，子 Agent 通过此字段复用父 PV")
 
+    CALLER_CONTEXT_FIELDS: ClassVar[tuple[str, ...]] = (
+        "caller_bk_app_code",
+        "caller_bk_biz_env",
+        "caller_bk_biz_id",
+        "caller_executor",
+        "caller_order_type",
+        "executor",
+    )
+
+    def to_caller_context(self) -> dict[str, Any]:
+        """抽取可持久化到 ``ChatSession.property.caller_context`` 的调用方字段。
+
+        不含 ``caller_trace_context``：那是当次请求的 W3C 头，不应跨 resume 复用。
+        """
+        data: dict[str, Any] = {}
+        for name in self.CALLER_CONTEXT_FIELDS:
+            value = getattr(self, name, None)
+            if value not in (None, ""):
+                data[name] = value
+        return data
+
+    def apply_caller_context(self, data: dict[str, Any] | None, *, overwrite: bool = False) -> ExecuteKwargs:
+        """用会话 ``caller_context`` 填回空字段；``overwrite=True`` 时覆盖已有值（resume）。"""
+        if not data:
+            return self
+        for name in self.CALLER_CONTEXT_FIELDS:
+            stored = data.get(name)
+            if stored in (None, ""):
+                continue
+            if overwrite or getattr(self, name, None) in (None, ""):
+                setattr(self, name, stored)
+        return self
+
+    def apply_session_caller_defaults(self, username: str | None = None) -> ExecuteKwargs:
+        """仅补齐 ``executor`` / ``caller_executor``，已有值不覆盖。
+
+        ``caller_bk_app_code`` / ``caller_bk_biz_env`` / ``caller_bk_biz_id`` /
+        ``caller_order_type`` 来自调用方入参（HTTP ``execute_kwargs``、BKFlow 工单表单、
+        A2A ``spec.params``），此处不填默认值。
+        """
+        resolved = self.executor or self.caller_executor or username or None
+        if resolved:
+            self.executor = self.executor or resolved
+            self.caller_executor = self.caller_executor or resolved
+        return self
+
 
 class SessionTool(BaseModel):
     tool_id: int

@@ -81,6 +81,10 @@ class ResourceManagerProtocol(Protocol):
         """更新会话 ``session_property.sandbox_pv_id`` 并返回后端 ``data`` 字段。"""
         ...
 
+    def update_chat_session_caller_context(self, session_code: str, caller_context: dict, **kwargs) -> dict:
+        """更新会话 ``session_property.caller_context`` 并返回后端 ``data`` 字段。"""
+        ...
+
     def get_or_create_session(
         self,
         session_code: str,

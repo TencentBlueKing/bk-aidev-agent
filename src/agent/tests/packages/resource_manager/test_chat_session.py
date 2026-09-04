@@ -46,6 +46,18 @@ def test_update_chat_session_sandbox_pv_id_writes_only_sandbox_pv_id():
     assert set(kwargs["json"]["session_property"].keys()) == {"sandbox_pv_id"}
 
 
+def test_update_chat_session_caller_context_writes_only_caller_context():
+    rm = _StubResourceManager()
+
+    result = rm.update_chat_session_caller_context("session-1", {"executor": "user", "caller_bk_app_code": "app-001"})
+
+    assert result == {"session_code": "session-1"}
+    rm.client.api.update_chat_session.assert_called_once_with(
+        path_params={"session_code": "session-1"},
+        json={"session_property": {"caller_context": {"executor": "user", "caller_bk_app_code": "app-001"}}},
+    )
+
+
 def test_update_chat_session_sandbox_pv_id_passes_kwargs():
     rm = _StubResourceManager()
 

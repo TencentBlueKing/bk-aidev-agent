@@ -34,13 +34,9 @@ logger = getLogger(__name__)
 
 
 def build_execute_kwargs(_execute_kwargs: dict, username: str | None = None) -> ExecuteKwargs:
-    """``dict`` → ``ExecuteKwargs``，并补齐 caller_/executor 等字段；按需注入 OTel trace context。"""
+    """``dict`` → ``ExecuteKwargs``，补齐 executor / caller_executor；按需注入 OTel trace context。"""
     execute_kwargs = ExecuteKwargs.model_validate(_execute_kwargs)
-    execute_kwargs.caller_bk_biz_env = execute_kwargs.caller_bk_biz_env or "domestic_biz"
-    execute_kwargs.caller_bk_app_code = execute_kwargs.caller_bk_app_code or "bkaidev"
-    execute_kwargs.executor = execute_kwargs.executor or username or "anonymous"
-    execute_kwargs.caller_executor = execute_kwargs.caller_executor or username or "anonymous"
-    execute_kwargs.caller_order_type = execute_kwargs.caller_order_type or "ai_chat"
+    execute_kwargs.apply_session_caller_defaults(username or "anonymous")
     if not execute_kwargs.caller_trace_context and trace is not None:
         current_span = trace.get_current_span()
         if current_span is not None and current_span.get_span_context().is_valid:

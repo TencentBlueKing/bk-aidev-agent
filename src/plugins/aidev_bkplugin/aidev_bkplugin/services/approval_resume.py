@@ -14,12 +14,11 @@ import threading
 import time
 from logging import getLogger
 
-from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent.approval import ApprovalStateHandler
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span, trace_headers
 
 from aidev_bkplugin.services.agent_builder import AgentBuilder
-from aidev_bkplugin.services.agent_execution import AgentExecutor
+from aidev_bkplugin.services.agent_execution import AgentExecutor, build_execute_kwargs
 from aidev_bkplugin.services.agent_session import SessionManager
 
 logger = getLogger(__name__)
@@ -156,18 +155,19 @@ def _resume_approval(
         builder = AgentBuilder(username=username)
         agent_instance = builder.by_session_code(session_code)
 
-        execute_kwargs = ExecuteKwargs(
-            stream=True,
-            session_code=session_code,
-            thread_id=graph_thread_id,
-            resume=resume_items,
-            caller_trace_context=trace_headers(),
-            # 不传 executor：审批 approvers 来自工具审批配置（ItsmTicketCreator 读
-            # target.approval.approvers），与调用人无关——提单人（username）不可成为
-            # 审批身份（禁止自审批）。缺省时建单请求不带 X-BKAIDEV-USER 头。
-            # 后台 drain（无 SSE 下游，下方 for _ in generator 自行排空）：标记 background_only，
-            # 使消费者读到 EOD 时不立即清理队列，保留缓存历史供前端在清理窗口内接管续流。
-            background_only=True,
+        # 与 chat 一样走 build_execute_kwargs。executor / caller_bk_* 由 execute()
+        # 从 session.property.caller_context 回填；此处 username 只作空字段兜底。
+        # 审批人仍来自工具配置 target.approval.approvers。
+        execute_kwargs = build_execute_kwargs(
+            {
+                "stream": True,
+                "session_code": session_code,
+                "thread_id": graph_thread_id,
+                "resume": resume_items,
+                "caller_trace_context": trace_headers(),
+                "background_only": True,
+            },
+            username,
         )
 
         logger.info(
