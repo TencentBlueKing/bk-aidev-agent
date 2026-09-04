@@ -147,6 +147,31 @@ aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
 
 未提供 `#welcome` 时行为不变，仍使用内置欢迎内容。
 
+### `#headerLeft` / `#headerActions` 自定义 Header
+
+仅 `AIBlueking` 提供。`#headerLeft` 插在标题区与右侧工具栏之间（标签、状态指示等）；`#headerActions` 插在右侧工具栏内，位于历史/转人工之后、压缩/关闭之前，用于自定义图标按钮。`showHistoryIcon` 只控制内置历史按钮，与 `#headerActions` 独立。
+
+```
+[logo] [title] [more] | #headerLeft | [new-chat] [history] [help] | #headerActions | [compress] [close] | [aside]
+```
+
+```vue
+<template>
+  <AIBlueking :url="apiUrl" :show-history-icon="true">
+    <template #headerLeft>
+      <span class="pro-tag">Pro</span>
+    </template>
+    <template #headerActions>
+      <i class="bkai-icon" @click="onCustomAction">
+        <!-- 自定义 svg / 图标字体 -->
+      </i>
+    </template>
+  </AIBlueking>
+</template>
+```
+
+子节点带 `bkai-icon` 时会套用 Header 工具栏的 20px 尺寸与 hover 样式。插槽内容应保持单行，避免撑高 Header（48px）。
+
 ### 消息工具栏扩展（`messageTools` / `updateTools`）
 
 在内置工具基础上增量定制 AI 消息工具栏，合并规则与 chat-x 一致：同 `id` 覆盖、新 `id` 追加、`{ id, hidden: true }` 隐藏。

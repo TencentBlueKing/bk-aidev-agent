@@ -291,7 +291,8 @@ const handleError = (error: Error) => {
 | `welcome` | `{ openingRemark, welcomeTitle }` | 自定义空会话欢迎区 |
 | `message` | `{ message, messageToolsStatus, onInterruptResume }` | 自定义消息渲染 |
 | `codeHeader` | `{ language, token }` | 自定义代码块头部 |
-| `headerLeft` | — | （仅 AIBlueking）Header 左侧区域 |
+| `headerLeft` | — | （仅 AIBlueking）Header 标题区与右侧工具栏之间 |
+| `headerActions` | — | （仅 AIBlueking）Header 右侧工具栏自定义图标（历史之后、压缩/关闭之前） |
 
 ### ChatBot Expose
 

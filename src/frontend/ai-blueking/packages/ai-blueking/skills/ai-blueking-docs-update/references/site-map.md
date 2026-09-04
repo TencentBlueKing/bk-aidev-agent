@@ -41,7 +41,7 @@
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
 | `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；空态也可打开侧栏 / 产物空态（≥ v2.2.3）；侧栏固定右侧 + 嵌入模式须业务 Header |
-| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`messageTools`/`updateTools`；`size` / `timezone`（≥ v2.2.3） |
+| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`、`messageTools`/`updateTools`；`size` / `timezone`（≥ v2.2.3） |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
 ### 高级用法
@@ -67,6 +67,8 @@
 组件行为变更时：更新对应 API 表 + 在指南中加交叉链接。
 
 欢迎区 / 消息工具栏扩展落点：指南 `ui-customization.md`（`#welcome`、`messageTools`/`updateTools`）、`sharing.md`（`confirm-share` + `source`、`agent-action`）；API 同步 `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`。
+
+Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization.md`；API `api/ai-blueking/aiblueking.md` Slots 表（仅 AIBlueking）。
 
 消息时间时区 `timezone` 落点（≥ v2.2.3）：指南 `chat-interaction.md`（四档格式 / `createdAt` 来源）+ `ui-customization.md`（`timezone` prop）；FAQ「如何让消息时间按指定时区显示」；API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`，以及 `api/chat-x/components.md` `MessageTime`。未配置时按浏览器时区。
 

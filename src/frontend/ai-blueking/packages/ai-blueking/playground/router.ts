@@ -62,6 +62,12 @@ const router = createRouter({
       meta: { title: 'headerLeft 插槽', group: 'example' },
     },
     {
+      path: '/examples/header-actions-slot',
+      name: 'HeaderActionsSlot',
+      component: () => import('./views/HeaderActionsSlotView.vue'),
+      meta: { title: 'headerActions 插槽', group: 'example' },
+    },
+    {
       path: '/examples/render-mode',
       name: 'RenderMode',
       component: () => import('./views/RenderModeView.vue'),

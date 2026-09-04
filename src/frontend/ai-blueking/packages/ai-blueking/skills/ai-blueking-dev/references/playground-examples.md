@@ -29,6 +29,7 @@
 | `ExampleBasicView.vue` / `ExampleAdvancedView.vue` | 基础 / 高级用法 | [ChatBot API](chatbot-api.md) |
 | `CodeHeaderSlotView.vue` | `#codeHeader` 插槽（代码块「插入/应用」） | [ChatBot API#Slots](chatbot-api.md) |
 | `HeaderLeftSlotView.vue` | `#headerLeft` 插槽（Header 左侧自定义） | [SKILL.md](../SKILL.md) |
+| `HeaderActionsSlotView.vue` | `#headerActions` 插槽：页面内展示实现原理 + AIHeader/AIBlueking 源码；`SourceGuideDialog` 可复制 Vue3/Vue2 示例 | [SKILL.md](../SKILL.md) |
 | `UrlSwitchView.vue` | `url` 动态切换与重初始化（`whenReady` / `ChatBotInitStaleError`） | [ChatBot API#whenReady](chatbot-api.md) |
 | `RequestOptionsView.vue` | `requestOptions` 响应式（对象/函数/ref/computed） | [SKILL.md · requestOptions 响应式](../SKILL.md) |
 | `RenderModeView.vue` | `renderMode`（chat / share / test） | [SKILL.md · 渲染模式](../SKILL.md) |

@@ -63,6 +63,12 @@
             >
               <slot name="headerLeft" />
             </template>
+            <template
+              v-if="$slots.headerActions"
+              #headerActions
+            >
+              <slot name="headerActions" />
+            </template>
           </AIHeader>
 
           <!-- ChatBot 核心组件（仅聊天区域） -->
@@ -200,6 +206,7 @@
   const attrs = useAttrs();
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
+    headerActions?: () => unknown;
     headerLeft?: () => unknown;
     message?: (props: {
       message: Message;

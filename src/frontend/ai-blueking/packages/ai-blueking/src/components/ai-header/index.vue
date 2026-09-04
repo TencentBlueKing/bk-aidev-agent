@@ -162,6 +162,12 @@
         class="bkai-icon bkai-zhushou"
         @click="handleHelpClick"
       ></i>
+      <div
+        v-if="$slots.headerActions"
+        class="header-actions"
+      >
+        <slot name="headerActions" />
+      </div>
       <i
         v-if="props.showCompressionIcon"
         v-bk-tooltips="{ content: compressionTooltip, boundary: 'parent' }"
@@ -248,6 +254,7 @@
   });
 
   defineSlots<{
+    headerActions?: () => unknown;
     headerLeft?: () => unknown;
   }>();
 
@@ -566,6 +573,12 @@
       justify-content: flex-end;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
     .header-toolbar-divider {
       flex-shrink: 0;
       width: 1px;
@@ -573,7 +586,8 @@
       background: #dcdee5;
     }
 
-    .bkai-icon {
+    .bkai-icon,
+    .header-actions :deep(.bkai-icon) {
       display: inline-flex;
       align-items: center;
       justify-content: center;

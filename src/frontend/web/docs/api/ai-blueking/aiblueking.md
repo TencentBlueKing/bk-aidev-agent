@@ -267,7 +267,8 @@ function openAI() {
 | `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatBot） |
 | `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
 | `codeHeader` | `{ language, token }` | 自定义代码块头部 |
-| `headerLeft` | — | Header 左侧区域 |
+| `headerLeft` | — | Header 标题区与右侧工具栏之间 |
+| `headerActions` | — | Header 右侧工具栏自定义图标（历史/转人工之后、压缩/关闭之前）；与 `showHistoryIcon` 独立 |
 
 ## 弹窗模式
 

@@ -1372,9 +1372,48 @@ render(h2) {
 
 **插槽链路**：`AIBlueking #headerLeft` → `AIHeader #headerLeft`，无 slot props。
 
+### 自定义 Header 右侧工具栏（`#headerActions` 插槽）
+
+`#headerActions` 插在右侧工具栏内部，位于历史/转人工之后、压缩/关闭之前，用于自定义图标按钮。`showHistoryIcon` 只控制内置历史按钮，两者独立。
+
+**Vue3 用法：**
+
+```vue
+<AIBlueking :url="apiUrl" :show-history-icon="true">
+  <template #headerActions>
+    <i class="bkai-icon" @click="onCustomAction">
+      <!-- 自定义 svg / 图标字体 -->
+    </i>
+  </template>
+</AIBlueking>
+```
+
+**Vue2 用法：**
+
+```javascript
+import AIBluekingV2, { h } from '@blueking/ai-blueking/vue2';
+
+<AIBluekingV2 :url="apiUrl">
+  <template #headerActions>
+    <i class="bkai-icon" @click="onCustomAction"></i>
+  </template>
+</AIBluekingV2>
+
+render(h2) {
+  return h2(AIBluekingV2, {
+    props: { url: apiUrl },
+    scopedSlots: {
+      headerActions: () => h('i', { class: 'bkai-icon', onClick: onCustomAction }),
+    },
+  });
+}
+```
+
+**插槽链路**：`AIBlueking #headerActions` → `AIHeader #headerActions`，无 slot props。子节点带 `bkai-icon` 时套用 Header 工具栏样式。
+
 **布局位置**：
 
 ```
-[logo] [title] [more] | ← #headerLeft → | [new-chat] [history] [help] [compress] [close] | [aside]
+[logo] [title] [more] | ← #headerLeft → | [new-chat] [history] [help] | ← #headerActions → | [compress] [close] | [aside]
      .left-section                              .right-section（关闭与侧栏展开之间有竖线分隔）
 ```

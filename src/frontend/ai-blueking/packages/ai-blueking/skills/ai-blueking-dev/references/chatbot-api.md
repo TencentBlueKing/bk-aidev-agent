@@ -339,6 +339,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | welcome | `({ openingRemark?, welcomeTitle? })` | 自定义空会话欢迎区（透传 ChatBot → ChatContainer） |
 | codeHeader | `({ language, token })` | 自定义代码块头部（透传 ChatBot） |
 | headerLeft | 无 | Header 标题区与右侧工具栏之间插入自定义内容（透传 AIHeader，详见 [`#headerLeft`](integration-patterns.md#自定义-header-左侧-headerleft-插槽)） |
+| headerActions | 无 | Header 右侧工具栏自定义图标，位于历史/转人工之后、压缩/关闭之前（透传 AIHeader，详见 [`#headerActions`](integration-patterns.md#自定义-header-右侧工具栏-headeractions-插槽)）；与 `showHistoryIcon` 独立 |
 | message | `({ message, messageToolsStatus, onInterruptResume })` | 自定义单条消息渲染（透传 ChatBot；同样须透传 `onInterruptResume`，见上文 HITL 说明） |
 
 ### AIBlueking Expose
@@ -414,4 +415,4 @@ interface SdkErrorPayload {
 - **Expose 缺口**：`updateAgentInfo`（AIBlueking / ChatBot）与 `selectedLlmCode`（ChatBot）未进 Vue2 `exposeKeys`。刷新 agentInfo 请用 `getChatHelper()?.agent.getAgentInfo()`。
 - **`ChatBotV2` 未注册的 props**：`asideCollapsed`、`enableModelSelect`、`models`、`renderMode`、`errorToast`、`skills`。因此 Vue2 嵌入模式无法 `v-model:asideCollapsed`，也无法走组件内模型选择。
 - **`AIBluekingV2` 未注册的 props**：`enableModelSelect`、`models`、`renderMode`、`errorToast`、`ignoreErrors`。
-- **插槽注册**：`AIBluekingV2` 为 `['codeHeader', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 为 `['codeHeader', 'message', 'welcome']`。HITL 场景下 `#message` 仍须透传 `onInterruptResume`。
+- **插槽注册**：`AIBluekingV2` 为 `['codeHeader', 'headerActions', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 为 `['codeHeader', 'message', 'welcome']`。HITL 场景下 `#message` 仍须透传 `onInterruptResume`。
