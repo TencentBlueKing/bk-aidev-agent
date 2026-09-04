@@ -16,7 +16,9 @@ def resume_case(monkeypatch):
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(tracing, "_agent_tracer", provider.get_tracer("test"))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr(tracing, "_agent_tracer", tracer)
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
     monkeypatch.setattr(ApprovalStateHandler, "check_resume", lambda *_: True)
     monkeypatch.setattr(approval_resume, "AgentBuilder", MagicMock())
     executor = MagicMock()
@@ -57,3 +59,25 @@ def test_approval_reader_keeps_callback_context_from_same_record(monkeypatch, ne
         ApprovalStateHandler().fetch_approve_result("session")["approval_trace_context"]
         == fields["approval_trace_context"]
     )
+
+
+def test_approval_resume_span_uses_application_service_name(resume_case, monkeypatch):
+    from opentelemetry.sdk.resources import Resource
+
+    exporter, _ = resume_case
+    module_exporter = InMemorySpanExporter()
+    module_provider = TracerProvider(resource=Resource.create({"service.name": "ai-skill-stag-default"}))
+    module_provider.add_span_processor(SimpleSpanProcessor(module_exporter))
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: module_provider.get_tracer("module"))
+    monkeypatch.setattr(
+        ApprovalStateHandler,
+        "_get_latest_interrupt_record",
+        lambda *_: {"property": {"builtin_property": {"approve_result": "approved"}}},
+    )
+    try:
+        approval_resume._approval_resume_worker("session", "author", "thread", [{"id": "approval"}])
+        resumed = next(span for span in module_exporter.get_finished_spans() if span.name == "bkplugin.approval.resume")
+        assert resumed.resource.attributes["service.name"] == "ai-skill-stag-default"
+        assert not any(span.name == "bkplugin.approval.resume" for span in exporter.get_finished_spans())
+    finally:
+        module_provider.shutdown()

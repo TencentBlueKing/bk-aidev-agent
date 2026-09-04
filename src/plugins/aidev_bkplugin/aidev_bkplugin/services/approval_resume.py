@@ -96,7 +96,7 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
     # 上下文覆盖生成器构造和排空，保证延迟发布的恢复事件也关联到审批回调。
     with (
         propagated_trace_context(approve_info.get("approval_trace_context")),
-        recording_span("bkplugin.approval.resume", record_exception=False),
+        recording_span("bkplugin.approval.resume", record_exception=False, use_global_tracer=True),
     ):
         _resume_approval(session_code, username, graph_thread_id, interrupts, approve_info)
 
