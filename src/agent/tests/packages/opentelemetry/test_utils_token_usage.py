@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """``extract_token_usage`` 单元测试（多路径提取，等价 services/token_usage.py 逻辑）。"""
 
+import pytest
 from aidev_agent.packages.opentelemetry.utils import extract_token_usage
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
@@ -109,6 +110,49 @@ def test_reasoning_to_reasoning_tokens():
     result = extract_token_usage(response)
     assert result["reasoning_tokens"] == 3
     assert "cached_tokens" not in result
+
+
+@pytest.mark.parametrize(
+    "details, expected_key, expected_value",
+    [
+        ({"prompt_tokens_details": {"cached_tokens": 9}}, "cached_tokens", 9),
+        ({"completion_tokens_details": {"reasoning_tokens": 4}}, "reasoning_tokens", 4),
+    ],
+)
+def test_provider_native_details_fallback(details, expected_key, expected_value):
+    """Test 11: provider 原生 details 键（prompt_tokens_details / completion_tokens_details）回落提取。"""
+    usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15, **details}
+    response = LLMResult(
+        generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+        llm_output={"token_usage": usage},
+    )
+    result = extract_token_usage(response)
+    assert result[expected_key] == expected_value
+
+
+@pytest.mark.parametrize(
+    "details, expected",
+    [
+        (
+            {"input_token_details": {"cache_read": 3}, "prompt_tokens_details": {"cached_tokens": 9}},
+            {"cached_tokens": 3},
+        ),
+        (
+            {"output_token_details": {"reasoning": 1}, "completion_tokens_details": {"reasoning_tokens": 7}},
+            {"reasoning_tokens": 1},
+        ),
+    ],
+)
+def test_normalized_details_take_precedence_over_provider_keys(details, expected):
+    """Test 12: 归一化 key 与 provider 原生 key 同时存在时归一化优先（or 短路语义）。"""
+    usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15, **details}
+    response = LLMResult(
+        generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+        llm_output={"token_usage": usage},
+    )
+    result = extract_token_usage(response)
+    for key, value in expected.items():
+        assert result[key] == value
 
 
 def test_coerce_usage_dict_paths():

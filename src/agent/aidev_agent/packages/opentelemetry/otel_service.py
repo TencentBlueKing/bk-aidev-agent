@@ -212,7 +212,7 @@ class BkAgentOTelService:
         headers = {"x-bk-token": token} if token else {}
 
         if exporter_type == ExporterType.GRPC:
-            return GRPCSpanExporter(
+            exporter = GRPCSpanExporter(
                 endpoint=url,
                 # insecure=True,  # 生产环境建议使用 TLS
                 headers=headers,
@@ -221,9 +221,11 @@ class BkAgentOTelService:
             # HTTP 协议需要在 endpoint 后添加 /v1/traces
             if not url.endswith("/v1/traces"):
                 url = f"{url.rstrip('/')}/v1/traces"
-            return HTTPSpanExporter(endpoint=url, headers=headers)
+            exporter = HTTPSpanExporter(endpoint=url, headers=headers)
         else:
             assert_never(exporter_type)
+
+        return exporter
 
     def _setup_metrics(self, resource: Resource):
         """

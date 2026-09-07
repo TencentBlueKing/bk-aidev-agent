@@ -169,20 +169,36 @@ class AgentKnowledgeNodeCallWrapper:
         return query or ""
 
     def get_attributes(self, state, config, instance) -> Dict[str, Any]:
-        """获取 span 属性"""
+        """获取 span 属性
+
+        既有 ``rag.*`` 键原样保留，另追加官方 gen_ai retrieval 语义键：
+        ``gen_ai.retrieval.query.text``（与 rag.query 同源）、
+        ``gen_ai.data_source.id``（复用 knowledge_bases 的 id）、``gen_ai.retrieval.top_k``。
+        """
         query = self._get_query_from_state(state)
-        attributes: Dict[str, Any] = {"rag.query": query}
+        attributes: Dict[str, Any] = {
+            "rag.query": query,
+            "gen_ai.retrieval.query.text": query,
+        }
 
         agent_options = getattr(instance, "agent_options", None)
         if agent_options is not None:
             kb_options = agent_options.knowledge_query_options
             if kb_options is not None:
+                # id 统一字符串化并剔除缺失值：None 或 int/str 混排会让 OTel 丢弃整个数组属性
+                kb_ids = [str(kb["id"]) for kb in kb_options.knowledge_bases if kb.get("id") is not None]
                 attributes.update(
                     {
-                        "rag.knowledge_bases": [kb.get("id") for kb in kb_options.knowledge_bases],
+                        "rag.knowledge_bases": kb_ids,
                         "rag.knowledge_items": [ki.get("id") for ki in kb_options.knowledge_items],
                     }
                 )
+                # data_source.id 复用 knowledge_bases 已采集的 id 列表，不新增采集范围
+                if kb_ids:
+                    attributes["gen_ai.data_source.id"] = kb_ids
+                # top_k 取目标检索条目数；knowledge_items 为空时不编造默认值
+                if kb_options.knowledge_items:
+                    attributes["gen_ai.retrieval.top_k"] = len(kb_options.knowledge_items)
                 if hasattr(kb_options, "model_dump"):
                     attributes["rag.kb_options"] = orjson.dumps(kb_options.model_dump(mode="json"))
         return attributes
