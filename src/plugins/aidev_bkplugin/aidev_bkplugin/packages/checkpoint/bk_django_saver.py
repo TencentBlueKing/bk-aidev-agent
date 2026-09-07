@@ -356,6 +356,12 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         self.lock = threading.Lock()
         # 验证模型字段
         self._validate_models()
+        # 兼容旧业务方 model：task_path 是 langgraph 上游后加的字段，
+        # 部分老业务方的 writes_model 里可能还没这个字段。启动时探测一次，
+        # put_writes 只在有字段时才写入，避免 TypeError: unexpected keyword 'task_path'。
+        self._writes_has_task_path = any(
+            f.name == "task_path" for f in self.writes_model._meta.get_fields()
+        )
 
     def _validate_models(self) -> None:
         """验证model是否包含必需的字段， 如果自定义模型需要其他字段或者约束，可重写本方法"""
@@ -659,30 +665,46 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         thread_id = str(config["configurable"]["thread_id"])
         checkpoint_ns = str(config["configurable"].get("checkpoint_ns", ""))
         checkpoint_id = str(config["configurable"]["checkpoint_id"])
+        # task_path 是 langgraph 上游后加的字段，为兼容老库/旧调用，None 时兜底为空串
+        task_path_value = task_path or ""
         writes_objects = []
 
         with self.lock:
             for idx, (channel, value) in enumerate(writes):
                 type_, serialized_value = self.serde.dumps_typed(value)
 
-                write_obj = self.writes_model(
-                    thread_id=thread_id,
-                    checkpoint_ns=checkpoint_ns,
-                    checkpoint_id=checkpoint_id,
-                    task_id=task_id,
-                    idx=WRITES_IDX_MAP.get(channel, idx),
-                    channel=channel,
-                    type=type_,
-                    value=serialized_value,
-                )
+                write_kwargs: dict[str, Any] = {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": checkpoint_ns,
+                    "checkpoint_id": checkpoint_id,
+                    "task_id": task_id,
+                    "idx": WRITES_IDX_MAP.get(channel, idx),
+                    "channel": channel,
+                    "type": type_,
+                    "value": serialized_value,
+                }
+                # 仅当业务方 model 声明了 task_path 字段时才传，避免 TypeError
+                if self._writes_has_task_path:
+                    write_kwargs["task_path"] = task_path_value
+
+                write_obj = self.writes_model(**write_kwargs)
                 writes_objects.append(write_obj)
             # 根据写入类型选择策略
             if all(w[0] in WRITES_IDX_MAP for w in writes):
                 # 如果所有写入都在WRITES_IDX_MAP中，使用bulk_create with update_conflicts
+                # 注意：bulk_upsert 走原生 SQL（INSERT ... ON DUPLICATE KEY UPDATE），
+                # 只有出现在 update_fields ∪ unique_fields 中的列才会拼进 INSERT 语句。
+                # task_path 是 langgraph 上游后加的 NOT NULL 列（Django TextField
+                # 默认无 SQL default），若未拼进 INSERT，MySQL 严格模式会抛
+                # 1364 "Field 'task_path' doesn't have a default value"。
+                # 因此当业务方 model 声明了 task_path 时，必须把它加进 update_fields。
+                update_fields = ["channel", "type", "value"]
+                if self._writes_has_task_path:
+                    update_fields.append("task_path")
                 bulk_upsert(
                     self.writes_model,
                     writes_objects,
-                    update_fields=["channel", "type", "value"],
+                    update_fields=update_fields,
                     unique_fields=["thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"],
                 )
             else:
