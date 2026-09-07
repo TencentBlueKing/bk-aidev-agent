@@ -44,6 +44,7 @@ const buildSources = (): IInputMenuItem[] => [
   { id: 'a1', type: 'artifact', name: '操作文档.docx' },
   { id: 'p1', type: 'prompt', name: '深圳旅游攻略？', content: '深圳旅游攻略？' },
   { id: 'f1', type: 'file', name: '文件' },
+  { id: 'i1', type: 'image', name: '图片' },
 ];
 
 const setup = (trigger: MenuTrigger | null, keyword = '', groupItemLimit = 4) =>
@@ -84,6 +85,7 @@ describe('useInputMenu', () => {
       'prompt',
     ]);
     expect(groups.value[0].divided).toBe(true);
+    expect(groups.value[0].items.map(item => item.id)).toEqual(['f1', 'i1']);
   });
 
   it('超过阈值的分组只展示前 N 条并给出折叠条数', () => {
@@ -109,16 +111,20 @@ describe('useInputMenu', () => {
     expect(groups.value[0].items.map(item => item.id)).toEqual(['s2']);
   });
 
-  it('没有会话产物时该分组仍保留并交由面板展示暂无数据', () => {
+  it('没有会话产物时不渲染该分组', () => {
     const { groups } = useInputMenu({
       sources: shallowRef<IInputMenuItem[]>([{ id: 'k1', type: 'knowledgebase', name: '知识库01' }]),
       keyword: shallowRef(''),
       trigger: shallowRef<MenuTrigger | null>('@'),
       groupItemLimit: shallowRef(4),
     });
-    const artifactGroup = groups.value.find(group => group.key === 'artifact');
-    expect(artifactGroup).toBeDefined();
-    expect(artifactGroup?.items).toEqual([]);
+    expect(groups.value.map(group => group.key)).toEqual(['knowledgebase']);
+  });
+
+  it('搜索过滤后组内无命中也不渲染该分组', () => {
+    const { groups } = setup('/', 'Hangzhou');
+    expect(groups.value.map(group => group.key)).toEqual(['skill']);
+    expect(groups.value[0].items.map(item => item.id)).toEqual(['s1']);
   });
 
   it('整体没有任何条目时不产出分组，避免弹出空面板', () => {

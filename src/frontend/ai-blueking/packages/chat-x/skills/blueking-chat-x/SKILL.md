@@ -3,7 +3,7 @@ name: blueking-chat-x
 description: >-
   Use when 在消费方项目中接入 / 使用 @blueking/chat-x 对话组件库（已 npm 安装、非改库源码），
   涉及「某组件怎么用、有哪些 props / events / slots / expose / v-model、怎么搭 AI 对话界面、
-  流式输出、停止生成、工具调用 ToolCall、快捷指令、文件上传、@ 资源、自定义消息或侧栏 Tab、
+  流式输出、停止生成、工具调用 ToolCall、快捷指令、文件上传、图片上传、@ 资源、自定义消息或侧栏 Tab、
   分享多选、HITL 中断审批、Markdown / 代码 / 公式 / 图表渲染、字号与主题 CSS 变量、
   消息时间 MessageTime / timezone」等问题时优先使用。
   若是在 packages/chat-x/src 内改库源码（写组件 / composable / 样式 / 测试），改用 chat-x-dev skill。
@@ -96,7 +96,7 @@ description: >-
 | --- | --- |
 | 搭完整对话界面 | `components/chat-container.md` |
 | 自定义布局（自己拼消息列表 + 输入框） | `components/message-container.md` + `components/chat-input.md` + `composables/use-message-group.md` |
-| `/` Prompt、`@` 资源、文件上传 | `components/chat-input.md` |
+| `/` Prompt、`@` 资源、文件 / 图片上传 | `components/chat-input.md` |
 | 流式输出 / 停止生成 | `components/chat-container.md`（`messageStatus` + `@stop-streaming`） |
 | 工具调用 / ToolCall 渲染 | `components/toolcall-render.md`、`components/tool-message.md` |
 | HITL 中断 / 工具审批 / 用户提问 | `components/interrupt-message.md`、`components/tool-approval-card.md`、`components/user-question-card.md` |

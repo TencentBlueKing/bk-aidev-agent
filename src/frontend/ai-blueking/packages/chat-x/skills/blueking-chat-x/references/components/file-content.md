@@ -124,7 +124,7 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 </script>
 ```
 
-> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败与上传中/失败的图片被自动过滤。
+> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败的图片被自动过滤。
 
 ## 上传中 / 上传失败
 
@@ -136,7 +136,7 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 | `error`   | 背景 `#fff0f0`、边框 `#ea3636`，第二行「上传失败」 | 与加载失败相同的破图占位（18px `ImageErrorIcon`） |
 | `success` / 未设置 | 正常卡片 | 正常缩略图，可预览 |
 
-上传中与上传失败的图片都不会进入 `ImagePreview` 列表。`ChatInput` 在存在 `pending` / `error` 附件时会拦截发送。
+上传中与上传失败的图片都不会进入 `ImagePreview` 列表。`ChatInput` 在存在 `pending` / `error` 附件时会拦截发送（见 [ChatInput](/components/input/chat-input)）。
 
 ## 图片加载失败
 

@@ -130,6 +130,8 @@ t('未定义的文本'); // ✗ 编译报错
 | `什么原因让你满意？`   | What makes you satisfied?    |
 | `什么原因让你不满意？` | What makes you dissatisfied? |
 | `上传文件`             | Upload File                  |
+| `文件`                 | File                         |
+| `图片`                 | Image                        |
 | `请求中...`            | Requesting...                |
 | `深度思考`             | Deep Thinking                |
 

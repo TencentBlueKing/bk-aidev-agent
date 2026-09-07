@@ -28,8 +28,6 @@ import type { MenuItemType, MenuTrigger } from '../../../types/input-menu';
 
 /** 分组的静态定义：一个分组可聚合多个语义相近的 type */
 export interface IMenuGroupDef {
-  /** 该分组无数据时是否仍然渲染并展示「暂无数据」 */
-  keepWhenEmpty: boolean;
   key: string;
   /** 文案 key，渲染时经 t() 转换 */
   name: keyof typeof lang;
@@ -37,15 +35,14 @@ export interface IMenuGroupDef {
 }
 
 export const MENU_GROUP_DEFS = {
-  add: { key: 'add', name: '添加', types: ['file'], keepWhenEmpty: false },
-  skill: { key: 'skill', name: 'Skill', types: ['skill'], keepWhenEmpty: false },
-  mcp: { key: 'mcp', name: 'MCP', types: ['mcp'], keepWhenEmpty: false },
-  tool: { key: 'tool', name: '工具', types: ['tool'], keepWhenEmpty: false },
+  add: { key: 'add', name: '添加', types: ['file', 'image'] },
+  skill: { key: 'skill', name: 'Skill', types: ['skill'] },
+  mcp: { key: 'mcp', name: 'MCP', types: ['mcp'] },
+  tool: { key: 'tool', name: '工具', types: ['tool'] },
   // 后端历史上用 doc / knowledgebase 表示同一语义，面板里合并成一个分组
-  knowledgebase: { key: 'knowledgebase', name: '知识库', types: ['knowledgebase', 'doc'], keepWhenEmpty: false },
-  // 设计稿标注：没有会话产物时该分组仍需展示「暂无数据」
-  artifact: { key: 'artifact', name: '会话产物', types: ['artifact'], keepWhenEmpty: true },
-  prompt: { key: 'prompt', name: 'Prompt', types: ['prompt'], keepWhenEmpty: false },
+  knowledgebase: { key: 'knowledgebase', name: '知识库', types: ['knowledgebase', 'doc'] },
+  artifact: { key: 'artifact', name: '会话产物', types: ['artifact'] },
+  prompt: { key: 'prompt', name: 'Prompt', types: ['prompt'] },
 } satisfies Record<string, IMenuGroupDef>;
 
 export type MenuGroupKey = keyof typeof MENU_GROUP_DEFS;

@@ -67,6 +67,7 @@
           <template #default>
             <input
               ref="fileInputRef"
+              :accept="fileInputAccept"
               class="chat-input-file-input"
               multiple
               type="file"
@@ -123,7 +124,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, onUnmounted, reactive, ref as deepRef, shallowRef, useTemplateRef, watch, watchPostEffect } from 'vue';
+  import { computed, nextTick, onUnmounted, reactive, ref as deepRef, shallowRef, useTemplateRef, watch, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -134,7 +135,7 @@
     MessageContentType,
     MessageStatus,
   } from '../../ag-ui/types';
-  import { CHAT_Z_INDEX, EDITOR_MENU_Z_INDEX, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, EDITOR_MENU_Z_INDEX, IMAGE_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
   import { t } from '../../lang/lang';
@@ -147,7 +148,13 @@
     type UploadFile,
     UploadStatus,
   } from '../../types';
-  import { formatUploadNotAddedMessage, getFileIdentity, getUploadFileName, getUploadFileSize } from '../../utils';
+  import {
+    formatUploadNotAddedMessage,
+    getFileIdentity,
+    getUploadFileName,
+    getUploadFileSize,
+    isFileAcceptedByAccept,
+  } from '../../utils';
   import AddMenuBtn from '../ai-buttons/add-menu-btn/add-menu-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
   import ShortcutBtns from '../ai-shortcut/shortcut-btns/shortcut-btns.vue';
@@ -176,12 +183,6 @@
     required: false,
   });
   const maxHeight = shallowRef(280);
-  export type ChatInputUploadResult = {
-    download_url?: string;
-    error?: string;
-    id?: string;
-    status?: 'failed' | 'success';
-  };
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
@@ -189,6 +190,7 @@
     (e: 'modelChange', model: IModelOption): void;
   };
   export type ChatInputProps = {
+    accept?: string; // 「文件」项 / 拖拽 / 粘贴的过滤类型；「图片」项打开时临时覆盖为 IMAGE_UPLOAD_ACCEPT
     defaultUploadFiles?: UploadFile[];
     inputMaxHeight?: number;
     /** 菜单每个分组默认展示的条数，超出折叠为「更多 +N」 */
@@ -212,11 +214,18 @@
     supportUpload?: boolean; // 是否支持上传文件 默认是true
     tippyOptions?: AITippyProps; // tips配置
   };
+  export type ChatInputUploadResult = {
+    download_url?: string;
+    error?: string;
+    id?: string;
+    status?: 'failed' | 'success';
+  };
   const props = withDefaults(defineProps<ChatInputProps>(), {
     menuSources: () => [],
     menuGroupItemLimit: DEFAULT_GROUP_ITEM_LIMIT,
     inputMaxHeight: 280,
     supportUpload: true,
+    accept: DEFAULT_UPLOAD_ACCEPT,
   });
   const emit = defineEmits<ChatInputEmits>();
   /** 数据源里存在的菜单类型，用于决定 placeholder 展示哪几行提示 */
@@ -256,9 +265,18 @@
   });
   const availableSources = computed<IInputMenuItem[]>(() => {
     const list = props.menuSources.filter(item => !insertedTagKeys.value.has(`${item.type}:${item.id}`));
-    // 「文件」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
-    return props.supportUpload ? [{ id: '__built_in_file__', type: 'file', name: t('文件') }, ...list] : list;
+    // 「文件」「图片」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
+    return props.supportUpload
+      ? [
+          { id: '__built_in_file__', type: 'file', name: t('文件') },
+          { id: '__built_in_image__', type: 'image', name: t('图片') },
+          ...list,
+        ]
+      : list;
   });
+  /** 选「图片」时临时收窄系统选择器；未指定则沿用 accept prop */
+  const pickerAccept = shallowRef<string>();
+  const fileInputAccept = computed(() => (pickerAccept.value ?? props.accept) || undefined);
   const {
     groups: menuGroups,
     flatItems,
@@ -291,12 +309,18 @@
   const handleToggleGroup = (key: string) => {
     toggleGroup(key as MenuGroupKey);
   };
+  /** 先写入 accept 再 click，确保系统选择器读到最新过滤条件 */
+  const openFilePicker = async (accept?: string) => {
+    pickerAccept.value = accept;
+    await nextTick();
+    fileInputRef.value?.click();
+  };
   const handleSelectMenuItem = (item: IInputMenuItem) => {
-    if (item.type === 'file') {
+    if (item.type === 'file' || item.type === 'image') {
       // 与插入标签保持一致：先吃掉用于过滤的输入文本，再唤起系统文件选择器
       aiSlashInputRef.value?.consumeTriggerText?.();
       handleCloseMenu();
-      fileInputRef.value?.click();
+      void openFilePicker(item.type === 'image' ? IMAGE_UPLOAD_ACCEPT : undefined);
       return;
     }
     if (item.type === 'prompt') {
@@ -449,6 +473,7 @@
     const existingKeys = new Set(uploadFiles.value.map(item => (item.file ? getFileIdentity(item.file) : '')));
     const acceptedItems: Partial<UploadFile>[] = [];
     let rejectedCount = 0;
+    let typeRejectedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const key = getFileIdentity(file);
@@ -458,6 +483,10 @@
       if (uploadFiles.value.length >= MAX_UPLOAD_FILES) {
         rejectedCount += files.length - i;
         break;
+      }
+      if (!isFileAcceptedByAccept(file, props.accept)) {
+        typeRejectedCount += 1;
+        continue;
       }
       if (file.size <= 0 || file.size >= MAX_UPLOAD_FILE_SIZE) {
         rejectedCount += 1;
@@ -471,6 +500,12 @@
       });
       uploadFiles.value.push(fileItem);
       acceptedItems.push(fileItem);
+    }
+    if (typeRejectedCount > 0) {
+      Message({
+        message: t('有 {count} 个文件因格式不支持未添加').replace('{count}', String(typeRejectedCount)),
+        theme: 'error',
+      });
     }
     if (rejectedCount > 0) {
       Message({
@@ -568,6 +603,7 @@
       handleUpload(files);
     }
     target.value = '';
+    pickerAccept.value = undefined;
   };
   // 点击输入区之外时收起菜单；用 mousedown 以便在编辑器失焦之前处理
   const handleDocumentMouseDown = (event: MouseEvent) => {

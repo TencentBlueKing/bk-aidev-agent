@@ -92,7 +92,7 @@ import type { CustomTab } from '@blueking/chat-x';
 2. **文案**：`tab.label`，带 `vOverflowTips` 防止过长截断
 3. **关闭**：仅非 `execution` Tab 渲染 `CloseIcon`，`onClick` 调用 `removeCustomTab(tab.name)`
 
-选中 Tab 时，对应标签会 `scrollIntoView({ behavior: 'smooth' })` 滚入可视区域。
+选中 Tab 时，若标签已在视口内，会以 `scrollIntoView({ block: 'nearest', inline: 'nearest' })` 把标签滚进 tab 栏；不在视口内则跳过，避免把整页文档拖走。
 
 ## 使用示例
 

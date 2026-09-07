@@ -85,14 +85,14 @@ aiSummary: >
 
 | 组件 | 说明 |
 | ---- | ---- |
-| [ChatInput](./input/chat-input.md) | 聊天主输入区。 |
+| [ChatInput](./input/chat-input.md) | 聊天主输入区，含 `/` `@` `\` 与 + 号「文件」「图片」上传。 |
 | [AiSlashInput](./input/ai-slash-input.md) | 富文本命令输入，负责触发符识别与资源标签插入。 |
 | [InputMenuPanel](./input/input-menu-panel.md) | 输入框上方的统一菜单面板，`@` `/` `\` 与 + 号共用。 |
 | [AddMenuBtn](./input/add-menu-btn.md) | 输入框左下角 + 号，唤起聚合菜单。 |
 | [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
 | [ModelSelector](./input/model-selector.md) | 模型下拉选择器，支持搜索与能力标签。 |
 | [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |
-| [FileUploadBtn](./input/file-upload-btn.md) | 独立文件选择按钮（ChatInput 已改用 + 号菜单）。 |
+| [FileUploadBtn](./input/file-upload-btn.md) | 独立文件选择按钮（ChatInput 已改用 + 号「文件」「图片」项）。 |
 | [ShortcutRender](./input/shortcut-render.md) | 快捷指令表单渲染。 |
 | [ShortcutBtn](./input/shortcut-btn.md) | 单个快捷指令按钮。 |
 | [ShortcutBtns](./input/shortcut-btns.md) | 快捷指令按钮组。 |

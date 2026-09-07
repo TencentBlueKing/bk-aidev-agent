@@ -19,6 +19,8 @@
 | `collectMessageArtifacts`  | 从会话消息里收集「会话产物」作为输入框菜单条目    |
 | `toArtifactMenuItem`       | 把单个文件产物转成输入框菜单条目                  |
 
+`ALLOWED_UPLOAD_EXTENSIONS` / `DEFAULT_UPLOAD_ACCEPT` / `IMAGE_UPLOAD_ACCEPT` 也从本模块导出，见下方 [上传常量](#上传常量)。
+
 ## Markdown 语法补全
 
 ### completeMarkdownSyntax
@@ -169,6 +171,22 @@ const lang = getCookieByName('blueking_language');
 const isEnglish = lang === 'en';
 
 const greeting = isEnglish ? 'Hello' : '你好';
+```
+
+## 上传常量
+
+与 [ChatInput 文件上传](/components/input/chat-input#file-upload) 共用，从 `@blueking/chat-x` 导出（源码 `src/utils/upload-accept.ts`）。
+
+| 常量 | 说明 |
+| ---- | ---- |
+| `ALLOWED_UPLOAD_EXTENSIONS` | 按 `image` / `document` / `text` / `code` 分类的扩展名（含点），分类用于 tooltip |
+| `DEFAULT_UPLOAD_ACCEPT` | 上述分类展平后的逗号串；`ChatInput.accept` 缺省值，「文件」项 / 拖拽 / 粘贴共用 |
+| `IMAGE_UPLOAD_ACCEPT` | `ALLOWED_UPLOAD_EXTENSIONS.image.join(',')`；+ 号菜单「图片」项打开系统选择器时临时使用 |
+
+```typescript
+import { DEFAULT_UPLOAD_ACCEPT, IMAGE_UPLOAD_ACCEPT } from '@blueking/chat-x';
+
+// 入队校验始终走 ChatInput 的 accept prop，不会改用 IMAGE_UPLOAD_ACCEPT
 ```
 
 ## 注意事项

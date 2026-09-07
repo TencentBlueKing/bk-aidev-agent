@@ -102,9 +102,11 @@ const { stubIcon } = vi.hoisted(() => {
 
 vi.mock('../../../icons', () => ({
   FileUploadIcon: stubIcon('FileUploadIcon', 'mock-file-upload-icon'),
+  ImageUploadIcon: stubIcon('ImageUploadIcon', 'mock-image-upload-icon'),
   KnowledgeBaseIcon: stubIcon('KnowledgeBaseIcon', 'mock-knowledge-base-icon'),
   McpIcon: stubIcon('McpIcon', 'mock-mcp-icon'),
   ModuleIcon: stubIcon('ModuleIcon', 'mock-module-icon'),
+  PromptIcon: stubIcon('PromptIcon', 'mock-prompt-icon'),
   ToolIcon: stubIcon('ToolIcon', 'mock-tool-icon'),
 }));
 

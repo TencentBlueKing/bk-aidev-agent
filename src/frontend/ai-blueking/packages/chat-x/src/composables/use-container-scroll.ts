@@ -68,7 +68,7 @@ export const useContainerScrollProvider = (
    * 防抖显示"返回底部"按钮
    */
   const debouncedShowScrollBottomBtn = customRef((track: () => void, trigger: () => void) => {
-    let timeout: ReturnType<typeof setTimeout> | undefined = undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     let show = false;
     return {
       get() {
@@ -133,7 +133,10 @@ export const useContainerScrollProvider = (
       jumpToBottom();
       return;
     }
-    toValue(bottomRef)?.scrollIntoView({ behavior: resolved, block: 'end' });
+    const container = toValue(containerRef);
+    if (!container) return;
+    // 只滚消息容器本身。scrollIntoView 会带动 window，文档页里多个 ChatContainer 会把页面拖到最后一个示例
+    container.scrollTo({ top: container.scrollHeight, behavior: resolved });
   };
 
   /**

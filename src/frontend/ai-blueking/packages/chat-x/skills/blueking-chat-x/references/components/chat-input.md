@@ -99,12 +99,12 @@ ai-chat-input-container（padding: 0 16px 16px）
 
 | 分组标题   | 覆盖的 `type`              | 备注                                             |
 | ---------- | -------------------------- | ------------------------------------------------ |
-| 添加       | `file`                     | 组件内置项，只出现在 + 号菜单                    |
+| 添加       | `file`、`image`            | 组件内置项，只出现在 + 号菜单                    |
 | Skill      | `skill`                    | 插入后序列化为 `/<id>`                           |
 | MCP        | `mcp`                      |                                                  |
 | 工具       | `tool`                     |                                                  |
 | 知识库     | `knowledgebase`、`doc`     | 后端两种历史命名合并为一个分组                   |
-| 会话产物   | `artifact`                 | 无数据时仍展示分组并显示「暂无数据」             |
+| 会话产物   | `artifact`                 | 无数据时不展示该分组                             |
 | Prompt     | `prompt`                   | 选中后整体替换输入框内容                         |
 
 ### 关键行为
@@ -112,10 +112,10 @@ ai-chat-input-container（padding: 0 16px 16px）
 - **过滤**：触发符之后输入的文本作为关键字，按 `name` 不区分大小写包含匹配。+ 号菜单的关键字取「唤起时光标位置 → 当前光标」之间的文本。
 - **折叠**：每个分组默认展示 `menuGroupItemLimit`（默认 4）条，超出折叠为「更多 +N」，点击展开；关键字或触发方式变化后折叠状态重置。
 - **去重**：已插入编辑器的标签按 `type:id` 从候选中剔除，不会重复出现。
-- **空面板不弹出**：只有「会话产物」这类保留分组、没有任何真实条目时，面板不会展示。
-- **内置「文件」项**：`supportUpload` 为 `true` 时，组件在「添加」分组注入一条 `type: 'file'` 的内置项，选中即唤起系统文件选择器，不需要业务方在 `menuSources` 里提供。
+- **空面板不弹出**：初始化或搜索后没有任何匹配条目时，面板不会展示。空分组也不会被算进结果（见 [InputMenuPanel](/components/input/input-menu-panel)）。
+- **内置「文件」「图片」项**：`supportUpload` 为 `true` 时注入，**不要**写进 `menuSources`。选中后都唤起隐藏文件选择器并走同一套 `onUpload`；选择器 `accept` 与入队校验的差异见 [文件上传](#file-upload)。
 - **+ 号显隐**：`supportUpload` 为 `false` 且 `menuSources` 为空时不渲染 + 号。
-- **选中动作**：`prompt` 整体替换输入框内容（取 `content`，缺省取 `name`）；`file` 唤起文件选择器；其余类型插入资源标签并补一个空格。
+- **选中动作**：`prompt` 整体替换输入框内容（取 `content`，缺省取 `name`）；`file` / `image` 唤起文件选择器；其余类型插入资源标签并补一个空格。
 
 ```vue
 <template>
@@ -282,7 +282,22 @@ const handleSendMessage = async (
 
 ## 文件上传 {#file-upload}
 
-`supportUpload` 默认 `true`。文件入口有三条路径：**+ 号菜单的「文件」项**、**拖拽到输入框**、**粘贴（Ctrl+V）**。
+`supportUpload` 默认 `true`。附件入口有三条路径：**+ 号菜单的「文件」「图片」项**、**拖拽到输入框**、**粘贴（Ctrl+V）**。`type: 'file'` / `'image'` 是组件内置动作项，不要写进 `menuSources`。
+
+### 「文件」与「图片」
+
+两条菜单项共用同一个隐藏 `input[type=file]` 和同一套 `handleUpload` / `onUpload`，差别只在**打开系统选择器时的 `accept`**：
+
+| 入口 | 系统选择器 `accept` | 入队后的扩展名校验 |
+| ---- | ------------------- | ------------------ |
+| 「文件」 | `accept` prop（默认 `DEFAULT_UPLOAD_ACCEPT`） | `accept` prop |
+| 「图片」 | 临时覆盖为 `IMAGE_UPLOAD_ACCEPT`（`.gif,.jpeg,.jpg,.png,.webp`） | 仍走 `accept` prop |
+| 拖拽 / 粘贴 | 不经过系统选择器 | `accept` prop |
+
+- 选「图片」时先写入 `IMAGE_UPLOAD_ACCEPT`，`nextTick` 后再 `click()` 隐藏 input，保证系统对话框读到最新过滤条件。
+- `change` 处理完会清掉临时覆盖，后续「文件」项、拖拽、粘贴不再受影响。
+- **入队校验始终用 `accept` prop**，不走 `IMAGE_UPLOAD_ACCEPT`。若业务把 `accept` 收窄到不含图片扩展名，即使用「图片」选出的文件也会弹出「因格式不支持未添加」且不会入队。
+- `IMAGE_UPLOAD_ACCEPT`、`DEFAULT_UPLOAD_ACCEPT`、`ALLOWED_UPLOAD_EXTENSIONS` 均从 `@blueking/chat-x` 导出，三者同源。
 
 - `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
@@ -290,11 +305,12 @@ const handleSendMessage = async (
 - 拖拽只响应从系统拖入的文件（编辑器内部标签拖动不会误触发），悬停时框体切换为蓝色描边 + 浅蓝底
 - 发送成功后待发送列表自动清空；文件加入列表后光标自动回到输入区
 
-**个数与大小校验**：
+**个数、大小与格式校验**：
 
 - 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
 - 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
-- 个数上限、重复与大小校验都在 `ChatInput` 的 `handleUpload` 中统一处理（含 + 号菜单唤起的系统文件选择器、拖拽和粘贴）。
+- **文件类型**：默认使用 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名列表）。系统文件选择框带 `accept` 过滤；选择后、拖拽、粘贴仍会再按扩展名校验，不支持的格式弹出「因格式不支持未添加」并不会入队。可通过 `accept` prop 覆盖（空字符串表示不限制）。「图片」项只改变打开选择器时的过滤，不改变这条入队规则。
+- 个数上限、重复、大小与类型校验都在 `ChatInput` 的 `handleUpload` 中统一处理（含 + 号菜单唤起的系统文件选择器、拖拽和粘贴）。
 
 **发送内容格式**（有文件时 `content` 变为数组）：
 
@@ -308,12 +324,32 @@ const handleSendMessage = async (
 ```
 
 ```vue
+<template>
+  <ChatInput
+    v-model="inputValue"
+    :accept="DEFAULT_UPLOAD_ACCEPT"
+    :message-status="messageStatus"
+    :on-send-message="handleSendMessage"
+    :on-stop-sending="handleStopSending"
+    :on-upload="handleUpload"
+  />
+</template>
+
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { ChatInput, MessageStatus, type UserMessage, type TagSchema } from '@blueking/chat-x';
+  import {
+    ChatInput,
+    DEFAULT_UPLOAD_ACCEPT,
+    MessageStatus,
+    type TagSchema,
+    type UserMessage,
+  } from '@blueking/chat-x';
 
   const inputValue = ref('');
   const messageStatus = ref(MessageStatus.Complete);
+
+  // accept 只约束「文件」项 / 拖拽 / 粘贴以及入队校验。
+  // 「图片」项打开选择器时组件会临时换成 IMAGE_UPLOAD_ACCEPT，不要把 accept 改成仅图片。
 
   const handleSendMessage = async (content: UserMessage['content'], docSchema: TagSchema) => {
     if (Array.isArray(content)) {
@@ -332,7 +368,7 @@ const handleSendMessage = async (
     messageStatus.value = MessageStatus.Stop;
   };
 
-  // 一次选择多个文件只回调一次，按文件顺序返回结果
+  // 「文件」「图片」选中后都走这里：一次选择多个文件只回调一次，按文件顺序返回结果
   const handleUpload = async (files: File[]) => {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
@@ -341,6 +377,8 @@ const handleSendMessage = async (
   };
 </script>
 ```
+
+**渲染效果**（点击左下角 +，「添加」分组里分别选「文件」「图片」；「图片」会打开仅图片的系统选择器）
 
 ### 预设上传文件（defaultUploadFiles）
 
@@ -466,7 +504,8 @@ const defaultFiles: UploadFile[] = [
 | inputMaxHeight     | `number`                                             | `280`    | -    | 框体最大高度（px），有文件时自动叠加文件预览区高度                   |
 | defaultUploadFiles | `UploadFile[]`                                       | -        | -    | 预设已上传的文件列表                                                 |
 | sendDisabledTip    | `string`                                             | -        | -    | 阻塞发送时的 tooltip；传入后点击、Enter 与 `triggerSendMessage()` 均不发送 |
-| supportUpload      | `boolean`                                            | `true`   | -    | 是否开启上传能力（内置「文件」菜单项、拖拽与粘贴）                   |
+| supportUpload      | `boolean`                                            | `true`   | -    | 是否开启上传能力（内置「文件」「图片」菜单项、拖拽与粘贴）                   |
+| accept             | `string`                                             | `DEFAULT_UPLOAD_ACCEPT` | - | 「文件」项 / 拖拽 / 粘贴的过滤类型，同时用于入队后的扩展名校验；「图片」项打开选择器时临时覆盖为 `IMAGE_UPLOAD_ACCEPT`；空字符串表示不限制 |
 | tippyOptions       | `AITippyProps`                                       | -        | -    | 透传给 AddMenuBtn、InputAttachment、ModelSelector 的 tooltip 配置    |
 | onSendMessage      | `(content: UserMessage['content'], docSchema: TagSchema, options?: { interrupt?: Interrupt; payload?: InterruptResume }) => Promise<void>` | - | - | 发送回调；无文件时 `content` 为字符串，有文件时为数组；第三参数由 [ChatContainer](/components/setup/chat-container) 在 UserQuestion 场景注入 |
 | onStopSending      | `() => Promise<void>`                                | -        | -    | 停止发送回调                                                         |
@@ -520,8 +559,8 @@ const defaultFiles: UploadFile[] = [
 ```typescript
 import type { Component } from 'vue';
 
-// 菜单可选项类型；file 为组件内置动作项，不由业务方提供
-type MenuItemType = 'file' | 'skill' | 'mcp' | 'tool' | 'knowledgebase' | 'doc' | 'artifact' | 'prompt';
+// 菜单可选项类型；file / image 为组件内置动作项，不由业务方提供
+type MenuItemType = 'file' | 'image' | 'skill' | 'mcp' | 'tool' | 'knowledgebase' | 'doc' | 'artifact' | 'prompt';
 
 // 菜单触发方式；plus 由左下角 + 号唤起
 type MenuTrigger = '/' | '@' | '\\' | 'plus';

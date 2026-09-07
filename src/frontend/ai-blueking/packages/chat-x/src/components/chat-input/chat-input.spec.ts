@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageStatus } from '../../ag-ui/types';
+import { DEFAULT_UPLOAD_ACCEPT, IMAGE_UPLOAD_ACCEPT } from '../../common';
 import ChatInput from './chat-input.vue';
 
 import type { IInputMenuItem, UploadFile } from '../../types';
@@ -334,6 +335,12 @@ vi.mock('./input-menu', async () => {
           h('div', {
             class: 'mock-input-menu-panel',
             'data-groups': (props.groups as { key: string }[]).map(group => group.key).join(','),
+            'data-add-types': (
+              (props.groups as { items?: { type: string }[]; key: string }[]).find(group => group.key === 'add')
+                ?.items ?? []
+            )
+              .map(item => item.type)
+              .join(','),
           });
       },
     }),
@@ -1044,18 +1051,17 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('skill');
     });
 
-    it('@ 触发展示知识库与会话产物分组', async () => {
+    it('@ 触发只展示有数据的知识库分组', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, '@');
-      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('knowledgebase,artifact');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('knowledgebase');
     });
 
-    it('plus 触发聚合全部分组，并把内置「文件」放在添加分组', async () => {
+    it('plus 触发聚合有数据的分组，并把内置「文件」「图片」放在添加分组', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, 'plus');
-      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe(
-        'add,skill,knowledgebase,artifact,prompt',
-      );
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('add,skill,knowledgebase,prompt');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-add-types')).toBe('file,image');
     });
 
     it('过滤关键字命中不到条目时不展示面板', async () => {
@@ -1114,9 +1120,30 @@ describe('ChatInput', () => {
       await wrapper
         .findComponent({ name: 'InputMenuPanel' })
         .vm.$emit('select', { id: '__built_in_file__', type: 'file', name: '文件' });
+      await nextTick();
       expect(mockConsumeTriggerText).toHaveBeenCalled();
       expect(mockCloseMenu).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
+      expect(fileInput.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+    });
+
+    it('选中内置「图片」时先吃掉过滤词再唤起仅图片的文件选择器', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, 'plus');
+      const fileInput = wrapper.find('.chat-input-file-input');
+      const clickSpy = vi.spyOn(fileInput.element as HTMLInputElement, 'click').mockImplementation(() => {});
+      await wrapper
+        .findComponent({ name: 'InputMenuPanel' })
+        .vm.$emit('select', { id: '__built_in_image__', type: 'image', name: '图片' });
+      await nextTick();
+      expect(mockConsumeTriggerText).toHaveBeenCalled();
+      expect(mockCloseMenu).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+      expect(fileInput.attributes('accept')).toBe(IMAGE_UPLOAD_ACCEPT);
+
+      await fileInput.trigger('change');
+      await nextTick();
+      expect(fileInput.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
     });
 
     it('insertMention 把条目追加到编辑器末尾', () => {
@@ -1166,6 +1193,60 @@ describe('ChatInput', () => {
       });
 
       expect(wrapper.find('.mock-add-menu-btn').exists()).toBe(true);
+    });
+
+    it('默认应将允许列表传给隐藏文件选择器', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '' },
+      });
+
+      expect(wrapper.find('.chat-input-file-input').attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+    });
+
+    it('应支持自定义 accept 覆盖默认允许列表', () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', accept: '.pdf' },
+      });
+
+      expect(wrapper.find('.chat-input-file-input').attributes('accept')).toBe('.pdf');
+    });
+
+    it('不支持的文件格式应拦截且提示，不调用 onUpload', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      await emitUpload(wrapper, [new File(['x'], 'malware.exe', { type: 'application/x-msdownload' })]);
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
+    });
+
+    it('一次选择中应只上传允许格式的文件', async () => {
+      const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/a.png' });
+      const allowed = new File(['img'], 'a.png', { type: 'image/png' });
+      const blocked = new File(['zip'], 'a.zip', { type: 'application/zip' });
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      await emitUpload(wrapper, [allowed, blocked]);
+
+      expect(onUpload).toHaveBeenCalledTimes(1);
+      expect(onUpload).toHaveBeenCalledWith([allowed]);
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+        }),
+      );
     });
 
     it('没有上传文件时不应该渲染 FileContent', () => {
@@ -1792,6 +1873,25 @@ describe('ChatInput', () => {
 
       expect(onUpload).toHaveBeenCalledWith([file]);
       expect(dropZone.classes()).not.toContain('is-dragover');
+    });
+
+    it('拖入不支持的格式应拦截并提示', async () => {
+      const onUpload = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload },
+      });
+
+      const file = new File(['exe-body'], 'setup.exe');
+      await wrapper.find('.chat-input').trigger('drop', { dataTransfer: createFileDataTransfer([file]) });
+
+      expect(onUpload).not.toHaveBeenCalled();
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 {count} 个文件因格式不支持未添加'.replace('{count}', '1'),
+          theme: 'error',
+        }),
+      );
     });
   });
 });

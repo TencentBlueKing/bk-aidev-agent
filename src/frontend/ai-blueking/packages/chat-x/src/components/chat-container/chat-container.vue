@@ -51,7 +51,7 @@
                         class: 'ai-execution-summary-label',
                         onVnodeMounted: (node: VNode) => {
                           if (selectedTab.name === tab.name) {
-                            node.el?.scrollIntoView({ behavior: 'smooth' });
+                            scrollActiveTabLabelIntoView(node.el);
                           }
                         },
                       },
@@ -704,6 +704,16 @@
       return;
     }
     dom.scrollIntoView({ behavior: 'smooth' });
+  };
+  /**
+   * 把选中的侧栏 Tab 标签滚进 tab 栏。
+   * 标签不在视口内时跳过：scrollIntoView 会带动 window，文档页多个示例会把页面拖到最后一个容器。
+   */
+  const scrollActiveTabLabelIntoView = (el: unknown) => {
+    if (!(el instanceof HTMLElement)) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   };
   // 侧栏 Tab 默认图标：执行情况用 ExecutionIcon，文件产物用 ArtifactTabIcon，其余用 NodeTabIcon
   const getSideTabIcon = (name: string) => {
