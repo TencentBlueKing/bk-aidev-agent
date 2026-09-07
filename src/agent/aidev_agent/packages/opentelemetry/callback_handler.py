@@ -19,7 +19,6 @@ to the current version of the project delivered to anyone in the future.
 import logging
 import threading
 import time
-import traceback
 from contextlib import contextmanager
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -41,7 +40,6 @@ from aidev_agent.config import BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH, BKAI_AGENT
 from aidev_agent.pydantic_models import ExecuteKwargs
 
 from .metrics import AgentMetrics, get_agent_metrics
-from .metrics import extract_token_usage as extract_metric_token_usage
 from .resilience import (
     is_timeout_error,
     record_operation_timeout,
@@ -50,10 +48,12 @@ from .resilience import (
 )
 from .span_utils import (
     SpanHolder,
+    get_model_name_for_response,
     set_chat_request,
     set_chat_response,
     set_llm_request,
-    truncate_span_attribute,
+    set_tool_request,
+    set_tool_response,
 )
 from .utils import (
     _safe_attach_context,
@@ -61,6 +61,7 @@ from .utils import (
     _set_span_attribute,
     dont_throw,
     extract_token_usage,
+    get_operation_name_for_span,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,8 @@ class BkAidevAgentInjector:
             "agent.session.caller_bk_biz_id": execute_kwargs.caller_bk_biz_id,
             "agent.session.caller_executor": execute_kwargs.caller_executor,
             "agent.session.caller_order_type": execute_kwargs.caller_order_type,
+            # 会话标识冗余到根 span 便于按 conversation 检索整条 trace；session_code 允许为空，空值写空串保证该键恒存在
+            "gen_ai.conversation.id": execute_kwargs.session_code or "",
         }
         # 如果存在上游传播的 Trace Context，则使用它，否则使用当前 context
         ctx = self.parent_context if self.parent_context is not None else None
@@ -248,7 +251,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         enable_traces: bool = True,
         enable_metrics: bool = False,
         debug: bool = False,
-        max_attribute_length: Optional[int] = None,
         max_input_attribute_length: int = BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH,
         max_output_attribute_length: int = BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH,
         agent_id: Optional[str] = None,
@@ -273,7 +275,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             enable_traces: 是否启用 traces，默认 True
             enable_metrics: 是否启用 metrics，默认 False
             debug: 是否为调试状态
-            max_attribute_length: 兼容旧调用的统一属性上限；设置后覆盖输入、输出上限
             max_input_attribute_length: 输入属性最大长度，默认 80 KiB
             max_output_attribute_length: 输出属性最大长度，默认 20 KiB
             agent_id: agent.info.id
@@ -302,12 +303,8 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         self.enable_traces = enable_traces
         self.enable_metrics = enable_metrics
         self.debug = debug
-        if max_attribute_length is not None:
-            max_input_attribute_length = max_attribute_length
-            max_output_attribute_length = max_attribute_length
         self.max_input_attribute_length = max(1, max_input_attribute_length)
         self.max_output_attribute_length = max(1, max_output_attribute_length)
-        self.max_attribute_length = max(self.max_input_attribute_length, self.max_output_attribute_length)
 
         # Agent / Session 基础信息，会注入到所有 span 中
         self._agent_id = agent_id
@@ -329,11 +326,16 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         # 顶层 chain start 时把 root span 重新 attach 为当前 active context 的 token；
         # 由 on_chain_end / on_chain_error 在顶层 detach。
         # 目的：让 LangchainInstrumentor 等"取当前 active ctx 作为父"的自动插桩
-        # 把它们的顶层 span 直接挂在 root span 下，而不是被覆盖到 chain.workflow 之下。
+        # 把它们的顶层 span 直接挂在 root span 下，而不是被压到 invoke_agent 顶层链 span 之下。
         self._root_attach_token: Any = None
         self._root_run_id: Optional[UUID] = None  # 根 Span 的 run_id
         self.spans: Dict[UUID, SpanHolder] = {}  # 使用 UUID 管理所有 Span
         self._current_workflow_run_id: Optional[UUID] = None  # 当前顶层 workflow 链的 run_id，用于挂载自定义 span
+        # 本轮 agent 执行的顶层 chain span_id（16 位小写 hex），供子 span 注入
+        # agent.conversation_root_span_id 关联键。建后不清空（区别于 _current_workflow_run_id
+        # 的"当前活动链"语义，不与 on_chain_end/error 的清理时序耦合）；handler 每 run
+        # 独立新建，无跨 run 残留。
+        self._conversation_root_span_id: Optional[str] = None
 
         # 工具调用计数器
         self.tool_call_counter = 0
@@ -392,28 +394,22 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             return
         self._transition_agent_phase("finalizing")
         self._finish_active_metric_operations()
-        try:
-            if self._injector is not None:
-                self._injector.on_bk_agent_end(error=error)
-        finally:
-            try:
-                if self._metrics is not None and self._agent_started_at is not None:
-                    started_at = self._agent_started_at
-                    self._agent_started_at = None
-                    try:
-                        self._metrics.record_agent(
-                            duration=time.monotonic() - started_at,
-                            iteration_count=self.agent_iteration_counter,
-                            attributes=self._metric_agent_attributes,
-                            error=error,
-                        )
-                    finally:
-                        try:
-                            self._finish_agent_phase()
-                        finally:
-                            self._metrics.record_active_agent(-1, self._metric_agent_attributes)
-            finally:
-                self._injector_ended = True
+        # on_bk_agent_end 已被 @dont_throw 包裹（异常 debug 记录），此处不再重复 try 保护
+        if self._injector is not None:
+            self._injector.on_bk_agent_end(error=error)
+        if self._metrics is not None and self._agent_started_at is not None:
+            started_at = self._agent_started_at
+            self._agent_started_at = None
+            # metrics 收尾链各方法均 @dont_throw（失败仅 debug 记录），顺序调用即可
+            self._metrics.record_agent(
+                duration=time.monotonic() - started_at,
+                iteration_count=self.agent_iteration_counter,
+                attributes=self._metric_agent_attributes,
+                error=error,
+            )
+            self._finish_agent_phase()
+            self._metrics.record_active_agent(-1, self._metric_agent_attributes)
+        self._injector_ended = True
 
     def _operation_phase(self) -> str:
         if self._active_llm_operation_count and self._active_tool_operation_count:
@@ -571,7 +567,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             ctx = set_span_in_context(self.spans[parent_run_id].span)
         elif self._injector is not None and self._injector.root_span is not None:
             # 顶层 span（无 LangChain 父 run_id）：优先以本服务的 root span 作为父，
-            # 让 chain.workflow 等顶层 span 直接挂在 ``agent.execution`` 下。
+            # 让 invoke_agent 等顶层 span 直接挂在 ``agent.execution`` 下。
             # 注：injector.root_span 在 on_chain_start 顶层路径里已被本 handler 创建。
             ctx = set_span_in_context(self._injector.root_span)
         elif self.parent_context is not None:
@@ -585,17 +581,32 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if self.debug:
             attributes["debug.thread_id"] = threading.current_thread().name
 
-        # 注入 Agent / Session 基础信息到所有 span
+        # 注入 Agent / Session 基础信息：gen_ai 语义键为主，agent.info.code 为保留的旧键
         if self._agent_id is not None:
-            attributes["agent.info.id"] = self._agent_id
+            attributes["gen_ai.agent.id"] = self._agent_id
         if self._agent_code is not None:
             attributes["agent.info.code"] = self._agent_code
         if self._agent_name is not None:
-            attributes["agent.info.name"] = self._agent_name
+            # 取可读 agent_name；agent_code 已由顶层 span 名承载
+            attributes["gen_ai.agent.name"] = self._agent_name
         if self._session_code is not None:
-            attributes["agent.session.session_code"] = self._session_code
+            attributes["gen_ai.conversation.id"] = self._session_code
         if self._caller_executor is not None:
-            attributes["agent.session.caller_executor"] = self._caller_executor
+            # OTel 标准 user 命名空间，非 gen_ai.*
+            attributes["user.name"] = self._caller_executor
+            attributes["user.id"] = self._caller_executor
+
+        # gen_ai.operation.name 集中赋值：按建 span name 映射，各创建点分散赋值已收敛到此
+        operation_name = get_operation_name_for_span(name)
+        if operation_name is not None:
+            attributes["gen_ai.operation.name"] = operation_name
+
+        # 用户视图关联键：指向本 trace 的顶层 invoke_agent chain span（16 位小写 hex）。
+        # 顶层 chain 自身建 span 时该字段尚未设置（先建后缓存），天然不自指；
+        # bare handler 等无根场景字段为 None，键缺省——关联键无根可指时空串会
+        # 误导 collector，不做空串兜底。
+        if self._conversation_root_span_id is not None:
+            attributes["agent.conversation_root_span_id"] = self._conversation_root_span_id
 
         # 创建 Span
         span = self.tracer.start_span(
@@ -671,6 +682,8 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         span = self.spans[run_id].span
+        # 错误类型恒写（gen_ai 语义键）：异常类名，取不到时兜底 _OTHER
+        _set_span_attribute(span, "error.type", type(error).__name__ or "_OTHER")
         span.set_status(Status(StatusCode.ERROR, str(error)))
         span.record_exception(error)
         self._end_span(span, run_id)
@@ -771,37 +784,52 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         name = self._get_name_from_callback(serialized, **kwargs)
 
         is_top_level = parent_run_id is None or parent_run_id not in self.spans
-        span_kind = "workflow" if is_top_level else "task"
 
-        # 顶层 chain 首次触发：先在执行线程上启动 injector 得到 root span。
-        # 之后 _create_span 才能通过 self._injector.root_span 把 chain span 挂在 root 下。
-        if is_top_level and not self._injector_started:
-            if self._metrics is not None:
-                self._agent_started_at = time.monotonic()
-                self._metrics.record_agent_started(self._metric_agent_attributes)
-                self._metrics.record_active_agent(1, self._metric_agent_attributes)
-                self._transition_agent_phase("processing", now=self._agent_started_at)
-            try:
+        if is_top_level:
+            # 顶层 chain 首次触发：先在执行线程上启动 injector 得到 root span，
+            # 之后 _create_span 才能经 self._injector.root_span 把 chain span 挂在 root 下。
+            if not self._injector_started:
+                if self._metrics is not None:
+                    self._agent_started_at = time.monotonic()
+                    self._metrics.record_agent_started(self._metric_agent_attributes)
+                    self._metrics.record_active_agent(1, self._metric_agent_attributes)
+                    self._transition_agent_phase("processing", now=self._agent_started_at)
+                # on_bk_agent_start 已被 @dont_throw 包裹（异常 debug 记录），此处不再重复 try 保护
                 if self._injector is not None:
                     self._injector.on_bk_agent_start(
                         inputs=self._start_inputs,
                         execute_kwargs=self._start_execute_kwargs,
                         agent_info=self._start_agent_info,
                     )
-            except Exception:  # noqa: BLE001
-                logger.debug("Failed to call injector.on_bk_agent_start", exc_info=True)
-            finally:
+                # 无论 on_bk_agent_start 是否成功，都标记已启动，避免同一次执行重复触发
                 self._injector_started = True
-
-        attributes = {
-            "chain.name": str(name),
-            "chain.type": span_kind,
-            "chain.is_top_level": is_top_level,
-        }
+            attributes = {
+                "chain.name": str(name),
+                "chain.type": "workflow",
+                "chain.is_top_level": True,
+                # description 暂为空字符串；version 取包版本，与根 span agent.info.sdk_version 同源
+                "gen_ai.agent.description": "",
+                "gen_ai.agent.version": AGENT_SDK_VERSION,
+            }
+            # 恒写入 —— 执行入参快照 str()，与根 span agent.session.input 无条件 str(inputs)
+            # 同源同格式，供平台侧在 chain span 上还原本次调用输入并对账；
+            # _start_inputs 为 None 时写入 "None"，与根 span 一致
+            attributes["input.value"] = str(self._start_inputs)
+            # 顶层 chain span 名采用官方 ${operation} ${name} 形态；agent_code 缺失兜底裸 invoke_agent
+            span_name = f"invoke_agent {self._agent_code}" if self._agent_code is not None else "invoke_agent"
+        else:
+            # 子链沿用 chain.task 命名
+            attributes = {
+                "chain.name": str(name),
+                "chain.type": "task",
+                "chain.is_top_level": False,
+                "gen_ai.task.name": str(name),
+            }
+            span_name = "chain.task"
         self._create_span(
             run_id=run_id,
             parent_run_id=parent_run_id,
-            name=f"chain.{span_kind}",
+            name=span_name,
             kind=SpanKind.INTERNAL,
             attributes=attributes,
             entity_name=str(name),
@@ -810,11 +838,16 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if is_top_level:
             # 记录当前顶层 workflow 链的 run_id，供 create_span 使用
             self._current_workflow_run_id = run_id
+            # 用户视图根：缓存顶层 chain span 的 16 位小写 hex id，供 _create_span 给
+            # 子 span 注入关联键。建 span 之后才缓存——顶层 chain 自身建 span 时字段
+            # 尚未设置，天然不自指；与 _current_workflow_run_id 同块设置，保证 rag 等
+            # 在此时刻之后创建的子 span 读到的一定是就绪字段。
+            self._conversation_root_span_id = format(self.spans[run_id].span.get_span_context().span_id, "016x")
             # 在 chain span attach 之上，再 attach root span 让其成为当前 active context。
             # 这样后续在同一线程上启动、依赖"当前 active ctx 作为父"的自动插桩 span
             # （典型如 ``opentelemetry.instrumentation.langchain.LangchainInstrumentor``
             # 在顶层 ``start_span`` 时不传 context 的 traceloop workflow span）会以 root 为父，
-            # 而不是被压到 ``chain.workflow`` 之下。
+            # 而不是被压到 ``invoke_agent`` 顶层链 span 之下。
             # 注意：栈式 attach 会覆盖此前的 active；on_chain_end / on_chain_error 顶层
             # 必须在结束 chain span 之前 detach 该 token，保持栈平衡。
             if self._injector is not None and self._injector.root_span is not None:
@@ -876,24 +909,23 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         避免因流被关闭而导致 root span 永不结束。
         """
         # GeneratorExit：上游正常关流，按"成功"处理
-        if isinstance(error, GeneratorExit):  # type: ignore[name-defined]
+        is_stream_close = isinstance(error, GeneratorExit)  # type: ignore[name-defined]
+        if is_stream_close:
             logger.debug("Ignore GeneratorExit in on_chain_error (stream closed)")
-            # 若是顶层 chain 的关流，需要把 root span 也收尾，避免泄露
-            is_top_level = parent_run_id is None or parent_run_id not in self.spans
-            if is_top_level:
-                self._detach_root_attach_token()
-                self._write_session_totals()  # 在 _finalize_injector 之前（流式关流视为成功）
-                self._finalize_injector()
-            return
 
-        # 如果是顶层 chain 且错误影响到根 Span，需要特殊处理
+        # 判断当前结束的是否为顶层 workflow 链（谓词仅计算一次，两条路径共用）
         is_top_level = parent_run_id is None or parent_run_id not in self.spans
 
         if is_top_level:
-            # 顶层 chain 错误：先 detach root attach（保持栈平衡），再统一走 injector 收尾
+            # 顶层 chain：先 detach root attach（保持栈平衡），再统一走 injector 收尾。
+            # 关流视为成功：error 传 None；真实错误传 error。totals 须在 finalize 之前。
             self._detach_root_attach_token()
-            self._write_session_totals()  # 在 _finalize_injector(error=error) 之前
-            self._finalize_injector(error=error)
+            self._write_session_totals()  # 在 _finalize_injector 之前
+            self._finalize_injector(error=None if is_stream_close else error)
+
+        # 关流按成功处理：不置 chain span ERROR 态、不 end、不清理 workflow 标记
+        if is_stream_close:
+            return
 
         # 处理 Chain Span 本身的错误
         self._handle_error(error, run_id, parent_run_id, **kwargs)
@@ -990,7 +1022,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        """Record TTFT once; token contents are intentionally not metric labels."""
+        """LLM 首 token 到达：记录 metrics TTFC 直方图。"""
         if self._metrics is None or run_id in self._llm_first_chunk_seen:
             return
         started_at = self._llm_started_at.get(run_id)
@@ -1020,45 +1052,19 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             return
 
         span = self._get_span(run_id)
-        model_name = None
-        if response.llm_output is not None:
-            model_name = response.llm_output.get("model_name") or response.llm_output.get("model_id")
-            if model_name is not None:
-                _set_span_attribute(span, "gen_ai.response.model", model_name or "unknown")
-            id = response.llm_output.get("id")
-            if id is not None and id != "":
-                _set_span_attribute(span, "gen_ai.response.id", id)
+        # model_name 供 metrics 属性使用（span 侧响应属性统一由 set_chat_response 写入）
+        model_name = get_model_name_for_response(response)
 
-        # token usage 提取 + 累加 + 设 LLM span 属性（D-01/D-02/D-04）
+        # token usage 提取供根 span 会话累加；span 侧 gen_ai.usage.* 由 set_chat_response 统一写入
         usage = extract_token_usage(response)
         if usage is not None:
-            _set_span_attribute(span, "gen_ai.usage.input_tokens", usage["input_tokens"])
-            _set_span_attribute(span, "gen_ai.usage.output_tokens", usage["output_tokens"])
-            _set_span_attribute(span, "gen_ai.usage.total_tokens", usage["total_tokens"])
-            # 扩展字段：官方扁平化 semconv 命名（D-03 Claude's Discretion 决议，research_open_questions A1），仅当模型返回时设置
-            if usage.get("cached_tokens") is not None:
-                _set_span_attribute(span, "gen_ai.usage.cache_read.input_tokens", usage["cached_tokens"])
-            if usage.get("reasoning_tokens") is not None:
-                _set_span_attribute(span, "gen_ai.usage.reasoning.output_tokens", usage["reasoning_tokens"])
-            # 累加到实例计数器（D-04；提取失败时 usage 为 None 不计入）
+            # 累加到实例计数器（提取失败时 usage 为 None 不计入）
             self._total_input_tokens += usage["input_tokens"]
             self._total_output_tokens += usage["output_tokens"]
             self._total_total_tokens += usage["total_tokens"]
 
         # 提取响应内容
         set_chat_response(span, response, max_attribute_length=self.max_output_attribute_length)
-        metric_usage = extract_metric_token_usage(response)
-        if metric_usage:
-            _set_span_attribute(
-                span,
-                "gen_ai.usage.cache_creation.input_tokens",
-                metric_usage["cache_creation_input_tokens"],
-            )
-            _set_span_attribute(
-                span,
-                "gen_ai.usage.cache_read.input_tokens",
-                metric_usage["cache_read_input_tokens"],
-            )
         started_at = self._llm_started_at.pop(run_id, None)
         if self._metrics is not None and started_at is not None:
             duration = time.monotonic() - started_at
@@ -1074,7 +1080,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                     self._active_llm_operation_count = max(0, self._active_llm_operation_count - 1)
                     self._transition_agent_phase(self._operation_phase())
         self._llm_first_chunk_seen.discard(run_id)
-        # 设置状态为成功
+        # 设置状态为成功（响应属性由 set_chat_response 写入）
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 
@@ -1113,6 +1119,10 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                     self._active_llm_operation_count = max(0, self._active_llm_operation_count - 1)
                     self._transition_agent_phase(self._operation_phase())
         self._llm_first_chunk_seen.discard(run_id)
+        # 官方响应状态枚举为 failed（非 error）；start 阶段就抛错无 LLM span 属主时防御性跳过
+        span_holder = self.spans.get(run_id)
+        if span_holder is not None:
+            _set_span_attribute(span_holder.span, "gen_ai.response.status", "failed")
         self._handle_error(error, run_id, parent_run_id, **kwargs)
 
     @dont_throw
@@ -1131,32 +1141,24 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         self.tool_call_counter += 1
-        tool_name = self._get_name_from_callback(serialized, kwargs=kwargs)
-        attributes = {
-            "tool.name": tool_name,
-            "tool.call_index": self.tool_call_counter,
-            "tool.input": truncate_span_attribute(input_str, self.max_input_attribute_length),
-        }
-        metadata = metadata or {}
-        if mcp_name := metadata.get("mcp_name"):
-            attributes.update(
-                {
-                    "tool.type": "mcp",
-                    "rpc.system": "mcp",
-                    "mcp.operation.name": "tools/call",
-                    "mcp.server.name": str(mcp_name),
-                    "mcp.tool.name": tool_name,
-                    "mcp.transport": str(metadata.get("mcp_transport") or "unknown"),
-                }
-            )
-        elif tool_code := metadata.get("tool_code"):
-            attributes.update({"tool.type": "http_api", "tool.code": str(tool_code)})
-        self._create_span(
+        # 与 on_chain_start 一致地展开 **kwargs：否则 kwargs 会被整体塞进
+        # _get_name_from_callback 的 **kwargs（形如 {"kwargs": {...}}），令 name 分支永不命中
+        tool_name = self._get_name_from_callback(serialized, **kwargs)
+        span = self._create_span(
             run_id=run_id,
             parent_run_id=parent_run_id,
             name="tool.execution",
             kind=SpanKind.INTERNAL,
-            attributes=attributes,
+        )
+        set_tool_request(
+            span,
+            serialized,
+            input_str,
+            kwargs,
+            metadata,
+            tool_name=tool_name,
+            call_index=self.tool_call_counter,
+            max_attribute_length=self.max_input_attribute_length,
         )
         self._tool_operation_scope_tokens[run_id] = set_operation_scope("tool")
         if self._metrics is not None:
@@ -1184,12 +1186,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
         span = self._get_span(run_id)
-        _set_span_attribute(
-            span,
-            "tool.output",
-            truncate_span_attribute(str(output), self.max_output_attribute_length),
-        )
-        _set_span_attribute(span, "tool.execution_status", "success")
+        set_tool_response(span, output, max_attribute_length=self.max_output_attribute_length)
         started_at = self._tool_started_at.pop(run_id, None)
         metric_attributes = self._tool_metric_attributes.pop(run_id, None)
         if self._metrics is not None and metric_attributes is not None:
@@ -1219,9 +1216,6 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         """工具调用出错 - 标记 Tool Span 为错误"""
         if context_api.get_value(_SUPPRESS_INSTRUMENTATION_KEY):
             return
-        span = self._get_span(run_id)
-        _set_span_attribute(span, "tool.execution_status", "failed")
-        _set_span_attribute(span, "tool.error_message", traceback.format_exc())
         started_at = self._tool_started_at.pop(run_id, None)
         metric_attributes = self._tool_metric_attributes.pop(run_id, None)
         if self._metrics is not None and metric_attributes is not None:

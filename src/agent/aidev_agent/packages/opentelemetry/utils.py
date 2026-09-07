@@ -98,6 +98,27 @@ def dont_throw(func):
         return wrapper
 
 
+def get_operation_name_for_span(span_name: str) -> str | None:
+    """把建 span 的 name 映射为 gen_ai.operation.name 值域全集。
+
+    仅识别六类官方/自定义 span：invoke_agent(顶层 chain，含改名后的
+    "invoke_agent {agent_code}")、execute_task(chain.task)、chat、text_completion、
+    execute_tool、retrieval。未知 name 返回 None（不写该键），供 span 建 span
+    时集中赋值 gen_ai.operation.name；根 span(agent.execution)与 recording_span 系
+    不走该赋值路径，天然不在此映射。
+    """
+    if span_name == "invoke_agent" or span_name.startswith("invoke_agent "):
+        return "invoke_agent"
+    mapping = {
+        "chain.task": "execute_task",
+        "chat_model.generate": "chat",
+        "llm.generate": "text_completion",
+        "tool.execution": "execute_tool",
+        "rag.retrieval": "retrieval",
+    }
+    return mapping.get(span_name)
+
+
 def _safe_attach_context(span: Span):
     """
     安全地将 span 附加到 context,处理异步场景下的潜在失败
@@ -237,9 +258,9 @@ def get_otel_endpoint_by_json_str(endpoints_str: str | None = None) -> List[Dict
     支持三种格式:
     1. 单个URL: "http://localhost:4317"
     2. 多个URL(逗号分隔): "http://host1:4317,http://host2:4317"
-    3. JSON格式(支持独立配置):
+    3.     JSON格式(支持独立配置):
        '[{"url": "http://host1:4317", "token": "xxx", "exporter_type": "grpc"},
-         {"url": "http://host2:4318", "token": "yyy", "exporter_type": "http"}]'
+         {"url": "http://host2:4318", "token": "yyy", "exporter_type": "http"}]
 
     Returns:
         List[Dict[str, Any]]: 端点配置列表
@@ -334,6 +355,10 @@ def get_otel_endpoint_by_env() -> List[Dict[str, Any]]:
 def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
     """从 LLMResult 多路径提取 token usage（等价 services/token_usage.py，独立维护）。
 
+    扩展字段的 details 同时认归一化 key（input_token_details / output_token_details）与
+    provider 原生 key（prompt_tokens_details / completion_tokens_details）：前者来自
+    LangChain UsageMetadata，后者来自 OpenAI 原始 usage 形状。
+
     Args:
         response: LangChain LLMResult
 
@@ -355,11 +380,11 @@ def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }
-    # D-03 扩展字段：从 UsageMetadata 实际 key 提取（非 D-03 字面 legacy key），缺失不上报
-    input_details = usage_dict.get("input_token_details") or {}
-    output_details = usage_dict.get("output_token_details") or {}
-    cached = input_details.get("cache_read")
-    reasoning = output_details.get("reasoning")
+    # 扩展字段：归一化 key 与 provider 原生 key 双路径提取，缺失不上报
+    input_details = usage_dict.get("input_token_details") or usage_dict.get("prompt_tokens_details") or {}
+    output_details = usage_dict.get("output_token_details") or usage_dict.get("completion_tokens_details") or {}
+    cached = input_details.get("cache_read") or input_details.get("cached_tokens")
+    reasoning = output_details.get("reasoning") or output_details.get("reasoning_tokens")
     if cached is not None:
         result["cached_tokens"] = int(cached)
     if reasoning is not None:

@@ -17,15 +17,17 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import asyncio
+import re
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 from aidev_agent.packages.opentelemetry.callback_handler import (
+    AGENT_SDK_VERSION,
     BkAidevAgentCallbackHandler,
     BkAidevAgentInjector,
 )
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -173,6 +175,47 @@ class TestBkAidevAgentInjector:
         assert span.attributes["debug.thread_id"] == start_thread_name
         assert span.attributes["debug.end_thread_id"] == producer_thread_name
 
+    @pytest.mark.parametrize("session_code", ["session-a", "session-b"])
+    def test_root_span_carries_gen_ai_conversation_id(self, tracer_and_exporter, session_code):
+        """根 span 冗余 gen_ai.conversation.id 便于按会话检索，但不赋 gen_ai.operation.name"""
+        tracer, exporter = tracer_and_exporter
+        execute_kwargs = MagicMock()
+        execute_kwargs.executor = "u"
+        execute_kwargs.session_code = session_code
+        execute_kwargs.caller_bk_app_code = "app"
+        execute_kwargs.caller_bk_biz_env = "env"
+        execute_kwargs.caller_bk_biz_id = 1
+        execute_kwargs.caller_executor = "u"
+        execute_kwargs.caller_order_type = "ai_chat"
+
+        injector = BkAidevAgentInjector(tracer=tracer)
+        injector.on_bk_agent_start(inputs={"input": "x"}, execute_kwargs=execute_kwargs, agent_info={})
+        injector.on_bk_agent_end()
+
+        span = exporter.get_finished_spans()[0]
+        assert span.name == "agent.execution"
+        assert span.attributes["gen_ai.conversation.id"] == session_code
+        assert "gen_ai.operation.name" not in span.attributes
+
+    def test_root_span_writes_empty_conversation_id_without_session_code(self, tracer_and_exporter):
+        """session_code 为空时 gen_ai.conversation.id 恒存在：写空字符串而非缺键"""
+        tracer, exporter = tracer_and_exporter
+        execute_kwargs = MagicMock()
+        execute_kwargs.session_code = None
+        execute_kwargs.executor = None
+        execute_kwargs.caller_bk_app_code = None
+        execute_kwargs.caller_bk_biz_env = None
+        execute_kwargs.caller_bk_biz_id = None
+        execute_kwargs.caller_executor = None
+        execute_kwargs.caller_order_type = None
+
+        injector = BkAidevAgentInjector(tracer=tracer)
+        injector.on_bk_agent_start(inputs={"input": "x"}, execute_kwargs=execute_kwargs, agent_info={})
+        injector.on_bk_agent_end()
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.conversation.id"] == ""
+
 
 class TestBkAidevAgentCallbackHandler:
     """测试 BkAidevAgentCallbackHandler 类"""
@@ -200,21 +243,6 @@ class TestBkAidevAgentCallbackHandler:
         asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
         asyncio.run(handler.on_chain_error(error, run_id=run_id))
         handler._finalize_injector(error=error)
-
-        assert recorder.record_active_agent.call_count == 2
-        recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
-        recorder.record_agent.assert_called_once()
-
-    def test_active_agent_is_decremented_when_summary_recording_fails(self, tracer_and_exporter):
-        tracer, _ = tracer_and_exporter
-        recorder = MagicMock()
-        recorder.record_agent.side_effect = RuntimeError("metric backend failed")
-        handler = BkAidevAgentCallbackHandler(tracer=tracer, metric_recorder=recorder)
-        run_id = uuid4()
-
-        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
-        asyncio.run(handler.on_chain_end(outputs={}, run_id=run_id))
-        handler._finalize_injector()
 
         assert recorder.record_active_agent.call_count == 2
         recorder.record_active_agent.assert_called_with(-1, handler._metric_agent_attributes)
@@ -509,7 +537,7 @@ class TestBkAidevAgentCallbackHandler:
         assert len(span.attributes["gen_ai.output.messages"]) == 4
 
     def test_tool_execution_span_attributes(self, tracer_and_exporter):
-        """测试 tool.* span 包含 tool.input 和 tool.output 属性"""
+        """测试 tool.* span 包含 tool.input 属性"""
         tracer, exporter = tracer_and_exporter
 
         # 创建回调处理器
@@ -547,9 +575,8 @@ class TestBkAidevAgentCallbackHandler:
         # 验证 span 名称
         assert span.name == "tool.execution"
 
-        # 验证包含 tool.input 和 tool.output 属性
+        # 验证包含 tool.input 属性
         assert span.attributes["tool.input"] == "1+1"
-        assert span.attributes["tool.output"] == "2"
         assert span.attributes["tool.name"] == "calculator"
 
     def test_tool_content_uses_separate_input_and_output_limits(self, tracer_and_exporter):
@@ -566,66 +593,7 @@ class TestBkAidevAgentCallbackHandler:
 
         span = exporter.get_finished_spans()[0]
         assert span.attributes["tool.input"] == "23456789"
-        assert span.attributes["tool.output"] == "ghij"
-
-    def test_tool_execution_with_dict_output(self, tracer_and_exporter):
-        """测试 tool.execution span 当 output 为字典时，tool.output 正确转换为字符串"""
-        tracer, exporter = tracer_and_exporter
-
-        # 创建回调处理器
-        handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
-
-        # 模拟工具调用
-        run_id = uuid4()
-        parent_run_id = None
-
-        # 工具开始
-        asyncio.run(
-            handler.on_tool_start(
-                serialized={"name": "json_processor"},
-                input_str='{"action": "process", "data": [1, 2, 3]}',
-                run_id=run_id,
-                parent_run_id=parent_run_id,
-            )
-        )
-
-        # 工具结束 - 输出为字典
-        output_dict = {
-            "status": "success",
-            "result": {"sum": 6, "count": 3},
-            "message": "处理完成",
-        }
-        asyncio.run(
-            handler.on_tool_end(
-                output=output_dict,  # type: ignore[assignment]
-                run_id=run_id,
-                parent_run_id=parent_run_id,
-            )
-        )
-
-        # 获取导出的 spans
-        spans = exporter.get_finished_spans()
-        assert len(spans) == 1
-
-        span = spans[0]
-
-        # 验证 span 名称
-        assert span.name == "tool.execution"
-
-        # 验证 tool.output 存在且为字符串类型
-        assert "tool.output" in span.attributes
-        tool_output = span.attributes["tool.output"]
-        assert isinstance(tool_output, str), f"tool.output should be str, but got {type(tool_output)}"
-
-        # 验证输出字符串包含字典的关键信息
-        assert "status" in tool_output
-        assert "success" in tool_output
-        assert "result" in tool_output
-
-        # 验证其他属性
-        assert span.attributes["tool.name"] == "json_processor"
-        assert span.attributes["tool.input"] == '{"action": "process", "data": [1, 2, 3]}'
-        assert span.attributes["tool.execution_status"] == "success"
+        assert span.attributes["gen_ai.tool.call.result"] == "ghij"
 
     def test_mcp_tool_execution_span_has_mcp_semantic_attributes(self, tracer_and_exporter):
         tracer, exporter = tracer_and_exporter
@@ -644,10 +612,9 @@ class TestBkAidevAgentCallbackHandler:
 
         span = exporter.get_finished_spans()[0]
         assert span.attributes["tool.type"] == "mcp"
-        assert span.attributes["rpc.system"] == "mcp"
-        assert span.attributes["mcp.operation.name"] == "tools/call"
+        assert span.attributes["rpc.system.name"] == "jsonrpc"
+        assert span.attributes["mcp.method.name"] == "tools/call"
         assert span.attributes["mcp.server.name"] == "resource"
-        assert span.attributes["mcp.tool.name"] == "search"
         assert span.attributes["mcp.transport"] == "streamable_http"
 
     def test_http_tool_execution_span_has_interface_attributes(self, tracer_and_exporter):
@@ -720,6 +687,9 @@ class TestBkAidevAgentCallbackHandler:
 
         assert rag_span is not None
 
+        # operation.name=retrieval 由建 span 漏斗按 rag.retrieval span 名统一写入
+        assert rag_span.attributes["gen_ai.operation.name"] == "retrieval"
+
         # 验证包含 rag.knowledge_bases 和 rag.knowledge_items 属性
         assert rag_span.attributes["query"] == "测试查询"
         assert "knowledge_bases" in rag_span.attributes
@@ -763,7 +733,7 @@ class TestBkAidevAgentCallbackHandler:
         return run_id
 
     def test_llm_generate_span_token_usage_attributes(self, tracer_and_exporter):
-        """Test 1: llm.generate span 设 gen_ai.usage.input_tokens/output_tokens/total_tokens 为 int"""
+        """Test 1: llm.generate span 设 gen_ai.usage.input_tokens/output_tokens 为 int（total 由 collector 推导）"""
         tracer, exporter = tracer_and_exporter
         handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
 
@@ -776,7 +746,7 @@ class TestBkAidevAgentCallbackHandler:
         span = next(s for s in spans if s.name == "llm.generate")
         assert span.attributes["gen_ai.usage.input_tokens"] == 10
         assert span.attributes["gen_ai.usage.output_tokens"] == 5
-        assert span.attributes["gen_ai.usage.total_tokens"] == 15
+        assert "gen_ai.usage.total_tokens" not in span.attributes
 
     def test_chat_model_generate_span_token_usage_attributes(self, tracer_and_exporter):
         """Test 2: chat_model.generate span 设 gen_ai.usage.*（同一 on_llm_end 路径）"""
@@ -793,7 +763,7 @@ class TestBkAidevAgentCallbackHandler:
         span = next(s for s in spans if s.name == "chat_model.generate")
         assert span.attributes["gen_ai.usage.input_tokens"] == 20
         assert span.attributes["gen_ai.usage.output_tokens"] == 8
-        assert span.attributes["gen_ai.usage.total_tokens"] == 28
+        assert "gen_ai.usage.total_tokens" not in span.attributes
 
     def _make_root_span_handler(self, tracer):
         """构造带有效 injector 的 handler，使顶层 chain 能创建 root span。
@@ -917,7 +887,7 @@ class TestBkAidevAgentCallbackHandler:
         assert root.attributes["agent.session.total_tokens"] == 30
 
     def test_malformed_llm_output_no_usage_attributes(self, tracer_and_exporter):
-        """Test 6: 畸形 llm_output → 无 gen_ai.usage.* 属性、计数器不变、不抛异常"""
+        """Test 6: 畸形 llm_output → 无数值型 usage 属性、计数器不变、不抛异常"""
         tracer, exporter = tracer_and_exporter
         handler = BkAidevAgentCallbackHandler(tracer=tracer, debug=True)
 
@@ -944,7 +914,10 @@ class TestBkAidevAgentCallbackHandler:
 
         spans = exporter.get_finished_spans()
         span = next(s for s in spans if s.name == "llm.generate")
-        assert all(not k.startswith("gen_ai.usage") for k in span.attributes)
+        # 数值型 usage 键缺失；缓存三键按恒存在语义写空串
+        number_keys = ("gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens")
+        assert all(key not in span.attributes for key in number_keys)
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == ""
         assert handler._total_input_tokens == 0
         assert handler._total_output_tokens == 0
         assert handler._total_total_tokens == 0
@@ -994,6 +967,656 @@ class TestBkAidevAgentCallbackHandler:
         span = next(s for s in spans if s.name == "llm.generate")
         assert span.attributes["gen_ai.usage.input_tokens"] == 10
         assert span.attributes["gen_ai.usage.output_tokens"] == 5
-        assert span.attributes["gen_ai.usage.total_tokens"] == 15
+        assert "gen_ai.usage.total_tokens" not in span.attributes
         assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 3
+        # 上报过缓存字段（details 内 cache_read）：同批未出现的 cache_creation 写真 0
+        assert span.attributes["gen_ai.usage.cache_write.input_tokens"] == 0
         assert span.attributes["gen_ai.usage.reasoning.output_tokens"] == 2
+
+    def test_llm_end_provider_native_completion_details_sets_reasoning(self, tracer_and_exporter):
+        """provider 原始 usage 的 completion_tokens_details.reasoning_tokens → span reasoning 属性；span 无 total_tokens"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(
+            handler,
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "completion_tokens_details": {"reasoning_tokens": 4},
+            },
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.usage.reasoning.output_tokens"] == 4
+        assert "gen_ai.usage.total_tokens" not in span.attributes
+
+    @pytest.mark.parametrize("chain_name", ["qa_chain", "rag_chain"])
+    async def test_top_level_chain_span_carries_invoke_agent_attributes(self, tracer_and_exporter, chain_name):
+        """顶层 chain 是一次 agent 执行主体：invoke_agent 命名 + gen_ai.agent.* + conversation.id"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            agent_code="test_agent",
+            agent_name="显示名",
+            session_code="session-9",
+        )
+        run_id = uuid4()
+        await handler.on_chain_start({"name": chain_name}, {}, run_id=run_id, parent_run_id=None)
+
+        span = handler.spans[run_id].span
+        assert span.name == "invoke_agent test_agent"
+        assert span.attributes["chain.name"] == chain_name
+        assert span.attributes["gen_ai.operation.name"] == "invoke_agent"
+        assert span.attributes["gen_ai.agent.name"] == "显示名"
+        assert span.attributes["gen_ai.conversation.id"] == "session-9"
+        assert span.attributes["gen_ai.agent.description"] == ""
+        assert span.attributes["gen_ai.agent.version"] == AGENT_SDK_VERSION
+        # 通用层旧键已删除（agent.info.code 为唯一保留旧键，未传 agent_id 时不写 gen_ai.agent.id）
+        assert "agent.info.id" not in span.attributes
+        assert "agent.info.name" not in span.attributes
+        assert "agent.session.session_code" not in span.attributes
+        assert "agent.session.caller_executor" not in span.attributes
+
+    async def test_create_span_replaces_generic_agent_keys_with_gen_ai_semantics(self, tracer_and_exporter):
+        """非根 span 通用注入：四旧键换 gen_ai 语义四新键，agent.info.code 保留"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            agent_id="agent-1",
+            agent_code="test_agent",
+            agent_name="显示名",
+            session_code="session-1",
+            caller_executor="caller-user",
+        )
+        run_id = uuid4()
+        await handler.on_tool_start(serialized={"name": "calculator"}, input_str="1+1", run_id=run_id)
+
+        span = handler.spans[run_id].span
+        assert span.attributes["gen_ai.agent.id"] == "agent-1"
+        assert span.attributes["gen_ai.agent.name"] == "显示名"
+        assert span.attributes["gen_ai.conversation.id"] == "session-1"
+        assert span.attributes["user.name"] == "caller-user"
+        assert span.attributes["agent.info.code"] == "test_agent"
+        assert span.attributes["gen_ai.operation.name"] == "execute_tool"
+        assert "agent.info.id" not in span.attributes
+        assert "agent.info.name" not in span.attributes
+        assert "agent.session.session_code" not in span.attributes
+        assert "agent.session.caller_executor" not in span.attributes
+
+    @pytest.mark.parametrize("child_name", ["model_node", "tool_node"])
+    async def test_nested_chain_span_carries_execute_task_attributes(self, tracer_and_exporter, child_name):
+        """graph 内节点/子链：execute_task + task.name"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        parent_id, child_id = uuid4(), uuid4()
+        await handler.on_chain_start({"name": "graph"}, {}, run_id=parent_id, parent_run_id=None)
+        await handler.on_chain_start({"name": child_name}, {}, run_id=child_id, parent_run_id=parent_id)
+
+        span = handler.spans[child_id].span
+        assert span.name == "chain.task"
+        assert span.attributes["gen_ai.operation.name"] == "execute_task"
+        assert span.attributes["gen_ai.task.name"] == child_name
+
+    @pytest.mark.parametrize(
+        "use_chat, span_name, expected_operation",
+        [(True, "chat_model.generate", "chat"), (False, "llm.generate", "text_completion")],
+    )
+    async def test_llm_span_carries_gen_ai_operation_name(
+        self, tracer_and_exporter, use_chat, span_name, expected_operation
+    ):
+        """LLM span 建 span 期即写 operation.name：chat 模型 chat，纯文本补全 text_completion"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        if use_chat:
+            await handler.on_chat_model_start(
+                serialized={"name": "test_chat_model"},
+                messages=[[HumanMessage(content="你好")]],
+                run_id=run_id,
+            )
+        else:
+            await handler.on_llm_start(serialized={"name": "test_llm"}, prompts=["请回答"], run_id=run_id)
+
+        span = handler.spans[run_id].span
+        assert span.name == span_name
+        assert span.attributes["gen_ai.operation.name"] == expected_operation
+
+    def test_llm_end_writes_cache_write_alongside_cache_creation(self, tracer_and_exporter):
+        """on_llm_end 在既有 cache_creation 之外双写官方新名 cache_write（零破坏）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_llm_start(serialized={"name": "test_llm"}, prompts=["请回答"], run_id=run_id))
+        llm_result = LLMResult(
+            generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+            llm_output={
+                "model_name": "qwen3",
+                "token_usage": {
+                    "prompt_tokens": 30,
+                    "completion_tokens": 5,
+                    "total_tokens": 35,
+                    "cache_creation_input_tokens": 12,
+                    "cache_read_input_tokens": 3,
+                },
+            },
+        )
+        asyncio.run(handler.on_llm_end(response=llm_result, run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        # input_tokens 含缓存总数 = (30-12-3) + 3 + 12，恰好还原 provider 总数
+        assert span.attributes["gen_ai.usage.input_tokens"] == 30
+        assert span.attributes["gen_ai.usage.cache_creation.input_tokens"] == 12
+        assert span.attributes["gen_ai.usage.cache_write.input_tokens"] == 12
+
+    def test_llm_end_cache_read_follows_metrics_extractor(self, tracer_and_exporter):
+        """cache_read 只由 metrics 提取器写入：两个提取器取值冲突时不再受语句顺序影响"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(
+            handler,
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "input_token_details": {"cache_read": 3},
+                "cache_read_input_tokens": 7,
+            },
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 7
+
+    def test_llm_end_writes_empty_cache_attributes_without_cache_usage(self, tracer_and_exporter):
+        """模型从未上报缓存字段：缓存三键写空串（字段恒存在），空串而非 0 避免污染命中率统计"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == ""
+        assert span.attributes["gen_ai.usage.cache_creation.input_tokens"] == ""
+        assert span.attributes["gen_ai.usage.cache_write.input_tokens"] == ""
+
+    def test_llm_end_writes_zero_cache_attributes_when_provider_reports_zero(self, tracer_and_exporter):
+        """provider 上报缓存字段但命中 0：三键写真 0（区别于未上报的空串）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(
+            handler,
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 0
+        assert span.attributes["gen_ai.usage.cache_creation.input_tokens"] == 0
+        assert span.attributes["gen_ai.usage.cache_write.input_tokens"] == 0
+
+    def test_llm_end_input_tokens_includes_cache_without_double_counting(self, tracer_and_exporter):
+        """provider 总数已含缓存（prompt_tokens + cached_tokens 形状）：还原总数而非再叠加 cache"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(
+            handler,
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "prompt_tokens_details": {"cached_tokens": 4},
+            },
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.usage.input_tokens"] == 10
+        assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 4
+
+    def _run_streamed_llm_call(self, handler, *, model_name="qwen3"):
+        """构造一次流式 LLM 调用（llm_output 为 None，served 模型名/id/ttfc 由末 chunk generation_info 携带）。"""
+        run_id = uuid4()
+        asyncio.run(handler.on_llm_start(serialized={"name": "test_llm"}, prompts=["请回答"], run_id=run_id))
+        asyncio.run(
+            handler.on_llm_end(
+                response=LLMResult(
+                    generations=[
+                        [
+                            ChatGeneration(
+                                message=AIMessage(content="答案"),
+                                generation_info={
+                                    "time_to_first_chunk": 0.05,
+                                    "model_name": model_name,
+                                    "id": "chatcmpl-1",
+                                    "finish_reason": "stop",
+                                },
+                            )
+                        ]
+                    ],
+                    llm_output=None,
+                ),
+                run_id=run_id,
+            )
+        )
+        return run_id
+
+    @pytest.mark.parametrize("enable_metrics", [True, False])
+    def test_llm_end_backfills_stream_and_ttfc_for_streamed_call(self, tracer_and_exporter, enable_metrics):
+        """流式调用：响应期实化 stream=True 与非负 float 秒 ttfc；metrics 开关无关（ttfc 经首 chunk 携带）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, enable_metrics=enable_metrics)
+
+        self._run_streamed_llm_call(handler)
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.request.stream"] is True
+        ttfc = span.attributes["gen_ai.response.time_to_first_chunk"]
+        assert isinstance(ttfc, float)
+        assert ttfc >= 0
+
+    def test_llm_end_writes_served_model_and_response_id_for_streamed_call(self, tracer_and_exporter):
+        """流式调用：gen_ai.response.model 取 served 模型名、gen_ai.response.id 取 provider id（非请求模型名）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_streamed_llm_call(handler, model_name="served-model")
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.response.model"] == "served-model"
+        assert span.attributes["gen_ai.response.id"] == "chatcmpl-1"
+
+    def test_llm_end_writes_finish_reasons_for_streamed_call(self, tracer_and_exporter):
+        """流式调用：末 chunk 的 finish_reason 上报为 gen_ai.response.finish_reasons"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_streamed_llm_call(handler)
+
+        span = exporter.get_finished_spans()[0]
+        assert list(span.attributes["gen_ai.response.finish_reasons"]) == ["stop"]
+
+    def test_llm_end_does_not_overwrite_request_model_with_response_model(self, tracer_and_exporter):
+        """请求模型名与响应模型名分离：非流式响应模型名不污染 gen_ai.request.model"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "test_llm"},
+                prompts=["请回答"],
+                invocation_params={"model": "requested-model"},
+                run_id=run_id,
+            )
+        )
+        asyncio.run(
+            handler.on_llm_end(
+                response=LLMResult(
+                    generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+                    llm_output={"model_name": "served-model", "id": "chatcmpl-2"},
+                ),
+                run_id=run_id,
+            )
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.request.model"] == "requested-model"
+        assert span.attributes["gen_ai.response.model"] == "served-model"
+        assert span.attributes["gen_ai.response.id"] == "chatcmpl-2"
+
+    def test_llm_end_actualizes_stream_declaration_from_result(self, tracer_and_exporter):
+        """请求期声明 stream=True（invocation_params.stream），响应期按结果实化：无 ttfc → False"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+        asyncio.run(
+            handler.on_llm_start(
+                serialized={"name": "test_llm"},
+                prompts=["请回答"],
+                invocation_params={"stream": True},
+                run_id=run_id,
+            )
+        )
+        asyncio.run(
+            handler.on_llm_end(
+                response=LLMResult(
+                    generations=[[ChatGeneration(message=AIMessage(content="答案"))]],
+                    llm_output={"model_name": "qwen3"},
+                ),
+                run_id=run_id,
+            )
+        )
+
+        span = next(s for s in exporter.get_finished_spans() if s.name == "llm.generate")
+        assert span.attributes["gen_ai.request.stream"] is False
+
+    def test_llm_end_writes_stream_false_and_empty_ttfc_without_tokens(self, tracer_and_exporter):
+        """非流式调用：stream=False 且 ttfc 写空串"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.request.stream"] is False
+        assert span.attributes["gen_ai.response.time_to_first_chunk"] == ""
+
+    def test_llm_end_writes_completed_response_status(self, tracer_and_exporter):
+        """正常结束：gen_ai.response.status=completed"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+        self._run_llm_call(handler, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.response.status"] == "completed"
+
+    def test_llm_error_writes_failed_response_status(self, tracer_and_exporter):
+        """异常结束：gen_ai.response.status=failed（官方枚举非 error）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+        asyncio.run(handler.on_llm_start(serialized={"name": "test_llm"}, prompts=["请回答"], run_id=run_id))
+        asyncio.run(handler.on_llm_error(ValueError("boom"), run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.response.status"] == "failed"
+
+    @pytest.mark.parametrize("tool_name", ["calculator", "knowledge_search"])
+    async def test_tool_execution_span_carries_execute_tool_attributes(self, tracer_and_exporter, tool_name):
+        """tool.execution 建 span 期写 execute_tool + tool.name/type，description 按上限截断"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, max_input_attribute_length=8)
+        description = "这是一个很长的工具描述"
+        run_id = uuid4()
+
+        await handler.on_tool_start(
+            serialized={"name": tool_name, "description": description},
+            input_str="1+1",
+            run_id=run_id,
+        )
+
+        span = handler.spans[run_id].span
+        assert span.name == "tool.execution"
+        assert span.attributes["gen_ai.operation.name"] == "execute_tool"
+        assert span.attributes["gen_ai.tool.name"] == tool_name
+        assert span.attributes["gen_ai.tool.type"] == "function"
+        assert span.attributes["gen_ai.tool.description"] == description[-8:]
+        # 既有 tool.* 键零破坏保留
+        assert span.attributes["tool.name"] == tool_name
+
+    @pytest.mark.parametrize("tool_name", ["from_kwargs", "from_other_kwargs"])
+    async def test_tool_name_falls_back_to_callback_kwargs(self, tracer_and_exporter, tool_name):
+        """on_tool_start 需展开 **kwargs，否则 kwargs 里的 name 分支永不命中并退化为 unknown"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(serialized={}, input_str="1+1", run_id=run_id, name=tool_name)
+
+        span = handler.spans[run_id].span
+        assert span.attributes["tool.name"] == tool_name
+        assert span.attributes["gen_ai.tool.name"] == tool_name
+
+    async def test_tool_error_writes_error_type(self, tracer_and_exporter):
+        """工具失败时 error.type 由共用错误路径写入（异常类名）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(serialized={"name": "calculator"}, input_str="1+1", run_id=run_id)
+        await handler.on_tool_error(ValueError("boom"), run_id=run_id)
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["error.type"] == "ValueError"
+        assert "tool.error_message" not in span.attributes
+
+    def test_chain_error_writes_error_type(self, tracer_and_exporter):
+        """chain 失败时 error.type 同样由共用错误路径写入（泛化自工具路径）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        asyncio.run(handler.on_chain_start(serialized={"name": "agent"}, inputs={}, run_id=run_id))
+        asyncio.run(handler.on_chain_error(RuntimeError("boom"), run_id=run_id))
+
+        span = next(s for s in exporter.get_finished_spans() if s.name == "invoke_agent")
+        assert span.attributes["error.type"] == "RuntimeError"
+
+    @pytest.mark.parametrize("tool_call_id", ["call-1", None])
+    async def test_tool_start_writes_call_id_and_arguments(self, tracer_and_exporter, tool_call_id):
+        """建 span 期写 gen_ai.tool.call.id（kwargs 缺失兜底空串）与 call.arguments（input_str 原样字符串）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(
+            serialized={"name": "calculator"}, input_str="1+1", run_id=run_id, tool_call_id=tool_call_id
+        )
+
+        span = handler.spans[run_id].span
+        assert span.attributes["gen_ai.tool.call.id"] == (tool_call_id or "")
+        assert span.attributes["gen_ai.tool.call.arguments"] == "1+1"
+
+    @pytest.mark.parametrize(
+        "output, expected",
+        [("42", "42"), ({"x": 1}, "{'x': 1}")],
+    )
+    async def test_tool_end_writes_call_result_as_string(self, tracer_and_exporter, output, expected):
+        """on_tool_end 写 gen_ai.tool.call.result：output 一律 str 转换（dict 输出亦然）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(serialized={"name": "calculator"}, input_str="1+1", run_id=run_id)
+        await handler.on_tool_end(output=output, run_id=run_id)  # type: ignore[assignment]
+
+        span = exporter.get_finished_spans()[0]
+        call_result = span.attributes["gen_ai.tool.call.result"]
+        assert isinstance(call_result, str)
+        assert call_result == expected
+
+    async def test_tool_end_call_result_takes_only_message_content(self, tracer_and_exporter):
+        """消息对象输出（审批拒绝的 ToolMessage）call.result 只取 content，不带 name/tool_call_id"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(serialized={"name": "calculator"}, input_str="1+1", run_id=run_id)
+        await handler.on_tool_end(
+            output=ToolMessage(content="审批未通过", name="calculator", tool_call_id="call-1"),
+            run_id=run_id,
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.tool.call.result"] == "审批未通过"
+
+    async def test_mcp_tool_span_writes_function_gen_ai_type_with_legacy_mcp_type(self, tracer_and_exporter):
+        """MCP 工具：gen_ai.tool.type 恒 function，MCP 区分由 legacy tool.type=mcp 承载并存"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+
+        await handler.on_tool_start(
+            serialized={"name": "search"},
+            input_str='{"query": "blueking"}',
+            run_id=run_id,
+            metadata={"mcp_name": "srv", "mcp_transport": "streamable_http"},
+        )
+
+        span = handler.spans[run_id].span
+        assert span.attributes["gen_ai.tool.type"] == "function"
+        assert span.attributes["tool.type"] == "mcp"
+
+    async def test_tool_call_arguments_and_result_share_truncation_limits(self, tracer_and_exporter):
+        """call.arguments/call.result 截断与 tool.input 同款（尾部保留、输入/输出各自上限）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            max_input_attribute_length=8,
+            max_output_attribute_length=4,
+        )
+        run_id = uuid4()
+
+        await handler.on_tool_start(serialized={"name": "bounded"}, input_str="0123456789", run_id=run_id)
+        await handler.on_tool_end(output="abcdefghij", run_id=run_id)
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["gen_ai.tool.call.arguments"] == "23456789"
+        assert span.attributes["gen_ai.tool.call.result"] == "ghij"
+
+    @pytest.mark.parametrize(
+        "use_chat, span_name",
+        [(True, "chat_model.generate"), (False, "llm.generate")],
+    )
+    async def test_llm_span_under_chain_carries_conversation_root(self, tracer_and_exporter, use_chat, span_name):
+        """LLM span 挂顶层 chain 下：conversation_root == 顶层 span 的 16 位小写 hex id"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        chain_id, llm_id = uuid4(), uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=chain_id, parent_run_id=None)
+        if use_chat:
+            await handler.on_chat_model_start(
+                serialized={"name": "m"},
+                messages=[[HumanMessage(content="hi")]],
+                run_id=llm_id,
+                parent_run_id=chain_id,
+            )
+        else:
+            await handler.on_llm_start(serialized={"name": "m"}, prompts=["hi"], run_id=llm_id, parent_run_id=chain_id)
+        root_hex = format(handler.spans[chain_id].span.get_span_context().span_id, "016x")
+        value = handler.spans[llm_id].span.attributes["agent.conversation_root_span_id"]
+        assert value == root_hex
+        assert re.fullmatch(r"[0-9a-f]{16}", value)
+
+    async def test_tool_span_under_chain_carries_conversation_root(self, tracer_and_exporter):
+        """tool span 挂顶层 chain 下：conversation_root 指向顶层 span"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        chain_id, tool_id = uuid4(), uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=chain_id, parent_run_id=None)
+        await handler.on_tool_start(
+            serialized={"name": "calculator"},
+            input_str="1+1",
+            run_id=tool_id,
+            parent_run_id=chain_id,
+        )
+        root_hex = format(handler.spans[chain_id].span.get_span_context().span_id, "016x")
+        assert handler.spans[tool_id].span.attributes["agent.conversation_root_span_id"] == root_hex
+
+    async def test_rag_span_carries_conversation_root(self, tracer_and_exporter):
+        """rag.retrieval 经漏斗被动获得 conversation_root（rag 是顶层 chain 直接子）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        chain_id = uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=chain_id, parent_run_id=None)
+        with handler.create_custom_span("rag.retrieval"):
+            pass
+        rag_span = next(s for s in exporter.get_finished_spans() if s.name == "rag.retrieval")
+        root_hex = format(handler.spans[chain_id].span.get_span_context().span_id, "016x")
+        assert rag_span.attributes["agent.conversation_root_span_id"] == root_hex
+
+    async def test_nested_chain_task_span_carries_conversation_root(self, tracer_and_exporter):
+        """漏斗统一注入的自然覆盖面：chain.task 子链也携带 conversation_root（值同顶层）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        top_id, task_id = uuid4(), uuid4()
+        await handler.on_chain_start({"name": "graph"}, {}, run_id=top_id, parent_run_id=None)
+        await handler.on_chain_start({"name": "model_node"}, {}, run_id=task_id, parent_run_id=top_id)
+        root_hex = format(handler.spans[top_id].span.get_span_context().span_id, "016x")
+        assert handler.spans[task_id].span.attributes["agent.conversation_root_span_id"] == root_hex
+
+    async def test_tool_span_without_parent_link_carries_conversation_root(self, tracer_and_exporter):
+        """关联语义绑定 handler 会话根而非 span 父子结构：顶层建立后无父链的 span 仍携带"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        chain_id, tool_id = uuid4(), uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=chain_id, parent_run_id=None)
+        await handler.on_tool_start(serialized={"name": "t"}, input_str="x", run_id=tool_id, parent_run_id=None)
+        root_hex = format(handler.spans[chain_id].span.get_span_context().span_id, "016x")
+        assert handler.spans[tool_id].span.attributes["agent.conversation_root_span_id"] == root_hex
+
+    @pytest.mark.parametrize("kind", ["llm", "tool", "rag"])
+    async def test_bare_handler_span_lacks_conversation_root(self, tracer_and_exporter, kind):
+        """bare handler 无顶层 chain：LLM/tool/rag span 键缺省（关联键无根不写，非空串）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+        if kind == "llm":
+            await handler.on_llm_start(serialized={"name": "m"}, prompts=["hi"], run_id=run_id)
+            span = handler.spans[run_id].span
+        elif kind == "tool":
+            await handler.on_tool_start(serialized={"name": "t"}, input_str="x", run_id=run_id)
+            span = handler.spans[run_id].span
+        else:
+            with handler.create_custom_span("rag.retrieval"):
+                pass
+            span = next(s for s in exporter.get_finished_spans() if s.name == "rag.retrieval")
+        assert "agent.conversation_root_span_id" not in span.attributes
+
+    async def test_top_level_chain_span_lacks_conversation_root(self, tracer_and_exporter):
+        """顶层 invoke_agent chain 自身不携带 conversation_root（先建后缓存时序，不自指）"""
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, agent_code="test_agent")
+        run_id = uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=run_id, parent_run_id=None)
+        span = handler.spans[run_id].span
+        assert span.name == "invoke_agent test_agent"
+        assert "agent.conversation_root_span_id" not in span.attributes
+
+    async def test_agent_execution_root_span_lacks_conversation_root(self, tracer_and_exporter):
+        """agent.execution 根 span 不携带 conversation_root（injector 直建不经漏斗，冻结）"""
+        tracer, exporter = tracer_and_exporter
+        handler = self._make_root_span_handler(tracer)
+        chain_id = uuid4()
+        await handler.on_chain_start(
+            serialized={"name": "wf"}, inputs={"input": "x"}, run_id=chain_id, parent_run_id=None
+        )
+        root_span = handler._injector.root_span
+        assert root_span is not None
+        assert root_span.name == "agent.execution"
+        assert "agent.conversation_root_span_id" not in root_span.attributes
+
+    async def test_top_level_chain_span_carries_input_value(self, tracer_and_exporter):
+        """顶层 chain span 带 input.value：值取 handler 入参快照，与回调 inputs 参数无关"""
+        tracer, exporter = tracer_and_exporter
+        start_inputs = {"input": "agent-level"}
+        handler = BkAidevAgentCallbackHandler(tracer=tracer, start_inputs=start_inputs)
+        chain_id, child_id = uuid4(), uuid4()
+        # 回调入参与快照取不同值：锁定 input.value 的值源是构造期快照而非本参数
+        await handler.on_chain_start({"name": "wf"}, {"chain": "local"}, run_id=chain_id, parent_run_id=None)
+        await handler.on_chain_start({"name": "node"}, {}, run_id=child_id, parent_run_id=chain_id)
+        assert handler.spans[chain_id].span.attributes["input.value"] == str(start_inputs)
+        assert "input.value" not in handler.spans[child_id].span.attributes
+
+    async def test_top_level_chain_span_input_value_defaults_to_none_str(self, tracer_and_exporter):
+        """未提取到入参快照（None）：input.value 键恒写入，值为 str(None) 即 "None"
+
+        与根 span agent.session.input 的无条件 str() 语义一致：恒写入，None 落为 "None"。
+        """
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        chain_id = uuid4()
+        await handler.on_chain_start({"name": "wf"}, {}, run_id=chain_id, parent_run_id=None)
+        assert handler.spans[chain_id].span.attributes["input.value"] == "None"
+
+    async def test_top_level_chain_input_value_matches_root_span_session_input(self, tracer_and_exporter):
+        """同源同格式对账：chain span 的 input.value == agent.execution 的 agent.session.input"""
+        tracer, exporter = tracer_and_exporter
+        handler = self._make_root_span_handler(tracer)
+        chain_id = uuid4()
+        await handler.on_chain_start(
+            serialized={"name": "wf"}, inputs={"input": "x"}, run_id=chain_id, parent_run_id=None
+        )
+        chain_span = handler.spans[chain_id].span
+        root_span = handler._injector.root_span
+        assert root_span is not None and root_span.name == "agent.execution"
+        assert chain_span.attributes["input.value"] == root_span.attributes["agent.session.input"]
