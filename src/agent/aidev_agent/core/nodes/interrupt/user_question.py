@@ -62,9 +62,26 @@ class UserQuestionStrategy:
 
         # 构造 payload（复刻原 _build_interrupt_payload）
         args = ask_tool_call.get("args") or {}
-        questions = args.get("questions") or []
+        raw_questions = args.get("questions")
         tool_call_id = ask_tool_call.get("id") or ""
-        payload = AskUserQuestionHandler().build_payload(questions=questions, tool_call_id=tool_call_id)
+
+        # 提前归一化 —— LLM 可能把 questions 传成 str / ["字符串"] / None 等脏结构，
+        # 先在策略层清洗，避免脏数据流向 build_payload 与前端 metadata。
+        handler = AskUserQuestionHandler()
+        questions = handler._normalize_questions(raw_questions)
+        if not questions:
+            # LLM 触发了 ask_user_question 但没给出任何有效问题，
+            # 直接放弃本次 interrupt 让流程继续走（下一个策略或正常回复兜底），
+            # 而不是把空 payload 抛到前端造成 500 / 空弹窗。
+            logger.warning(
+                "[AskUserQuestion] tool_call 无有效 questions，跳过 interrupt: "
+                "tool_call_id=%s, raw=%r",
+                tool_call_id,
+                raw_questions,
+            )
+            return None
+
+        payload = handler.build_payload(questions=questions, tool_call_id=tool_call_id)
 
         # dispatch_custom_event + interrupt()（复刻原 _resolve_ask_user_question）
         try:

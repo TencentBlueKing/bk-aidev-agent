@@ -230,3 +230,100 @@ def test_skipped_content_constant_exists():
 )
 def test_parse_resume_answers(resume_items, expected):
     assert parse_resume_answers(resume_items) == expected
+
+
+# 测试 11：_normalize_questions 兼容 LLM 输出的各种脏结构
+# 覆盖 str / list[str] / dict / 混合列表 / None / 非法项，防御 build_payload 崩溃。
+@pytest.mark.parametrize(
+    "raw, expected_count, first_question",
+    [
+        (None, 0, None),  # None → 空列表
+        ([], 0, None),  # 空 list
+        ("单字符串", 1, "单字符串"),  # 整个 str（LLM 退化输出）
+        (["问题1", "问题2"], 2, "问题1"),  # list of str
+        ([{"question": "Q1"}], 1, "Q1"),  # 合法 dict list（原样保留）
+        ([{"question": "Q1"}, "Q2"], 2, "Q1"),  # 混合 dict + str
+        ({"question": "solo"}, 1, "solo"),  # 单 dict（未包 list）
+        ([None, 123, "有效", {"question": "也有效"}], 2, "有效"),  # 混合非法项，静默丢弃
+        (["   ", "有效"], 1, "有效"),  # 空白 str 丢弃
+    ],
+)
+def test_normalize_questions_various_shapes(raw, expected_count, first_question):
+    out = AskUserQuestionHandler._normalize_questions(raw)
+    assert len(out) == expected_count
+    if expected_count > 0:
+        assert out[0]["question"] == first_question
+
+
+# 测试 11.1：str 项被包装成完整协议字段（header/multiSelect/options 补齐默认值）
+# dict 项则原样保留（不强改 LLM 已给出的合法 dict）—— 这是刻意设计。
+def test_normalize_questions_wraps_str_into_full_dict():
+    out = AskUserQuestionHandler._normalize_questions(["问题A"])
+    assert len(out) == 1
+    # str 转 dict 时必带协议要求的默认字段
+    assert out[0] == {"question": "问题A", "header": "", "multiSelect": False, "options": []}
+
+
+def test_normalize_questions_preserves_dict_as_is():
+    # LLM 已给出合法 dict（哪怕只带 question），不强填其他字段避免覆盖 LLM 意图
+    raw = [{"question": "Q1"}]
+    out = AskUserQuestionHandler._normalize_questions(raw)
+    assert out == [{"question": "Q1"}]  # 原样保留
+
+
+# 测试 12：_first_question_text 缺字段回落链
+@pytest.mark.parametrize(
+    "questions, expected",
+    [
+        ([], ""),
+        ([{"question": "Q"}], "Q"),
+        ([{"header": "H"}], "H"),  # 缺 question → 回落 header
+        ([{"question": "", "header": "H"}], "H"),  # question 空串 → 回落 header
+        ([{}], ""),  # 都缺 → 空串
+        (["直接字符串"], "直接字符串"),  # str 项直接返回
+    ],
+)
+def test_first_question_text_fallback(questions, expected):
+    assert AskUserQuestionHandler._first_question_text(questions) == expected
+
+
+# 测试 13：build_payload 接受脏 questions 不再 500
+# 回归测试 —— 修前 questions=["纯字符串问题"] 会触发
+# TypeError: string indices must be integers。
+def test_build_payload_accepts_dirty_questions_without_crash():
+    handler = AskUserQuestionHandler()
+    payload = handler.build_payload(questions=["今天天气怎么样？"], tool_call_id="call_x")
+
+    assert payload["reason"] == "aidev:user_question"
+    assert payload["toolCallId"] == "call_x"
+    # 归一化后的 questions 必为标准 dict 形态
+    normalized = payload["metadata"]["questions"]
+    assert len(normalized) == 1
+    assert normalized[0]["question"] == "今天天气怎么样？"
+    assert normalized[0]["header"] == ""
+    assert normalized[0]["multiSelect"] is False
+    assert normalized[0]["options"] == []
+    # message 用归一化后的首个 question
+    assert payload["message"] == "需要用户回答：今天天气怎么样？"
+
+
+# 测试 14：build_payload 空 questions 走"需要用户回答"兜底 message
+def test_build_payload_empty_questions_fallback_message():
+    handler = AskUserQuestionHandler()
+    payload = handler.build_payload(questions=[], tool_call_id="call_y")
+
+    assert payload["message"] == "需要用户回答"
+    assert payload["metadata"]["questions"] == []
+    # 空 questions 时其他顶层字段仍应正常生成
+    assert payload["reason"] == "aidev:user_question"
+    assert payload["id"].startswith("int-question-call_y-")
+    assert payload["expiresAt"] is not None
+
+
+# 测试 15：build_payload 处理 dict 项缺 question 字段时 message 回落 header
+def test_build_payload_message_falls_back_to_header_when_question_missing():
+    handler = AskUserQuestionHandler()
+    questions = [{"header": "选择环境", "multiSelect": False, "options": []}]
+    payload = handler.build_payload(questions=questions, tool_call_id="call_z")
+
+    assert payload["message"] == "需要用户回答：选择环境"
