@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
 from aidev_agent.packages.opentelemetry.metrics import (
     AgentMetrics,
     configure_metric_identity,
@@ -88,7 +89,27 @@ def test_extract_token_usage_preserves_cache_breakdown_and_normalizes_prompt_tok
         "input_tokens": 96,
         "output_tokens": 48,
         "total_tokens": 168,
+        "has_cache_fields": True,
     }
+
+
+@pytest.mark.parametrize(
+    "token_usage, expected_presence",
+    [
+        ({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}, False),
+        ({"prompt_tokens": 10, "prompt_tokens_details": {"cached_tokens": 4}}, True),
+        ({"prompt_tokens": 10, "input_token_details": {"cache_read": 3}}, True),
+        ({"prompt_tokens": 10, "cache_read_input_tokens": 0}, True),
+    ],
+)
+def test_extract_token_usage_reports_cache_field_presence(token_usage, expected_presence):
+    """presence 信号区分"未上报缓存"（False）与"上报了缓存但命中 0"（True）"""
+    response = LLMResult(generations=[], llm_output={"token_usage": token_usage})
+
+    usage = extract_token_usage(response)
+
+    assert usage is not None
+    assert usage["has_cache_fields"] is expected_presence
 
 
 def test_extract_standard_usage_metadata_subtracts_nested_cache_from_input():
@@ -120,6 +141,44 @@ def test_error_type_is_added_only_to_duration_metric():
     assert duration_attrs["error.type"] == "RuntimeError"
     assert meter.instruments["gen_ai.invoke_agent.iteration_count"].calls == [(2, attrs)]
     assert "agent.session.session_code" not in duration_attrs
+
+
+def test_record_agent_swallows_backend_failures():
+    """OTel 后端 record 抛错时不得向调用方传播。"""
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+
+    def _raise_backend_error(*args, **kwargs):
+        raise RuntimeError("metric backend unavailable")
+
+    meter.instruments["gen_ai.invoke_agent.duration"].record = _raise_backend_error
+
+    recorder.record_agent(1.2, 2, {})
+
+    assert meter.instruments["gen_ai.invoke_agent.duration"].calls == []
+
+
+@pytest.mark.parametrize(
+    "invoke, instrument_name, sabotage_method",
+    [
+        (lambda r, a: r.record_active_agent(1, a), "aidev.agent.active", "add"),
+        (lambda r, a: r.record_agent_phase_active(1, "llm", a), "aidev.agent.phase.active", "add"),
+        (lambda r, a: r.record_agent_phase_duration(0.6, "llm", a), "aidev.agent.phase.duration", "record"),
+    ],
+)
+def test_finalize_metric_methods_swallow_backend_failures(invoke, instrument_name, sabotage_method):
+    """OTel 后端抛错时 finalize 链各 metrics 方法不得向调用方传播。"""
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+
+    def _raise_backend_error(*args, **kwargs):
+        raise RuntimeError("metric backend unavailable")
+
+    setattr(meter.instruments[instrument_name], sabotage_method, _raise_backend_error)
+
+    invoke(recorder, {})
+
+    assert meter.instruments[instrument_name].calls == []
 
 
 def test_active_agent_metric_is_symmetric_and_low_cardinality():

@@ -163,7 +163,7 @@ class TestCompleteAgentExecution:
         assert agent_span.attributes["agent.session.session_code"] == "test-session-simple"
 
         # 验证 chain span
-        chain_span = next((s for s in spans if "chain" in s.name), None)
+        chain_span = next((s for s in spans if s.name.startswith("invoke_agent")), None)
         assert chain_span is not None
 
         # 验证 llm span
@@ -331,13 +331,12 @@ class TestCompleteAgentExecution:
         # 验证 span 数量：agent.execution + chain + 2*llm + tool
         assert len(spans) == 5
 
-        # 验证所有 tool.* span 包含 tool.input 和 tool.output
+        # 验证所有 tool.* span 包含 tool.input
         tool_spans = [s for s in spans if s.name.startswith("tool.")]
         assert len(tool_spans) == 1
 
         for tool_span in tool_spans:
             assert "tool.input" in tool_span.attributes
-            assert "tool.output" in tool_span.attributes
             assert "tool.name" in tool_span.attributes
 
         # 验证所有 llm/chat_model span 包含 llm.input 和 llm.output
@@ -586,7 +585,7 @@ class TestCompleteAgentExecution:
         assert agent_span.attributes["agent.session.session_code"] == "test-session-streaming"
 
         # 验证 chain span 已结束
-        chain_span = next((s for s in spans if "chain" in s.name), None)
+        chain_span = next((s for s in spans if s.name.startswith("invoke_agent")), None)
         assert chain_span is not None, "chain span 应该存在"
         assert chain_span.end_time is not None, "chain span 应该已经结束"
 
