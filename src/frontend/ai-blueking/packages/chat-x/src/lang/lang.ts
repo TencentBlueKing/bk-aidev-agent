@@ -34,6 +34,7 @@ export const lang = {
   MCP: 'MCP',
   Prompt: 'Prompt',
   文件: 'File',
+  图片: 'Image',
   工具: 'Tool',
   知识库: 'Knowledge Base',
   会话产物: 'Conversation Files',

@@ -43,7 +43,7 @@
 ### 媒体文件
 
 - **AiImage 图片展示** — 图片展示组件，组合加载、错误、预览和 extra 插槽。 → `components/ai-image.md`
-- **FileContent 文件内容** — 渲染文件附件，支持图片预览和下载事件。 → `components/file-content.md`
+- **FileContent 文件内容** — 渲染文件附件，支持图片预览、上传中/失败态和下载事件。 → `components/file-content.md`
 - **ImageContent 图片内容** — 渲染 Markdown 图片 token。 → `components/image-content.md`
 - **ImagePreview 图片预览** — 图片全屏预览容器，支持缩放、旋转、下载工具栏。 → `components/image-preview.md`
 - **ImagePreviewGroup 图片预览组** — 通过 provide/inject 管理同组图片预览。 → `components/image-preview-group.md`
@@ -146,7 +146,7 @@
 
 ## Icons 图标
 
-- **图标** — `@blueking/chat-x` 内置了 74 个 SVG 图标：其中 69 个通过 Vue `h()` 预创建为 VNode 对象，可直接用于模板渲染； → `icons/index.md`
+- **图标** — `@blueking/chat-x` 内置了 76 个 SVG 图标：其中 70 个通过 Vue `h()` 预创建为 VNode 对象，可直接用于模板渲染； → `icons/index.md`
 
 ## 主题
 

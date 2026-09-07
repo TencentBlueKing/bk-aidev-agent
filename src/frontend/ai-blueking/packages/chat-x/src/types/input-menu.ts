@@ -31,9 +31,19 @@ import type { lang } from '../lang/lang';
 /**
  * 输入框菜单可选项类型。
  *
- * `file` 是组件内置的动作项（触发本地文件上传），不由业务方通过 `menuSources` 提供。
+ * `file` / `image` 是组件内置的动作项（触发本地文件 / 图片上传），不由业务方通过 `menuSources` 提供。
  */
-export const MENU_ITEM_TYPES = ['file', 'skill', 'mcp', 'tool', 'knowledgebase', 'doc', 'artifact', 'prompt'] as const;
+export const MENU_ITEM_TYPES = [
+  'file',
+  'image',
+  'skill',
+  'mcp',
+  'tool',
+  'knowledgebase',
+  'doc',
+  'artifact',
+  'prompt',
+] as const;
 
 /** 面板渲染用的分组（已应用关键字过滤与折叠阈值） */
 export interface IInputMenuGroup {

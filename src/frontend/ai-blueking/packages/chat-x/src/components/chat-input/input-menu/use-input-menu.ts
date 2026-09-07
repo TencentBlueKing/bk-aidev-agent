@@ -60,8 +60,6 @@ export const useInputMenu = (params: {
     const limit = Math.max(params.groupItemLimit.value, 1);
     const keyword = params.keyword.value.trim().toLowerCase();
     const result: IInputMenuGroup[] = [];
-    // keepWhenEmpty 的分组不计入总数：整个面板没有任何真实条目时不应弹出
-    let totalCount = 0;
 
     for (const key of TRIGGER_GROUP_KEYS[trigger]) {
       const def = MENU_GROUP_DEFS[key];
@@ -69,8 +67,8 @@ export const useInputMenu = (params: {
         item =>
           (def.types as MenuItemType[]).includes(item.type) && (!keyword || item.name.toLowerCase().includes(keyword)),
       );
-      totalCount += matched.length;
-      if (!matched.length && !def.keepWhenEmpty) {
+      // 初始化与搜索过滤后，组内没有条目就不渲染该分组
+      if (!matched.length) {
         continue;
       }
       const expanded = expandedKeys.value.includes(key);
@@ -85,7 +83,7 @@ export const useInputMenu = (params: {
       });
     }
 
-    return totalCount > 0 ? result : [];
+    return result;
   });
 
   /** 当前可见且可选中的条目，顺序与面板一致，供键盘上下选择 */

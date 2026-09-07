@@ -198,11 +198,11 @@ sinceVersion: '1.0.0'
 
 **所需组件**：`ChatInput`（`onUpload` + 内部 `uploadFiles` / `UserMessage` 的 `inputContent`）
 
-为 `ChatInput` 提供 `onUpload`，返回带 `download_url` 的结果；发送消息时由组件将文件并入用户消息内容。
+为 `ChatInput` 提供 `onUpload`，返回带 `download_url` 的结果；发送消息时由组件将文件并入用户消息内容。`supportUpload` 默认 `true` 时，+ 号菜单「添加」分组会注入内置的「文件」「图片」两项（不要写进 `menuSources`）：「文件」使用 `accept` prop，「图片」打开系统选择器时临时使用 `IMAGE_UPLOAD_ACCEPT`。拖拽、粘贴与入队校验始终走 `accept`。
 
 ```vue
 <script setup lang="ts">
-  import { ChatInput, MessageStatus } from '@blueking/chat-x';
+  import { ChatInput, DEFAULT_UPLOAD_ACCEPT, MessageStatus } from '@blueking/chat-x';
   import { ref as deepRef } from 'vue';
 
   const input = deepRef('');
@@ -214,6 +214,7 @@ sinceVersion: '1.0.0'
 <template>
   <ChatInput
     v-model="input"
+    :accept="DEFAULT_UPLOAD_ACCEPT"
     :message-status="MessageStatus.Complete"
     :on-upload="onUpload"
     :on-send-message="async () => {}"

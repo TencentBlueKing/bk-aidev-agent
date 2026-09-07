@@ -10,7 +10,7 @@
   - `/` → `skill` / `mcp` / `tool`
   - `@` → `knowledgebase` / `doc` / `artifact`
   - `\` → `prompt`
-  - `+` → 以上全部，并在支持上传时附带内置「文件」项
+  - `+` → 以上全部，并在支持上传时附带内置「文件」「图片」项
 - 移除 `IAiSlashMenuItem` / `IAiSlashGroupItem` / `ISkillListItem`，改用 `IInputMenuItem`、`MenuItemType`、`MenuTrigger`
 - 移除组件 `AiSlashEditor`、`AiSlashMenu`、`AiSkillList`、`AiPromptList`
 - 消息工具栏默认不再提供「引用」（整段 cite）；改为按资源引用（Mention 标签）
@@ -38,15 +38,16 @@ const menuSources = shallowRef<IInputMenuItem[]>([
 
 ### Added
 
-- **统一资源菜单**：`InputMenuPanel` + `useInputMenu` + `useMenuTrigger`；分组默认展示 4 条，超出折叠为「更多 +N」；会话产物组无数据时仍展示「暂无数据」
-- **+ 号聚合菜单**：新增 `AddMenuBtn`，点击唤起全部资源分组
+- **统一资源菜单**：`InputMenuPanel` + `useInputMenu` + `useMenuTrigger`；分组默认展示 4 条，超出折叠为「更多 +N」；组内无数据时不渲染该分组
+- **+ 号聚合菜单**：新增 `AddMenuBtn`，点击唤起全部资源分组；「添加」分组内置「文件」「图片」两项，共用同一套上传校验与 `onUpload`。「图片」打开系统选择器时临时使用 `IMAGE_UPLOAD_ACCEPT`
+- **上传常量**：导出 `IMAGE_UPLOAD_ACCEPT`（与 `ALLOWED_UPLOAD_EXTENSIONS.image` 同源）；入队校验仍走 `accept` / `DEFAULT_UPLOAD_ACCEPT`
 - **Mention 标签**：`MentionTag` / `MentionText`；选中后以「图标 + 蓝色名称」内联插入；有描述时 hover 气泡；会话产物标签可点击打开侧栏预览
 - **发送还原 / 编辑回填**：用户消息 `property.extra.docSchema` 保存富文本文档；仅含 tag 时走结构化渲染，历史纯文本消息表现不变
 - **会话产物引用**：消息区文件卡片、侧栏产物预览可一键把文件以标签插入输入框（只读 / 分享态隐藏入口）
 - **自动收集会话产物**：`collectMessageArtifacts` 从助手 `artifacts` 与用户附件收集；业务未自行传入 `artifact` 时自动拼进 `@` 菜单
 - **跨层插入**：`useInputMention` provide/inject，任意深度组件可 `insertMention`
 - **用户消息折叠**：`CollapsibleContent`，正文最高 200px，超出展示「显示更多 / 收起」
-- **ResourceIcon**：菜单项与标签共用类型默认图标（远程图失效回退内置图标；产物按文件后缀推导）
+- **ResourceIcon**：菜单项与标签共用类型默认图标（远程图失效回退内置图标；产物按文件后缀推导）；新增 `image` → `ImageUploadIcon`、`prompt` → `PromptIcon`
 - npm 包发布 `skills/` 目录，供 Agent 消费 chat-x 组件文档
 
 ### Changed

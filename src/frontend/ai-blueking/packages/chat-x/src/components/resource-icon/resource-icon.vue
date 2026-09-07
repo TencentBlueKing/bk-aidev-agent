@@ -24,7 +24,7 @@
 <script setup lang="ts">
   import { computed, shallowRef, watch } from 'vue';
 
-  import { FileUploadIcon, KnowledgeBaseIcon, McpIcon, ModuleIcon, ToolIcon } from '../../icons';
+  import { FileUploadIcon, ImageUploadIcon, KnowledgeBaseIcon, McpIcon, ModuleIcon, PromptIcon, ToolIcon } from '../../icons';
   import FileIcon from '../file-icon/file-icon.vue';
 
   defineOptions({ name: 'ResourceIcon' });
@@ -38,10 +38,12 @@
    */
   const TYPE_FALLBACK_ICONS: Record<string, Component> = {
     file: FileUploadIcon,
+    image: ImageUploadIcon,
     mcp: McpIcon,
     tool: ToolIcon,
     knowledgebase: KnowledgeBaseIcon,
     doc: KnowledgeBaseIcon,
+    prompt: PromptIcon,
   };
 
   const props = defineProps<{

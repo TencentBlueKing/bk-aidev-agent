@@ -34,6 +34,7 @@ sinceVersion: 0.0.51
 
   const sources = computed(() => [
     { id: '__built_in_file__', type: 'file', name: '文件' },
+    { id: '__built_in_image__', type: 'image', name: '图片' },
     { id: 'translate', type: 'skill', name: '翻译', description: '把选中的文本翻译成目标语言' },
     { id: 'summarize', type: 'skill', name: '总结' },
     { id: 'review', type: 'skill', name: '代码评审' },
@@ -87,19 +88,20 @@ sinceVersion: 0.0.51
 
 分组静态定义（`MENU_GROUP_DEFS`）：
 
-| `key`           | 标题     | 覆盖 `type`            | `keepWhenEmpty` |
-| --------------- | -------- | ---------------------- | --------------- |
-| `add`           | 添加     | `file`                 | `false`         |
-| `skill`         | Skill    | `skill`                | `false`         |
-| `mcp`           | MCP      | `mcp`                  | `false`         |
-| `tool`          | 工具     | `tool`                 | `false`         |
-| `knowledgebase` | 知识库   | `knowledgebase`、`doc` | `false`         |
-| `artifact`      | 会话产物 | `artifact`             | `true`          |
-| `prompt`        | Prompt   | `prompt`               | `false`         |
+| `key`           | 标题     | 覆盖 `type`            |
+| --------------- | -------- | ---------------------- |
+| `add`           | 添加     | `file`、`image`        |
+| `skill`         | Skill    | `skill`                |
+| `mcp`           | MCP      | `mcp`                  |
+| `tool`          | 工具     | `tool`                 |
+| `knowledgebase` | 知识库   | `knowledgebase`、`doc` |
+| `artifact`      | 会话产物 | `artifact`             |
+| `prompt`        | Prompt   | `prompt`               |
 
-- `keepWhenEmpty` 为 `true` 的分组在无数据时仍渲染并展示「暂无数据」，且**不计入**「面板是否有内容」的判断——只有这类分组时面板不会弹出。
+- 组内无匹配条目时，`useInputMenu` **不产出该分组**（初始化与搜索过滤后均如此）；全部组都为空时 `groups` 为空数组，`ChatInput` 因此不弹出面板。
+- 面板组件本身若被传入 `items` 为空的分组，仍会渲染标题并展示「暂无数据」。`ChatInput` 默认路径不会走到这一支。
 - `DIVIDED_GROUP_KEYS` 决定哪些分组下方画分隔线，目前为 `['add']`。
-- `getMenuTypeLabel(type)` 由分组定义反查生成，菜单分组标题与标签气泡标题共用一份映射。
+- `getMenuTypeLabel(type)` 由分组定义反查生成，菜单分组标题与标签气泡标题共用一份映射（`file` / `image` 都映射到「添加」）。
 
 ## 渲染示例
 

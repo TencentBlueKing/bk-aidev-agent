@@ -26,11 +26,13 @@ sinceVersion: 0.0.51
 
   const cases = [
     { type: 'file', name: '文件' },
+    { type: 'image', name: '图片' },
     { type: 'skill', name: 'Skill（无内置图标，回退 ModuleIcon）' },
     { type: 'mcp', name: 'MCP' },
     { type: 'tool', name: '工具' },
     { type: 'knowledgebase', name: '知识库' },
     { type: 'doc', name: '知识库（doc）' },
+    { type: 'prompt', name: '写文章' },
     { type: 'artifact', name: '巡检报告.pdf' },
     { type: 'artifact', name: '数据明细.xlsx' },
     { type: 'unknown', name: '未登记类型' },
@@ -44,7 +46,7 @@ sinceVersion: 0.0.51
 ## 源码事实
 
 - **源码位置**：`src/components/resource-icon/resource-icon.vue`
-- **内置图标表**：`file` → `FileUploadIcon`、`mcp` → `McpIcon`、`tool` → `ToolIcon`、`knowledgebase` / `doc` → `KnowledgeBaseIcon`
+- **内置图标表**：`file` → `FileUploadIcon`、`image` → `ImageUploadIcon`、`mcp` → `McpIcon`、`tool` → `ToolIcon`、`knowledgebase` / `doc` → `KnowledgeBaseIcon`、`prompt` → `PromptIcon`
 - **特殊分支**：`artifact` 走 [FileIcon](/components/helper/file-icon) 按 `name` 的文件后缀推导
 - **最终兜底**：以上都不命中时渲染 `ModuleIcon`（田字格）
 
@@ -64,7 +66,7 @@ icon 缺省
 `icon` 变化时会重置失效标记，换成新的 URL 会重新尝试加载。
 
 ::: info 内部组件
-本组件不在包入口导出，由菜单、标签与模型选择器内部使用。内置图标（`McpIcon` / `ToolIcon` / `KnowledgeBaseIcon` / `ModuleIcon` / `FileUploadIcon`）从包入口导出，可单独使用，见 [Icons 图标](/icons/)。
+本组件不在包入口导出，由菜单、标签与模型选择器内部使用。内置图标（`McpIcon` / `ToolIcon` / `KnowledgeBaseIcon` / `PromptIcon` / `ModuleIcon` / `FileUploadIcon` / `ImageUploadIcon`）从包入口导出，可单独使用，见 [Icons 图标](/icons/)。
 :::
 
 ## 用法
@@ -77,6 +79,8 @@ icon 缺省
   <ResourceIcon :icon="McpIcon" name="database-server" type="mcp" />
   <!-- 按类型兜底 -->
   <ResourceIcon name="API 接口文档" type="knowledgebase" />
+  <ResourceIcon name="写文章" type="prompt" />
+  <ResourceIcon name="图片" type="image" />
   <!-- 会话产物按后缀推导 -->
   <ResourceIcon name="巡检报告.pdf" type="artifact" />
 </template>
