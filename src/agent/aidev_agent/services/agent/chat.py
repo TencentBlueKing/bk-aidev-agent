@@ -1569,6 +1569,17 @@ class ChatAgentBuilder:
     - Chat 专属字段读 ``self.ctx.chat.{temperature, max_tokens, auth_headers, checkpointer, ...}``。
     """
 
+    # docSchema tag 的 data.type → 装配期资源形状：tool / mcp 按 code 收窄，知识库按数字 id，
+    # 文件与产物按 PV 相对路径；skill 走渐进式披露（只交出描述、正文按需拉取），全量挂载成本极低，
+    # 且 options.skills 非空还是 runtime 沙箱工具链的开关，故不参与收窄。
+    DOC_SCHEMA_TAG_TYPES = {
+        "tool": ("tool", "code"),
+        "mcp": ("mcp", "code"),
+        "doc": ("knowledgebase", "id"),
+        "knowledgebase": ("knowledgebase", "id"),
+        "artifact": ("file", "path"),
+    }
+
     def __init__(self, ctx: AgentBuildContext):
         self.ctx = ctx
         self._specific_resources: list[dict] = []
@@ -2158,9 +2169,45 @@ class ChatAgentBuilder:
                 f"ChatAgentBuilder: handling last human message with resources in session_context_data->[{item}]"
             )
             if item.get("role") == PromptRole.USER.value:
-                # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
-                extra = item.get("extra") or {}
-                resources = extra.get("resources") or []
+                resources = self._resolve_last_human_resources(item)
                 self._file_resources = [resource for resource in resources if resource.get("type") == "file"]
                 self._specific_resources = [resource for resource in resources if resource.get("type") != "file"]
                 break
+
+    @classmethod
+    def _resolve_last_human_resources(cls, item: dict) -> list[dict]:
+        """取本轮用户消息声明的资源：优先 docSchema，缺省时降级 extra.resources。
+
+        ``docSchema`` 是前端输入框富文本结构。只要该键存在就以它为唯一事实源——空数组代表
+        本轮确实没有引用任何资源，此时不回退旧字段。
+        """
+        doc_schema = item.get("docSchema")
+        if doc_schema is not None:
+            return cls._convert_doc_schema_to_resources(doc_schema)
+        # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
+        extra = item.get("extra") or {}
+        return extra.get("resources") or []
+
+    @classmethod
+    def _convert_doc_schema_to_resources(cls, doc_schema: Any) -> list[dict]:
+        """把 docSchema 的 tag 节点转成装配期资源形状，text 节点、未知 type 与空 value 忽略。"""
+        if not isinstance(doc_schema, list):
+            return []
+        resources: list[dict] = []
+        for node in [node for line in doc_schema if isinstance(line, list) for node in line]:
+            if not isinstance(node, dict) or node.get("type") != "tag":
+                continue
+            data = node.get("data") or {}
+            mapping = cls.DOC_SCHEMA_TAG_TYPES.get(data.get("type") or "")
+            value = data.get("value")
+            if mapping is None or value in (None, ""):
+                continue
+            resource_type, value_key = mapping
+            if value_key == "id":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    logger.warning("ChatAgentBuilder: docSchema 知识库 tag value 非数字 id->[%s]", value)
+                    continue
+            resources.append({"type": resource_type, value_key: value})
+        return resources
