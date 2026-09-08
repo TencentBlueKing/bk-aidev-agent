@@ -6,8 +6,19 @@
           <img src="@/assets/svg/ai-logo.svg" alt="AI助手logo" />
           <h1 class="ai-share-header-title">{{ title }}</h1>
         </div>
-        <div class="ai-share-header-right" v-if="agentName">
-          {{ `分享于 "${agentName}"` }}
+        <div class="ai-share-header-right">
+          <span v-if="agentName" class="ai-share-header-text">{{ `分享于 "${agentName}"` }}</span>
+          <span v-if="agentName" class="ai-share-header-divider" aria-hidden="true"></span>
+          <span
+            v-bk-tooltips="{
+              content: asideCollapsed ? '展开侧栏' : '收起侧栏',
+              delay: [300, 0],
+            }"
+            class="aside-toggle"
+            @click="asideCollapsed = !asideCollapsed"
+          >
+            <AsideToggleIcon />
+          </span>
         </div>
       </div>
       <div
@@ -29,6 +40,7 @@
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
           <ChatContainer
+            v-model:aside-collapsed="asideCollapsed"
             :messages="messages"
             :message-status="MessageStatus.Complete"
             message-tools-status="hidden"
@@ -45,10 +57,10 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeMount, ref, computed } from "vue"
+  import { cloneVNode, computed, defineComponent, onBeforeMount, ref } from "vue"
   import { useRoute } from "vue-router"
-  import { Message, Exception as BkException, Button as BkButton } from "bkui-vue"
-  import { ChatContainer, MessageStatus, type AIFileInfo, type OnArtifactClick } from "@blueking/chat-x"
+  import { Message, Exception as BkException, Button as BkButton, bkTooltips as vBkTooltips } from "bkui-vue"
+  import { ChatContainer, CollapsedAsideIcon, MessageStatus, type AIFileInfo, type OnArtifactClick } from "@blueking/chat-x"
   import "@blueking/chat-x/dist/index.css"
   import { transferMessageApi2Message, type IMessageApi, type IMessage } from "@blueking/chat-helper"
 
@@ -122,6 +134,17 @@
   const sessionCode = ref<string>("")
 
   const route = useRoute()
+
+  /** CollapsedAsideIcon 是预创建 VNode，不能当 SFC 用，需 cloneVNode 包一层 */
+  const AsideToggleIcon = defineComponent({
+    name: "AsideToggleIcon",
+    setup() {
+      return () => cloneVNode(CollapsedAsideIcon)
+    },
+  })
+
+  /** 嵌入式 ChatContainer 不自带侧栏开关，由分享页 Header 受控 */
+  const asideCollapsed = ref(true)
 
   /**
    * 分享页侧栏（文件产物 / 执行情况）宽度：对齐工作台 ChatBot 默认 560，
@@ -331,9 +354,41 @@
           }
         }
         .ai-share-header-right {
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+          gap: 12px;
           font-size: 12px;
           color: #979ba5;
           line-height: 32px;
+        }
+
+        .ai-share-header-divider {
+          flex-shrink: 0;
+          width: 1px;
+          height: 12px;
+          background: #c4c6cc;
+        }
+
+        .aside-toggle {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+          color: #63656e;
+          cursor: pointer;
+          border-radius: 2px;
+
+          &:hover {
+            color: #4d4f56;
+            background: #eaebf0;
+          }
+
+          :deep(svg) {
+            width: 14px;
+            height: 14px;
+          }
         }
       }
 
