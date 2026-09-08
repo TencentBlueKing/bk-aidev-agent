@@ -31,11 +31,10 @@ import type { lang } from '../lang/lang';
 /**
  * 输入框菜单可选项类型。
  *
- * `file` / `image` 是组件内置的动作项（触发本地文件 / 图片上传），不由业务方通过 `menuSources` 提供。
+ * `file` 是组件内置的动作项（触发本地文件上传），不由业务方通过 `menuSources` 提供。
  */
 export const MENU_ITEM_TYPES = [
   'file',
-  'image',
   'skill',
   'mcp',
   'tool',

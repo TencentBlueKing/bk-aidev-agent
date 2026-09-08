@@ -295,16 +295,12 @@ const ALLOWED_UPLOAD_EXTENSIONS = {
 
 /** 「文件」项 / 拖拽 / 粘贴的默认 accept，以及入队校验默认值 */
 const DEFAULT_UPLOAD_ACCEPT = Object.values(ALLOWED_UPLOAD_EXTENSIONS).flat().join(',');
-
-/** 仅图片：+ 号菜单「图片」项打开系统选择器时临时使用 */
-const IMAGE_UPLOAD_ACCEPT = ALLOWED_UPLOAD_EXTENSIONS.image.join(',');
 ```
 
 | 常量 | 说明 |
 | ---- | ---- |
 | `ALLOWED_UPLOAD_EXTENSIONS` | 默认允许的扩展名分类（含点）；分类用于 tooltip 展示 |
 | `DEFAULT_UPLOAD_ACCEPT` | `ChatInput.accept` 缺省值 |
-| `IMAGE_UPLOAD_ACCEPT` | 「图片」项打开系统选择器时的临时 `accept`；入队校验不改用此值 |
 
 ## 使用示例
 
@@ -319,7 +315,6 @@ import {
   CONST_MESSAGE_TOOLS,
   DEFAULT_SHORTCUTS,
   DEFAULT_UPLOAD_ACCEPT,
-  IMAGE_UPLOAD_ACCEPT,
 } from '@blueking/chat-x';
 
 // 创建消息
@@ -342,9 +337,8 @@ console.log(
   CONST_MESSAGE_TOOLS.map(t => t.name),
 );
 
-// 上传：「文件」项 / 拖拽 / 粘贴用 DEFAULT_UPLOAD_ACCEPT；「图片」项打开选择器时临时用 IMAGE_UPLOAD_ACCEPT
+// 上传：「文件」项 / 拖拽 / 粘贴用 DEFAULT_UPLOAD_ACCEPT（已含图片扩展名）
 const filePickerAccept = DEFAULT_UPLOAD_ACCEPT;
-const imagePickerAccept = IMAGE_UPLOAD_ACCEPT;
 ```
 
 ## 关联组件

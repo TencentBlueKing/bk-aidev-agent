@@ -42,7 +42,7 @@ InputMenuPanel 渲染输入框菜单：分组标题 + InputMenuOption 条目 + �
 
 | `key`           | 标题     | 覆盖 `type`            |
 | --------------- | -------- | ---------------------- |
-| `add`           | 添加     | `file`、`image`        |
+| `add`           | 添加     | `file`                 |
 | `skill`         | Skill    | `skill`                |
 | `mcp`           | MCP      | `mcp`                  |
 | `tool`          | 工具     | `tool`                 |
@@ -53,7 +53,7 @@ InputMenuPanel 渲染输入框菜单：分组标题 + InputMenuOption 条目 + �
 - 组内无匹配条目时，`useInputMenu` **不产出该分组**（初始化与搜索过滤后均如此）；全部组都为空时 `groups` 为空数组，`ChatInput` 因此不弹出面板。
 - 面板组件本身若被传入 `items` 为空的分组，仍会渲染标题并展示「暂无数据」。`ChatInput` 默认路径不会走到这一支。
 - `DIVIDED_GROUP_KEYS` 决定哪些分组下方画分隔线，目前为 `['add']`。
-- `getMenuTypeLabel(type)` 由分组定义反查生成，菜单分组标题与标签气泡标题共用一份映射（`file` / `image` 都映射到「添加」）。
+- `getMenuTypeLabel(type)` 由分组定义反查生成，菜单分组标题与标签气泡标题共用一份映射（`file` 映射到「添加」）。
 
 ## 渲染示例
 

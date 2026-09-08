@@ -124,7 +124,16 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, nextTick, onUnmounted, reactive, ref as deepRef, shallowRef, useTemplateRef, watch, watchPostEffect } from 'vue';
+  import {
+    computed,
+    ref as deepRef,
+    onUnmounted,
+    reactive,
+    shallowRef,
+    useTemplateRef,
+    watch,
+    watchPostEffect,
+  } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -135,7 +144,14 @@
     MessageContentType,
     MessageStatus,
   } from '../../ag-ui/types';
-  import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, EDITOR_MENU_Z_INDEX, IMAGE_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import {
+    CHAT_Z_INDEX,
+    DEFAULT_UPLOAD_ACCEPT,
+    EDITOR_MENU_Z_INDEX,
+    isEn,
+    MAX_UPLOAD_FILE_SIZE,
+    MAX_UPLOAD_FILES,
+  } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
   import { t } from '../../lang/lang';
@@ -190,7 +206,7 @@
     (e: 'modelChange', model: IModelOption): void;
   };
   export type ChatInputProps = {
-    accept?: string; // 「文件」项 / 拖拽 / 粘贴的过滤类型；「图片」项打开时临时覆盖为 IMAGE_UPLOAD_ACCEPT
+    accept?: string; // 「文件」项 / 拖拽 / 粘贴的过滤类型，同时用于入队校验
     defaultUploadFiles?: UploadFile[];
     inputMaxHeight?: number;
     /** 菜单每个分组默认展示的条数，超出折叠为「更多 +N」 */
@@ -265,18 +281,10 @@
   });
   const availableSources = computed<IInputMenuItem[]>(() => {
     const list = props.menuSources.filter(item => !insertedTagKeys.value.has(`${item.type}:${item.id}`));
-    // 「文件」「图片」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
-    return props.supportUpload
-      ? [
-          { id: '__built_in_file__', type: 'file', name: t('文件') },
-          { id: '__built_in_image__', type: 'image', name: t('图片') },
-          ...list,
-        ]
-      : list;
+    // 「文件」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
+    return props.supportUpload ? [{ id: '__built_in_file__', type: 'file', name: t('文件') }, ...list] : list;
   });
-  /** 选「图片」时临时收窄系统选择器；未指定则沿用 accept prop */
-  const pickerAccept = shallowRef<string>();
-  const fileInputAccept = computed(() => (pickerAccept.value ?? props.accept) || undefined);
+  const fileInputAccept = computed(() => props.accept || undefined);
   const {
     groups: menuGroups,
     flatItems,
@@ -309,18 +317,15 @@
   const handleToggleGroup = (key: string) => {
     toggleGroup(key as MenuGroupKey);
   };
-  /** 先写入 accept 再 click，确保系统选择器读到最新过滤条件 */
-  const openFilePicker = async (accept?: string) => {
-    pickerAccept.value = accept;
-    await nextTick();
+  const openFilePicker = () => {
     fileInputRef.value?.click();
   };
   const handleSelectMenuItem = (item: IInputMenuItem) => {
-    if (item.type === 'file' || item.type === 'image') {
+    if (item.type === 'file') {
       // 与插入标签保持一致：先吃掉用于过滤的输入文本，再唤起系统文件选择器
       aiSlashInputRef.value?.consumeTriggerText?.();
       handleCloseMenu();
-      void openFilePicker(item.type === 'image' ? IMAGE_UPLOAD_ACCEPT : undefined);
+      openFilePicker();
       return;
     }
     if (item.type === 'prompt') {
@@ -603,7 +608,6 @@
       handleUpload(files);
     }
     target.value = '';
-    pickerAccept.value = undefined;
   };
   // 点击输入区之外时收起菜单；用 mousedown 以便在编辑器失焦之前处理
   const handleDocumentMouseDown = (event: MouseEvent) => {

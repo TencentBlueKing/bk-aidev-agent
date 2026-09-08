@@ -44,7 +44,6 @@ const buildSources = (): IInputMenuItem[] => [
   { id: 'a1', type: 'artifact', name: '操作文档.docx' },
   { id: 'p1', type: 'prompt', name: '深圳旅游攻略？', content: '深圳旅游攻略？' },
   { id: 'f1', type: 'file', name: '文件' },
-  { id: 'i1', type: 'image', name: '图片' },
 ];
 
 const setup = (trigger: MenuTrigger | null, keyword = '', groupItemLimit = 4) =>
@@ -85,7 +84,7 @@ describe('useInputMenu', () => {
       'prompt',
     ]);
     expect(groups.value[0].divided).toBe(true);
-    expect(groups.value[0].items.map(item => item.id)).toEqual(['f1', 'i1']);
+    expect(groups.value[0].items.map(item => item.id)).toEqual(['f1']);
   });
 
   it('超过阈值的分组只展示前 N 条并给出折叠条数', () => {

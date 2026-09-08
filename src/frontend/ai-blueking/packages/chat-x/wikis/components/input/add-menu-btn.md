@@ -100,10 +100,10 @@ sinceVersion: 0.0.51
 
 ## 与 FileUploadBtn 的关系
 
-`ChatInput` 内部的上传入口已从 [FileUploadBtn](/components/input/file-upload-btn) 改为 + 号聚合菜单里的「文件」「图片」项：
+`ChatInput` 内部的上传入口已从 [FileUploadBtn](/components/input/file-upload-btn) 改为 + 号聚合菜单里的「文件」项：
 
-- 上传能力开启（`supportUpload`）时，组件在菜单「添加」分组注入内置的 `type: 'file'` 与 `type: 'image'` 条目，选中后唤起隐藏的原生 `input[type=file]`
-- 「图片」打开选择器时临时把 `accept` 收窄为 `IMAGE_UPLOAD_ACCEPT`；「文件」、拖拽、粘贴与入队校验仍走 `ChatInput` 的 `accept` prop，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)
+- 上传能力开启（`supportUpload`）时，组件在菜单「添加」分组注入内置的 `type: 'file'` 条目，选中后唤起隐藏的原生 `input[type=file]`
+- 「文件」、拖拽、粘贴与入队校验都走 `ChatInput` 的 `accept` prop，详见 [ChatInput 文件上传](/components/input/chat-input#file-upload)
 - `FileUploadBtn` 组件仍然保留并可独立使用，但不再出现在 `ChatInput` 的默认布局中
 
 ## 关联组件

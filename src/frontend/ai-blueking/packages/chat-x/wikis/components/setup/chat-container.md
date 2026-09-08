@@ -1012,7 +1012,7 @@ ai-chat-container（:data-ai-size="size"）
 
 **2. 资源引用入口**：容器通过 [useInputMention](/composables/use-input-mention) 提供 `insertMention`，消息区的文件卡片与侧栏产物面板因此能直接把文件「@ 进输入框」，无需逐层透传输入框实例。没有输入框的场景（`Share` 只读态）自动不显示引用按钮。
 
-**3. 编辑态菜单下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」「图片」项。
+**3. 编辑态菜单下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」项。
 
 ```vue
 <template>

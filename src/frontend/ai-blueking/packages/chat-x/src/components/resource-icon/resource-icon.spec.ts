@@ -43,7 +43,6 @@ const { stubIcon } = vi.hoisted(() => {
 
 vi.mock('../../icons', () => ({
   FileUploadIcon: stubIcon('FileUploadIcon', 'mock-file-upload-icon'),
-  ImageUploadIcon: stubIcon('ImageUploadIcon', 'mock-image-upload-icon'),
   KnowledgeBaseIcon: stubIcon('KnowledgeBaseIcon', 'mock-knowledge-base-icon'),
   McpIcon: stubIcon('McpIcon', 'mock-mcp-icon'),
   ModuleIcon: stubIcon('ModuleIcon', 'mock-module-icon'),
@@ -111,7 +110,6 @@ describe('ResourceIcon', () => {
       ['knowledgebase', 'mock-knowledge-base-icon'],
       ['doc', 'mock-knowledge-base-icon'],
       ['file', 'mock-file-upload-icon'],
-      ['image', 'mock-image-upload-icon'],
       ['prompt', 'mock-prompt-icon'],
     ])('%s 回退到 %s', (type, className) => {
       wrapper = mount(ResourceIcon, { props: { name: 'a', type } });

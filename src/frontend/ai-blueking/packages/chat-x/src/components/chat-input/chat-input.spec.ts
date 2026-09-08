@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageStatus } from '../../ag-ui/types';
-import { DEFAULT_UPLOAD_ACCEPT, IMAGE_UPLOAD_ACCEPT } from '../../common';
+import { DEFAULT_UPLOAD_ACCEPT } from '../../common';
 import ChatInput from './chat-input.vue';
 
 import type { IInputMenuItem, UploadFile } from '../../types';
@@ -1057,11 +1057,11 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('knowledgebase');
     });
 
-    it('plus 触发聚合有数据的分组，并把内置「文件」「图片」放在添加分组', async () => {
+    it('plus 触发聚合有数据的分组，并把内置「文件」放在添加分组', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, 'plus');
       expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('add,skill,knowledgebase,prompt');
-      expect(wrapper.find('.mock-input-menu-panel').attributes('data-add-types')).toBe('file,image');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-add-types')).toBe('file');
     });
 
     it('过滤关键字命中不到条目时不展示面板', async () => {
@@ -1124,25 +1124,6 @@ describe('ChatInput', () => {
       expect(mockConsumeTriggerText).toHaveBeenCalled();
       expect(mockCloseMenu).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
-      expect(fileInput.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
-    });
-
-    it('选中内置「图片」时先吃掉过滤词再唤起仅图片的文件选择器', async () => {
-      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
-      await emitMenuChange(wrapper, 'plus');
-      const fileInput = wrapper.find('.chat-input-file-input');
-      const clickSpy = vi.spyOn(fileInput.element as HTMLInputElement, 'click').mockImplementation(() => {});
-      await wrapper
-        .findComponent({ name: 'InputMenuPanel' })
-        .vm.$emit('select', { id: '__built_in_image__', type: 'image', name: '图片' });
-      await nextTick();
-      expect(mockConsumeTriggerText).toHaveBeenCalled();
-      expect(mockCloseMenu).toHaveBeenCalled();
-      expect(clickSpy).toHaveBeenCalled();
-      expect(fileInput.attributes('accept')).toBe(IMAGE_UPLOAD_ACCEPT);
-
-      await fileInput.trigger('change');
-      await nextTick();
       expect(fileInput.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
     });
 

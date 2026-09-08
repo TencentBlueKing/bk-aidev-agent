@@ -32,7 +32,7 @@ import {
   isFileAcceptedByAccept,
   normalizeAcceptTokens,
 } from './file';
-import { ALLOWED_UPLOAD_EXTENSIONS, DEFAULT_UPLOAD_ACCEPT, IMAGE_UPLOAD_ACCEPT } from './upload-accept';
+import { ALLOWED_UPLOAD_EXTENSIONS, DEFAULT_UPLOAD_ACCEPT } from './upload-accept';
 
 const createFile = (name: string, type = ''): File => new File(['x'], name, { type });
 
@@ -56,12 +56,6 @@ describe('isDefaultUploadAccept', () => {
 
   it('收窄后的 accept 不应判定为默认列表', () => {
     expect(isDefaultUploadAccept('.pdf,.doc')).toBe(false);
-  });
-});
-
-describe('IMAGE_UPLOAD_ACCEPT', () => {
-  it('仅为允许的图片扩展名', () => {
-    expect(IMAGE_UPLOAD_ACCEPT).toBe(ALLOWED_UPLOAD_EXTENSIONS.image.join(','));
   });
 });
 
