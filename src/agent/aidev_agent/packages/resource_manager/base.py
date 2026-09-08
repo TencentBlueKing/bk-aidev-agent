@@ -36,6 +36,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     McpToolsResult,
     _extract_mcp_tools_error_detail,
 )
+from aidev_agent.packages.resource_manager.registry import SANDBOX_PV_PROPERTY_KEYS
 from aidev_agent.pydantic_models import AgentConfig
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
@@ -331,11 +332,14 @@ class BaseResourceManager(abc.ABC):
             .get("data", {})
         )
 
-    def update_chat_session_sandbox_pv_id(self, session_code: str, sandbox_pv_id: str, **kwargs) -> dict:
+    def update_chat_session_sandbox_pv_id(
+        self, session_code: str, sandbox_pv_id: str, *, scope: str = "session", **kwargs
+    ) -> dict:
+        property_key = SANDBOX_PV_PROPERTY_KEYS[scope]
         client = self.get_client()
         return client.api.update_chat_session(
             path_params={"session_code": session_code},
-            json={"session_property": {"sandbox_pv_id": sandbox_pv_id}},
+            json={"session_property": {property_key: sandbox_pv_id}},
             **kwargs,
         ).get("data", {})
 

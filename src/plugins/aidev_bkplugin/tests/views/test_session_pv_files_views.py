@@ -3,7 +3,7 @@
 
 覆盖点：
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
-- 5 个 action 参数透传（GET list / stat / preview / download_url / upload）
+- 6 个 action 参数透传（GET list / stat / preview / download_url / upload / promote）
 - 上传会话归属校验与沙箱文件异常映射
 - 沙箱文件异常 → blueapps 异常映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
@@ -72,6 +72,7 @@ def _request(
     meta=None,
     path="/pv-files",
     files=None,
+    data=None,
 ):
     return SimpleNamespace(
         query_params=query_params or {},
@@ -80,6 +81,7 @@ def _request(
         COOKIES=cookies or {},
         META=meta or {},
         path=path,
+        data=data or {},
         FILES=SimpleNamespace(getlist=lambda field_name: files or [] if field_name == "files" else []),
     )
 
@@ -431,6 +433,46 @@ class TestPvFilesUpload:
         assert excinfo.value.STATUS_CODE == 400
         instance.upload_files.assert_not_called()
         session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# pv_files_promote
+# ---------------------------------------------------------------------------
+
+
+class TestPvFilesPromote:
+    def test_promote_forwards_paths(self, view, mock_svc):
+        instance, _ = mock_svc
+        promote_result = {
+            "count": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "results": [{"path": "files/a.txt", "status": "success"}],
+        }
+        instance.promote_files.return_value = promote_result
+
+        response = view.pv_files_promote(_request(method="POST", data={"paths": ["files/a.txt"]}), pk="s1")
+
+        assert response.data == promote_result
+        instance.promote_files.assert_called_once_with(session_code="s1", paths=["files/a.txt"])
+
+    @pytest.mark.parametrize("data", [{}, {"paths": []}, {"paths": "files/a.txt"}])
+    def test_promote_rejects_missing_paths(self, view, mock_svc, data):
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        with pytest.raises(ClientBlueException):
+            view.pv_files_promote(_request(method="POST", data=data), pk="s1")
+        instance.promote_files.assert_not_called()
+
+    def test_promote_maps_invalid_argument_to_400(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        instance.promote_files.side_effect = SandboxFileInvalidArgumentError("非法的草稿路径")
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_promote(_request(method="POST", data={"paths": ["../etc"]}), pk="s1")
+        assert excinfo.value.STATUS_CODE == 400
 
 
 # ---------------------------------------------------------------------------

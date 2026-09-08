@@ -325,6 +325,24 @@ class ChatSessionViewSet(PluginViewSet):
             self._raise_pv_exc(exc)
         return Response(data=data)
 
+    @action(["POST"], url_path="pv_files/promote", detail=True)
+    def pv_files_promote(self, request, pk, **kwargs):
+        """把草稿卷内的附件搬进会话 PV，发送消息前调用。"""
+        self._check_session_owner(request, pk, require_access=True)
+        paths = request.data.get("paths")
+        if not isinstance(paths, list) or not paths:
+            raise ClientBlueException(message="paths is required")
+
+        svc = self._make_pv_file_service(request)
+        snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
+        if snapshot:
+            svc._executor_info["snapshot"] = snapshot
+        try:
+            data = svc.promote_files(session_code=pk, paths=paths)
+        except SandboxFileError as exc:
+            self._raise_pv_exc(exc)
+        return Response(data=data)
+
 
 def _copy_session_content_payload(data):
     """复制写消息 payload，避免改写原始 request.data。"""

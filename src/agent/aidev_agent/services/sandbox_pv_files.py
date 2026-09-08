@@ -23,7 +23,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import NotRequired, Optional, TypedDict
+from typing import Literal, NamedTuple, NotRequired, Optional, TypedDict
 from urllib.parse import quote, urlencode
 from uuid import uuid4
 
@@ -31,7 +31,10 @@ from bkapi_client_core.exceptions import HTTPResponseError
 from requests import HTTPError as RequestsHTTPError
 
 from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
-from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+from aidev_agent.packages.resource_manager.registry import (
+    SANDBOX_PV_PROPERTY_KEYS,
+    ResourceManagerProtocol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,26 @@ PV_LIST_PAGE_SLEEP_SECONDS = 0.5  # 翻页前预防性等待，避免打爆 PaaS
 SESSION_VOLUME_PATH = "$STORAGE_PATH/session"
 SESSION_FILES_DIR = "files"
 TEMP_UPLOAD_VOLUME_MOUNT_PATH = "/app/.storage/session"
+# 草稿卷只挂给临时上传 sandbox，不写入 agent 运行时的 volume_mounts，
+# 因此运行中的 agent 在物理上读不到用户尚未发送的附件。
+TEMP_DRAFT_VOLUME_MOUNT_PATH = "/app/.storage/draft"
+
+
+PvScope = Literal["session", "draft"]
+
+
+class _PvScopeSpec(NamedTuple):
+    """一种 PV 作用域的差异项：会话属性字段、卷名前缀、临时 sandbox 挂载点。"""
+
+    property_key: str
+    volume_name_prefix: str
+    mount_path: str
+
+
+PV_SCOPE_SPECS: dict[PvScope, _PvScopeSpec] = {
+    "session": _PvScopeSpec(SANDBOX_PV_PROPERTY_KEYS["session"], "session-pv", TEMP_UPLOAD_VOLUME_MOUNT_PATH),
+    "draft": _PvScopeSpec(SANDBOX_PV_PROPERTY_KEYS["draft"], "session-draft-pv", TEMP_DRAFT_VOLUME_MOUNT_PATH),
+}
 # 临时上传 sandbox 的 PaaS 存活时长，同时作为进程内复用缓存的过期阈值：
 # 复用期内不再建/销毁，到期由 PaaS 自动回收；临界点若命中已回收 sandbox，由 fallback 重建兜底
 # PaaS sandbox ttl_seconds 上限为 30 分钟（1800s）
@@ -179,9 +202,13 @@ def _get_session_op_lock(session_code: str) -> threading.Lock:
         return lock
 
 
-def _get_cached_upload_sandbox(app_code: str, session_code: str, volume_id: str) -> str:
-    """返回未过期的缓存 sandbox_id，无则空串。"""
-    cache_key = (app_code, session_code, volume_id)
+def _get_cached_upload_sandbox(app_code: str, session_code: str, volume_key: str) -> str:
+    """返回未过期的缓存 sandbox_id，无则空串。
+
+    `volume_key` 标识该 sandbox 实际挂载的卷组合（见 `_build_volume_cache_key`），
+    挂载组合变化时不得复用旧容器。
+    """
+    cache_key = (app_code, session_code, volume_key)
     with _UPLOAD_SANDBOX_CACHE_LOCK:
         entry = _UPLOAD_SANDBOX_CACHE.get(cache_key)
         if not entry:
@@ -196,14 +223,19 @@ def _get_cached_upload_sandbox(app_code: str, session_code: str, volume_id: str)
         return sandbox_id
 
 
+def _build_volume_cache_key(draft_volume_id: str, session_volume_id: str) -> str:
+    """临时上传 sandbox 的挂载指纹：草稿卷与会话卷任一变化都不复用旧容器。"""
+    return f"{draft_volume_id}|{session_volume_id}"
+
+
 def _set_cached_upload_sandbox(
     app_code: str,
     session_code: str,
-    volume_id: str,
+    volume_key: str,
     sandbox_id: str,
     created_at: float | None = None,
 ) -> None:
-    cache_key = (app_code, session_code, volume_id)
+    cache_key = (app_code, session_code, volume_key)
     with _UPLOAD_SANDBOX_CACHE_LOCK:
         if created_at is None:
             existing = _UPLOAD_SANDBOX_CACHE.get(cache_key)
@@ -213,8 +245,8 @@ def _set_cached_upload_sandbox(
         _UPLOAD_SANDBOX_CACHE[cache_key] = (sandbox_id, created_at)
 
 
-def _invalidate_cached_upload_sandbox(app_code: str, session_code: str, volume_id: str) -> None:
-    cache_key = (app_code, session_code, volume_id)
+def _invalidate_cached_upload_sandbox(app_code: str, session_code: str, volume_key: str) -> None:
+    cache_key = (app_code, session_code, volume_key)
     with _UPLOAD_SANDBOX_CACHE_LOCK:
         _UPLOAD_SANDBOX_CACHE.pop(cache_key, None)
     # 显式失效时一并清理会话锁，避免锁对象持续累积
@@ -311,16 +343,21 @@ class SandboxPvFileService:
     # 反查 & Client 构造
     # ------------------------------------------------------------------
 
-    def _get_volume_id(self, session_code: str) -> str:
-        """从 `ChatSession.session_property.sandbox_pv_id` 读取 volume_id，缺失即报错。"""
+    def _resolve_volume_id(self, session_code: str, scope: PvScope = "session") -> str:
+        """从会话属性读取指定作用域的 volume_id，缺失即报错。"""
+        spec = PV_SCOPE_SPECS[scope]
         session = self._rm.retrieve_chat_session(session_code) or {}
         session_property = session.get("session_property") or {}
-        volume_id = session_property.get("sandbox_pv_id")
+        volume_id = session_property.get(spec.property_key)
         if not volume_id:
             raise SandboxFileNotFoundError(
-                f"session {session_code} 未初始化沙箱 PersistentVolume（sandbox_pv_id 缺失）"
+                f"session {session_code} 未初始化沙箱 PersistentVolume（{spec.property_key} 缺失）"
             )
         return volume_id
+
+    def _get_volume_id(self, session_code: str) -> str:
+        """从 `ChatSession.session_property.sandbox_pv_id` 读取 volume_id，缺失即报错。"""
+        return self._resolve_volume_id(session_code, "session")
 
     def _get_client(self):
         return self._rm.get_paas_sbx_client(self._executor_info)
@@ -330,8 +367,9 @@ class SandboxPvFileService:
         return {"app_code": app_code, "volume_id": volume_id}
 
     @staticmethod
-    def _extract_volume_id(session: dict) -> str:
-        volume_id = ((session or {}).get("session_property") or {}).get("sandbox_pv_id")
+    def _extract_volume_id(session: dict, scope: PvScope = "session") -> str:
+        property_key = PV_SCOPE_SPECS[scope].property_key
+        volume_id = ((session or {}).get("session_property") or {}).get(property_key)
         return str(volume_id) if volume_id else ""
 
     @staticmethod
@@ -357,8 +395,20 @@ class SandboxPvFileService:
 
     def ensure_volume(self, session_code: str) -> str:
         """幂等获取会话 PV；不存在时创建并写回会话。"""
+        return self._ensure_volume(session_code, "session")
+
+    def ensure_draft_volume(self, session_code: str) -> str:
+        """幂等获取会话草稿 PV；不存在时创建并写回会话。
+
+        草稿卷只挂给临时上传 sandbox，不进入 agent 运行时挂载，
+        用户尚未发送的附件因此对运行中的 agent 不可见。
+        """
+        return self._ensure_volume(session_code, "draft")
+
+    def _ensure_volume(self, session_code: str, scope: PvScope) -> str:
+        spec = PV_SCOPE_SPECS[scope]
         try:
-            return self._get_volume_id(session_code)
+            return self._resolve_volume_id(session_code, scope)
         except SandboxFileNotFoundError:
             pass
 
@@ -366,7 +416,7 @@ class SandboxPvFileService:
         app_code = self._executor_info.get("app_code") or ""
         created_volume_id = ""
         try:
-            volume_name = f"session-pv-{session_code}-{uuid4().hex[:8]}"
+            volume_name = f"{spec.volume_name_prefix}-{session_code}-{uuid4().hex[:8]}"
             response = client.create_agent_sandbox_volume.request(
                 json={"name": volume_name},
                 path_params={"app_code": app_code},
@@ -398,15 +448,14 @@ class SandboxPvFileService:
                     paas_message = str(create_payload.get("message") or "")
                 raise SandboxFileServerError(paas_message or "创建 sandbox PV 返回格式异常")
 
-            updated_session = self._rm.update_chat_session_sandbox_pv_id(
-                session_code,
-                created_volume_id,
-            )
-            persisted_volume_id = self._extract_volume_id(updated_session)
+            updated_session = self._update_session_volume_id(session_code, created_volume_id, scope)
+            persisted_volume_id = self._extract_volume_id(updated_session, scope)
             if not persisted_volume_id:
-                persisted_volume_id = self._extract_volume_id(self._rm.retrieve_chat_session(session_code))
+                persisted_volume_id = self._extract_volume_id(
+                    self._rm.retrieve_chat_session(session_code), scope
+                )
             if not persisted_volume_id:
-                raise SandboxFileServerError(f"会话 {session_code} 的 sandbox PV 写回失败")
+                raise SandboxFileServerError(f"会话 {session_code} 的 {spec.property_key} 写回失败")
 
             if persisted_volume_id != created_volume_id:
                 self._delete_volume_quietly(client, app_code, created_volume_id)
@@ -423,6 +472,16 @@ class SandboxPvFileService:
             if created_volume_id:
                 self._delete_volume_quietly(client, app_code, created_volume_id)
             raise SandboxFileServerError(f"创建会话 sandbox PV 失败: {exc}") from exc
+
+    def _update_session_volume_id(self, session_code: str, volume_id: str, scope: PvScope) -> dict:
+        """把新建卷写回会话属性。
+
+        session 作用域保持原有位置调用，未升级的 ResourceManager 实现同样可用；
+        草稿作用域才附加 `scope`，老实现会因缺少该参数报错并触发上传侧降级。
+        """
+        if scope == "session":
+            return self._rm.update_chat_session_sandbox_pv_id(session_code, volume_id)
+        return self._rm.update_chat_session_sandbox_pv_id(session_code, volume_id, scope=scope)
 
     # ------------------------------------------------------------------
     # 错误映射
@@ -509,14 +568,23 @@ class SandboxPvFileService:
             raise SandboxFileInvalidArgumentError("since/until 必须是 tz-aware datetime（含时区信息）")
         return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _call_single(self, action: str, session_code: str, params: dict, *, volume_id=None, client=None):
+    def _call_single(
+        self,
+        action: str,
+        session_code: str,
+        params: dict,
+        *,
+        scope: PvScope = "session",
+        volume_id=None,
+        client=None,
+    ):
         """调用 PaaS 单个操作（非分页），返回原始 Response。
 
         `action` 同时用作 Client 属性名与错误日志 tag（当前所有单请求方法都对齐）。
         `volume_id` / `client` 可选：调用方已算好的可传入，避免分页等循环场景重复
         `_get_volume_id`（一次会话 HTTP 查询）与 `_get_client` 构造。
         """
-        volume_id = volume_id or self._get_volume_id(session_code)
+        volume_id = volume_id or self._resolve_volume_id(session_code, scope)
         client = client or self._get_client()
         try:
             resp = getattr(client, action).request(
@@ -552,10 +620,18 @@ class SandboxPvFileService:
             return snapshot
         raise SandboxFileInvalidArgumentError("创建临时 sandbox 需要 file-kit Skill 的已构建镜像")
 
+    @staticmethod
+    def _build_upload_volume_mounts(draft_volume_id: str, session_volume_id: str) -> list[dict[str, str]]:
+        """临时上传 sandbox 的挂载：会话卷用于 promote 落地，草稿卷用于承接未发送附件。"""
+        mounts = [{"volume_id": session_volume_id, "mount_path": TEMP_UPLOAD_VOLUME_MOUNT_PATH}]
+        if draft_volume_id:
+            mounts.append({"volume_id": draft_volume_id, "mount_path": TEMP_DRAFT_VOLUME_MOUNT_PATH})
+        return mounts
+
     def _create_upload_sandbox(
         self,
         session_code: str,
-        volume_id: str,
+        volume_mounts: list[dict[str, str]],
         snapshot: str,
         backend: PaasSandboxBackend,
     ) -> tuple[str, float]:
@@ -566,7 +642,7 @@ class SandboxPvFileService:
             ttl_seconds=TEMP_UPLOAD_SANDBOX_TTL_SECONDS,
             snapshot=snapshot,
             snapshot_entrypoint=[],
-            volume_mounts=[{"volume_id": volume_id, "mount_path": TEMP_UPLOAD_VOLUME_MOUNT_PATH}],
+            volume_mounts=volume_mounts,
         )
         created_at = time.monotonic()
         logger.info(
@@ -608,7 +684,7 @@ class SandboxPvFileService:
                 file_name = f"{stem}-{uuid4().hex[:8]}{suffix}"
             used_names.add(file_name)
             relative_path = posixpath.join(files_dir, file_name)
-            absolute_path = posixpath.join(TEMP_UPLOAD_VOLUME_MOUNT_PATH, relative_path)
+            absolute_path = posixpath.join(absolute_files_dir, file_name)
             result = {
                 "type": "file",
                 "id": relative_path,
@@ -651,6 +727,10 @@ class SandboxPvFileService:
         同一进程的复用期内不再 create/destroy，到期由 PaaS 自动回收；复用失败（容器已被回收）
         时 fallback 重建一次。同一进程内的会话操作加锁串行化，避免单容器并发冲突。
 
+        文件先落到会话草稿卷，`promote_files` 之后才移入会话卷；草稿卷不挂载给 agent 运行时，
+        因此运行中的 agent 读不到用户尚未发送的附件。ResourceManager 不支持草稿卷写回时
+        （老平台）自动降级为直接写会话卷，保持既有行为。
+
         同名文件直接覆盖会话 PV 中已有文件的内容，路径（``files/<filename>``）保持不变；
         同一请求内若出现多个同名文件，后者追加短 hash 后缀（``files/<stem>-<hash><suffix>``）
         以避免互相覆盖，跨请求的同名文件不做去重、按原路径覆盖。
@@ -658,7 +738,11 @@ class SandboxPvFileService:
         validate_session_upload_files(files)
 
         snapshot = self._resolve_upload_snapshot()
-        volume_id = self.ensure_volume(session_code)
+        session_volume_id = self.ensure_volume(session_code)
+        draft_volume_id = self._ensure_draft_volume_or_degrade(session_code)
+        upload_scope: PvScope = "draft" if draft_volume_id else "session"
+        volume_mounts = self._build_upload_volume_mounts(draft_volume_id, session_volume_id)
+        volume_key = _build_volume_cache_key(draft_volume_id, session_volume_id)
         client = self._get_client()
         backend = PaasSandboxBackend(
             app_code=self._executor_info.get("app_code") or "",
@@ -669,15 +753,17 @@ class SandboxPvFileService:
             env_vars={},
         )
         files_dir = SESSION_FILES_DIR
-        absolute_files_dir = posixpath.join(TEMP_UPLOAD_VOLUME_MOUNT_PATH, files_dir)
+        absolute_files_dir = posixpath.join(PV_SCOPE_SPECS[upload_scope].mount_path, files_dir)
 
         # 进程内会话锁：串行化同一进程内的 sandbox exec/upload，避免单容器并发冲突
         with _get_session_op_lock(session_code):
             app_code = self._executor_info.get("app_code") or ""
-            sandbox_id = _get_cached_upload_sandbox(app_code, session_code, volume_id)
+            sandbox_id = _get_cached_upload_sandbox(app_code, session_code, volume_key)
             sandbox_created_at: float | None = None
             if not sandbox_id:
-                sandbox_id, sandbox_created_at = self._create_upload_sandbox(session_code, volume_id, snapshot, backend)
+                sandbox_id, sandbox_created_at = self._create_upload_sandbox(
+                    session_code, volume_mounts, snapshot, backend
+                )
 
             gone_signal: dict[str, bool] = {}
             try:
@@ -693,9 +779,9 @@ class SandboxPvFileService:
                         session_code,
                         sandbox_id,
                     )
-                    _invalidate_cached_upload_sandbox(app_code, session_code, volume_id)
+                    _invalidate_cached_upload_sandbox(app_code, session_code, volume_key)
                     sandbox_id, sandbox_created_at = self._create_upload_sandbox(
-                        session_code, volume_id, snapshot, backend
+                        session_code, volume_mounts, snapshot, backend
                     )
                     try:
                         results = self._write_files_to_sandbox(
@@ -718,9 +804,9 @@ class SandboxPvFileService:
                     session_code,
                     sandbox_id,
                 )
-                _invalidate_cached_upload_sandbox(app_code, session_code, volume_id)
+                _invalidate_cached_upload_sandbox(app_code, session_code, volume_key)
                 sandbox_id, sandbox_created_at = self._create_upload_sandbox(
-                    session_code, volume_id, snapshot, backend
+                    session_code, volume_mounts, snapshot, backend
                 )
                 results = self._write_files_to_sandbox(
                     session_code, sandbox_id, backend, files_dir, absolute_files_dir, files
@@ -728,12 +814,12 @@ class SandboxPvFileService:
             _set_cached_upload_sandbox(
                 app_code,
                 session_code,
-                volume_id,
+                volume_key,
                 sandbox_id,
                 created_at=sandbox_created_at,
             )
 
-        self._attach_image_download_urls(session_code, results)
+        self._attach_image_download_urls(session_code, results, upload_scope)
         succeeded = sum(item["status"] == "success" for item in results)
         return {
             "count": len(results),
@@ -742,7 +828,147 @@ class SandboxPvFileService:
             "results": results,
         }
 
-    def _attach_image_download_urls(self, session_code: str, results: list[dict]) -> None:
+    @staticmethod
+    def _normalize_draft_path(path: str) -> str:
+        """校验草稿相对路径，只接受 `files/<filename>` 这一层，拒绝穿越与绝对路径。"""
+        raw = str(path or "").strip()
+        if not raw:
+            raise SandboxFileInvalidArgumentError("待提交的草稿路径不能为空")
+        normalized = posixpath.normpath(raw)
+        if normalized != raw or normalized.startswith(("/", "..")):
+            raise SandboxFileInvalidArgumentError(f"非法的草稿路径: {path}")
+        if posixpath.dirname(normalized) != SESSION_FILES_DIR:
+            raise SandboxFileInvalidArgumentError(f"草稿路径必须位于 {SESSION_FILES_DIR}/ 下: {path}")
+        return normalized
+
+    @staticmethod
+    def _build_promote_result(moved: list[tuple[str, str]]) -> dict:
+        results = []
+        for path, error in moved:
+            item = {"path": path, "status": "failed" if error else "success"}
+            if error:
+                item["error"] = error
+            results.append(item)
+        succeeded = sum(item["status"] == "success" for item in results)
+        return {
+            "count": len(results),
+            "succeeded": succeeded,
+            "failed": len(results) - succeeded,
+            "results": results,
+        }
+
+    def _move_drafts_into_session(
+        self,
+        sandbox_id: str,
+        backend: PaasSandboxBackend,
+        target_dir: str,
+        paths: list[str],
+    ) -> list[tuple[str, str]]:
+        """在同时挂载草稿卷与会话卷的 sandbox 内逐个搬运，返回 (path, error) 列表。"""
+        mkdir_result = backend.exec_command(sandbox_id, ["mkdir", "-p", target_dir])
+        if mkdir_result.exit_code not in (0, None):
+            raise SandboxFileServerError(
+                f"创建会话文件目录失败: exit_code={mkdir_result.exit_code}, stderr={mkdir_result.stderr}"
+            )
+
+        moved: list[tuple[str, str]] = []
+        for path in paths:
+            source = posixpath.join(TEMP_DRAFT_VOLUME_MOUNT_PATH, path)
+            destination = posixpath.join(TEMP_UPLOAD_VOLUME_MOUNT_PATH, path)
+            # argv 直传，文件名中的引号、空格等字符不经 shell 解析
+            result = backend.exec_command(sandbox_id, ["mv", "-f", source, destination])
+            if result.exit_code in (0, None):
+                moved.append((path, ""))
+                continue
+            error = result.stderr or f"exit_code={result.exit_code}"
+            logger.warning("[pv_files] 草稿搬运失败 path=%s error=%s", path, error)
+            moved.append((path, error))
+        return moved
+
+    def promote_files(self, session_code: str, paths: list[str]) -> dict:
+        """把草稿卷内的附件移入会话卷，使其对后续 agent 可见。
+
+        发送消息前调用：上传阶段文件只落在草稿卷，运行中的 agent 物理上读不到；
+        本方法把本轮真正要发送的附件搬进会话卷，相对路径 ``files/<filename>`` 保持不变。
+        草稿卷不存在说明上传已降级直写会话卷，无需搬运，按成功返回。
+        """
+        if not paths:
+            raise SandboxFileInvalidArgumentError("待提交的草稿路径不能为空")
+        if len(paths) > MAX_SESSION_UPLOAD_FILES:
+            raise SandboxFileInvalidArgumentError(f"单次提交文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
+        normalized_paths = [self._normalize_draft_path(path) for path in paths]
+
+        try:
+            draft_volume_id = self._resolve_volume_id(session_code, "draft")
+        except SandboxFileNotFoundError:
+            return self._build_promote_result([(path, "") for path in normalized_paths])
+
+        snapshot = self._resolve_upload_snapshot()
+        session_volume_id = self.ensure_volume(session_code)
+        backend = PaasSandboxBackend(
+            app_code=self._executor_info.get("app_code") or "",
+            bk_username=self._executor_info.get("executor") or "",
+            client=self._get_client(),
+            snapshot=snapshot,
+            snapshot_entrypoint=[],
+            env_vars={},
+        )
+        volume_mounts = self._build_upload_volume_mounts(draft_volume_id, session_volume_id)
+        volume_key = _build_volume_cache_key(draft_volume_id, session_volume_id)
+        target_dir = posixpath.join(TEMP_UPLOAD_VOLUME_MOUNT_PATH, SESSION_FILES_DIR)
+        app_code = self._executor_info.get("app_code") or ""
+
+        # 与上传共用会话锁和 sandbox 复用缓存，避免同一容器上并发 exec
+        with _get_session_op_lock(session_code):
+            sandbox_id = _get_cached_upload_sandbox(app_code, session_code, volume_key)
+            sandbox_created_at: float | None = None
+            if not sandbox_id:
+                sandbox_id, sandbox_created_at = self._create_upload_sandbox(
+                    session_code, volume_mounts, snapshot, backend
+                )
+            try:
+                moved = self._move_drafts_into_session(sandbox_id, backend, target_dir, normalized_paths)
+            except HTTPResponseError as exc:
+                if not self._is_sandbox_gone(exc):
+                    self._raise_mapped_paas_error("promote_files", exc)
+                logger.warning(
+                    "[pv_files] sandbox 疑似已回收，重建重试 session=%s sandbox_id=%s",
+                    session_code,
+                    sandbox_id,
+                )
+                _invalidate_cached_upload_sandbox(app_code, session_code, volume_key)
+                sandbox_id, sandbox_created_at = self._create_upload_sandbox(
+                    session_code, volume_mounts, snapshot, backend
+                )
+                try:
+                    moved = self._move_drafts_into_session(sandbox_id, backend, target_dir, normalized_paths)
+                except HTTPResponseError as exc2:
+                    self._raise_mapped_paas_error("promote_files", exc2)
+            _set_cached_upload_sandbox(
+                app_code,
+                session_code,
+                volume_key,
+                sandbox_id,
+                created_at=sandbox_created_at,
+            )
+
+        return self._build_promote_result(moved)
+
+    def _ensure_draft_volume_or_degrade(self, session_code: str) -> str:
+        """获取草稿卷；ResourceManager 或平台不支持时返回空串，由调用方退回会话卷。"""
+        try:
+            return self.ensure_draft_volume(session_code)
+        except SandboxFileError:
+            logger.warning(
+                "[pv_files] 草稿 PV 不可用，本次上传直接落会话卷 session=%s",
+                session_code,
+                exc_info=True,
+            )
+            return ""
+
+    def _attach_image_download_urls(
+        self, session_code: str, results: list[dict], scope: PvScope = "session"
+    ) -> None:
         """给成功上传的图片签发 download_url，供输入框和首条 user 消息展示。
 
         签发失败不得打垮整批：该文件改为 failed 并写入原因，其它已成功文件不受影响。
@@ -757,7 +983,7 @@ class SandboxPvFileService:
                 continue
             try:
                 url_data = self.get_download_url(
-                    session_code, path, expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN
+                    session_code, path, expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN, scope=scope
                 )
             except (SandboxFileError, HTTPResponseError, RequestsHTTPError) as exc:
                 # 文件已成功写入 PV，失败的只是「签发展示用临时 URL」；保留 status=success，
@@ -843,26 +1069,28 @@ class SandboxPvFileService:
             result["truncated"] = True
         return result
 
-    def delete_file(self, session_code: str, path: str) -> None:
+    def delete_file(self, session_code: str, path: str, scope: PvScope = "session") -> None:
         """删除 PV 内指定文件（幂等）。"""
-        self._call_single("delete_file", session_code, {"path": path})
+        self._call_single("delete_file", session_code, {"path": path}, scope=scope)
 
-    def stat_file(self, session_code: str, path: str) -> dict:
+    def stat_file(self, session_code: str, path: str, scope: PvScope = "session") -> dict:
         """查询文件/目录元数据（不存在时 PaaS 返回 `exists=false`，透传）。"""
-        resp = self._call_single("stat_file", session_code, {"path": path})
+        resp = self._call_single("stat_file", session_code, {"path": path}, scope=scope)
         return resp.json() or {}
 
-    def preview_file(self, session_code: str, path: str, max_bytes: int = 65536) -> tuple[bytes, bool]:
+    def preview_file(
+        self, session_code: str, path: str, max_bytes: int = 65536, scope: PvScope = "session"
+    ) -> tuple[bytes, bool]:
         """返回文件前 max_bytes 字节纯文本内容，及是否被截断（`X-Truncated` header）。"""
-        resp = self._call_single(
-            "preview_file", session_code, {"path": path, "max_bytes": max_bytes}
-        )
+        resp = self._call_single("preview_file", session_code, {"path": path, "max_bytes": max_bytes}, scope=scope)
         truncated = str(resp.headers.get("X-Truncated", "false")).lower() == "true"
         return resp.content, truncated
 
-    def get_download_url(self, session_code: str, path: str, expires_in: int = 600) -> dict:
+    def get_download_url(
+        self, session_code: str, path: str, expires_in: int = 600, scope: PvScope = "session"
+    ) -> dict:
         """签发临时 download_url / preview_url。"""
         resp = self._call_single(
-            "get_download_url", session_code, {"path": path, "expires_in": expires_in}
+            "get_download_url", session_code, {"path": path, "expires_in": expires_in}, scope=scope
         )
         return resp.json() or {}
