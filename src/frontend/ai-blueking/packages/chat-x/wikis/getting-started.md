@@ -330,7 +330,7 @@ const assistantMessage: Message = {
 
 | 组件             | 说明                                            | 文档                                                        |
 | ---------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| `ChatInput`      | 聊天输入框，支持 `/` Prompt、`@` 资源、+ 号「文件」「图片」上传 | [ChatInput](./components/input/chat-input)           |
+| `ChatInput`      | 聊天输入框，支持 `/` Prompt、`@` 资源、+ 号「文件」上传 | [ChatInput](./components/input/chat-input)           |
 | `AiSelection`    | AI 划词选择浮窗                                 | [AiSelection](./components/input/ai-selection)       |
 | `ShortcutBtns`   | 快捷指令按钮组                                  | [ShortcutBtns](./components/input/shortcut-btns.md)        |
 | `ShortcutRender` | 快捷指令表单渲染器                              | [ShortcutRender](./components/input/shortcut-render) |

@@ -35,7 +35,7 @@ export interface IMenuGroupDef {
 }
 
 export const MENU_GROUP_DEFS = {
-  add: { key: 'add', name: '添加', types: ['file', 'image'] },
+  add: { key: 'add', name: '添加', types: ['file'] },
   skill: { key: 'skill', name: 'Skill', types: ['skill'] },
   mcp: { key: 'mcp', name: 'MCP', types: ['mcp'] },
   tool: { key: 'tool', name: '工具', types: ['tool'] },

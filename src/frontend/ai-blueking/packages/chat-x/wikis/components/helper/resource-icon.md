@@ -26,7 +26,6 @@ sinceVersion: 0.0.51
 
   const cases = [
     { type: 'file', name: '文件' },
-    { type: 'image', name: '图片' },
     { type: 'skill', name: 'Skill（无内置图标，回退 ModuleIcon）' },
     { type: 'mcp', name: 'MCP' },
     { type: 'tool', name: '工具' },
@@ -46,7 +45,7 @@ sinceVersion: 0.0.51
 ## 源码事实
 
 - **源码位置**：`src/components/resource-icon/resource-icon.vue`
-- **内置图标表**：`file` → `FileUploadIcon`、`image` → `ImageUploadIcon`、`mcp` → `McpIcon`、`tool` → `ToolIcon`、`knowledgebase` / `doc` → `KnowledgeBaseIcon`、`prompt` → `PromptIcon`
+- **内置图标表**：`file` → `FileUploadIcon`、`mcp` → `McpIcon`、`tool` → `ToolIcon`、`knowledgebase` / `doc` → `KnowledgeBaseIcon`、`prompt` → `PromptIcon`
 - **特殊分支**：`artifact` 走 [FileIcon](/components/helper/file-icon) 按 `name` 的文件后缀推导
 - **最终兜底**：以上都不命中时渲染 `ModuleIcon`（田字格）
 
@@ -80,7 +79,6 @@ icon 缺省
   <!-- 按类型兜底 -->
   <ResourceIcon name="API 接口文档" type="knowledgebase" />
   <ResourceIcon name="写文章" type="prompt" />
-  <ResourceIcon name="图片" type="image" />
   <!-- 会话产物按后缀推导 -->
   <ResourceIcon name="巡检报告.pdf" type="artifact" />
 </template>

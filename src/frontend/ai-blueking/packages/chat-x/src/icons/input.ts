@@ -88,7 +88,7 @@ export const FileUploadIcon = h(
   ],
 );
 /**
- * 图片上传（线性）图标 —— input menu「图片」项
+ * 图片上传（线性）图标
  * 来源设计稿 图片-线性.svg，原始 viewBox 为 32×32
  */
 export const ImageUploadIcon = h(

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+
+- + 号「添加」分组只保留内置「文件」项；移除「图片」项、`MenuItemType` 的 `'image'`，以及导出常量 `IMAGE_UPLOAD_ACCEPT`。图片与其它允许类型都通过「文件」入口（`accept` / `DEFAULT_UPLOAD_ACCEPT`）选择。
+
 ## 0.0.52-beta.1 (2026-09-03)
 
 输入区资源引用能力重构：`/` `@` `\` 与左下角 `+` 共用统一菜单；选中资源以 Mention 标签插入，发送后可还原、编辑可回填；会话产物支持从消息卡片 / 侧栏引用进输入框。

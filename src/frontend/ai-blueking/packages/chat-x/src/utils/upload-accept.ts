@@ -71,6 +71,3 @@ export const ALLOWED_UPLOAD_EXTENSIONS = {
 
 /** 系统文件选择框 / 校验共用的默认 accept */
 export const DEFAULT_UPLOAD_ACCEPT = Object.values(ALLOWED_UPLOAD_EXTENSIONS).flat().join(',');
-
-/** 仅图片：input menu「图片」项打开系统选择器时使用 */
-export const IMAGE_UPLOAD_ACCEPT = ALLOWED_UPLOAD_EXTENSIONS.image.join(',');
