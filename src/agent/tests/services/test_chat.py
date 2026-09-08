@@ -1208,6 +1208,63 @@ def test_chat_agent_builder_separates_file_resources_from_config_resources():
     assert builder._specific_resources == [{"type": "tool", "code": "search"}]
 
 
+def _make_doc_schema_chat_ctx(doc_schema, resources: list[dict]):
+    ctx = _make_dummy_chat_ctx()
+    ctx.session_context_data = [
+        {
+            "role": PromptRole.USER.value,
+            "content": "请分析这些文件",
+            "docSchema": doc_schema,
+            "extra": {"resources": resources},
+        }
+    ]
+    return ctx
+
+
+def _tag(tag_type: str, value: str) -> dict:
+    return {"type": "tag", "data": {"label": value, "value": value, "type": tag_type}}
+
+
+@pytest.mark.parametrize(
+    "doc_schema, expected_specific, expected_files",
+    [
+        # docSchema 优先于 extra.resources；text 节点与 skill tag 均不参与收窄
+        (
+            [
+                [
+                    _tag("tool", "weather_query"),
+                    {"type": "text", "text": " "},
+                    _tag("mcp", "bk-itsm-prod-ticket"),
+                    _tag("skill", "file-kit"),
+                    _tag("doc", "259"),
+                    _tag("knowledgebase", "260"),
+                    _tag("artifact", "outputs/report.pdf"),
+                ]
+            ],
+            [
+                {"type": "tool", "code": "weather_query"},
+                {"type": "mcp", "code": "bk-itsm-prod-ticket"},
+                {"type": "knowledgebase", "id": 259},
+                {"type": "knowledgebase", "id": 260},
+            ],
+            [{"type": "file", "path": "outputs/report.pdf"}],
+        ),
+        # 空数组代表本轮未引用资源，不回退 extra.resources
+        ([], [], []),
+        ([[]], [], []),
+    ],
+)
+def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, expected_specific, expected_files):
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_doc_schema_chat_ctx(doc_schema, [{"type": "tool", "code": "legacy"}])
+
+    builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == expected_specific
+    assert builder.file_resources == expected_files
+
+
 def test_agent_builds_llm_history_with_exact_non_image_file_references():
     agent = ChatCompletionAgent(
         chat_history=[

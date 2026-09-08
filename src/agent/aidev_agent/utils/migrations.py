@@ -120,6 +120,8 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
 
     - ``role``/``content`` 原样透传（非归一）。
     - ``property.extra`` → ChatPrompt ``extra`` 字段（含 command 等协议字段）。
+    - ``property.docSchema`` → ChatPrompt 顶层 ``docSchema``（前端富文本结构，声明本轮引用资源）；
+      缺省时不塞键，装配期借此判定是否降级读 ``extra.resources``。
     - 平铺顶层字段回嵌 ``builtin_property``
         - tool_calls/tool_call_id/duration/message_id/error/type/activity_type
         - convert 链读取的 turn_id/status/created_at/artifacts
@@ -166,4 +168,6 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
             "builtin_property": builtin_property,
         }
     )
+    if property_data.get("docSchema") is not None:
+        prompt["docSchema"] = property_data["docSchema"]
     return prompt
