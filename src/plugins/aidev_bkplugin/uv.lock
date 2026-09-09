@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.2.2"
+version = "2.2.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d4/f4/c8f08ed460e199a1040c1ab1a9e2f988b1371a1899fe4d536b302931895b/aidev_agent-2.2.2.tar.gz", hash = "sha256:5aeeec1a9418a3aacef366c42224ab532a55fec1cf56abfd2c00caf0a6d8a39f", size = 1032411, upload-time = "2026-09-04T08:47:32.824Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/73/fd/3b60a48974580fa4245bbaaea7fed82535eaa5af38a6a930843720bce1db/aidev_agent-2.2.4.tar.gz", hash = "sha256:cdf2f2f71ac01873eac6aff5173746b8f2d027ca3e37d7ffdf381962e7d0784b", size = 1032391, upload-time = "2026-09-09T07:51:33.274Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/91/e024ce3a5c84bcd654f71918a1b9e1641bd6ed87f030002ecaf42170f5af/aidev_agent-2.2.2-py3-none-any.whl", hash = "sha256:f340aa077107e1e23103944b3a24b0003031faac08b7dc69366ad8cd97aca55e", size = 678267, upload-time = "2026-09-04T08:47:34.429Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/c2/5b20cdba72a36f77b07894f2ba403f60897a07ddaea05a47d70b5981fe2b/aidev_agent-2.2.4-py3-none-any.whl", hash = "sha256:f354e252ef19cd92e5d137766cbec9faae7799f6a2719539bf68017faf34e12e", size = 678269, upload-time = "2026-09-09T07:51:35.5Z" },
 ]
 
 [package.optional-dependencies]
@@ -71,7 +71,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.2.2"
+version = "2.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -96,7 +96,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.2.2" },
+    { name = "aidev-agent", specifier = ">=2.2.4" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },

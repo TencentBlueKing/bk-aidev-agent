@@ -35,7 +35,7 @@ dependencies = [
     "rstream>=0.40.1,<1.0.0",
 ]
 name = "aidev-agent"
-version = "2.2.2"
+version = "2.2.4"
 description = "bkaidev agent builder"
 
 [project.optional-dependencies]
