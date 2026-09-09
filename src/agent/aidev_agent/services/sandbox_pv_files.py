@@ -221,6 +221,31 @@ class SandboxUploadFile(TypedDict):
     mime_type: NotRequired[str]
 
 
+def normalize_session_pv_path(path: str | None, *, required: bool = True) -> str:
+    """清洗会话 PV 相对路径：去空白、统一分隔符、拒绝 `..`。"""
+    normalized = (path or "").strip().replace("\\", "/")
+    if required and not normalized:
+        raise SandboxFileInvalidArgumentError("path is required")
+    if ".." in normalized.split("/"):
+        raise SandboxFileInvalidArgumentError("invalid path")
+    return normalized
+
+
+def validate_session_upload_stats(files) -> None:
+    """read() 前按数量和 UploadedFile.size 做内存护栏。平台与插件 HTTP 入口共用。"""
+    if not files:
+        raise SandboxFileInvalidArgumentError("上传文件不能为空")
+    if len(files) > MAX_SESSION_UPLOAD_FILES:
+        raise SandboxFileInvalidArgumentError(f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
+    for upload_file in files:
+        size = getattr(upload_file, "size", 0) or 0
+        if size > MAX_SESSION_UPLOAD_FILE_SIZE:
+            name = getattr(upload_file, "name", "") or ""
+            raise SandboxFileInvalidArgumentError(
+                f"文件 {name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
+            )
+
+
 def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
     """校验上传数量、扩展名和单文件大小。HTTP 入口与 Service 共用。"""
     if not files:
@@ -748,12 +773,13 @@ class SandboxPvFileService:
                 "truncated": true,          # 仅在触达 max_pages 上限时附加
             }
         """
+        path = normalize_session_pv_path(path, required=False)
         volume_id = self._get_volume_id(session_code)
         client = self._get_client()
         path_params = self._build_path_params(volume_id)
 
         base_params: dict = {
-            "path": path or "",
+            "path": path,
             "is_recursive": True,
             "page_size": PV_LIST_PAGE_SIZE,
         }
@@ -800,16 +826,19 @@ class SandboxPvFileService:
         return result
 
     def delete_file(self, session_code: str, path: str) -> None:
-        """删除 PV 内指定文件（幂等）。"""
+        """删除 PV 内指定文件。文件不存在时由 PaaS 返回 404，HTTP 入口再收成幂等。"""
+        path = normalize_session_pv_path(path, required=True)
         self._call_single("delete_file", session_code, {"path": path})
 
     def stat_file(self, session_code: str, path: str) -> dict:
         """查询文件/目录元数据（不存在时 PaaS 返回 `exists=false`，透传）。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single("stat_file", session_code, {"path": path})
         return resp.json() or {}
 
     def preview_file(self, session_code: str, path: str, max_bytes: int = 65536) -> tuple[bytes, bool]:
         """返回文件前 max_bytes 字节纯文本内容，及是否被截断（`X-Truncated` header）。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single(
             "preview_file", session_code, {"path": path, "max_bytes": max_bytes}
         )
@@ -818,6 +847,7 @@ class SandboxPvFileService:
 
     def get_download_url(self, session_code: str, path: str, expires_in: int = 600) -> dict:
         """签发临时 download_url / preview_url。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single(
             "get_download_url", session_code, {"path": path, "expires_in": expires_in}
         )

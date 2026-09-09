@@ -6,8 +6,6 @@ from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
     IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-    MAX_SESSION_UPLOAD_FILE_SIZE,
-    MAX_SESSION_UPLOAD_FILES,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
@@ -15,7 +13,9 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxPvFileService,
     fill_user_image_urls,
     iter_user_images_missing_url,
+    normalize_session_pv_path,
     validate_session_upload_files,
+    validate_session_upload_stats,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
 from blueapps.core.exceptions import ClientBlueException, ResourceNotFound, ServerBlueException
@@ -238,12 +238,8 @@ class ChatSessionViewSet(PluginViewSet):
     def pv_files(self, request, pk, **kwargs):
         if request.method == "DELETE":
             self._check_session_owner(request, pk, require_access=True)
-            path = (request.query_params.get("path") or "").strip().replace("\\", "/")
-            if not path:
-                raise ClientBlueException(message="path is required")
-            if ".." in path.split("/"):
-                raise ClientBlueException(message="invalid path")
             try:
+                path = normalize_session_pv_path(request.query_params.get("path"), required=True)
                 self._make_pv_file_service(request).delete_file(session_code=pk, path=path)
             except SandboxFileNotFoundError:
                 pass
@@ -256,7 +252,7 @@ class ChatSessionViewSet(PluginViewSet):
         try:
             data = svc.list_files(
                 session_code=pk,
-                path=params.get("path", ""),
+                path=normalize_session_pv_path(params.get("path"), required=False),
                 since=None,
                 until=None,
             )
@@ -267,10 +263,8 @@ class ChatSessionViewSet(PluginViewSet):
     @action(["GET"], url_path="pv_files/stat", detail=True)
     def pv_files_stat(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         try:
+            path = normalize_session_pv_path(request.query_params.get("path"), required=True)
             data = self._make_pv_file_service(request).stat_file(session_code=pk, path=path)
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)
@@ -279,11 +273,9 @@ class ChatSessionViewSet(PluginViewSet):
     @action(["GET"], url_path="pv_files/preview", detail=True)
     def pv_files_preview(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         max_bytes = _parse_positive_int(request.query_params.get("max_bytes"), 65536)
         try:
+            path = normalize_session_pv_path(request.query_params.get("path"), required=True)
             content, truncated = self._make_pv_file_service(request).preview_file(
                 session_code=pk, path=path, max_bytes=max_bytes
             )
@@ -296,11 +288,9 @@ class ChatSessionViewSet(PluginViewSet):
     @action(["GET"], url_path="pv_files/download_url", detail=True)
     def pv_files_download_url(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         expires_in = _parse_positive_int(request.query_params.get("expires_in"), 600)
         try:
+            path = normalize_session_pv_path(request.query_params.get("path"), required=True)
             data = self._make_pv_file_service(request).get_download_url(
                 session_code=pk, path=path, expires_in=expires_in
             )
@@ -319,13 +309,7 @@ class ChatSessionViewSet(PluginViewSet):
         self._check_session_owner(request, pk, require_access=True)
         uploaded_files = request.FILES.getlist("files")
         try:
-            if len(uploaded_files) > MAX_SESSION_UPLOAD_FILES:
-                raise SandboxFileInvalidArgumentError(f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
-            for upload_file in uploaded_files:
-                if upload_file.size > MAX_SESSION_UPLOAD_FILE_SIZE:
-                    raise SandboxFileInvalidArgumentError(
-                        f"文件 {upload_file.name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
-                    )
+            validate_session_upload_stats(uploaded_files)
             files = [
                 {
                     "name": upload_file.name,
