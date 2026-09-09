@@ -644,11 +644,11 @@ describe('UserMessage', () => {
       ],
     ];
 
-    it('property.extra.docSchema 含标签时按结构渲染而不是纯文本', () => {
+    it('property.docSchema 含标签时按结构渲染而不是纯文本', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: '帮我查一下 @知识库01 的内容',
-          property: { extra: { docSchema: docWithTag } },
+          property: { docSchema: docWithTag },
         } as never,
       });
 
@@ -657,12 +657,25 @@ describe('UserMessage', () => {
       expect(wrapper.find('.mock-text-content').exists()).toBe(false);
     });
 
+    it('编辑时从 property.docSchema 回填标签，并保留同级 extra 的引用展示', async () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '帮我查一下 @知识库01 的内容',
+          property: { docSchema: docWithTag, extra: { cite: '原引用内容' } },
+        } as never,
+      });
+      expect(wrapper.find('.mock-cite-content').text()).toContain('原引用内容');
+      await wrapper.findComponent({ name: 'MessageTools' }).props('onAction')({ id: 'edit' });
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('modelValue')).toEqual(docWithTag);
+      expect(mockChatInputFocus).toHaveBeenCalled();
+    });
+
     it('标签携带的 icon 直接用于渲染', () => {
       const doc = [
         [{ type: 'tag', data: { label: '知识库01', value: 'kb_01', type: 'knowledgebase', icon: 'https://x/kb.png' } }],
       ];
       wrapper = mount(UserMessage, {
-        props: { content: '@知识库01', property: { extra: { docSchema: doc } } } as never,
+        props: { content: '@知识库01', property: { docSchema: doc } } as never,
       });
 
       expect(wrapper.find('.ai-resource-icon img').attributes('src')).toBe('https://x/kb.png');
@@ -672,7 +685,7 @@ describe('UserMessage', () => {
       wrapper = mount(UserMessage, {
         props: {
           content: '普通消息',
-          property: { extra: { docSchema: [[{ type: 'text', text: '普通消息' }]] } },
+          property: { docSchema: [[{ type: 'text', text: '普通消息' }]] },
         } as never,
       });
 

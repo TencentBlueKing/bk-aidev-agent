@@ -119,17 +119,14 @@ const isExecutionMessage = (m: Message): boolean => {
 
 ## sessionArtifacts 会话级文件产物
 
-`sessionArtifacts` 拍平当前会话所有 `AssistantMessage.property.artifacts`，供 `ChatContainer` 侧栏「文件产物」Tab 聚合预览。以 **`outputId`** 为会话内唯一键去重（同 `outputId` 视为同一文件），保留最后一次出现的文件信息，列表顺序与「最后一次出现」的相对顺序一致：
+`sessionArtifacts` 收集当前会话具有 `outputId` 的助手产物与用户上传附件，供 `ChatContainer` 侧栏「文件产物」Tab 聚合预览。以 **`outputId`** 为会话内唯一键去重（同 `outputId` 视为同一文件），保留最后一次出现的文件信息，列表顺序与「最后一次出现」的相对顺序一致：
 
 ```typescript
 const sessionArtifacts = computed(() => {
   // delete + set：同 key 覆盖内容，并把该项挪到 Map 末尾，保证「最后出现」顺序
   const byOutputId = new Map();
   for (const message of messages.value) {
-    if (message.role !== MessageRole.Assistant) continue;
-    const artifacts = message.property?.artifacts;
-    if (!artifacts?.length) continue;
-    for (const file of artifacts) {
+    for (const file of getMessageArtifacts(message)) {
       if (byOutputId.has(file.outputId)) {
         byOutputId.delete(file.outputId);
       }
@@ -214,7 +211,7 @@ const {
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
 | executionGroups  | `ComputedRef<MessageGroup[]>` | 仅包含执行类消息的分组（工具调用 + FlowAgent），自动提取 `userMessageTitle` |
-| sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 拍平会话所有 AssistantMessage 文件产物，按 `outputId` 去重（保留最后一次） |
+| sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 收集助手产物与具有 `outputId` 的上传附件，按 `outputId` 去重（保留最后一次） |
 | pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
 | pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
 | isShareMode      | `ShallowRef<boolean>`         | 是否处于分享模式                                                            |

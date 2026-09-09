@@ -170,6 +170,8 @@
     getUploadFileName,
     getUploadFileSize,
     isFileAcceptedByAccept,
+    toArtifactMenuItem,
+    toUploadArtifact,
   } from '../../utils';
   import AddMenuBtn from '../ai-buttons/add-menu-btn/add-menu-btn.vue';
   import ShortcutBtn from '../ai-shortcut/shortcut-btn/shortcut-btn.vue';
@@ -183,6 +185,7 @@
   import { DEFAULT_GROUP_ITEM_LIMIT, InputMenuPanel, useInputMenu } from './input-menu';
   import { ModelSelector } from './model-selector';
 
+  import type { AIFileInfo } from '../../ag-ui/types/file';
   import type { MenuGroupKey } from './input-menu';
   import type { IModelOption } from './model-selector';
 
@@ -202,6 +205,7 @@
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
     (e: 'deleteShortcut'): void;
+    (e: 'deleteFile', file: Partial<UploadFile>): void;
     (e: 'update:modelValue', value: string | TagSchema, selectedResourceList: IInputMenuItem[]): void;
     (e: 'modelChange', model: IModelOption): void;
   };
@@ -234,6 +238,7 @@
     download_url?: string;
     error?: string;
     id?: string;
+    path?: string;
     status?: 'failed' | 'success';
   };
   const props = withDefaults(defineProps<ChatInputProps>(), {
@@ -245,7 +250,7 @@
   });
   const emit = defineEmits<ChatInputEmits>();
   /** 数据源里存在的菜单类型，用于决定 placeholder 展示哪几行提示 */
-  const sourceTypes = computed(() => new Set(props.menuSources.map(item => item.type)));
+  const sourceTypes = computed(() => new Set(resolvedMenuSources.value.map(item => item.type)));
   const resolvedPlaceholder = computed(() => {
     if (props.placeholder !== undefined) {
       return props.placeholder;
@@ -260,6 +265,16 @@
     });
   });
   const uploadFiles = deepRef<Partial<UploadFile>[]>(props.defaultUploadFiles || []);
+  const uploadedArtifacts = computed(() =>
+    uploadFiles.value.map(toUploadArtifact).filter((file): file is AIFileInfo => !!file),
+  );
+  const resolvedMenuSources = computed(() => {
+    const sources = new Map(props.menuSources.map(item => [`${item.type}:${item.id}`, item]));
+    for (const file of uploadedArtifacts.value) {
+      sources.set(`artifact:${file.outputId}`, toArtifactMenuItem(file));
+    }
+    return [...sources.values()];
+  });
   const selectedShortcut = computed(() => {
     return props.shortcuts?.find(shortcut => shortcut.id === props.shortcutId);
   });
@@ -280,7 +295,7 @@
     );
   });
   const availableSources = computed<IInputMenuItem[]>(() => {
-    const list = props.menuSources.filter(item => !insertedTagKeys.value.has(`${item.type}:${item.id}`));
+    const list = resolvedMenuSources.value.filter(item => !insertedTagKeys.value.has(`${item.type}:${item.id}`));
     // 「文件」是组件内置的上传入口，只在 + 号聚合菜单的「添加」分组里出现
     return props.supportUpload ? [{ id: '__built_in_file__', type: 'file', name: t('文件') }, ...list] : list;
   });
@@ -396,6 +411,7 @@
         content = uploadFiles.value?.slice().map(file => ({
           type: MessageContentType.Binary,
           id: file.id,
+          outputId: file.outputId,
           url: file.url,
           mimeType: file.mimeType || file.file?.type || '',
           filename: getUploadFileName(file),
@@ -462,9 +478,10 @@
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
   const applyUploadResult = (fileItem: Partial<UploadFile>, res?: ChatInputUploadResult) => {
     const failed = res?.status === 'failed';
-    const succeeded = !failed && (!!res?.id || !!res?.download_url || res?.status === 'success');
+    const succeeded = !failed && (!!res?.id || !!res?.path || !!res?.download_url || res?.status === 'success');
     if (succeeded) {
-      fileItem.id = res.id;
+      fileItem.id = res.id || res.path;
+      fileItem.outputId = res.path;
       fileItem.url = res.download_url;
       fileItem.status = UploadStatus.Success;
       return;
@@ -579,6 +596,9 @@
   };
   const handleDeleteFile = (file: Partial<UploadFile>) => {
     uploadFiles.value = uploadFiles.value.filter(item => {
+      if (item.id && file.id) {
+        return item.id !== file.id;
+      }
       if (item.file) {
         return item.file !== file.file;
       }
@@ -590,13 +610,15 @@
       }
       return true;
     });
+    // 仅通知业务方删除远端文件，UI 不等待接口结果。
+    emit('deleteFile', file);
   };
   /** 把文档里的标签还原成菜单选项，作为 update:modelValue 的第二个参数交给业务方 */
   const handleUpdateModelValue = (value: TagSchema) => {
     const selectedResourceList = value
       .flat()
       .filter(node => node.type === 'tag')
-      .map(node => props.menuSources.find(item => item.id === node.data.value && item.type === node.data.type))
+      .map(node => resolvedMenuSources.value.find(item => item.id === node.data.value && item.type === node.data.type))
       .filter((item): item is IInputMenuItem => Boolean(item));
     emit('update:modelValue', value, selectedResourceList);
   };
@@ -639,6 +661,7 @@
     focus,
     insertMention,
     triggerSendMessage: handleSendMessage,
+    uploadedArtifacts,
   });
 </script>
 <style lang="scss">

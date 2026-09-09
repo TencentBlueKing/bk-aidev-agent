@@ -65,6 +65,7 @@ export const useInputMenu = (params: {
       const def = MENU_GROUP_DEFS[key];
       const matched = params.sources.value.filter(
         item =>
+          (item.type !== 'artifact' || !!item.id) &&
           (def.types as MenuItemType[]).includes(item.type) && (!keyword || item.name.toLowerCase().includes(keyword)),
       );
       // 初始化与搜索过滤后，组内没有条目就不渲染该分组

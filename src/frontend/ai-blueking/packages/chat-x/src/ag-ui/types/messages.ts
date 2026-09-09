@@ -66,6 +66,11 @@ export interface BaseMessage<T extends MessageType, C = string> {
   property?: {
     /* 附件 */
     artifacts?: AIFileInfo[];
+    /**
+     * 发送时输入框的富文本文档。content 仍是纯文本（不改后端契约），
+     * 有这份文档时用户消息会把 @ 选中的资源原样还原成标签，编辑回填也不会丢标签。
+     */
+    docSchema?: TagSchema;
     extra?: {
       cite:
         | {
@@ -87,11 +92,6 @@ export interface BaseMessage<T extends MessageType, C = string> {
           context_type: 'checkbox' | 'input' | 'number' | 'radioGroup' | 'select' | 'switcher' | 'text' | 'textarea'; // 快捷指令 components type 类型
         } & Partial<OldShortcut>
       >[];
-      /**
-       * 发送时输入框的富文本文档。content 仍是纯文本（不改后端契约），
-       * 有这份文档时用户消息会把 @ 选中的资源原样还原成标签，编辑回填也不会丢标签。
-       */
-      docSchema?: TagSchema;
       pause?: boolean; // 用于判断是否显示 message tools
       shortcut?: Partial<Shortcut>; // 用于 UserMessage 的快捷指令
     };

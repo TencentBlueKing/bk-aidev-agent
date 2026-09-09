@@ -5,7 +5,9 @@
       'is-readonly': readonly,
       'is-pending': isPending,
       'is-error': isError,
+      'is-previewable': previewable,
     }"
+    @click="previewable && emit('preview')"
   >
     <span class="ai-upload-file-item-icon">
       <!-- 与文件产物侧栏共用一套扩展名 → 图标映射，解除类型限制后各类文件都有对应图标 -->
@@ -64,9 +66,10 @@
   const props = defineProps<{
     file: Partial<UploadFile>;
     readonly?: boolean;
+    previewable?: boolean;
   }>();
   const emit = defineEmits<{
-    (e: 'delete'): void;
+    (e: 'delete' | 'preview'): void;
   }>();
 
   const commonTippyOptions = useCommonTippyInject();
@@ -99,6 +102,10 @@
 
     &:not(.is-readonly):not(.is-pending):not(.is-error):hover {
       background: variables.$color-border;
+    }
+
+    &.is-previewable {
+      cursor: pointer;
     }
 
     &.is-error {

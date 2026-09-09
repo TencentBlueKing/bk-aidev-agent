@@ -39,11 +39,13 @@ import {
   // CopyIcon,
   DeleteIcon,
   InterruptReason,
+  MessageContentType,
   MessageRole,
   MessageStatus,
   ShareIcon,
   t,
 } from '../src';
+import { createMockUploadedFile, getMockUploadedFileUrls } from './upload-file';
 
 // 模型图标示例：图标为图片地址（string），贴合后端返回的 icon 字段
 const DEEPSEEK_ICON =
@@ -756,6 +758,8 @@ export const MOCK_ARTIFACT_URL_MAP: Record<string, MockArtifactUrl> = MOCK_ARTIF
 export const mockArtifactClick = async (file: AIFileInfo): Promise<MockArtifactUrl> => {
   console.info('mockArtifactClick', file);
   await new Promise(resolve => setTimeout(resolve, 600));
+  const uploadedUrls = getMockUploadedFileUrls(file.outputId);
+  if (uploadedUrls) return uploadedUrls;
   const staticUrls = MOCK_ARTIFACT_STATIC_URL[file.outputId] ?? {};
   const textDownloadUrl = getMockTextDownloadUrl(file.outputId);
   return {
@@ -808,12 +812,30 @@ const mockCreatedAt = (dayOffset: number, hours: number, minutes: number, yearOf
   return date.toISOString();
 };
 
+// 已上传文件样例：可在 @ / + 中引用，也可点击附件在侧栏预览与下载。
+const MOCK_UPLOADED_FILES = [
+  new File(['# 上传文件接入说明\n\n上传响应的 `path` 会保存为 `outputId`。\n\n- 在 @ 或 + 中引用文件\n- 点击附件或标签打开侧栏\n- 在侧栏下载原文件\n'], '上传文件接入说明.md', { type: 'text/markdown' }),
+  new File(['{\n  "service": "chat-x",\n  "uploadLimitMB": 45,\n  "previewEnabled": true\n}'], '上传配置示例.json', { type: 'application/json' }),
+].map(createMockUploadedFile);
+
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示与 outputId 去重
 export const MOCK_ARTIFACTS_MESSAGES = [
   {
     id: 'mock-artifacts-user',
     role: MessageRole.User,
-    content: '帮我把本周监控方案相关的产出文件都整理出来，方便评审。',
+    content: [
+      { type: MessageContentType.Text, text: '帮我检查上传的接入说明和配置。旧版附件没有 outputId，只展示在消息中，不进入 @ / + 菜单。' },
+      ...MOCK_UPLOADED_FILES.map(file => ({
+        type: MessageContentType.Binary,
+        id: file.id,
+        outputId: file.path,
+        filename: file.name,
+        mimeType: file.mime_type,
+        size: file.size,
+        url: file.download_url,
+      })),
+      { type: MessageContentType.Binary, id: 'legacy-file', filename: '旧版附件（无outputId）.txt', mimeType: 'text/plain', size: 128 },
+    ],
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user',

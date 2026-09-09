@@ -130,7 +130,7 @@ export const CONST_UPDATE_TOOLS = [
 
 export const MAX_UPLOAD_FILES = 9; // 最大上传文件数量
 
-export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
+export const MAX_UPLOAD_FILE_SIZE = 45 * 1024 * 1024; // 单文件大小须严格小于 45MB
 
 export { ALLOWED_UPLOAD_EXTENSIONS, DEFAULT_UPLOAD_ACCEPT } from '../utils/upload-accept';
 

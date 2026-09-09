@@ -26,7 +26,7 @@
 
 import { defineComponent, h, nextTick } from 'vue';
 
-import { type VueWrapper, mount } from '@vue/test-utils';
+import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,7 +63,6 @@ vi.mock('../../common', async importOriginal => {
     CHAT_Z_INDEX: 1000,
     isEn: false,
     MAX_UPLOAD_FILES: 9,
-    MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
     commonSVGProps: {
       class: 'mock-svg-icon',
       xmlns: 'http://www.w3.org/2000/svg',
@@ -1143,6 +1142,130 @@ describe('ChatInput', () => {
   });
 
   describe('文件上传功能测试', () => {
+    it.each(['@', 'plus'] as const)('上传 path 应立即加入 %s 菜单并在发送内容中保留 outputId', async trigger => {
+      const onSendMessage = vi.fn();
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '', onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({ id: 'upload-id', path: 'files/report.pdf', status: 'success' }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await emitMenuChange(wrapper, trigger);
+      const groups = wrapper.findComponent({ name: 'InputMenuPanel' }).props('groups');
+      expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
+        id: 'files/report.pdf', type: 'artifact', name: 'report.pdf',
+      });
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([
+        { outputId: 'files/report.pdf', name: 'report.pdf', size: 3, type: 'pdf' },
+      ]);
+      await emitMenuChange(wrapper, null);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage.mock.calls[0][0][0]).toMatchObject({ id: 'upload-id', outputId: 'files/report.pdf' });
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([]);
+    });
+
+    it('取消上传附件后应从菜单和暴露的预览数据移除', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload: vi.fn().mockResolvedValue({ path: 'files/a.pdf' }) },
+      });
+      await emitUpload(wrapper, [new File(['a'], 'a.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await wrapper.find('.mock-file-item').trigger('click');
+      await emitMenuChange(wrapper, '@');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([]);
+    });
+
+    it.each([
+      { id: 'legacy-id', download_url: 'https://example.com/a.pdf' },
+      { path: 'files/a.pdf', status: 'failed' },
+    ])('没有有效 outputId 的上传结果不能加入菜单：%j', async result => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', onUpload: vi.fn().mockResolvedValue(result) } });
+      await emitUpload(wrapper, [new File(['a'], 'a.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await emitMenuChange(wrapper, '@');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+    });
+
+    it.each(['选择', '拖拽', '粘贴'])('%s 文件时仅允许非空且严格小于 45 MB 的文件', async entry => {
+      const onUpload = vi.fn().mockResolvedValue({ id: 'files/valid.pdf', status: 'success' });
+      const files = [45 * 1024 * 1024 - 1, 45 * 1024 * 1024, 45 * 1024 * 1024 + 1, 0].map((size, index) => {
+        const file = new File(['pdf'], `${index}.pdf`, { type: 'application/pdf' });
+        Object.defineProperty(file, 'size', { value: size });
+        return file;
+      });
+      wrapper = mount(ChatInput, { props: { modelValue: '', onUpload } });
+
+      if (entry === '选择') {
+        const input = wrapper.find('.chat-input-file-input');
+        Object.defineProperty(input.element, 'files', { value: files });
+        await input.trigger('change');
+      } else if (entry === '拖拽') {
+        await wrapper.find('.chat-input').trigger('drop', {
+          dataTransfer: { types: ['Files'], files },
+        });
+      } else {
+        await emitUpload(wrapper, files);
+      }
+
+      expect(onUpload).toHaveBeenCalledExactlyOnceWith([files[0]]);
+      expect(wrapper.findAll('.mock-file-item')).toHaveLength(1);
+      expect(mockBkMessage).toHaveBeenCalledWith(expect.objectContaining({
+        message: '有 3 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+      }));
+    });
+
+    it.each(['成功', '失败'])('删除接口%s时都应立即移除附件并抛出完整文件信息', async result => {
+      let resolveDelete!: () => void;
+      let rejectDelete!: (error: Error) => void;
+      const request = new Promise<void>((resolve, reject) => {
+        resolveDelete = resolve;
+        rejectDelete = reject;
+      });
+      const onDeleteFile = vi.fn(() => request);
+      const errorHandler = vi.fn();
+      const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload: vi.fn().mockResolvedValue({ id: 'files/report.pdf', status: 'success' }),
+          onDeleteFile,
+        },
+        global: { config: { errorHandler } },
+      });
+      await emitUpload(wrapper, [file]);
+      await flushPromises();
+      await wrapper.find('.mock-file-item').trigger('click');
+
+      expect(wrapper.find('.mock-file-content').exists()).toBe(false);
+      expect(wrapper.emitted('deleteFile')).toEqual([[expect.objectContaining({
+        id: 'files/report.pdf', file, status: 'success',
+      })]]);
+      expect(onDeleteFile).toHaveBeenCalledTimes(1);
+
+      const error = new Error('删除失败');
+      if (result === '成功') resolveDelete();
+      else rejectDelete(error);
+      await flushPromises();
+      expect(wrapper.find('.mock-file-content').exists()).toBe(false);
+      expect(errorHandler).toHaveBeenCalledTimes(result === '成功' ? 0 : 1);
+    });
+
+    it('删除仅含 id 的回填附件时应移除对应文件并发出事件', async () => {
+      const files = [
+        { type: 'binary', id: 'files/a.pdf', mimeType: 'application/pdf' },
+        { type: 'binary', id: 'files/b.pdf', mimeType: 'application/pdf' },
+      ] as UploadFile[];
+      wrapper = mount(ChatInput, { props: { modelValue: '', defaultUploadFiles: files } });
+      await wrapper.find('.mock-file-item').trigger('click');
+
+      expect(wrapper.findComponent({ name: 'FileContent' }).props('files')).toEqual([files[1]]);
+      expect(wrapper.emitted('deleteFile')).toEqual([[files[0]]]);
+    });
+
     it('supportUpload 默认为 true 时应该渲染 + 号按钮', () => {
       wrapper = mount(ChatInput, {
         props: {

@@ -61,7 +61,7 @@ sinceVersion: 1.0.0
 ```
 用户选择文件
   │
-  ├─ 遍历所选文件：size > 0 且 size < MAX_UPLOAD_FILE_SIZE（约 2.4MB）→ 加入 toEmit
+  ├─ 遍历所选文件：size > 0 且 size < MAX_UPLOAD_FILE_SIZE（45MB）→ 加入 toEmit
   │       size 为 0 或 ≥ 上限 → sizeRejected += 1
   │
   ├─ sizeRejected > 0 → bkui-vue Message.error（formatUploadNotAddedMessage，说明可能超大或超出个数等）
@@ -79,7 +79,7 @@ sinceVersion: 1.0.0
 | 部分文件因空文件或单文件超大被过滤                           | 弹出错误 toast；若仍有合法文件，**仍触发** `upload`（payload 为合法子集） |
 | 全部被过滤（均为空或超大）                                   | 仅 toast，**不触发** `upload`                                        |
 | `file.size === 0`                                          | 计入未添加提示，不进入 `upload` payload                              |
-| `file.size >= MAX_UPLOAD_FILE_SIZE`（与全局常量一致，约 2.4MB） | 计入未添加提示，不进入 `upload` payload（比较为严格 `<`）           |
+| `file.size >= MAX_UPLOAD_FILE_SIZE`（与全局常量一致，45MB） | 计入未添加提示，不进入 `upload` payload（比较为严格 `<`）           |
 | 选择后取消                                                   | `files.length === 0`，不触发 `upload`                                |
 
 > `multiple` prop 声明存在但当前模板中 `input` 的 `multiple` 属性为**硬编码**（非 `:multiple="multiple"` 绑定），始终允许多选，该 prop 暂时无实际效果。
@@ -170,7 +170,7 @@ sinceVersion: 1.0.0
 
 | 事件名 | 参数              | 说明                                                                                      |
 | ------ | ----------------- | ----------------------------------------------------------------------------------------- |
-| upload | `(files: File[])` | 当存在至少一个合法文件时触发；`files` 为过滤掉空文件与单文件超大（`size >= MAX_UPLOAD_FILE_SIZE`，约 2.4MB）后的数组；个数截断不在此组件内完成 |
+| upload | `(files: File[])` | 当存在至少一个合法文件时触发；`files` 为过滤掉空文件与单文件超大（`size >= MAX_UPLOAD_FILE_SIZE`，45MB）后的数组；个数截断不在此组件内完成 |
 
 ### Slots
 

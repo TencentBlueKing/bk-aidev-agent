@@ -30,6 +30,7 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import FileContent from './file-content.vue';
+import { ARTIFACT_PREVIEW_TOKEN } from '../../../composables/use-artifact-preview';
 
 import type { UploadFile } from '../../../types';
 import { UploadStatus } from '../../../types';
@@ -92,6 +93,35 @@ describe('FileContent', () => {
 
   afterEach(() => {
     wrapper?.unmount();
+  });
+
+  describe('上传文件产物预览', () => {
+    it.each(['pdf', 'png'])('具有 outputId 的 %s 附件应通过统一侧栏预览', async extension => {
+      const openPreview = vi.fn();
+      const file = { outputId: `files/a.${extension}`, filename: `a.${extension}`, mimeType: extension === 'png' ? 'image/png' : 'application/pdf', size: 1 };
+      wrapper = mount(FileContent, {
+        props: { files: [file] },
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: { openPreview } } },
+      });
+      if (extension === 'png') await wrapper.find(IMAGE_SELECTOR).trigger('error');
+      await wrapper.find(extension === 'png' ? IMAGE_SELECTOR : FILE_SELECTOR).trigger('click');
+      expect(openPreview).toHaveBeenCalledExactlyOnceWith({ file: {
+        outputId: file.outputId, name: file.filename, size: 1, type: extension,
+      } });
+      expect(wrapper.findComponent({ name: 'ImagePreview' }).props('visible')).toBe(false);
+    });
+
+    it.each([UploadStatus.Pending, UploadStatus.Error])('%s 附件不能预览，删除按钮也不触发预览', async status => {
+      const openPreview = vi.fn();
+      wrapper = mount(FileContent, {
+        props: { files: [{ outputId: 'files/a.pdf', filename: 'a.pdf', status }] },
+        global: { provide: { [ARTIFACT_PREVIEW_TOKEN]: { openPreview } } },
+      });
+      await wrapper.find(FILE_SELECTOR).trigger('click');
+      await wrapper.find(DELETE_SELECTOR).trigger('click');
+      expect(openPreview).not.toHaveBeenCalled();
+      expect(wrapper.emitted('deleteFile')).toHaveLength(1);
+    });
   });
 
   describe('渲染测试', () => {

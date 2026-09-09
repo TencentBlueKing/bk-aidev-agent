@@ -32,13 +32,18 @@
  * 结构化入参而非直接依赖 `UploadFile`，让 utils 层不反向依赖 components / types。
  */
 import { formatBytes, isImageFile } from './file';
+import { normalizeFileExtension } from './file-type';
+
+import type { AIFileInfo } from '../ag-ui/types/file';
 
 /** 附件的结构化最小契约，`Partial<UploadFile>` 可直接传入 */
 export type UploadFileLike = {
   file?: File;
   filename?: string;
   mimeType?: string;
+  outputId?: string;
   size?: number;
+  status?: string;
   url?: string;
 };
 
@@ -47,10 +52,10 @@ export const getFileIdentity = (file: File): string => `${file.name}_${file.size
 
 /**
  * 附件的稳定 key：待发送态用 `File` 身份（上传成功回填 url 后不变），
- * 已发送态退回 url / 文件名。
+ * 已发送态优先用 outputId，旧附件退回 url / 文件名。
  */
 export const getUploadFileKey = (item: UploadFileLike): string =>
-  item.file ? getFileIdentity(item.file) : item.url || item.filename || '';
+  item.file ? getFileIdentity(item.file) : item.outputId || item.url || item.filename || '';
 
 /**
  * 是否按图片渲染缩略图。
@@ -79,4 +84,18 @@ export const splitUploadFiles = <T extends UploadFileLike>(items: T[]): { imageF
     (isUploadImageFile(item) ? imageFiles : otherFiles).push(item);
   }
   return { imageFiles, otherFiles };
+};
+
+/** 已上传附件按 path 映射出的 outputId 进入与助手产物相同的引用、预览流程。 */
+export const toUploadArtifact = (item: UploadFileLike): AIFileInfo | undefined => {
+  if (!item.outputId || item.status === 'pending' || item.status === 'error') {
+    return undefined;
+  }
+  const name = getUploadFileName(item) || item.outputId.split('/').pop() || item.outputId;
+  return {
+    outputId: item.outputId,
+    name,
+    size: getUploadFileSize(item) ?? 0,
+    type: normalizeFileExtension(undefined, name),
+  };
 };

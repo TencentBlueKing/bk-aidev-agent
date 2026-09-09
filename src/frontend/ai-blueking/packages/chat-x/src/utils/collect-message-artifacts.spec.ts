@@ -39,8 +39,8 @@ describe('toArtifactMenuItem', () => {
     });
   });
 
-  it('缺少 outputId 时回退到文件名作为 id', () => {
-    expect(toArtifactMenuItem({ name: 'a.md', outputId: '', size: 1, type: 'md' }).id).toBe('a.md');
+  it('缺少 outputId 时不再回退到文件名作为 id', () => {
+    expect(toArtifactMenuItem({ name: 'a.md', outputId: '', size: 1, type: 'md' }).id).toBe('');
   });
 
   it('与消息收集产出的条目完全一致，保证去重可用', () => {
@@ -52,6 +52,14 @@ describe('toArtifactMenuItem', () => {
 });
 
 describe('collectMessageArtifacts', () => {
+  it('缺少 outputId 的助手文件不会成为菜单条目', () => {
+    const messages = [{ content: '', property: { artifacts: [
+      { name: 'missing.pdf', outputId: '', size: 1, type: 'pdf' },
+      { name: 'valid.pdf', outputId: 'output-1', size: 1, type: 'pdf' },
+    ] } }] as unknown as Message[];
+    expect(collectMessageArtifacts(messages)).toEqual([{ id: 'output-1', name: 'valid.pdf', type: 'artifact' }]);
+  });
+
   it('没有消息时返回空数组', () => {
     expect(collectMessageArtifacts()).toEqual([]);
     expect(collectMessageArtifacts([])).toEqual([]);
@@ -71,7 +79,7 @@ describe('collectMessageArtifacts', () => {
     const messages = [
       {
         content: [
-          { type: MessageContentType.Binary, id: 'b1', filename: '人员名单.xlsx', mimeType: 'xlsx' },
+          { type: MessageContentType.Binary, id: 'upload-1', outputId: 'b1', filename: '人员名单.xlsx', mimeType: 'xlsx' },
           { type: MessageContentType.Text, text: '看看这个' },
         ],
       },
@@ -96,19 +104,17 @@ describe('collectMessageArtifacts', () => {
     expect(collectMessageArtifacts(messages).map(item => item.id)).toEqual(['a', 'b']);
   });
 
-  it('二进制附件缺少 id 时按 url、filename 依次回退', () => {
+  it('二进制附件缺少 outputId 时不能用 id、url 或 filename 替代', () => {
     const messages = [
       {
         content: [
           { type: MessageContentType.Binary, url: 'http://example.com/a.png', filename: 'a.png' },
           { type: MessageContentType.Binary, filename: 'b.pdf' },
+          { type: MessageContentType.Binary, id: 'legacy-id', filename: 'c.pdf' },
         ],
       },
     ] as unknown as Message[];
-    expect(collectMessageArtifacts(messages)).toEqual([
-      { id: 'http://example.com/a.png', type: 'artifact', name: 'a.png' },
-      { id: 'b.pdf', type: 'artifact', name: 'b.pdf' },
-    ]);
+    expect(collectMessageArtifacts(messages)).toEqual([]);
   });
 
   it('id / url / filename 都缺失的二进制附件会被跳过', () => {
@@ -119,7 +125,7 @@ describe('collectMessageArtifacts', () => {
   it('助手产物与用户附件一起收集，同一 id 仍去重', () => {
     const messages = [
       { content: '', property: { artifacts: [{ name: 'a.md', outputId: 'o1', size: 1, type: 'md' }] } },
-      { content: [{ type: MessageContentType.Binary, id: 'o1', filename: 'a-v2.md' }] },
+      { content: [{ type: MessageContentType.Binary, id: 'upload-1', outputId: 'o1', filename: 'a-v2.md' }] },
     ] as unknown as Message[];
     expect(collectMessageArtifacts(messages)).toEqual([{ id: 'o1', type: 'artifact', name: 'a-v2.md' }]);
   });
