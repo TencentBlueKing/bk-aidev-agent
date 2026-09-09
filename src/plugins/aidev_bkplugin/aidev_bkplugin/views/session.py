@@ -6,6 +6,8 @@ from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
     IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    MAX_SESSION_UPLOAD_FILE_SIZE,
+    MAX_SESSION_UPLOAD_FILES,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
@@ -316,15 +318,22 @@ class ChatSessionViewSet(PluginViewSet):
         """批量上传文件到会话 PV。"""
         self._check_session_owner(request, pk, require_access=True)
         uploaded_files = request.FILES.getlist("files")
-        files = [
-            {
-                "name": upload_file.name,
-                "content": upload_file.read(),
-                "mime_type": upload_file.content_type or "application/octet-stream",
-            }
-            for upload_file in uploaded_files
-        ]
         try:
+            if len(uploaded_files) > MAX_SESSION_UPLOAD_FILES:
+                raise SandboxFileInvalidArgumentError(f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
+            for upload_file in uploaded_files:
+                if upload_file.size > MAX_SESSION_UPLOAD_FILE_SIZE:
+                    raise SandboxFileInvalidArgumentError(
+                        f"文件 {upload_file.name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
+                    )
+            files = [
+                {
+                    "name": upload_file.name,
+                    "content": upload_file.read(),
+                    "mime_type": upload_file.content_type or "application/octet-stream",
+                }
+                for upload_file in uploaded_files
+            ]
             validate_session_upload_files(files)
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)

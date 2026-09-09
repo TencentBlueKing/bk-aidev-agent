@@ -487,6 +487,50 @@ class TestPvFilesUpload:
         instance.upload_files.assert_not_called()
         session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image.assert_not_called()
 
+    def test_upload_rejects_oversized_file_without_reading(self, view, mock_svc):
+        from aidev_agent.services.sandbox_pv_files import MAX_SESSION_UPLOAD_FILE_SIZE
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        uploaded_file = SimpleNamespace(
+            name="big.txt",
+            size=MAX_SESSION_UPLOAD_FILE_SIZE + 1,
+            content_type="text/plain",
+            read=MagicMock(side_effect=AssertionError("oversized file must not be read")),
+        )
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
+
+        assert str(MAX_SESSION_UPLOAD_FILE_SIZE) in excinfo.value.message
+        assert excinfo.value.STATUS_CODE == 400
+        uploaded_file.read.assert_not_called()
+        instance.upload_files.assert_not_called()
+
+    def test_upload_rejects_too_many_files_without_reading(self, view, mock_svc):
+        from aidev_agent.services.sandbox_pv_files import MAX_SESSION_UPLOAD_FILES
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        uploaded_files = [
+            SimpleNamespace(
+                name=f"f{index}.txt",
+                size=1,
+                content_type="text/plain",
+                read=MagicMock(side_effect=AssertionError("too many files must not be read")),
+            )
+            for index in range(MAX_SESSION_UPLOAD_FILES + 1)
+        ]
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_upload(_request(method="POST", files=uploaded_files), pk="s1")
+
+        assert str(MAX_SESSION_UPLOAD_FILES) in excinfo.value.message
+        assert excinfo.value.STATUS_CODE == 400
+        for uploaded_file in uploaded_files:
+            uploaded_file.read.assert_not_called()
+        instance.upload_files.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # 异常映射：SandboxFileError 基类兜底为 ServerBlueException
