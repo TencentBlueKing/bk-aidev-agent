@@ -3,7 +3,7 @@
 
 覆盖点：
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
-- 5 个 action 参数透传（GET list / DELETE / stat / preview / download_url / upload）
+- 6 个 action 参数透传（GET list / DELETE / stat / preview / download_url / upload）
 - 上传会话归属校验与沙箱文件异常映射
 - 沙箱文件异常 → blueapps 异常映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
@@ -301,6 +301,27 @@ class TestPvFilesDelete:
 
         with pytest.raises(ClientBlueException):
             view.pv_files(_request(method="DELETE"), pk="s1")
+
+    def test_delete_blank_path_raises(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
+        with pytest.raises(ClientBlueException, match="path is required"):
+            view.pv_files(_request({"path": "  "}, method="DELETE"), pk="s1")
+
+    def test_delete_parent_path_raises(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        with pytest.raises(ClientBlueException, match="invalid path"):
+            view.pv_files(_request({"path": "files/../secret.txt"}, method="DELETE"), pk="s1")
+        instance.delete_file.assert_not_called()
+
+    def test_delete_strips_and_normalizes_separators(self, view, mock_svc):
+        instance, _ = mock_svc
+        instance.delete_file.return_value = None
+        response = view.pv_files(_request({"path": "  files\\a.txt  "}, method="DELETE"), pk="s1")
+        assert response.status_code == 204
+        instance.delete_file.assert_called_once_with(session_code="s1", path="files/a.txt")
 
     def test_delete_not_found_is_idempotent_204(self, view, mock_svc):
         instance, _ = mock_svc

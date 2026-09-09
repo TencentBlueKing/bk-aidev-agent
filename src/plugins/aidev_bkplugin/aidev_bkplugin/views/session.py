@@ -236,9 +236,11 @@ class ChatSessionViewSet(PluginViewSet):
     def pv_files(self, request, pk, **kwargs):
         if request.method == "DELETE":
             self._check_session_owner(request, pk, require_access=True)
-            path = request.query_params.get("path", "")
+            path = (request.query_params.get("path") or "").strip().replace("\\", "/")
             if not path:
                 raise ClientBlueException(message="path is required")
+            if ".." in path.split("/"):
+                raise ClientBlueException(message="invalid path")
             try:
                 self._make_pv_file_service(request).delete_file(session_code=pk, path=path)
             except SandboxFileNotFoundError:

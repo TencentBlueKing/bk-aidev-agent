@@ -1228,7 +1228,7 @@ def _tag(tag_type: str, value: str) -> dict:
 @pytest.mark.parametrize(
     "doc_schema, expected_specific, expected_files",
     [
-        # docSchema 优先于 extra.resources；text 节点与 skill tag 均不参与收窄
+        # docSchema 优先于 extra.resources；text / skill / file tag 均不参与收窄
         (
             [
                 [
@@ -1236,6 +1236,7 @@ def _tag(tag_type: str, value: str) -> dict:
                     {"type": "text", "text": " "},
                     _tag("mcp", "bk-itsm-prod-ticket"),
                     _tag("skill", "file-kit"),
+                    _tag("file", "files/legacy.pdf"),
                     _tag("doc", "259"),
                     _tag("knowledgebase", "260"),
                     _tag("artifact", "outputs/report.pdf"),
@@ -1252,6 +1253,17 @@ def _tag(tag_type: str, value: str) -> dict:
         # 空数组代表本轮未引用资源，不回退 extra.resources
         ([], [], []),
         ([[]], [], []),
+        # 非数字知识库 id 跳过；其余 tag 仍解析
+        ([[_tag("doc", "kb-foo"), _tag("tool", "weather_query")]], [{"type": "tool", "code": "weather_query"}], []),
+        # data 非 dict、file tag 均忽略，不打崩装配
+        (
+            [[{"type": "tag", "data": "not-a-dict"}, _tag("file", "files/a.pdf"), _tag("mcp", "bk-itsm")]],
+            [{"type": "mcp", "code": "bk-itsm"}],
+            [],
+        ),
+        # 非法形状不回退 extra.resources
+        ({"type": "tag"}, [], []),
+        ("not-a-list", [], []),
     ],
 )
 def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, expected_specific, expected_files):
@@ -1263,6 +1275,17 @@ def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, 
 
     assert builder._specific_resources == expected_specific
     assert builder.file_resources == expected_files
+
+
+def test_chat_agent_builder_warns_when_doc_schema_is_not_list(caplog):
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_doc_schema_chat_ctx({"type": "tag"}, [{"type": "tool", "code": "legacy"}])
+    with caplog.at_level("WARNING"):
+        builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == []
+    assert "docSchema 不是二维数组" in caplog.text
 
 
 def test_agent_builds_llm_history_with_exact_non_image_file_references():
