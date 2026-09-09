@@ -144,7 +144,14 @@ class BkAidevAgentInjector:
         start_time_unix_nano = int(now.timestamp() * 1_000_000_000)
 
         # Agent 配置信息
-        agent_info = agent_info or {}
+        agent_info = dict(agent_info or {})
+        # 仅裁剪上报副本，避免提示词正文撑大属性或影响 Agent 运行配置。
+        if isinstance(prompt_setting := agent_info.get("prompt_setting"), dict):
+            agent_info["prompt_setting"] = {
+                key: value
+                for key, value in prompt_setting.items()
+                if key not in {"collection_content", "prompt_content"}
+            }
         agent_id = agent_info.get("agent_id", "unknown")
         agent_code = agent_info.get("agent_code", "unknown")
         agent_name = agent_info.get("agent_name", "unknown")

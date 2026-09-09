@@ -17,9 +17,11 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import asyncio
+from copy import deepcopy
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import orjson
 import pytest
 from aidev_agent.packages.opentelemetry.callback_handler import (
     BkAidevAgentCallbackHandler,
@@ -63,6 +65,43 @@ def tracer_and_exporter():
 
 class TestBkAidevAgentInjector:
     """测试 BkAidevAgentInjector 类"""
+
+    def test_on_bk_agent_start_filters_prompt_bodies(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        agent_info = {
+            "agent_code": "test_agent",
+            "prompt_setting": {
+                "collection_content": "知识" * 20000,
+                "prompt_content": "提示词" * 20000,
+                "temperature": 0.5,
+            },
+            "other_setting": {"prompt_content": "keep"},
+        }
+        original = deepcopy(agent_info)
+        injector = BkAidevAgentInjector(tracer=tracer)
+        injector.on_bk_agent_start(inputs={}, execute_kwargs=MagicMock(), agent_info=agent_info)
+        injector.on_bk_agent_end()
+
+        (span,) = exporter.get_finished_spans()
+        payload = span.attributes["agent.info.agent_info"]
+        assert orjson.loads(payload) == {
+            "agent_code": "test_agent",
+            "prompt_setting": {"temperature": 0.5},
+            "other_setting": {"prompt_content": "keep"},
+        }
+        assert len(payload.encode("utf-8")) < 1024
+        assert agent_info == original
+        assert span.name == "agent.execution"
+
+    @pytest.mark.parametrize("agent_info", [{}, {"prompt_setting": None}, {"prompt_setting": {}}])
+    def test_on_bk_agent_start_preserves_empty_prompt_settings(self, tracer_and_exporter, agent_info):
+        tracer, exporter = tracer_and_exporter
+        injector = BkAidevAgentInjector(tracer=tracer)
+        injector.on_bk_agent_start(inputs={}, execute_kwargs=MagicMock(), agent_info=agent_info)
+        injector.on_bk_agent_end()
+
+        (span,) = exporter.get_finished_spans()
+        assert orjson.loads(span.attributes["agent.info.agent_info"]) == agent_info
 
     def test_on_bk_agent_start_span_attributes(self, tracer_and_exporter):
         """测试 on_bk_agent_start 创建的 span 包含所有必需的属性"""
