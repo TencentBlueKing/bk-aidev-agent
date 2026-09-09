@@ -573,6 +573,52 @@ class AskUserQuestionHandler:
                 interrupt.builtin_property["status"] = "complete"
         return upgraded
 
+    @staticmethod
+    def _normalize_questions(questions: Any) -> list[dict]:
+        """把 LLM 传进来的脏 questions 归一化成协议要求的 list[dict]。
+
+        LLM tool_call args 的 ``questions`` 参数虽然 schema 声明为
+        ``List[dict]``，但实际运行中 LLM 经常会退化输出，常见脏形态：
+
+        - ``"直接一个字符串"`` —— 整个 questions 是 str（非 list）
+        - ``["字符串问题1", "字符串问题2"]`` —— list 里混字符串
+        - ``[{...}, "字符串"]`` —— dict 和 str 混合
+        - ``None`` —— 完全没传
+        - 单个 dict（未包 list）
+
+        本方法把它们统一归一化成 ``[{"question": ..., "header": "",
+        "multiSelect": False, "options": []}, ...]``，避免下游取值全部踩雷。
+        """
+        if not questions:
+            return []
+        if isinstance(questions, dict):
+            questions = [questions]
+        elif isinstance(questions, str):
+            questions = [questions]
+        elif not isinstance(questions, list):
+            return []
+        out: list[dict] = []
+        for q in questions:
+            if isinstance(q, dict):
+                out.append(q)
+            elif isinstance(q, str):
+                if q.strip():
+                    out.append({"question": q, "header": "", "multiSelect": False, "options": []})
+            # 其他类型（None / int / 嵌套 list 等）静默丢弃
+        return out
+
+    @staticmethod
+    def _first_question_text(questions: list[dict]) -> str:
+        """安全提取首个问题的展示文本，防御 dict 缺 ``question`` 字段的情况。"""
+        if not questions:
+            return ""
+        first = questions[0]
+        if isinstance(first, dict):
+            return str(first.get("question") or first.get("header") or "")
+        if isinstance(first, str):
+            return first
+        return str(first)
+
     def build_payload(
         self,
         *,
@@ -590,6 +636,8 @@ class AskUserQuestionHandler:
             questions: 问题数组，每项为
                 ``{"header": str, "multiSelect": bool, "question": str,
                 "options": [{"label": str, "description": str?}]}``。
+                LLM 可能传入脏结构（str / 混合列表 / None），本方法内部会
+                先经 ``_normalize_questions`` 归一化，避免下游取值崩溃。
             tool_call_id: 触发该 interrupt 的 tool_call id。
             expires_at: 中断过期时间（ISO 8601 带时区偏移字符串）。
                 为 ``None`` 时自动生成当前时间 + 24h。
@@ -597,21 +645,25 @@ class AskUserQuestionHandler:
         Returns:
             interrupt payload dict，顶层结构遵循 AG-UI ``Interrupt`` 模型。
         """
+        # 归一化，防止 LLM 传 ["字符串"] 等脏结构击穿下方 questions[0]['question']
+        normalized_questions = self._normalize_questions(questions)
+
         # id 格式 int-question-{tool_call_id}-{uuid_hex}
         interrupt_id = f"int-question-{tool_call_id}-{uuid.uuid4().hex[:8]}"
         metadata: dict[str, Any] = {
             "type": "ask_user_question",
             "status": InterruptStatus.PENDING.value,
-            "questions": questions,
+            "questions": normalized_questions,
         }
         # expiresAt 顶层字段，未传入时自动生成 24h 后过期
         if expires_at is None:
             expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        first_text = self._first_question_text(normalized_questions)
         return {
             "id": interrupt_id,
             "reason": ASK_USER_QUESTION_REASON,
             "toolCallId": tool_call_id,
-            "message": f"需要用户回答：{questions[0]['question']}" if questions else "需要用户回答",
+            "message": f"需要用户回答：{first_text}" if first_text else "需要用户回答",
             "expiresAt": expires_at,
             "metadata": metadata,
         }
