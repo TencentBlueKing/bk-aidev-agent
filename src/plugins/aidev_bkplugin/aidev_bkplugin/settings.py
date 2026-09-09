@@ -5,7 +5,7 @@ import os
 # 应用模块
 INSTALLED_APPS = ("aidev_bkplugin",)
 
-# 会话 PV 单文件上限 40MiB。请求体按约 50MiB，给 multipart 留余量；超出时 Django 在进入视图前拒绝。
+# 会话 PV 单文件上限 45MiB。请求体按约 50MiB，给 multipart 留余量；超出时 Django 在进入视图前拒绝。
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(50 * 1024 * 1024)))
 
 # 智能体
