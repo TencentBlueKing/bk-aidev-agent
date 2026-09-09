@@ -232,8 +232,20 @@ class ChatSessionViewSet(PluginViewSet):
             logger.warning("[pv_files] resolve_upload_snapshot empty")
         return image
 
-    @action(["GET"], url_path="pv_files", detail=True)
+    @action(["GET", "DELETE"], url_path="pv_files", detail=True)
     def pv_files(self, request, pk, **kwargs):
+        if request.method == "DELETE":
+            self._check_session_owner(request, pk, require_access=True)
+            path = request.query_params.get("path", "")
+            if not path:
+                raise ClientBlueException(message="path is required")
+            try:
+                self._make_pv_file_service(request).delete_file(session_code=pk, path=path)
+            except SandboxFileNotFoundError:
+                pass
+            except SandboxFileError as exc:
+                self._raise_pv_exc(exc)
+            return Response(status=204)
         self._check_session_owner(request, pk, require_access=False)
         svc = self._make_pv_file_service(request)
         params = request.query_params
