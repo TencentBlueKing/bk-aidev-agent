@@ -6,7 +6,7 @@ domain: message
 description: 渲染用户消息，支持纯文本、键值引用、文件附件和编辑态输入。
 aiSummary: >
   渲染用户消息：纯文本（非 Markdown）、键值引用、二进制附件与编辑态 ChatInput / ShortcutRender；
-  正文经 CollapsibleContent 限高 200px，property.extra.docSchema 含标签时改用 MentionText 还原资源标签；
+  正文经 CollapsibleContent 限高 200px，property.docSchema 含标签时改用 MentionText 还原资源标签；
   工具栏含 copy / edit / delete。源码位置：src/components/chat-message/user-message/user-message.vue。
 relatedComponents:
   - slug: mention-text
@@ -177,7 +177,7 @@ sinceVersion: 0.0.20
 
 ## 资源标签回显与正文折叠
 
-**标签回显**：`property.extra.docSchema` 是发送时输入框的富文本文档。**只有文档里真的含标签节点时**才走 [MentionText](/components/rendering/mention-text) 结构化渲染，纯文本文档仍走 `TextContent`——历史消息与第三方消息的表现因此保持不变。`content` 始终是纯文本，后端契约不变。
+**标签回显**：`property.docSchema` 是发送时输入框的富文本文档。**只有文档里真的含标签节点时**才走 [MentionText](/components/rendering/mention-text) 结构化渲染，纯文本文档仍走 `TextContent`——历史消息与第三方消息的表现因此保持不变。`content` 始终是纯文本，后端契约不变。
 
 编辑态同样以 `docSchema` 回填，否则改完这条消息已选资源会退化成纯文本；因此业务侧在 `onInputConfirm` 里要把新的 `docSchema` 一起写回。
 
@@ -399,7 +399,7 @@ sinceVersion: 0.0.20
 **`editContent` 的初始化逻辑**（仅文本部分，二进制文件通过 `defaultUploadFiles` 恢复）：
 
 ```
-文档含标签      → editContent = property.extra.docSchema（保留已选资源）
+文档含标签      → editContent = property.docSchema（保留已选资源）
 否则 textParts 有值 → editContent = textParts[0]（取第一个文本片段）
 binaryFiles 有值   → 进入编辑模式（editContent 可为空）
 进入编辑态后       → nextTick 后自动 focus，光标落在内容末尾
@@ -513,7 +513,7 @@ binaryFiles 有值   → 进入编辑模式（editContent 可为空）
 | ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | content            | `string \| InputContent[]`                                                                 | 消息内容，字符串或含 text/binary 的数组                                   |
 | createdAt          | `number \| string`                                                                         | 消息创建时间，经 `MessageTools` 的 `#prepend` 插槽交给 `MessageTime` 渲染在工具图标左侧；无值时不展示 |
-| property           | `{ extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `extra.cite` / `shortcut` / `context` / `docSchema`  |
+| property           | `{ docSchema?: TagSchema; extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `docSchema` 与 `extra.cite` / `extra.shortcut` / `extra.context`  |
 | messageTools       | `IToolBtn[]`                                                                               | 自定义用户消息工具组；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 |
 | messageToolsStatus | `MessageToolsStatus`                                                                       | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除                       |
 | onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`delete` 需外部处理                   |
@@ -561,8 +561,6 @@ type MessageExtra = {
   command?: string;
   pause?: boolean;
   shortcut?: Partial<Shortcut>;
-  /** 发送时输入框的富文本文档；有标签时用于回显与编辑回填 */
-  docSchema?: TagSchema;
   context?: Array<{
     __key: string;
     __label: string;

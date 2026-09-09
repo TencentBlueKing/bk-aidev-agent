@@ -73,7 +73,7 @@
             </span>
             <!-- 设计稿：引用位于下载左侧，点击后该文件以标签形式进入输入框 -->
             <span
-              v-if="inputMention"
+              v-if="inputMention && activeArtifact.outputId"
               v-tippy="citeTippy"
               class="ai-file-artifact-panel-preview-header-action"
               @click="handleCite(activeArtifact)"
@@ -187,7 +187,7 @@
   }));
 
   const handleCite = (file: SessionArtifact) => {
-    inputMention?.insertMention(toArtifactMenuItem(file));
+    if (file.outputId) inputMention?.insertMention(toArtifactMenuItem(file));
   };
 
   const filteredArtifacts = computed(() => {

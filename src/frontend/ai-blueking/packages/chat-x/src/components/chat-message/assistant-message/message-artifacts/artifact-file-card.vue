@@ -29,7 +29,7 @@
     <!-- 右侧操作区：hover 显示，设计稿中引用在下载左侧 -->
     <div class="ai-artifact-file-card-actions">
       <div
-        v-if="inputMention"
+        v-if="inputMention && file.outputId"
         v-tippy="citeTippy"
         class="ai-artifact-file-card-action ai-artifact-file-card-cite"
         @click.stop="handleCite"
@@ -122,7 +122,7 @@
   }));
 
   const handleCite = () => {
-    inputMention?.insertMention(toArtifactMenuItem(props.file));
+    if (props.file.outputId) inputMention?.insertMention(toArtifactMenuItem(props.file));
   };
 
   const handleCardClick = () => {

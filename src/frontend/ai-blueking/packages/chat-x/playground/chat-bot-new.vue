@@ -47,6 +47,7 @@
       :timezone="timezone"
       :update-tools="customUpdateTools"
       @confirm-share="handleConfirmShare"
+      @delete-file="handleDeleteFile"
       @delete-shortcut="handleDeleteShortcut"
       @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
@@ -204,9 +205,9 @@
     MOCK_TOOLCALL_STATUS_MESSAGES,
     mockArtifactClick,
   } from './mock';
-  import { mockUploadFileToSession } from './upload-file';
+  import { mockDeleteUploadedFile, mockUploadFileToSession } from './upload-file';
 
-  import type { CustomTab, IInputMenuItem, Shortcut, TagSchema } from '../src/types';
+  import type { CustomTab, IInputMenuItem, Shortcut, TagSchema, UploadFile } from '../src/types';
   import type { IToolBtn } from '../src/types/tool';
 
   import '../src/styles/global.scss';
@@ -951,7 +952,7 @@
       messageId: `user_${Date.now()}`,
       status: MessageStatus.Complete,
       // content 仍是纯文本；docSchema 让用户消息把 @ 选中的资源原样还原成标签
-      property: { extra: { docSchema } },
+      property: { docSchema },
     } as UserMessage);
     await new Promise(resolve => setTimeout(resolve, 5000));
   };
@@ -970,6 +971,12 @@
 
   // playground 走本地 mock，不依赖后端网关与 access_token；
   // 真实接入示例见 ./upload-file 的 uploadFileToSession
+  const handleDeleteFile = async (file: Partial<UploadFile>) => {
+    const outputId = file.outputId || file.id;
+    if (outputId) await mockDeleteUploadedFile(outputId);
+    console.log('delete file:', outputId);
+  };
+
   const handleUpload = async (files: File[]) => {
     const responses = await Promise.all(
       files.map(async file => {
@@ -987,7 +994,7 @@
     const target = messages.value.find(item => item.id === message.id);
     if (target) {
       target.content = content as Message['content'];
-      target.property = { ...target.property, extra: { ...target.property?.extra, docSchema } };
+      target.property = { ...target.property, docSchema };
     }
   };
 

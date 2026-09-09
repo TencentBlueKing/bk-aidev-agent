@@ -33,16 +33,7 @@ import type { lang } from '../lang/lang';
  *
  * `file` 是组件内置的动作项（触发本地文件上传），不由业务方通过 `menuSources` 提供。
  */
-export const MENU_ITEM_TYPES = [
-  'file',
-  'skill',
-  'mcp',
-  'tool',
-  'knowledgebase',
-  'doc',
-  'artifact',
-  'prompt',
-] as const;
+export const MENU_ITEM_TYPES = ['file', 'skill', 'mcp', 'tool', 'knowledgebase', 'doc', 'artifact', 'prompt'] as const;
 
 /** 面板渲染用的分组（已应用关键字过滤与折叠阈值） */
 export interface IInputMenuGroup {
@@ -73,6 +64,7 @@ export interface IInputMenuItem {
    * 因此只有字符串形式能被保留，传组件时标签内会回退为类型默认图标。
    */
   icon?: Component | string;
+  /** artifact 类型必须使用文件的 outputId，不能用 URL 或文件名代替 */
   id: string;
   name: string;
   type: MenuItemType;

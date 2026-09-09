@@ -206,7 +206,7 @@
    * 纯文本走原有 TextContent，保持历史消息与第三方消息的表现不变。
    */
   const mentionDoc = computed(() => {
-    const doc = props.property?.extra?.docSchema;
+    const doc = props.property?.docSchema;
     return doc?.some(line => line.some(node => node.type === 'tag')) ? doc : undefined;
   });
 

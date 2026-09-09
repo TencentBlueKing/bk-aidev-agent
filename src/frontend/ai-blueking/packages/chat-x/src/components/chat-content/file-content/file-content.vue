@@ -12,6 +12,7 @@
         v-for="item in imageItems"
         :key="item.key"
         :has-error="item.hasError"
+        :previewable="canPreviewArtifact(item.file)"
         :name="item.name"
         :readonly="readonly"
         :src="item.src"
@@ -30,8 +31,10 @@
         v-for="item in fileItems"
         :key="item.key"
         :file="item.file"
+        :previewable="canPreviewArtifact(item.file)"
         :readonly="readonly"
         @delete="handleDeleteFile(item.file)"
+        @preview="handleArtifactPreview(item.file)"
       />
     </div>
     <ImagePreview
@@ -45,8 +48,9 @@
 <script lang="ts" setup>
   import { computed, onBeforeUnmount, shallowReactive, shallowRef, watch } from 'vue';
 
+  import { useArtifactPreviewConsumer } from '../../../composables/use-artifact-preview';
   import { type UploadFile, type UploadFileVariant, UploadStatus } from '../../../types';
-  import { getUploadFileKey, getUploadFileName, splitUploadFiles } from '../../../utils';
+  import { getUploadFileKey, getUploadFileName, splitUploadFiles, toUploadArtifact } from '../../../utils';
   import ImagePreview from '../../image-preview/image-preview.vue';
   import UploadFileItem from './upload-file-item.vue';
   import UploadImageItem from './upload-image-item.vue';
@@ -66,6 +70,13 @@
       variant: 'input',
     },
   );
+
+  const artifactPreview = useArtifactPreviewConsumer();
+  const canPreviewArtifact = (file: Partial<UploadFile>) => !!artifactPreview && !!toUploadArtifact(file);
+  const handleArtifactPreview = (file: Partial<UploadFile>) => {
+    const artifact = toUploadArtifact(file);
+    if (artifact) artifactPreview?.openPreview({ file: artifact });
+  };
 
   // 图片加载失败：key -> true，失败项降级为错误占位且不进入预览列表
   const imageErrorMap = shallowReactive<Record<string, boolean>>({});
@@ -141,6 +152,11 @@
     emit('deleteFile', file);
   };
   const handlePreview = (key: string) => {
+    const item = imageItems.value.find(item => item.key === key);
+    if (item && canPreviewArtifact(item.file)) {
+      handleArtifactPreview(item.file);
+      return;
+    }
     const index = previewItems.value.findIndex(item => item.key === key);
     if (index < 0) return;
     previewIndex.value = index;

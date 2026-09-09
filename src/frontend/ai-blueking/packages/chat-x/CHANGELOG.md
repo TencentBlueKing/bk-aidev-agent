@@ -4,7 +4,26 @@
 
 ### Breaking Changes
 
+- 用户消息的富文本文档从 `property.extra.docSchema` 移至 `property.docSchema`，与 `extra` 同级；发送、编辑回填及编辑确认后的持久化需使用新字段位置。
+
 - + 号「添加」分组只保留内置「文件」项；移除「图片」项、`MenuItemType` 的 `'image'`，以及导出常量 `IMAGE_UPLOAD_ACCEPT`。图片与其它允许类型都通过「文件」入口（`accept` / `DEFAULT_UPLOAD_ACCEPT`）选择。
+
+### Added
+
+- `ChatInput` / `ChatContainer` 新增 `deleteFile(file: Partial<UploadFile>)` 事件（模板监听 `@delete-file`）：取消输入框附件时携带 `id` 等文件信息，供业务方调用删除接口；UI 立即移除附件，不等待接口结果，成功或失败均不恢复附件。
+- Playground 新增上传、删除及本地文件下载 mock，上传响应包含 `id` / `path`；补充已上传文件和无 `outputId` 的历史附件示例，支持验证引用、预览及菜单过滤行为。
+
+### Changed
+
+- `@` / `+` 的会话文件只收集具有 `outputId` 的条目，不再回退到 URL 或文件名；手动传入的 `artifact.id` 必须使用文件 `outputId`。
+- 上传响应 `path` 映射为附件 `outputId`，上传成功后即可引用、预览；发送时保留该身份，待发送附件、用户消息附件与助手产物共用侧栏预览和下载流程。
+
+- 单文件上传大小限制放宽为严格小于 45 MB（`45 * 1024 * 1024` 字节），文件选择、拖拽、粘贴及 `FileUploadBtn` 共用此限制，大小提示同步更新。
+
+### Fixed
+
+- 修复仅含 `id` 的回填附件无法取消的问题，删除时优先按文件 `id` 匹配。
+- 带 `outputId` 的图片附件在缩略图失效后仍可打开产物预览；取消或发送附件后，同步清理待发送文件的菜单与预览数据。
 
 ## 0.0.52-beta.1 (2026-09-03)
 

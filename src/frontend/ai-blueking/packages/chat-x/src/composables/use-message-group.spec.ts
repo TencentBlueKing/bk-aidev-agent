@@ -359,6 +359,22 @@ describe('useMessageGroup', () => {
   });
 
   describe('sessionArtifacts', () => {
+    it('用户上传文件与助手产物共用 outputId 去重，并忽略缺少 outputId 的文件', async () => {
+      const messages = [
+        createAssistantMessage('a1', '', { property: { artifacts: [
+          createFile({ outputId: 'files/report.pdf', name: 'old.pdf' }),
+          createFile({ outputId: '', name: 'invalid.pdf' }),
+        ] } }),
+        { ...createUserMessage('u1'), content: [
+          { type: MessageContentType.Binary, id: 'upload-id', outputId: 'files/report.pdf', filename: 'report.pdf', size: 5, mimeType: 'application/pdf' },
+          { type: MessageContentType.Binary, id: 'legacy-id', filename: 'legacy.pdf', mimeType: 'application/pdf' },
+        ] },
+      ] as Message[];
+      const { sessionArtifacts } = setupMessageGroup(messages);
+      await nextTick();
+      expect(sessionArtifacts.value).toEqual([{ outputId: 'files/report.pdf', name: 'report.pdf', size: 5, type: 'pdf' }]);
+    });
+
     it('无文件产物时应返回空数组', async () => {
       const { sessionArtifacts } = setupMessageGroup([createAssistantMessage('1', 'plain')]);
       await nextTick();

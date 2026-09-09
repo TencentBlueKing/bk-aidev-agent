@@ -256,6 +256,7 @@
               :shortcuts="shortcuts"
               :support-upload="supportUpload"
               :tippy-options="commonTippyOptions"
+              @delete-file="emits('deleteFile', $event)"
               @delete-shortcut="handleCloseShortcut"
               @model-change="emits('modelChange', $event)"
               @select-shortcut="handleSelectShortcut"
@@ -594,7 +595,7 @@
   const {
     messageGroups,
     executionGroups,
-    sessionArtifacts,
+    sessionArtifacts: messageArtifacts,
     isShareMode,
     isAllSelected,
     onToggleShareAll,
@@ -607,6 +608,15 @@
     messages: computed(() => props.messages),
     renderMode: computed(() => renderMode.value),
     selectedUserMessages,
+  });
+
+  // 输入框里上传成功但尚未发送的文件也可立即预览，移除附件后同步移出侧栏。
+  const sessionArtifacts = computed(() => {
+    const files = new Map(messageArtifacts.value.map(file => [file.outputId, file]));
+    for (const file of chatInputRef.value?.uploadedArtifacts ?? []) {
+      files.set(file.outputId, file);
+    }
+    return [...files.values()];
   });
 
   // 文件卡片点击 → 命中文件并展开侧栏、切到「文件产物」Tab

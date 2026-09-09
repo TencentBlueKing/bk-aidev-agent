@@ -7,7 +7,7 @@ description: 把发送时保留的富文本文档还原成「文本 + 资源标�
 aiSummary: >
   MentionText 接收一份 TagSchema 文档（二维数组：行 → 节点），逐行渲染：text 节点输出文本、
   tag 节点交给 MentionTag；行间用 <br> 分隔，空白以 pre-wrap 保留。
-  UserMessage 在 property.extra.docSchema 含标签时用它替代 TextContent。
+  UserMessage 在 property.docSchema 含标签时用它替代 TextContent。
   源码位置：src/components/mention/mention-text.vue。
 relatedComponents:
   - slug: mention-tag
@@ -61,7 +61,7 @@ sinceVersion: 0.0.51
 ```
 用户在输入框选中资源
   → onSendMessage(content, docSchema)   content 仍是纯文本，不改后端契约
-  → 业务侧把 docSchema 存进 message.property.extra.docSchema
+  → 业务侧把 docSchema 存进 message.property.docSchema
   → UserMessage 检测到文档中存在 tag 节点
   → 用 MentionText 渲染（否则回退 TextContent）
 ```
@@ -73,14 +73,14 @@ sinceVersion: 0.0.51
 const handleSendMessage = async (content: UserMessage['content'], docSchema: TagSchema) => {
   messages.value.push({
     id, messageId: id, role: MessageRole.User, content,
-    property: { extra: { docSchema } },
+    property: { docSchema },
   });
 };
 
 // 编辑确认
 const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], docSchema: TagSchema) => {
   target.content = content;
-  target.property = { ...target.property, extra: { ...target.property?.extra, docSchema } };
+  target.property = { ...target.property, docSchema };
 };
 ```
 

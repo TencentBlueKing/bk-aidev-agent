@@ -24,6 +24,7 @@
  * IN THE SOFTWARE.
  */
 import { MessageContentType } from '../ag-ui/types/constants';
+import { toUploadArtifact } from './upload-file';
 
 import type { BinaryInputContent } from '../ag-ui/types/contents';
 import type { AIFileInfo } from '../ag-ui/types/file';
@@ -37,40 +38,31 @@ import type { IInputMenuItem } from '../types/input-menu';
  * `@` 菜单的去重、以及已插入标签的匹配全部失效。
  */
 export const toArtifactMenuItem = (file: AIFileInfo): IInputMenuItem => ({
-  id: file.outputId || file.name,
+  id: file.outputId,
   type: 'artifact',
   name: file.name,
 });
 
-/**
- * 从会话消息里收集「会话产物」，作为输入框 `@` 菜单的 artifact 选项。
- *
- * 两个来源：助手消息的文件产物 `property.artifacts`，以及用户消息里已上传的二进制附件。
- * 同一 id 多次出现时取最后一次的名称（文件可能被后续轮次更新），位置保持首次出现的顺序。
- */
-export const collectMessageArtifacts = (messages: Message[] = []): IInputMenuItem[] => {
-  const collected = new Map<string, IInputMenuItem>();
-
-  for (const message of messages) {
-    for (const artifact of message.property?.artifacts ?? []) {
-      const item = toArtifactMenuItem(artifact);
-      if (item.id) {
-        collected.set(item.id, item);
-      }
-    }
-    if (!Array.isArray(message.content)) {
-      continue;
-    }
+/** 从同一条消息提取具有 outputId 的助手产物与上传附件，供菜单、侧栏共用。 */
+export const getMessageArtifacts = (message: Message): AIFileInfo[] => {
+  const files = (message.property?.artifacts ?? []).filter(file => !!file.outputId);
+  if (Array.isArray(message.content)) {
     for (const content of message.content as BinaryInputContent[]) {
-      if (content?.type !== MessageContentType.Binary) {
-        continue;
-      }
-      const id = content.id || content.url || content.filename || '';
-      if (id) {
-        collected.set(id, { id, type: 'artifact', name: content.filename || id });
-      }
+      if (content?.type !== MessageContentType.Binary) continue;
+      const file = toUploadArtifact(content);
+      if (file) files.push(file);
     }
   }
+  return files;
+};
 
+/** 同一 outputId 取最后一次名称，菜单位置保持首次出现的顺序。 */
+export const collectMessageArtifacts = (messages: Message[] = []): IInputMenuItem[] => {
+  const collected = new Map<string, IInputMenuItem>();
+  for (const message of messages) {
+    for (const file of getMessageArtifacts(message)) {
+      collected.set(file.outputId, toArtifactMenuItem(file));
+    }
+  }
   return [...collected.values()];
 };

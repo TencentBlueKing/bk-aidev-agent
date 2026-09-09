@@ -286,8 +286,10 @@ const handleSendMessage = async (
 
 选中「文件」后唤起隐藏 `input[type=file]`，与拖拽 / 粘贴共用同一套 `handleUpload` / `onUpload`。系统选择器与入队校验都走 `accept` prop（默认 `DEFAULT_UPLOAD_ACCEPT`，含图片 / 文档 / 文本 / 代码扩展名）。
 
-- `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; status?: 'failed' | 'success' }`
+- `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; path?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
+- 上传成功后将响应 `path` 保存为附件的 `outputId`（`id` 缺省时也以 `path` 回填）。具有 `outputId` 的文件立即进入 `@` / `+` 的「会话产物」菜单和容器预览侧栏；发送时保留 `outputId`，已发送附件与助手产物共用引用、预览和下载能力。仅有 `id`、URL 或文件名的旧附件不作为会话产物收集。
+- 取消附件时立即从 UI 移除，并触发 `deleteFile` 事件（模板使用 `@delete-file`），参数为 `Partial<UploadFile>`。业务方可根据 `file.id` 调用删除接口；组件不等待接口结果，成功或失败均不恢复附件。上传中 / 上传失败的附件也会触发事件，此时 `id` 可能为空，由业务方决定是否调用接口。发送后清空列表不会触发此事件。
 - **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 拖拽只响应从系统拖入的文件（编辑器内部标签拖动不会误触发），悬停时框体切换为蓝色描边 + 浅蓝底
 - 发送成功后待发送列表自动清空；文件加入列表后光标自动回到输入区
@@ -295,7 +297,7 @@ const handleSendMessage = async (
 **个数、大小与格式校验**：
 
 - 列表最多保留 **`MAX_UPLOAD_FILES`（9）** 个待发送附件；已满时再次选择/拖入/粘贴文件会弹出 **bkui-vue `Message` 错误提示**（`formatUploadNotAddedMessage`），且不会继续入队。
-- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（约 2.4MB）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
+- 在未满的前提下：空文件、单文件大小 **`>= MAX_UPLOAD_FILE_SIZE`（45MB，即 `45 * 1024 * 1024` 字节）** 会被跳过并弹出超大小/个数提示。与已有文件重复的项只去重、不弹这条误导文案。
 - **文件类型**：默认使用 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名列表）。系统文件选择框带 `accept` 过滤；选择后、拖拽、粘贴仍会再按扩展名校验，不支持的格式弹出「因格式不支持未添加」并不会入队。可通过 `accept` prop 覆盖（空字符串表示不限制）。
 - 个数上限、重复、大小与类型校验都在 `ChatInput` 的 `handleUpload` 中统一处理（含 + 号菜单唤起的系统文件选择器、拖拽和粘贴）。
 
@@ -505,6 +507,7 @@ const defaultFiles: UploadFile[] = [
 | modelChange       | `(model: IModelOption)`                                               | 用户切换模型                                                 |
 | selectShortcut    | `(shortcut: Shortcut)`                                                | 点击底部快捷指令按钮                                         |
 | deleteShortcut    | -                                                                     | 点击已选快捷指令旁的关闭按钮                                 |
+| deleteFile        | `(file: Partial<UploadFile>)`                                         | 用户取消附件；携带文件 `id`、状态等信息，UI 立即移除，不等待删除接口 |
 
 ### Slots
 
@@ -519,6 +522,8 @@ const defaultFiles: UploadFile[] = [
 | send-icon      | -                                                                | 发送按钮内图标，点击逻辑与样式仍由组件控制               |
 
 ### Expose
+
+`uploadedArtifacts`：只读 `AIFileInfo[]`，包含输入框中已上传且具有 `outputId` 的附件；供容器合并到侧栏预览列表，取消或发送后同步更新。
 
 | 方法名             | 类型                              | 说明                                             |
 | ------------------ | --------------------------------- | ------------------------------------------------ |

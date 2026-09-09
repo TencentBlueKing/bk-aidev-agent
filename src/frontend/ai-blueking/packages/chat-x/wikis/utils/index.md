@@ -79,10 +79,10 @@ const tools = mergeToolsById(
 
 | 来源                            | id 取值                                          | 名称                   |
 | ------------------------------- | ------------------------------------------------ | ---------------------- |
-| 助手消息的 `property.artifacts` | `file.outputId \|\| file.name`                   | `file.name`            |
-| 用户消息里的二进制附件          | `content.id \|\| content.url \|\| content.filename` | `content.filename` 或 id |
+| 助手消息的 `property.artifacts` | `file.outputId`                   | `file.name`            |
+| 用户消息里的二进制附件          | `content.outputId` | `content.filename` 或 id |
 
-同一 id 多次出现时取最后一次的名称（文件可能被后续轮次更新），位置保持首次出现的顺序。
+缺少 `outputId` 的文件会被跳过；上传响应中的 `path` 由 `ChatInput` 映射为 `outputId`。同一 id 多次出现时取最后一次的名称（文件可能被后续轮次更新），位置保持首次出现的顺序。
 
 ```typescript
 import { collectMessageArtifacts } from '@blueking/chat-x';

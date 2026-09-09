@@ -55,6 +55,17 @@ const setup = (trigger: MenuTrigger | null, keyword = '', groupItemLimit = 4) =>
   });
 
 describe('useInputMenu', () => {
+  it.each(['@', 'plus'] as const)('%s 不展示缺少 outputId 的文件条目', trigger => {
+    const { flatItems } = useInputMenu({
+      sources: shallowRef<IInputMenuItem[]>([
+        { id: '', name: 'invalid.pdf', type: 'artifact' },
+        { id: 'files/valid.pdf', name: 'valid.pdf', type: 'artifact' },
+      ]),
+      keyword: shallowRef(''), trigger: shallowRef(trigger), groupItemLimit: shallowRef(4),
+    });
+    expect(flatItems.value).toEqual([{ id: 'files/valid.pdf', name: 'valid.pdf', type: 'artifact' }]);
+  });
+
   it('trigger 为空时不产出任何分组', () => {
     const { groups, hasContent } = setup(null);
     expect(groups.value).toEqual([]);

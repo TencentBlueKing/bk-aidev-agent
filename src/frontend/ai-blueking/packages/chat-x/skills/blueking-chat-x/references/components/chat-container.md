@@ -242,7 +242,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 内置「文件产物」Tab
 
-除「执行情况」外，容器内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话所有 `AssistantMessage.property.artifacts`（按 `outputId` 去重）：
+除「执行情况」外，容器内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话具有 `outputId` 的助手产物、用户消息附件及输入框中上传成功的待发送附件（按 `outputId` 去重）：
 
 - **常驻挂载 / 默认选中**：容器初始化即通过 `ensureCustomTab` 挂上该 Tab（不展开侧栏）；因 `order: -1` 排在 Tab 栏首位，在用户未主动切换过 Tab 时它就是侧栏的默认面板。不随产物有无增删，无产物时由面板展示整块空态
 - **默认图标**：`ArtifactTabIcon`，16×16 线性折角文档，`fill` 走 `currentColor` 以继承 Tab 选中/默认色
@@ -620,7 +620,7 @@ ai-chat-container（:data-ai-size="size"）
 
 `menuSources` 继承自 [ChatInput](/components/input/chat-input)，一份数组按 `type` 分发到 `/`、`@`、`\` 与左下角 + 号。容器在此之上做了三件事：
 
-**1. 会话产物自动收集**：`menuSources` 中没有 `artifact` 条目时，容器用 [`collectMessageArtifacts`](/utils/#会话产物收集) 从 `messages` 里收集产物补进去——来源是助手消息的 `property.artifacts` 与用户消息里的二进制附件。业务方自己传了 `artifact` 条目时以传入的为准，容器不再自动补。没有产物时 `@` / + 号菜单不会出现「会话产物」分组。
+**1. 会话产物自动收集**：`menuSources` 中没有 `artifact` 条目时，容器用 [`collectMessageArtifacts`](/utils/#会话产物收集) 从 `messages` 里收集产物补进去——来源是具有 `outputId` 的助手消息 `property.artifacts` 与用户消息二进制附件，不再回退到 URL 或文件名。上传响应的 `path` 由输入框映射为 `outputId`，尚未发送的成功附件也会追加到菜单。手动传入的 `artifact.id` 必须是对应文件的 `outputId`。业务方自己传了 `artifact` 条目时以传入的为准，容器不再自动补。没有产物时 `@` / + 号菜单不会出现「会话产物」分组。
 
 **2. 资源引用入口**：容器通过 [useInputMention](/composables/use-input-mention) 提供 `insertMention`，消息区的文件卡片与侧栏产物面板因此能直接把文件「@ 进输入框」，无需逐层透传输入框实例。没有输入框的场景（`Share` 只读态）自动不显示引用按钮。
 
@@ -651,7 +651,7 @@ ai-chat-container（:data-ai-size="size"）
 </script>
 ```
 
-> 用户消息要把 `@` 选中的资源以标签形态回显，需要业务侧把 `onSendMessage` 的 `docSchema` 存进 `message.property.extra.docSchema`，详见 [MentionText](/components/rendering/mention-text)。
+> 用户消息要把 `@` 选中的资源以标签形态回显，需要业务侧把 `onSendMessage` 的 `docSchema` 存进 `message.property.docSchema`，详见 [MentionText](/components/rendering/mention-text)。
 
 ## 模型选择
 
@@ -776,6 +776,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | update:asideCollapsed | `(collapsed: boolean)`          | 折叠态变更请求（`v-model:asideCollapsed`）；受控时是否真的展开取决于外部是否更新该值 |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
+| deleteFile     | `(file: Partial<UploadFile>)`          | 取消输入框附件（继承自 ChatInput）；业务方根据 `file.id` 调用删除接口，UI 立即移除，不等待结果 |
 | modelChange    | `(model: IModelOption)`                | 切换模型（继承自 ChatInput）         |
 
 ### Slots
