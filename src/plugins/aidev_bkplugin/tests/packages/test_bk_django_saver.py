@@ -5,6 +5,7 @@ import threading
 import pytest
 from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver, _database_write_lock, bulk_upsert
 from django.db import InterfaceError, OperationalError, connection, models
+from langgraph.checkpoint.base import WRITES_IDX_MAP
 
 
 class WriteForTest(models.Model):
@@ -276,3 +277,139 @@ def test_bulk_upsert_preserves_mysql_native_upsert(mocker, write_obj):
     sql, params = cursor.executemany.call_args.args
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert params == [["thread-id", "", "checkpoint-id", "task-id", 0, "channel", "json", b"1"]]
+
+
+# ---------- put_writes task_path 兼容性测试（复刻 2.2.1 15b6b17f，修复 MySQL 1364） ----------
+
+
+class WriteWithTaskPathForTest(models.Model):
+    """模拟新版业务方 writes_model：带 task_path 列（NOT NULL 无 SQL default）。
+
+    复现 langgraph 上游给 put_writes 加 task_path 参数后，业务方按新示例
+    在 model 里加了 task_path 字段时，MySQL 严格模式下 1364 的场景。
+    """
+
+    thread_id = models.CharField(max_length=255)
+    checkpoint_ns = models.CharField(max_length=255, default="")
+    checkpoint_id = models.CharField(max_length=255)
+    task_id = models.CharField(max_length=255)
+    task_path = models.TextField()
+    idx = models.IntegerField()
+    channel = models.TextField()
+    type = models.TextField(null=True, blank=True)
+    value = models.BinaryField()
+
+    class Meta:
+        app_label = "tests"
+
+
+def _make_put_writes_saver(mocker, writes_model, has_task_path):
+    """构造一个绕过 __init__ 校验的 saver 实例，用于测 put_writes 分支。"""
+    instance = object.__new__(BKDjangoSaver)
+    instance.lock = threading.Lock()
+    instance.writes_model = writes_model
+    instance._writes_has_task_path = has_task_path
+    instance.serde = mocker.Mock()
+    instance.serde.dumps_typed.return_value = ("json", b"v")
+    return instance
+
+
+def _put_writes_config():
+    return {
+        "configurable": {
+            "thread_id": "t",
+            "checkpoint_ns": "",
+            "checkpoint_id": "c",
+        }
+    }
+
+
+def _patch_write_pipeline(mocker):
+    """屏蔽 put_writes 内的锁与重试包装，让 save_writes 直接执行。"""
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver._database_write_lock")
+    mocker.patch(
+        "aidev_bkplugin.packages.checkpoint.bk_django_saver._run_database_write_with_retry",
+        side_effect=lambda op, *a, **k: op(),
+    )
+    return mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.bulk_upsert")
+
+
+def test_writes_has_task_path_detection_true():
+    """__init__ 探测逻辑：writes_model 声明 task_path 时应识别为 True。"""
+    has = any(f.name == "task_path" for f in WriteWithTaskPathForTest._meta.get_fields())
+    assert has is True
+
+
+def test_writes_has_task_path_detection_false():
+    """__init__ 探测逻辑：老版 model 未声明 task_path 时应识别为 False，走兼容路径。"""
+    has = any(f.name == "task_path" for f in WriteForTest._meta.get_fields())
+    assert has is False
+
+
+def test_put_writes_new_model_appends_task_path_to_update_fields_and_write_obj(mocker):
+    """新版 model（含 task_path）走 upsert 分支时：
+
+    1. bulk_upsert 的 update_fields 应追加 "task_path"（否则原生 SQL INSERT
+       缺列，MySQL 严格模式抛 1364）
+    2. 构造的 write_obj 上应实际写入 task_path 值
+    """
+    saver = _make_put_writes_saver(mocker, WriteWithTaskPathForTest, has_task_path=True)
+    bulk_upsert_mock = _patch_write_pipeline(mocker)
+
+    channel_key = next(iter(WRITES_IDX_MAP.keys()))
+    saver.put_writes(
+        _put_writes_config(),
+        [(channel_key, "v")],
+        "task-id",
+        task_path="('__pregel_pull','agent')",
+    )
+
+    call = bulk_upsert_mock.call_args
+    update_fields = call.kwargs["update_fields"]
+    unique_fields = call.kwargs["unique_fields"]
+    writes_objects = call.args[1]
+
+    assert "task_path" in update_fields, f"update_fields 缺 task_path: {update_fields}"
+    assert unique_fields == ["thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "idx"]
+    assert writes_objects[0].task_path == "('__pregel_pull','agent')"
+
+
+def test_put_writes_old_model_skips_task_path(mocker):
+    """老版 model（无 task_path）走 upsert 分支时：
+
+    1. update_fields 不应包含 "task_path"
+    2. 构造 write_obj 时不应传 task_path kwarg（否则 model(**kwargs) 抛 TypeError）
+    3. 即使 langgraph 上游传了 task_path，也不能挂
+    """
+    saver = _make_put_writes_saver(mocker, WriteForTest, has_task_path=False)
+    bulk_upsert_mock = _patch_write_pipeline(mocker)
+
+    channel_key = next(iter(WRITES_IDX_MAP.keys()))
+    saver.put_writes(
+        _put_writes_config(),
+        [(channel_key, "v")],
+        "task-id",
+        task_path="whatever",
+    )
+
+    call = bulk_upsert_mock.call_args
+    update_fields = call.kwargs["update_fields"]
+    writes_objects = call.args[1]
+
+    assert "task_path" not in update_fields
+    assert not hasattr(writes_objects[0], "task_path")
+
+
+def test_put_writes_new_model_falsy_task_path_falls_back_to_empty_string(mocker):
+    """langgraph 上游可能传 None / 空串（异常场景），saver 应兜底为空串。"""
+    saver = _make_put_writes_saver(mocker, WriteWithTaskPathForTest, has_task_path=True)
+    bulk_upsert_mock = _patch_write_pipeline(mocker)
+
+    channel_key = next(iter(WRITES_IDX_MAP.keys()))
+    saver.put_writes(_put_writes_config(), [(channel_key, "v")], "task-id", task_path=None)
+    saver.put_writes(_put_writes_config(), [(channel_key, "v")], "task-id")
+
+    assert bulk_upsert_mock.call_count == 2
+    for call in bulk_upsert_mock.call_args_list:
+        writes_objects = call.args[1]
+        assert writes_objects[0].task_path == ""
