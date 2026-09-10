@@ -98,7 +98,9 @@ if Fernet:  # type: ignore
 
 CUSTOM_ENCRYPTION = None
 
-CUSTOM_ENCRYPTION_KEY = b"4QRcFBhcDnhrTTbWBHzMA3qPIcRxbAtZuQOfsE9amiU="
+# 密钥改为从环境变量读取，避免硬编码在源码中导致加密形同虚设。
+# 保留原值作为兜底仅为兼容存量部署，新环境必须通过 CUSTOM_ENCRYPTION_KEY 注入。
+CUSTOM_ENCRYPTION_KEY = os.environ.get("CUSTOM_ENCRYPTION_KEY", "4QRcFBhcDnhrTTbWBHzMA3qPIcRxbAtZuQOfsE9amiU=").encode()
 
 logger = logging.getLogger(__name__)
 

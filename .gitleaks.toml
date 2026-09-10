@@ -1,0 +1,25 @@
+# gitleaks 自定义规则：通用规则覆盖不到「变量名 + 硬编码密钥字面量」的写法，
+# 例如 CUSTOM_ENCRYPTION_KEY = b"..." 这种会被漏掉（已在 service.py 实际发生过）。
+#
+# 用法：gitleaks detect --no-git --source . --config .gitleaks.toml
+title = "BKAIDEV gitleaks 扩展规则"
+
+[extend]
+# 继承默认规则集，只追加下面的自定义规则
+useDefault = true
+
+[[rules]]
+id = "hardcoded-crypto-key-assignment"
+description = "源码中硬编码的对称加密密钥（_KEY / _SECRET 变量直接赋字面量）"
+regex = '''(?i)\b\w*(?:encryption|cipher|aes|sm4|fernet)\w*(?:_key|_secret)\s*=\s*(?:b?["'])[A-Za-z0-9+/=_-]{16,}'''
+tags = ["key", "crypto"]
+
+[rules.allowlist]
+description = "允许从环境变量/配置读取的写法"
+regexes = [
+    '''(?i)(?:os\.environ|getenv|env\.str|env\.bytes|settings\.|config\[|getattr)''',
+]
+paths = [
+    '''(?i).*_test\.py$''',
+    '''(?i).*/tests?/.*''',
+]
