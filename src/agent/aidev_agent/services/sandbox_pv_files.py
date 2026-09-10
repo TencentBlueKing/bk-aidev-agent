@@ -263,15 +263,12 @@ def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
             )
 
 
-def iter_user_images_missing_url(payload: dict):
-    """找出用户消息里缺展示 URL 的图片 binary。"""
-    if payload.get("role") != "user":
-        return
-    content = payload.get("content")
+def iter_user_image_binaries(content):
+    """找出用户消息里带 PV 路径的图片 binary。"""
     if not isinstance(content, list):
         return
     for item in content:
-        if not isinstance(item, dict) or item.get("type") != "binary" or item.get("url"):
+        if not isinstance(item, dict) or item.get("type") != "binary":
             continue
         if not str(item.get("mime_type") or "").startswith("image/"):
             continue
@@ -279,13 +276,48 @@ def iter_user_images_missing_url(payload: dict):
             yield item
 
 
-def fill_user_image_urls(file_service: "SandboxPvFileService", payload: dict) -> None:
-    """给缺 url 的用户图片 binary 签发 download_url。"""
-    session_code = payload.get("session_code") or ""
+def iter_user_images_missing_url(payload: dict):
+    """找出用户消息里缺展示 URL 的图片 binary。"""
+    if payload.get("role") != "user":
+        return
+    for item in iter_user_image_binaries(payload.get("content")):
+        if not item.get("url"):
+            yield item
+
+
+def fill_user_image_urls(
+    file_service: "SandboxPvFileService",
+    payload: dict,
+    *,
+    only_missing: bool = True,
+    url_cache: dict[str, str] | None = None,
+    session_code: str = "",
+    clear_on_failure: bool = False,
+) -> None:
+    """给用户图片 binary 签发 / 刷新 download_url。
+
+    ``only_missing=True``：写消息时只补缺 URL。
+    ``only_missing=False``：读历史或组模型输入时强制刷新，按 path 去重。
+    ``clear_on_failure``：签发失败时去掉旧 URL，避免把过期链接送给模型。
+    """
+    if payload.get("role") != "user":
+        return
+    session_code = session_code or payload.get("session_code") or ""
     if not session_code:
         return
-    for item in iter_user_images_missing_url(payload):
-        path = item.get("id") or item.get("path")
+    cache = url_cache if url_cache is not None else {}
+    for item in iter_user_image_binaries(payload.get("content")):
+        if only_missing and item.get("url"):
+            continue
+        path = str(item.get("id") or item.get("path") or "")
+        if not path:
+            continue
+        if path in cache:
+            if cache[path]:
+                item["url"] = cache[path]
+            elif clear_on_failure:
+                item.pop("url", None)
+            continue
         try:
             url_data = file_service.get_download_url(
                 session_code=session_code,
@@ -294,10 +326,16 @@ def fill_user_image_urls(file_service: "SandboxPvFileService", payload: dict) ->
             )
         except SandboxFileError:
             logger.exception("签发用户图片 URL 失败: session=%s path=%s", session_code, path)
+            cache[path] = ""
+            if clear_on_failure:
+                item.pop("url", None)
             continue
-        url = url_data.get("download_url")
+        url = url_data.get("download_url") or ""
+        cache[path] = url
         if url:
             item["url"] = url
+        elif clear_on_failure:
+            item.pop("url", None)
 
 
 class SandboxPvFileService:

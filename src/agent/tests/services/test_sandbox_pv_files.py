@@ -780,3 +780,56 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert "url" not in payload["content"][0]
+
+    def test_refreshes_existing_url_when_not_only_missing(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"},
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        assert payload["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/a.png", expires_in=3600
+        )
+
+    def test_dedupes_same_path_across_payloads(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        url_cache = {}
+        first = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-1"}],
+        }
+        second = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-2"}],
+        }
+
+        fill_user_image_urls(file_service, first, only_missing=False, url_cache=url_cache)
+        fill_user_image_urls(file_service, second, only_missing=False, url_cache=url_cache)
+
+        assert first["content"][0]["url"] == "https://cdn/fresh.png"
+        assert second["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once()
+
+    def test_clears_stale_url_when_refresh_fails(self):
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileError("boom")
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"}],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False, clear_on_failure=True)
+
+        assert "url" not in payload["content"][0]
