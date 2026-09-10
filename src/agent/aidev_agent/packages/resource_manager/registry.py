@@ -25,6 +25,15 @@ if TYPE_CHECKING:
     from aidev_agent.pydantic_models import AgentConfig
 
 
+# 会话沙箱 PV 作用域 → ``ChatSession.session_property`` 字段名。
+# session：agent 运行时挂载的会话卷；
+# draft：只挂给临时上传 sandbox 的草稿卷，运行中的 agent 读不到其中未发送的附件。
+SANDBOX_PV_PROPERTY_KEYS: dict[str, str] = {
+    "session": "sandbox_pv_id",
+    "draft": "sandbox_draft_pv_id",
+}
+
+
 @runtime_checkable
 class ResourceManagerProtocol(Protocol):
     """业务侧资源管理协议。
@@ -77,8 +86,13 @@ class ResourceManagerProtocol(Protocol):
         """取回会话详情（业务返回结构 = 后端 ``data`` 字段）。"""
         ...
 
-    def update_chat_session_sandbox_pv_id(self, session_code: str, sandbox_pv_id: str, **kwargs) -> dict:
-        """更新会话 ``session_property.sandbox_pv_id`` 并返回后端 ``data`` 字段。"""
+    def update_chat_session_sandbox_pv_id(
+        self, session_code: str, sandbox_pv_id: str, *, scope: str = "session", **kwargs
+    ) -> dict:
+        """更新会话属性中的沙箱 PV id 并返回后端 ``data`` 字段。
+
+        ``scope`` 决定写入哪个属性字段，取值见 ``SANDBOX_PV_PROPERTY_KEYS``。
+        """
         ...
 
     def update_chat_session_caller_context(self, session_code: str, caller_context: dict, **kwargs) -> dict:

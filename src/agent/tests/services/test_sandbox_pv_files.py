@@ -856,3 +856,226 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert "url" not in payload["content"][0]
+
+
+# ---------------------------------------------------------------------------
+# 草稿卷：上传隔离 + promote 搬运
+# ---------------------------------------------------------------------------
+
+
+SESSION_MOUNT = {"volume_id": "vol-abc", "mount_path": "/app/.storage/session"}
+DRAFT_MOUNT = {"volume_id": "vol-draft", "mount_path": "/app/.storage/draft"}
+
+
+@pytest.fixture
+def draft_service(mock_client):
+    """会话卷与草稿卷都已初始化的 service。"""
+    rm = MagicMock()
+    rm.retrieve_chat_session.return_value = {
+        "session_property": {"sandbox_pv_id": "vol-abc", "sandbox_draft_pv_id": "vol-draft"}
+    }
+    rm.get_paas_sbx_client.return_value = mock_client
+    return SandboxPvFileService(
+        resource_manager=rm,
+        executor_info={
+            "app_code": "test-app",
+            "app_secret": "test-secret",
+            "snapshot": DEFAULT_UPLOAD_SNAPSHOT,
+        },
+    )
+
+
+class TestEnsureDraftVolume:
+    def test_creates_draft_volume_with_scope_kwarg(self, service, resource_manager, mock_client):
+        resource_manager.update_chat_session_sandbox_pv_id.return_value = {
+            "session_property": {"sandbox_draft_pv_id": "vol-draft-new"}
+        }
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-draft-new"})
+
+        assert service.ensure_draft_volume("s1") == "vol-draft-new"
+
+        resource_manager.update_chat_session_sandbox_pv_id.assert_called_once_with(
+            "s1", "vol-draft-new", scope="draft"
+        )
+        create_kwargs = mock_client.create_agent_sandbox_volume.request.call_args.kwargs
+        assert create_kwargs["json"]["name"].startswith("session-draft-pv-s1-")
+
+    def test_reuses_persisted_draft_volume(self, draft_service, mock_client):
+        assert draft_service.ensure_draft_volume("s1") == "vol-draft"
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+
+
+class TestDraftUpload:
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_writes_into_draft_volume_and_mounts_both(self, mock_backend_cls, draft_service):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+
+        result = draft_service.upload_files("s1", [{"name": "a.txt", "content": b"a"}])
+
+        assert result["succeeded"] == 1
+        # 相对路径不变，变的只是它当前所在的卷
+        assert result["results"][0]["path"] == "files/a.txt"
+        assert backend.upload_file.call_args.args[1] == "/app/.storage/draft/files/a.txt"
+        assert backend.create_sandbox.call_args.kwargs["volume_mounts"] == [SESSION_MOUNT, DRAFT_MOUNT]
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_degrades_to_session_volume_when_manager_lacks_scope(
+        self, mock_backend_cls, service, resource_manager, mock_client
+    ):
+        """老平台的 ResourceManager 不认 scope：上传退回直写会话卷，不整体失败。"""
+
+        def _update(session_code, volume_id, **kwargs):
+            if kwargs.get("scope"):
+                raise TypeError("unexpected keyword argument 'scope'")
+            return {"session_property": {"sandbox_pv_id": volume_id}}
+
+        resource_manager.update_chat_session_sandbox_pv_id.side_effect = _update
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+
+        result = service.upload_files("s1", [{"name": "a.txt", "content": b"a"}])
+
+        assert result["succeeded"] == 1
+        assert backend.upload_file.call_args.args[1] == "/app/.storage/session/files/a.txt"
+        assert backend.create_sandbox.call_args.kwargs["volume_mounts"] == [SESSION_MOUNT]
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_image_download_url_is_signed_against_draft_volume(self, mock_backend_cls, draft_service, mock_client):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+        mock_client.get_download_url.request.return_value = _mock_paas_response({"download_url": "https://img"})
+
+        result = draft_service.upload_files("s1", [{"name": "a.png", "content": b"p", "mime_type": "image/png"}])
+
+        assert result["results"][0]["download_url"] == "https://img"
+        assert mock_client.get_download_url.request.call_args.kwargs["path_params"]["volume_id"] == "vol-draft"
+
+
+class TestPromoteFiles:
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_moves_drafts_into_session_volume(self, mock_backend_cls, draft_service):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+
+        result = draft_service.promote_files("s1", ["files/a.txt", "files/b.png"])
+
+        assert result == {
+            "count": 2,
+            "succeeded": 2,
+            "failed": 0,
+            "results": [
+                {"path": "files/a.txt", "status": "success"},
+                {"path": "files/b.png", "status": "success"},
+            ],
+        }
+        commands = [call.args[1] for call in backend.exec_command.call_args_list]
+        assert commands == [
+            ["mkdir", "-p", "/app/.storage/session/files"],
+            ["mv", "-f", "/app/.storage/draft/files/a.txt", "/app/.storage/session/files/a.txt"],
+            ["mv", "-f", "/app/.storage/draft/files/b.png", "/app/.storage/session/files/b.png"],
+        ]
+        assert backend.create_sandbox.call_args.kwargs["volume_mounts"] == [SESSION_MOUNT, DRAFT_MOUNT]
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_reuses_upload_sandbox(self, mock_backend_cls, draft_service):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
+
+        draft_service.upload_files("s1", [{"name": "a.txt", "content": b"a"}])
+        draft_service.promote_files("s1", ["files/a.txt"])
+
+        assert backend.create_sandbox.call_count == 1
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_per_file_failure_is_reported(self, mock_backend_cls, draft_service):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sandbox-upload"
+        backend.exec_command.side_effect = [
+            SimpleNamespace(stdout="", stderr="", exit_code=0),
+            SimpleNamespace(stdout="", stderr="No such file or directory", exit_code=1),
+            SimpleNamespace(stdout="", stderr="", exit_code=0),
+        ]
+
+        result = draft_service.promote_files("s1", ["files/gone.txt", "files/ok.txt"])
+
+        assert result["succeeded"] == 1
+        assert result["failed"] == 1
+        assert result["results"][0] == {
+            "path": "files/gone.txt",
+            "status": "failed",
+            "error": "No such file or directory",
+        }
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_rebuilds_sandbox_when_gone(self, mock_backend_cls, draft_service):
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.side_effect = ["sandbox-upload", "sandbox-upload-2"]
+        backend.exec_command.side_effect = [
+            _mock_http_error(404, "AGENT_SANDBOX_NOT_FOUND"),
+            SimpleNamespace(stdout="", stderr="", exit_code=0),
+            SimpleNamespace(stdout="", stderr="", exit_code=0),
+        ]
+
+        result = draft_service.promote_files("s1", ["files/a.txt"])
+
+        assert result["succeeded"] == 1
+        assert backend.create_sandbox.call_count == 2
+
+    def test_returns_success_when_draft_volume_missing(self, service, mock_client):
+        """上传已降级直写会话卷时无需搬运，按成功返回且不触碰 sandbox。"""
+        result = service.promote_files("s1", ["files/a.txt"])
+
+        assert result == {
+            "count": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "results": [{"path": "files/a.txt", "status": "success"}],
+        }
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "../../etc/passwd",
+            "files/../../etc/passwd",
+            "/etc/passwd",
+            "files/./a.txt",
+            "files/sub/a.txt",
+            "a.txt",
+            "",
+        ],
+    )
+    def test_rejects_illegal_path(self, draft_service, path):
+        with pytest.raises(SandboxFileInvalidArgumentError):
+            draft_service.promote_files("s1", [path])
+
+    def test_rejects_empty_and_oversized_batch(self, draft_service):
+        with pytest.raises(SandboxFileInvalidArgumentError):
+            draft_service.promote_files("s1", [])
+        with pytest.raises(SandboxFileInvalidArgumentError):
+            draft_service.promote_files("s1", [f"files/{i}.txt" for i in range(MAX_SESSION_UPLOAD_FILES + 1)])
+
+
+class TestScopedSingleFileCalls:
+    def test_delete_file_targets_draft_volume(self, draft_service, mock_client):
+        mock_client.delete_file.request.return_value = _mock_paas_response()
+
+        draft_service.delete_file("s1", "files/a.txt", scope="draft")
+
+        call_kwargs = mock_client.delete_file.request.call_args.kwargs
+        assert call_kwargs["path_params"]["volume_id"] == "vol-draft"
+
+    def test_delete_file_defaults_to_session_volume(self, draft_service, mock_client):
+        mock_client.delete_file.request.return_value = _mock_paas_response()
+
+        draft_service.delete_file("s1", "files/a.txt")
+
+        call_kwargs = mock_client.delete_file.request.call_args.kwargs
+        assert call_kwargs["path_params"]["volume_id"] == "vol-abc"
