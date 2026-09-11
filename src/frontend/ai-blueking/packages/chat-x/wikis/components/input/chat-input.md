@@ -436,7 +436,7 @@ const handleSendMessage = async (
 
 - `onUpload` 一次选择传入**全部** `File[]`，返回同序的结果数组（也可对单文件返回单个对象）；元素为 `{ download_url?: string; id?: string; path?: string; status?: 'failed' | 'success' }`
 - 文件自动去重（基于 `name + size + lastModified` 复合键），不会重复上传
-- 上传成功后将响应 `path` 保存为附件的 `outputId`（`id` 缺省时也以 `path` 回填）。具有 `outputId` 的文件立即进入 `@` / `+` 的「会话产物」菜单和容器预览侧栏；发送时保留 `outputId`，已发送附件与助手产物共用引用、预览和下载能力。仅有 `id`、URL 或文件名的旧附件不作为会话产物收集。
+- 上传成功后将响应 `path` 保存为附件的 `outputId`（`id` 缺省时也以 `path` 回填）。**展示名始终取本地 `File.name`（编辑态回填时取 `filename`），选中即可见、不等上传返回，上传完成后也不会跳变**；`artifact` 标签的 `label` 与 `@` 菜单条目名同源于此。具有 `outputId` 的文件立即进入 `@` / `+` 的「会话产物」菜单和容器预览侧栏；发送时保留 `outputId`，已发送附件与助手产物共用引用、预览和下载能力。仅有 `id`、URL 或文件名的旧附件不作为会话产物收集。
 - 取消附件时立即从 UI 移除，并触发 `deleteFile` 事件（模板使用 `@delete-file`），参数为 `Partial<UploadFile>`。业务方可根据 `file.id` 调用删除接口；组件不等待接口结果，成功或失败均不恢复附件。上传中 / 上传失败的附件也会触发事件，此时 `id` 可能为空，由业务方决定是否调用接口。发送后清空列表不会触发此事件。
 - **上传中或存在失败附件时禁止发送**（点击、Enter、`triggerSendMessage` 均拦截）。失败附件需用户删除后才能再发；不要把附件 Pending 映射成 `MessageStatus.Pending`
 - 拖拽只响应从系统拖入的文件（编辑器内部标签拖动不会误触发），悬停时框体切换为蓝色描边 + 浅蓝底

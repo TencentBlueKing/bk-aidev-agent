@@ -165,6 +165,7 @@
     UploadStatus,
   } from '../../types';
   import {
+    appendArtifactTags,
     formatUploadNotAddedMessage,
     getFileIdentity,
     getUploadFileName,
@@ -394,6 +395,17 @@
     const filesHeight = filesRef.value?.clientHeight || 0;
     maxHeight.value = defaultHeight + filesHeight;
   });
+  /**
+   * 发送时随消息一起交出的文档：编辑器内容 + 待发送附件的 artifact 标签。
+   *
+   * 附件不是编辑器里的节点，但它和 `@` 插入的产物是同一种资源引用，
+   * 因此在这里补齐——业务方只需原样持久化，不必自己从 content 反推。
+   */
+  const buildSendDocSchema = (): TagSchema => {
+    // 编辑态回填纯文本消息时 modelValue 是字符串，此时文档里不可能有标签
+    const doc: TagSchema = Array.isArray(props.modelValue) ? props.modelValue : [];
+    return appendArtifactTags(doc, uploadedArtifacts.value);
+  };
   const handleSendMessage = async () => {
     try {
       if (effectiveSendDisabledTip.value) {
@@ -425,7 +437,7 @@
           });
         }
       }
-      props.onSendMessage?.(content, props.modelValue as TagSchema);
+      props.onSendMessage?.(content, buildSendDocSchema());
       uploadFiles.value = [];
     } catch (error) {
       console.error(error);
@@ -483,6 +495,8 @@
       fileItem.id = res.id || res.path;
       fileItem.outputId = res.path;
       fileItem.url = res.download_url;
+      // 不用响应里的文件名覆盖展示名：本地名选中即可见、上传完成后也不会跳变，
+      // 而上传本就是原样提交 File，服务端登记名与本地名一致。
       fileItem.status = UploadStatus.Success;
       return;
     }

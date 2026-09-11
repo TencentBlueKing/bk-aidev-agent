@@ -73,6 +73,8 @@
 
 **标签回显**：`property.docSchema` 是发送时输入框的富文本文档。**只有文档里真的含标签节点时**才走 [MentionText](/components/rendering/mention-text) 结构化渲染，纯文本文档仍走 `TextContent`——历史消息与第三方消息的表现因此保持不变。`content` 始终是纯文本，后端契约不变。
 
+**附件标签不重复展示**：`ChatInput` 发送时会把待发送附件补成 `artifact` 标签写进文档，本组件在渲染与编辑回填前会剥掉 `value` 命中当前附件的那些标签（`outputId` 与 `id` 都参与匹配，历史消息经 chat-helper 转换后只剩 `id`），同一文件只由 `FileContent` 卡片承载。整行标签被剥掉后不留空行，用户手输的空行照常保留；`@` 选中的其它资源、以及没有附件承载的 `artifact` 标签都照常回显。
+
 编辑态同样以 `docSchema` 回填，否则改完这条消息已选资源会退化成纯文本；因此业务侧在 `onInputConfirm` 里要把新的 `docSchema` 一起写回。
 
 **正文折叠**：正文外层套 [CollapsibleContent](/components/rendering/collapsible-content)，超过 `CONST_USER_MESSAGE_MAX_HEIGHT`（200px）时折叠并展示「显示更多 / 收起」。

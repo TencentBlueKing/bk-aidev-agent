@@ -113,7 +113,7 @@
     type UploadFile,
     MessageToolsStatus,
   } from '../../../types';
-  import { mergeToolsById } from '../../../utils';
+  import { mergeToolsById, omitArtifactTags } from '../../../utils';
   import ShortcutRender from '../../ai-shortcut/shortcut-render/shortcut-render.vue';
   import CiteContent from '../../chat-content/cite-content/cite-content.vue';
   import CollapsibleContent from '../../chat-content/collapsible-content/collapsible-content.vue';
@@ -201,19 +201,23 @@
     return null;
   }) as Partial<Shortcut>;
 
-  /**
-   * 仅当文档里真的含标签时才走结构化渲染：
-   * 纯文本走原有 TextContent，保持历史消息与第三方消息的表现不变。
-   */
-  const mentionDoc = computed(() => {
-    const doc = props.property?.docSchema;
-    return doc?.some(line => line.some(node => node.type === 'tag')) ? doc : undefined;
-  });
-
   // 二进制文件
   const binaryFiles = computed(() => {
     if (!Array.isArray(props.content)) return [];
     return props.content?.filter(item => item.type === MessageContentType.Binary) as UploadFile[];
+  });
+
+  /**
+   * 仅当文档里真的含标签时才走结构化渲染：
+   * 纯文本走原有 TextContent，保持历史消息与第三方消息的表现不变。
+   *
+   * 发送时附件会被补成 artifact 标签，这里剥掉由附件卡片承载的那些，避免同一文件重复展示。
+   */
+  const mentionDoc = computed(() => {
+    const doc = props.property?.docSchema;
+    if (!doc) return undefined;
+    const visibleDoc = omitArtifactTags(doc, binaryFiles.value);
+    return visibleDoc.some(line => line.some(node => node.type === 'tag')) ? visibleDoc : undefined;
   });
   // 文本内容（统一为 string[]，兼容 content 为 string 或 InputContent[]）
   const textParts = computed((): string[] => {

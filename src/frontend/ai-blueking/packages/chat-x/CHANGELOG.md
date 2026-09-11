@@ -10,6 +10,8 @@
 
 ### Added
 
+- **上传附件自动进入文档**：`ChatInput` 发送前把待发送附件补成一行 `artifact` 标签写进 `onSendMessage` 的 `docSchema`（`file` → `artifact`、文件名 → `label`、上传接口 `path` → `value`），业务方原样持久化即可，无需从 `content` 的 Binary 反推。编辑回填的文档已含该文件标签时按 `value` 去重，不重复追加。附件展示名仍取本地 `File.name`，选中即可见、不等上传返回。
+- 新增工具函数 `toArtifactTagNode` / `appendArtifactTags` / `omitArtifactTags`，供附件与 `artifact` 标签互转。
 - `ChatInput` / `ChatContainer` 新增 `deleteFile(file: Partial<UploadFile>)` 事件（模板监听 `@delete-file`）：取消输入框附件时携带 `id` 等文件信息，供业务方调用删除接口；UI 立即移除附件，不等待接口结果，成功或失败均不恢复附件。
 - Playground 新增上传、删除及本地文件下载 mock，上传响应包含 `id` / `path`；补充已上传文件和无 `outputId` 的历史附件示例，支持验证引用、预览及菜单过滤行为。
 
@@ -22,6 +24,7 @@
 
 ### Fixed
 
+- 上传附件不再同时以文件卡片和 Mention 标签重复展示：`UserMessage` 回显与编辑回填前会剥掉 `value` 命中当前附件的 `artifact` 标签（`outputId` 与 `id` 都参与匹配，兼容只剩 `id` 的历史消息）。
 - 修复仅含 `id` 的回填附件无法取消的问题，删除时优先按文件 `id` 匹配。
 - 带 `outputId` 的图片附件在缩略图失效后仍可打开产物预览；取消或发送附件后，同步清理待发送文件的菜单与预览数据。
 
