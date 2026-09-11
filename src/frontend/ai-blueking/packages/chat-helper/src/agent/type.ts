@@ -105,6 +105,7 @@ export interface IAgentInfo {
   conversationSettings?: {
     commands?: IAgentCommand[];
     enableChatSession?: boolean;
+    enableWordSelectionPopup?: boolean;
     openingRemark?: string;
     predefinedQuestions?: string[];
   };
@@ -130,6 +131,7 @@ export interface IAgentInfoApi {
   conversation_settings?: {
     commands?: IAgentCommandApi[];
     enable_chat_session?: boolean;
+    enable_word_selection_popup?: boolean;
     opening_remark?: string;
     predefined_questions?: string[];
   };

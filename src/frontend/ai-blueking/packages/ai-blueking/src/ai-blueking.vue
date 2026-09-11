@@ -30,7 +30,7 @@
             :chat-helper="chatHelper"
             :draggable="props.draggable"
             :dropdown-menu-config="props.dropdownMenuConfig"
-            :enable-chat-session="props.enableChatSession"
+            :enable-chat-session="effectiveEnableChatSession"
             :has-permission="hasPermission"
             :has-session-contents="hasSessionContents"
             :is-compression-height="isCompressed"
@@ -165,7 +165,7 @@
 
       <!-- 划词选择弹窗（使用 chat-x 的 AiSelection 组件） -->
       <AiSelection
-        v-if="props.enablePopup"
+        v-if="effectiveEnablePopup"
         v-model:visible="aiSelectionVisible"
         :exclude-selectors="['.draggable-container-wrapper']"
         :max-shortcut-count="props.shortcutLimit"
@@ -238,6 +238,8 @@
     agentResources,
     agentPrompts,
     agentSkills,
+    effectiveEnableChatSession,
+    effectiveEnablePopup,
     handleError,
     reportSdkError,
     ensureSessionReady,

@@ -14,9 +14,9 @@
         @mousedown.stop
       >
         <div class="ai-selection-popover-content">
-          <slot :shortcuts="shortcuts">
+          <slot :shortcuts="displayShortcuts">
             <template
-              v-for="(shortcut, index) in shortcuts.slice(0, maxShortcutCount)"
+              v-for="(shortcut, index) in displayShortcuts.slice(0, maxShortcutCount)"
               :key="shortcut.id"
             >
               <ShortcutBtn
@@ -25,7 +25,7 @@
                 @click="handleSelectShortcut(shortcut)"
               />
             </template>
-            <template v-if="shortcuts.length > maxShortcutCount">
+            <template v-if="displayShortcuts.length > maxShortcutCount">
               <div
                 class="ai-divider"
                 style="margin: 0 4px"
@@ -61,7 +61,7 @@
                     class="shortcut-menu"
                   >
                     <ShortcutBtn
-                      v-for="shortcut in shortcuts.slice(maxShortcutCount)"
+                      v-for="shortcut in displayShortcuts.slice(maxShortcutCount)"
                       :key="shortcut.id"
                       mode="menu"
                       :shortcut="shortcut"
@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, onMounted, onUnmounted, shallowRef, useTemplateRef } from 'vue';
+  import { computed, nextTick, onMounted, onUnmounted, shallowRef, useTemplateRef } from 'vue';
 
   import { Tippy, useTippy } from 'vue-tippy';
 
@@ -107,6 +107,8 @@
   );
 
   const visible = defineModel<boolean>('visible', { required: true });
+
+  const displayShortcuts = computed(() => (props.shortcuts?.length ? props.shortcuts : DEFAULT_SHORTCUTS));
 
   const emits = defineEmits<{
     (e: 'selectShortcut', shortcut: Shortcut, text: string): void;

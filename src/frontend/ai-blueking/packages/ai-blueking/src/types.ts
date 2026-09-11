@@ -219,7 +219,7 @@ export interface AIBluekingProps {
 
   /** 下拉菜单配置 */
   dropdownMenuConfig?: DropdownMenuConfig;
-  /** 是否启用会话管理 */
+  /** 是否启用会话管理（与 info conversationSettings.enableChatSession 联动） */
   enableChatSession?: boolean;
   /**
    * 是否启用模型选择（默认 true）
@@ -230,7 +230,7 @@ export interface AIBluekingProps {
    * 外部传入的模型列表（有值时跳过内部拉取，优先使用）
    */
   models?: ILlmItem[] | IModelOption[];
-  /** 是否启用选中文本弹窗 */
+  /** 是否启用选中文本弹窗（与 info conversationSettings.enableWordSelectionPopup 联动） */
   enablePopup?: boolean;
   /** 接口错误时是否自动弹出 Message 提示，默认 true；设为 false 可自行通过 sdk-error 事件处理（统一错误出口控制） */
   errorToast?: boolean;
@@ -382,6 +382,7 @@ export interface IAgentInfoData {
   /** 会话设置 */
   conversationSettings?: {
     enableChatSession?: boolean;
+    enableWordSelectionPopup?: boolean;
     openingRemark?: string;
     predefinedQuestions?: string[];
   };

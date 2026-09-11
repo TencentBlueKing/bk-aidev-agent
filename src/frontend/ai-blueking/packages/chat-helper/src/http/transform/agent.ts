@@ -59,6 +59,7 @@ export const transferAgentInfoApi2AgentInfo = (data: IAgentInfoApi): IAgentInfo 
       supportUpload: command.support_upload,
     })),
     enableChatSession: data?.conversation_settings?.enable_chat_session,
+    enableWordSelectionPopup: data?.conversation_settings?.enable_word_selection_popup,
   },
   promptSetting: data?.prompt_setting
     ? {

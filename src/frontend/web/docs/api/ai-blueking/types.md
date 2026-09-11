@@ -33,11 +33,11 @@ interface AIBluekingProps {
   updateTools?: IToolBtn[];
 
   // 功能开关
-  /** 是否启用选中文本弹窗（AiSelection） */
+  /** 是否启用选中文本弹窗（AiSelection）；与 info enableWordSelectionPopup 联动 */
   enablePopup?: boolean;
   /** 是否可拖拽 */
   draggable?: boolean;
-  /** 是否启用会话管理 */
+  /** 是否启用会话管理；与 info enableChatSession 联动 */
   enableChatSession?: boolean;
   /**
    * 是否启用模型选择（默认 true，≥ v2.2.2）
@@ -630,6 +630,7 @@ interface IAgentInfoData {
   /** 会话设置 */
   conversationSettings?: {
     enableChatSession?: boolean;
+    enableWordSelectionPopup?: boolean;
     openingRemark?: string;
     predefinedQuestions?: string[];
   };

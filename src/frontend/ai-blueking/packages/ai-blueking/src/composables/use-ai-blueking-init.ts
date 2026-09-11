@@ -278,6 +278,18 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     }));
   });
 
+  const effectiveEnableChatSession = computed(
+    () =>
+      props.enableChatSession !== false &&
+      agentInfo.value?.conversationSettings?.enableChatSession !== false,
+  );
+
+  const effectiveEnablePopup = computed(
+    () =>
+      props.enablePopup !== false &&
+      agentInfo.value?.conversationSettings?.enableWordSelectionPopup !== false,
+  );
+
   // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败）
   watch(
     () => bootstrapError.value,
@@ -404,6 +416,8 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     agentResources,
     agentPrompts,
     agentSkills,
+    effectiveEnableChatSession,
+    effectiveEnablePopup,
     handleError,
     reportSdkError,
     ensureSessionReady,

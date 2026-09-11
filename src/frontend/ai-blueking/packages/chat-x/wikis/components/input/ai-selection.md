@@ -501,7 +501,7 @@ v-model:visible="selectionVisible"
 | 属性名           | 类型         | 默认值              | 必填 | 说明                                                    |
 | ---------------- | ------------ | ------------------- | ---- | ------------------------------------------------------- |
 | visible          | `boolean`    | -                   | ✅   | 控制弹窗显示，必须使用 `v-model:visible`                |
-| shortcuts        | `Shortcut[]` | `DEFAULT_SHORTCUTS` | -    | 快捷指令列表，默认为内置「问问小鲸」                    |
+| shortcuts        | `Shortcut[]` | `DEFAULT_SHORTCUTS` | -    | 快捷指令列表；未传或空数组时回退内置「问问小鲸」        |
 | maxShortcutCount | `number`     | `3`                 | -    | 直接展示的最大指令数，超出收起到「更多」菜单            |
 | offset           | `number`     | `10`                | -    | 弹窗与选区的垂直间距（px）                              |
 | excludeSelectors | `string[]`   | `[]`                | -    | 排除的 CSS 选择器数组，选区在这些选择器内部时不显示弹窗 |

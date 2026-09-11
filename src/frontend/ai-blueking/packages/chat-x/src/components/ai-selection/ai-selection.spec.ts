@@ -166,6 +166,26 @@ describe('AiSelection', () => {
       expect(wrapper.find('.mock-shortcut-btn').exists()).toBe(true);
     });
 
+    it('shortcuts 为空数组时应该回退到默认问问小鲸', async () => {
+      wrapper = mount(AiSelection, {
+        props: {
+          visible: true,
+          shortcuts: [],
+          'onUpdate:visible': (val: boolean) => wrapper.setProps({ visible: val }),
+        },
+        global: {
+          stubs: {
+            Teleport: true,
+          },
+        },
+      });
+
+      await nextTick();
+      const btns = wrapper.findAll('.mock-shortcut-btn');
+      expect(btns.length).toBe(1);
+      expect(btns[0].attributes('data-shortcut-id')).toBe('ai-chat');
+    });
+
     it('应该渲染自定义的快捷指令', async () => {
       const shortcuts = [createShortcut('custom-1', '自定义指令1'), createShortcut('custom-2', '自定义指令2')];
 
@@ -375,7 +395,9 @@ describe('AiSelection', () => {
 
       await nextTick();
       expect(wrapper.find('.ai-selection-popover').exists()).toBe(true);
-      expect(wrapper.findAll('.mock-shortcut-btn').length).toBe(0);
+      const btns = wrapper.findAll('.mock-shortcut-btn');
+      expect(btns.length).toBe(1);
+      expect(btns[0].attributes('data-shortcut-id')).toBe('ai-chat');
     });
   });
 });
