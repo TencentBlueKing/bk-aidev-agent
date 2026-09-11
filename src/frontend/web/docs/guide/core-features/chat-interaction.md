@@ -185,6 +185,17 @@ stopChat()
     → emit('stop')
 ```
 
+## 文件上传 {#文件上传}
+
+自 **v2.2.4** 起，输入区与消息态支持通用文件附件（不再限于图片）。`ChatBot` / `AIBlueking` 已接入，无需额外配置。
+
+- **允许类型**：默认 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名）。系统选择框带 `accept` 过滤；拖拽 / 粘贴仍会再按扩展名校验，不支持的格式会提示「因格式不支持未添加」且不入队。
+- **数量**：待发送列表最多 **9** 个；已满时再次选择会弹出错误提示且不入队。一次选择多个文件时 `onUpload` 只回调一次并传入 `File[]`。
+- **接口**：`session.uploadFiles` 按 `agent.info.agentSdkVersion` 分流——能解析且 `< 2.2.2rc25` 走旧 `upload/{fileName}/`（逐个）；否则（含空字符串 / 缺省）走 `pv_files/upload/`（一次 multipart）。上传中 / 失败态会展示在附件卡片上。
+- **附件按钮显隐**：仍跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先。
+
+原子组装时请自行把 `ChatInput.onUpload` 接到 `session.uploadFiles`。详见 [chat-x ChatInput](/api/chat-x/components#chatinput)、[chat-helper SDK](/api/chat-helper/sdk)。
+
 ## 刷新 / 切会话续流
 
 页面刷新或切换会话时，若当前会话仍为 `Running`，SDK 会调用 `resumeStreamingChat`，请求体带 `execute_kwargs.stream_mode: "attach"`，只接管已有流、不新建生产者。新发送、重发、HITL 恢复仍用默认 `"start"`。

@@ -170,7 +170,7 @@ const onSessionReady = (data: { openingRemark: string; predefinedQuestions: stri
 
 Header 提供以下会话操作入口：
 
-- **新建会话按钮**：调用 `SessionBusinessManager.createNewSession()`
+- **新建会话按钮**：调用 `SessionBusinessManager.createNewSession()`（自 **v2.2.4** 起会同时清空输入框引用内容）
 - **历史记录下拉**：展示会话列表，点击切换会话
 - **更多菜单**：重命名、自动生成名称、分享等
 

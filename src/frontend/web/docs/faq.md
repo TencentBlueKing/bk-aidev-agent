@@ -310,3 +310,19 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 不传 `timezone` 时跟随浏览器时区。四档格式（今天 / 昨天 / 今年内 / 跨年）见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示)。
 
 没有时间通常是因为该条（或 AI 回复组内所有消息）没有合法 `createdAt`：历史接口未返回 `created_at`，或本轮流式尚未收到 `RUN_FINISHED`。此时组件不渲染占位。
+
+---
+
+## 如何关闭多会话或划词弹窗？为什么设了 prop 还不生效？
+
+自 **v2.2.4** 起，`AIBlueking` 的 `enableChatSession` / `enablePopup` 与 `agent/info` 的 `conversationSettings.enableChatSession` / `enableWordSelectionPopup` **联动**：宿主或智能体**任一为 `false` 即关闭**。
+
+```vue
+<!-- 宿主关闭划词弹窗 -->
+<AIBlueking :enable-popup="false" />
+
+<!-- 宿主关闭 Header 历史 / 新建会话 -->
+<AIBlueking :enable-chat-session="false" />
+```
+
+若宿主保持默认 `true`，仍可能被智能体配置关掉。shortcut 为空时划词弹窗回退内置「问问小鲸」。详见 [内容引用](/guide/core-features/content-referencing)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。

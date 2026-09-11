@@ -170,7 +170,8 @@ Session 模块管理会话的完整生命周期。
 | `renameSession`             | `(code: string) => Promise<void>`                             | 重命名会话       |
 | `getSessionFeedbackReasons` | `(rate: string) => Promise<string[]>`                         | 获取反馈原因列表 |
 | `postSessionFeedback`       | `(params: object) => Promise<void>`                           | 提交反馈         |
-| `uploadFile`                | `(code: string, file: File) => Promise<void>`                 | 上传文件到会话   |
+| `uploadFile`                | `(code: string, file: File) => Promise<IUploadFileResult \| undefined>` | 上传单个文件；按 `agentSdkVersion` 分流旧接口 / `pv_files` |
+| `uploadFiles`               | `(code: string, files: File[]) => Promise<IUploadFileResult[]>` | 批量上传（**≥ v2.2.4**）；新接口一次 multipart，旧接口仍逐个 |
 
 ### 用法示例
 

@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 | --- | --- |
 | `changelog.md` | 版本更新记录，新版本插在文首 |
-| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3） |
+| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4） |
 
 ## 指南 `/guide/`
 
@@ -22,7 +22,7 @@
 
 | 链接 | 文件 |
 | --- | --- |
-| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3） |
+| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3）；`enablePopup` / `enableChatSession` 与 info 联动（≥ v2.2.4） |
 | `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` | 嵌入式 ChatBot；**业务 Header**（会话名 + `v-model:asideCollapsed`，侧栏固定右侧） |
 | `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
 | `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |
@@ -31,17 +31,17 @@
 
 | 链接 | 文件 | 典型更新场景 |
 | --- | --- | --- |
-| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源 |
+| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
-| `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用 |
+| `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `/` 提示词、`@` 资源 |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`、upload=`support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
-| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；空态也可打开侧栏 / 产物空态（≥ v2.2.3）；侧栏固定右侧 + 嵌入模式须业务 Header |
-| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`、`messageTools`/`updateTools`；`size` / `timezone`（≥ v2.2.3） |
+| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；空态也可打开侧栏 / 产物空态（≥ v2.2.3）；执行情况面板不展示节点重试/跳过（≥ v2.2.4）；侧栏固定右侧 + 嵌入模式须业务 Header |
+| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`（≥ v2.2.4）、`messageTools`/`updateTools`；动态 placeholder（≥ v2.2.4）；`size` / `timezone`（≥ v2.2.3） |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
 ### 高级用法
@@ -76,6 +76,10 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 
 `stream_mode`（`start` / `attach`）落点：指南 `chat-interaction.md`「刷新 / 切会话续流」、`session-management.md` 切换会话；API `api/chat-helper/sdk.md` `#stream-mode`、`api/chat-helper/types.md` `StreamMode`。ChatBot / AIBlueking 无新 Props。
 
+文件上传（≥ v2.2.4）落点：指南 `chat-interaction.md`「文件上传」；API `api/chat-x/components.md` `ChatInput`（`onUpload` / `accept`）、`api/chat-helper/sdk.md` `uploadFile` / `uploadFiles`。默认 `pv_files/upload`，旧 SDK 走逐个 `upload/{fileName}/`。
+
+`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）：指南 `aiblueking-floating.md`、`content-referencing.md`；FAQ「如何关闭多会话或划词弹窗」；API `aiblueking.md` / `types.md`。任一为 `false` 即关闭。
+
 ## 示例 `/demos/`
 
 `demos/full-panel.md`、`basic-usage.md`、`atomic-assembly.md` — 可运行示例，大改交互时同步。
@@ -88,7 +92,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 - `themeConfig.sidebar["/guide/"]` 等 — 侧栏（**新指南页必改**）
 - 顶栏版本下拉读 `changelog.md` 首条 `## vX.Y.Z`（`utils/resolve-changelog-version.js`）
 
-演示依赖（npm 已发布后再改）：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 应对齐该正式版及其配套子包（当前 2.2.3 / 0.0.49-beta.12 / 0.0.12-beta.24）。
+演示依赖（npm 已发布后再改）：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 应对齐该正式版及其配套子包（当前 2.2.4 / 0.0.51 / 0.0.12）。
 
 ## 源码对照（写文档前建议阅读）
 

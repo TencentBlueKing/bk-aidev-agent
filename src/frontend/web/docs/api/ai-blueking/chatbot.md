@@ -63,7 +63,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `helloText` | `string` | — | 欢迎语 |
-| `placeholder` | `string` | — | 输入框占位符 |
+| `placeholder` | `string` | — | 输入框占位符；未传时按 Skill / Prompt / 资源动态生成（**≥ v2.2.4**） |
 | `renderMode` | `RenderMode` | `'chat'` | 渲染模式：`chat`（默认）、`share`（分享）、`test`（测试） |
 | `height` | `string \| number` | — | 容器高度 |
 | `maxWidth` | `string \| number` | — | 最大宽度 |
