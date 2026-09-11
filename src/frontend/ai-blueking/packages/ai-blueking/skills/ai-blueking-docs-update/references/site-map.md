@@ -35,7 +35,7 @@
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
-| `/guide/core-features/prompts` | `prompts.md` | 用户 `/` 提示词、`@` 资源 |
+| `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill、`@` 资源；`property.docSchema` 协议（≥ chat-x 0.0.52） |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`、upload=`support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |

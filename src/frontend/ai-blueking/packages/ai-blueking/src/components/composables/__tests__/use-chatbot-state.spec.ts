@@ -110,45 +110,47 @@ describe('useChatbotState', () => {
     });
   });
 
-  describe('effectiveResources', () => {
-    it('should use props resources when provided', () => {
-      const resources = [{ id: 'r1', label: 'Res1' }] as any;
-      const params = createParams({ props: { resources } as ChatBotProps });
-      const { effectiveResources } = useChatbotState(params);
-      expect(effectiveResources.value).toEqual(resources);
+  describe('effectiveMenuSources', () => {
+    it('should prefer props over agent.info and merge three channels', () => {
+      const params = createParams({
+        props: {
+          skills: [{ skill_code: 's1', skill_name: 'Skill 1', description: '', icon: '' }],
+          resources: [{ type: 'tool', name: '搜索工具', code: 'search_tool', id: 1, icon: '' }],
+          prompts: ['完整提示词'],
+        } as ChatBotProps,
+      });
+      const { effectiveMenuSources } = useChatbotState(params);
+      expect(effectiveMenuSources.value).toEqual([
+        { type: 'skill', id: 's1', name: 'Skill 1', description: '', icon: '' },
+        { type: 'tool', id: 'search_tool', name: '搜索工具', icon: '' },
+        { type: 'prompt', id: 'prompt-0', name: '完整提示词', content: '完整提示词' },
+      ]);
     });
 
-    it('should fall back to agent info resources', () => {
-      const chatHelper = shallowRef(createMockChatHelper());
-      (chatHelper.value.agent.info as any).value = { resources: [{ id: 'r2', label: 'Res2' }] };
-      const params = createParams({ chatHelper, props: {} as ChatBotProps });
-      const { effectiveResources } = useChatbotState(params);
-      expect(effectiveResources.value).toEqual([{ id: 'r2', label: 'Res2' }]);
-    });
-
-    it('should return empty array when no resources available', () => {
-      const params = createParams({ props: {} as ChatBotProps });
-      const { effectiveResources } = useChatbotState(params);
-      expect(effectiveResources.value).toEqual([]);
-    });
-  });
-
-  describe('effectivePrompts', () => {
-    it('should use props prompts when provided', () => {
-      const prompts = ['prompt1', 'prompt2'];
-      const params = createParams({ props: { prompts } as ChatBotProps });
-      const { effectivePrompts } = useChatbotState(params);
-      expect(effectivePrompts.value).toEqual(prompts);
-    });
-
-    it('should fall back to agent info predefined questions', () => {
+    it('should fall back to agent.info with real API shape', () => {
       const chatHelper = shallowRef(createMockChatHelper());
       (chatHelper.value.agent.info as any).value = {
+        relatedSkills: [{ skill_code: 'code_review', skill_name: '代码审查', description: 'desc', icon: 'i' }],
+        resources: [
+          { type: 'mcp', name: '监控', code: 'monitor_mcp', id: 2, icon: '' },
+          { type: 'knowledgebase', name: '运维知识库', code: 'ops_kb', id: 58, icon: '' },
+        ],
         conversationSettings: { predefinedQuestions: ['q1'] },
       };
       const params = createParams({ chatHelper, props: {} as ChatBotProps });
-      const { effectivePrompts } = useChatbotState(params);
-      expect(effectivePrompts.value).toEqual(['q1']);
+      const { effectiveMenuSources } = useChatbotState(params);
+      expect(effectiveMenuSources.value.map(item => `${item.type}:${item.id}`)).toEqual([
+        'skill:code_review',
+        'mcp:monitor_mcp',
+        'knowledgebase:58',
+        'prompt:prompt-0',
+      ]);
+    });
+
+    it('should return empty array when no menu sources available', () => {
+      const params = createParams({ props: {} as ChatBotProps });
+      const { effectiveMenuSources } = useChatbotState(params);
+      expect(effectiveMenuSources.value).toEqual([]);
     });
   });
 

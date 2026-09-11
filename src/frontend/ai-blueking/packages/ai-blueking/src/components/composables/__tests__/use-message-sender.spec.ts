@@ -20,27 +20,24 @@ function createParams(overrides: Partial<UseMessageSenderParams> = {}): UseMessa
     chatHelper: shallowRef(createMockChatHelper()),
     chatBusinessManager: shallowRef(createMockChatBusinessManager()),
     selectedShortcut: ref(null),
-    selectedResources: shallowRef([]),
     ...overrides,
   };
 }
 
 describe('useMessageSender', () => {
   describe('doSendMessage', () => {
-    it('should clear input, cite, and resources after sending', async () => {
+    it('should clear input and cite after sending', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
       const { doSendMessage, userInput, cite } = useMessageSender(params);
 
       userInput.value = 'hello';
       cite.value = 'some cite';
-      params.selectedResources.value = [{ id: 'r1' }] as any;
 
       await doSendMessage('hello');
 
       expect(userInput.value).toEqual([[]]);
       expect(cite.value).toBe('');
-      expect(params.selectedResources.value).toEqual([]);
     });
 
     it('should emit send-message event', async () => {
@@ -82,26 +79,47 @@ describe('useMessageSender', () => {
   });
 
   describe('handleSendMessage', () => {
-    it('should build extra with cite, command, and resources', async () => {
+    it('should write docSchema at property top-level with cite/command, without extra.resources', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
       params.selectedShortcut = ref({ id: 'cmd-1' }) as any;
-      params.selectedResources = shallowRef([{ id: 'r1', label: 'Resource 1' }]) as any;
 
       const sender = useMessageSender(params);
       sender.cite.value = 'cited text';
 
-      await sender.handleSendMessage('test message', [] as any);
+      const docSchema = [
+        [
+          { type: 'text', text: '分析 ' },
+          {
+            type: 'tag',
+            data: { type: 'knowledgebase', label: '运维知识库', value: '58', icon: '', description: '' },
+          },
+        ],
+      ];
 
-      expect(params.chatBusinessManager.value!.sendMessage).toHaveBeenCalledWith('test message', 'session-1', {
+      await sender.handleSendMessage('分析 @运维知识库', docSchema as any);
+
+      expect(params.chatBusinessManager.value!.sendMessage).toHaveBeenCalledWith('分析 @运维知识库', 'session-1', {
         property: {
           extra: {
             cite: 'cited text',
             command: 'cmd-1',
-            resources: [{ id: 'r1', label: 'Resource 1' }],
           },
+          docSchema,
         },
       });
+      const sent = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sent.property.extra.resources).toBeUndefined();
+    });
+
+    it('should send plain text without property when there is no tag', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+
+      const sender = useMessageSender(params);
+      await sender.handleSendMessage('普通文本', [[{ type: 'text', text: '普通文本' }]] as any);
+
+      expect(params.chatBusinessManager.value!.sendMessage).toHaveBeenCalledWith('普通文本', 'session-1', {});
     });
 
     it('should emit error on failure', async () => {
@@ -111,6 +129,39 @@ describe('useMessageSender', () => {
       await handleSendMessage('test', [] as any);
 
       expect(params.emit).toHaveBeenCalledWith('error', expect.any(Error));
+    });
+
+    it('should pass artifact tags injected by chat-x through without re-deriving them', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const sender = useMessageSender(params);
+
+      const artifactTag = {
+        type: 'tag',
+        data: {
+          type: 'artifact',
+          label: 'bk_apigw_resources_bp-aidev-develop (7).yaml',
+          value: 'files/bk_apigw_resources_bp-aidev-develop_7.yaml',
+          icon: '',
+          description: '',
+        },
+      };
+      const content = [
+        {
+          type: 'binary',
+          id: 'upload-id',
+          outputId: 'files/bk_apigw_resources_bp-aidev-develop_7.yaml',
+          filename: 'bk_apigw_resources_bp-aidev-develop (7).yaml',
+          mimeType: 'application/x-yaml',
+        },
+        { type: 'text', text: '分析这个文件' },
+      ];
+      const docSchema = [[{ type: 'text', text: '分析这个文件' }], [artifactTag]];
+
+      await sender.handleSendMessage(content as any, docSchema as any);
+
+      const sent = (params.chatBusinessManager.value!.sendMessage as any).mock.calls[0][2];
+      expect(sent.property.docSchema).toEqual(docSchema);
     });
 
     it('存在 ask-user-question options 时应走 resumeUserQuestionWithInput', async () => {
@@ -267,15 +318,13 @@ describe('useMessageSender', () => {
   });
 
   describe('handleUpdateModelValue', () => {
-    it('should update userInput and selectedResources', () => {
+    it('should update userInput and ignore the selected resource list', () => {
       const params = createParams();
       const { handleUpdateModelValue, userInput } = useMessageSender(params);
 
-      const resources = [{ id: 'r1', label: 'R1' }] as any;
-      handleUpdateModelValue('new input', resources);
+      handleUpdateModelValue('new input');
 
       expect(userInput.value).toBe('new input');
-      expect(params.selectedResources.value).toEqual(resources);
     });
   });
 

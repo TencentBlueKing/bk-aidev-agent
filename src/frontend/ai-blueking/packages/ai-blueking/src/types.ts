@@ -48,12 +48,35 @@ import type {
   AiSizeMode,
   CustomBkFlowTab,
   CustomTab,
-  IAiSlashMenuItem,
   IModelOption,
   IToolBtn,
   Message,
   RenderMode,
 } from '@blueking/chat-x';
+
+/**
+ * 宿主传入的资源项。保持旧 IAiSlashMenuItem 字段形状，宿主零改动。
+ * 内部会映射为 chat-x 的 IInputMenuItem。
+ */
+export interface IHostResourceItem {
+  [key: string]: unknown;
+  code?: string;
+  icon?: null | string;
+  id?: null | number | string;
+  name: string;
+  type: string;
+}
+
+/**
+ * 宿主传入的技能项。保持旧 ISkillListItem 字段形状，宿主零改动。
+ * ChatBot 有 skills prop；AIBlueking 不暴露 skills。
+ */
+export interface IHostSkillItem {
+  description?: string;
+  icon?: string;
+  skill_code: string;
+  skill_name: string;
+}
 
 /** sdk-error 业务语义 apiName */
 export type SdkErrorApiName = 'chat' | 'getAgentInfo' | 'init' | 'session' | 'share';
@@ -288,8 +311,8 @@ export interface AIBluekingProps {
   // 其他配置
   /** 请求配置（支持 ref/computed，替换后后续请求自动生效） */
   requestOptions?: MaybeRefOrGetter<IRequestOptions>;
-  /** 资源列表（输入 @ 触发） */
-  resources?: IAiSlashMenuItem[];
+  /** 资源列表（输入 @ 触发）；内部映射为 menuSources */
+  resources?: IHostResourceItem[];
   /** 快捷操作显示数量限制 */
   shortcutLimit?: number;
   // Popup 配置
