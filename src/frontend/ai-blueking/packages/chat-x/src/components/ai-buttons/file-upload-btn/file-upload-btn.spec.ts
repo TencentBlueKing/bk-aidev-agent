@@ -328,7 +328,7 @@ describe('FileUploadBtn', () => {
       await triggerFileChange(wrapper, [validFile, emptyFile]);
 
       expect(mockMessage).toHaveBeenCalledWith({
-        message: '有 1 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+        message: '有 1 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
         theme: 'error',
       });
       const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
@@ -340,11 +340,11 @@ describe('FileUploadBtn', () => {
       wrapper = mount(FileUploadBtn);
 
       const validFile = createFile('small.png', 1024);
-      const oversizedFile = createFile('huge.png', 46 * 1024 * 1024);
+      const oversizedFile = createFile('huge.png', 21 * 1024 * 1024);
       await triggerFileChange(wrapper, [validFile, oversizedFile]);
 
       expect(mockMessage).toHaveBeenCalledWith({
-        message: '有 1 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+        message: '有 1 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
         theme: 'error',
       });
       const emittedFiles = wrapper.emitted('upload')?.[0]?.[0] as File[];
@@ -405,14 +405,14 @@ describe('FileUploadBtn', () => {
 
       expect(wrapper.emitted('upload')).toBeFalsy();
       expect(mockMessage).toHaveBeenCalledWith({
-        message: '有 1 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+        message: '有 1 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
         theme: 'error',
       });
     });
 
-    it('小于 45 MB 一个字节的文件应允许上传', async () => {
+    it('小于 20 MB 一个字节的文件应允许上传', async () => {
       wrapper = mount(FileUploadBtn);
-      const file = createFile('valid.png', 45 * 1024 * 1024 - 1);
+      const file = createFile('valid.png', 20 * 1024 * 1024 - 1);
       await triggerFileChange(wrapper, [file]);
 
       expect(wrapper.emitted('upload')).toEqual([[[file]]]);
@@ -422,12 +422,12 @@ describe('FileUploadBtn', () => {
     it('刚好等于最大尺寸的文件应该被过滤', async () => {
       wrapper = mount(FileUploadBtn);
 
-      const maxSizeFile = createFile('max.png', 45 * 1024 * 1024);
+      const maxSizeFile = createFile('max.png', 20 * 1024 * 1024);
       await triggerFileChange(wrapper, [maxSizeFile]);
 
       expect(wrapper.emitted('upload')).toBeFalsy();
       expect(mockMessage).toHaveBeenCalledWith({
-        message: '有 1 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+        message: '有 1 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
         theme: 'error',
       });
     });
