@@ -1167,6 +1167,101 @@ describe('ChatInput', () => {
       expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([]);
     });
 
+    it('附件展示名取本地文件名，选中即可见且上传完成后不跳变', async () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload: vi.fn().mockResolvedValue({
+            id: 'files/bk_apigw_7.yaml',
+            path: 'files/bk_apigw_7.yaml',
+            status: 'success',
+          }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['yaml'], 'bk_apigw_resources (7).yaml', { type: 'application/x-yaml' })]);
+      // 上传尚未返回，附件名已经可见
+      expect(wrapper.find('.mock-file-item').text()).toBe('bk_apigw_resources (7).yaml');
+
+      await flushPromises();
+      await emitMenuChange(wrapper, '@');
+
+      const groups = wrapper.findComponent({ name: 'InputMenuPanel' }).props('groups');
+      expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
+        id: 'files/bk_apigw_7.yaml',
+        type: 'artifact',
+        name: 'bk_apigw_resources (7).yaml',
+      });
+    });
+
+    it('发送时把待发送附件按文件名 / path 补成 artifact 标签行', async () => {
+      const onSendMessage = vi.fn();
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: [[{ type: 'text', text: '分析这个文件' }]] as never,
+          onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({
+            id: 'upload-id',
+            path: 'files/bk_apigw_7.yaml',
+            status: 'success',
+          }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['yaml'], 'bk_apigw_resources (7).yaml', { type: 'application/x-yaml' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][1]).toEqual([
+        [{ type: 'text', text: '分析这个文件' }],
+        [
+          {
+            type: 'tag',
+            data: {
+              type: 'artifact',
+              label: 'bk_apigw_resources (7).yaml',
+              value: 'files/bk_apigw_7.yaml',
+              icon: '',
+              description: '',
+            },
+          },
+        ],
+      ]);
+    });
+
+    it('编辑回填的文档已含该附件标签时不重复追加', async () => {
+      const onSendMessage = vi.fn();
+      const artifactTag = {
+        type: 'tag',
+        data: {
+          type: 'artifact',
+          label: 'report.pdf',
+          value: 'files/report.pdf',
+          icon: '',
+          description: '',
+        },
+      };
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: [[{ type: 'text', text: '再看一下' }], [artifactTag]] as never,
+          defaultUploadFiles: [
+            {
+              type: 'binary',
+              id: 'files/report.pdf',
+              outputId: 'files/report.pdf',
+              filename: 'report.pdf',
+              mimeType: 'application/pdf',
+              size: 2048,
+            },
+          ] as unknown as UploadFile[],
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][1]).toEqual([[{ type: 'text', text: '再看一下' }], [artifactTag]]);
+    });
+
     it('取消上传附件后应从菜单和暴露的预览数据移除', async () => {
       wrapper = mount(ChatInput, {
         props: { modelValue: '', onUpload: vi.fn().mockResolvedValue({ path: 'files/a.pdf' }) },

@@ -700,4 +700,95 @@ describe('UserMessage', () => {
       expect(wrapper.find('.mock-text-content').exists()).toBe(true);
     });
   });
+
+  describe('上传附件的 artifact 标签不与文件卡片重复展示', () => {
+    const artifactTag = {
+      type: 'tag',
+      data: { label: 'report.pdf', value: 'files/report.pdf', type: 'artifact', icon: '' },
+    };
+    const attachment = {
+      type: 'binary',
+      id: 'files/report.pdf',
+      outputId: 'files/report.pdf',
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+    };
+
+    it('标签命中附件时剥掉标签，只保留文件卡片与纯文本', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: [attachment, { type: 'text', text: '分析这个文件' }],
+          property: { docSchema: [[{ type: 'text', text: '分析这个文件' }], [artifactTag]] },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(false);
+      expect(wrapper.find('.mock-text-content').exists()).toBe(true);
+      expect(wrapper.find('.ai-user-message-binary-files').exists()).toBe(true);
+    });
+
+    it('历史消息的附件只剩 id 时也能剥掉标签', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: [{ ...attachment, outputId: undefined }, { type: 'text', text: '分析这个文件' }],
+          property: { docSchema: [[{ type: 'text', text: '分析这个文件' }], [artifactTag]] },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(false);
+    });
+
+    it('同一条消息里 @ 选中的资源仍照常回显', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: [attachment, { type: 'text', text: '结合 @知识库01 分析' }],
+          property: {
+            docSchema: [
+              [
+                { type: 'text', text: '结合 ' },
+                { type: 'tag', data: { label: '知识库01', value: 'kb_01', type: 'knowledgebase', icon: '' } },
+                { type: 'text', text: ' 分析' },
+              ],
+              [artifactTag],
+            ],
+          },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(true);
+      expect(wrapper.findAll('.ai-mention-tag')).toHaveLength(1);
+      expect(wrapper.find('.ai-mention-tag').text()).toBe('知识库01');
+    });
+
+    it('编辑回填不带附件标签，避免与回填的附件重复', async () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: [attachment, { type: 'text', text: '分析这个文件' }],
+          property: { docSchema: [[{ type: 'text', text: '分析这个文件' }], [artifactTag]] },
+        } as never,
+      });
+
+      await wrapper.findComponent({ name: 'MessageTools' }).props('onAction')({ id: 'edit' });
+
+      const chatInput = wrapper.findComponent({ name: 'ChatInput' });
+      expect(chatInput.props('modelValue')).toBe('分析这个文件');
+      expect(chatInput.props('defaultUploadFiles')).toHaveLength(1);
+    });
+
+    it('没有附件承载的 artifact 标签照常回显', () => {
+      wrapper = mount(UserMessage, {
+        props: {
+          content: '引用了 @操作文档.docx',
+          property: {
+            docSchema: [
+              [{ type: 'tag', data: { label: '操作文档.docx', value: 'files/doc.docx', type: 'artifact', icon: '' } }],
+            ],
+          },
+        } as never,
+      });
+
+      expect(wrapper.find('.ai-mention-text').exists()).toBe(true);
+      expect(wrapper.find('.ai-mention-tag').text()).toBe('操作文档.docx');
+    });
+  });
 });

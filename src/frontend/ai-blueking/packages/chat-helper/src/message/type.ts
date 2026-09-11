@@ -159,6 +159,8 @@ export interface IBinaryInputContent {
   filename?: string;
   id?: string;
   mimeType: string;
+  /** 上传接口返回的 path，文件在会话内的永久身份，用于引用、预览与下载 */
+  outputId?: string;
   size?: number;
   type: MessageType.Binary;
   url?: string;
@@ -169,6 +171,7 @@ export interface IBinaryInputContentApi {
   filename?: string;
   id?: string;
   mime_type: string;
+  output_id?: string;
   size?: number;
   type: MessageType.Binary;
   url?: string;

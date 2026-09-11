@@ -6,7 +6,8 @@
 
 - 对外仍保留 `prompts` / `resources` / `skills`（`AIBlueking` 无 `skills`），内部 `buildMenuSources` 映射为 `menuSources`
 - 发送与编辑写 `property.docSchema`（与 `extra` 同级），不再写 `extra.resources`
-- 上传文件的 `artifact` 标签（`label` 取上传接口 `name`，`value` 取 `path`，`file` → `artifact`）由 chat-x 注入，`ai-blueking` 只透传
+- 上传文件的 `artifact` 标签（`label` 取文件名，`value` 取上传接口 `path`，`file` → `artifact`）由 chat-x 注入，`ai-blueking` 只透传
+- `chat-helper` 的用户消息 Binary 内容双向透传 `outputId` ↔ `output_id`，历史消息重载后仍保留文件的会话内身份
 - 无标签纯文本不发 `docSchema`
 - chat-helper `IMessageProperty` 顶层增加 `docSchema?: unknown`
 

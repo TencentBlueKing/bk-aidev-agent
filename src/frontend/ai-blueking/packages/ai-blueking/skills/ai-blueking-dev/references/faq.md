@@ -506,7 +506,7 @@ interceptors: {
 
 ### Q: 发送时还要写 `extra.resources` 吗？
 
-**A**: 不要。选中资源统一走 `property.docSchema`（与 `extra` 同级）。`extra` 只保留 `cite` / `command` / `context`。无任何标签的纯文本消息不要带 `docSchema`。上传文件除 Binary content 外，文档里还会带一条 `artifact` 标签（`label` 取上传接口 `name`，`value` 取 `path`，接口 `file` 映射为 `artifact`），该标签由 chat-x 注入，业务侧只原样透传。
+**A**: 不要。选中资源统一走 `property.docSchema`（与 `extra` 同级）。`extra` 只保留 `cite` / `command` / `context`。无任何标签的纯文本消息不要带 `docSchema`。上传文件除 Binary content 外，文档里还会带一条 `artifact` 标签（`label` 取文件名，`value` 取上传接口 `path`，接口 `file` 映射为 `artifact`），该标签由 chat-x 注入，业务侧只原样透传。
 
 ### Q: AIBlueking 怎么传 skills？
 

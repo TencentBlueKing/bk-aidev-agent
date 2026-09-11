@@ -106,23 +106,25 @@ flowchart TB
 - chat-helper `IMessageProperty.docSchema?: unknown`
 - peerDep `@blueking/chat-x >=0.0.52-beta.1`
 
-## 5. 待 chat-x 承接：上传文件的 artifact 标签注入
+## 5. chat-x 承接上传文件的 artifact 标签注入（已完成）
 
-读取键位已由 chat-x `839ffed` 改为 `property.docSchema`，该项已闭环。
+读取键位已由 chat-x `839ffed` 改为 `property.docSchema`。
 
-剩余一项：**上传文件的 artifact 标签改由 chat-x 在 `onSendMessage` 前注入进 `docSchema`**，`ai-blueking` 只做透传。
+**上传文件的 artifact 标签由 chat-x 在 `onSendMessage` 前注入进 `docSchema`**，`ai-blueking` 只做透传。
 
 放在 chat-x 的理由：
 
 - 只有 chat-x 同时持有上传响应原文（`path` / `name`）与当前附件列表，注入点唯一
-- 业务层拿不到协议字段：`ChatInputUploadResult` 没有 `name`，`applyUploadResult` 也没存；`chat-helper` 的消息 transform 双向都丢掉了 `outputId`，历史消息重载后无法再推导
+- 业务层拿不到协议字段：改造前 `ChatInputUploadResult` 没有 `name`、`applyUploadResult` 也没存；`chat-helper` 的消息 transform 双向都丢掉了 `outputId`，历史消息重载后无法再推导
 - 编辑回填时文档里已含上次注入的标签，业务层再追加会重复；chat-x 自己注入可按 `value` 去重
 - 双重展示（文件卡片 + Mention 标签）也在 chat-x 侧：渲染时跳过 `value` 命中附件 `outputId` 的 artifact 标签，两半在同一个包里改才自洽
 
-需要的改动：
+已落地的改动：
 
-1. `ChatInputUploadResult` 补 `name?: string`；`applyUploadResult` 保存接口 `name` / `path`
-2. `handleSendMessage` emit 前，把有 `path` 的附件按 `{ type: 'artifact', label: name, value: path }` 合进 `props.modelValue`，并按 `value` 与文档内已有标签去重
-3. `user-message.vue` 渲染时跳过 `value` 命中 Binary 附件的 artifact 标签，避免与 `FileContent` 卡片重复
+1. `chat-input.vue` `buildSendDocSchema()`：emit 前把有 `outputId` 的附件按 `{ type: 'artifact', label: 文件名, value: path }` 追加成一行，按 `value` 与文档内已有标签去重（编辑回填不会重复追加）
+2. `user-message.vue` 渲染与编辑回填前调用 `omitArtifactTags`，剥掉 `value` 命中当前附件的 artifact 标签，避免与 `FileContent` 卡片重复
+3. `chat-helper` 的消息 transform 双向透传 `outputId` ↔ `output_id`，历史消息重载后仍能按 `outputId` 匹配。后端 `SessionContent.content` 是 `list[dict]` 且 `extra="allow"`，content 内的键原样存取，无需后端改动
 
-在此之前，纯上传（不 `@` 引用）的消息 `property.docSchema` 里不会有 artifact 标签，后端只能从 `content` 的 Binary 拿到文件。
+注入与剥离共用 `src/utils/artifact-tags.ts` 一套 `value` 口径，避免两边漂移。
+
+**附件展示名不走上传响应**：`uploadPvFiles` 原样提交 `File`，服务端登记名与本地 `file.name` 一致，所以展示名一律取本地名（编辑态取持久化的 `filename`）。这样选中文件即可见、不必等接口返回，上传完成后也不会发生名字跳变；`artifact` 标签 `label` 与 `@` 菜单条目名同源于此。

@@ -89,7 +89,7 @@ const resources: IHostResourceItem[] = [
 
 选中资源后，发送载荷把编辑器文档**原样**放在 `property.docSchema`（与 `extra` **同级**）。**不再发送** `extra.resources`。`extra` 只保留 `cite` / `command` / `context`。
 
-纯文本消息（文档里没有任何标签）不写 `docSchema`。上传文件除 `content` 里的 Binary 外，文档里还会带一条 `artifact` 标签：`label` 取上传接口 `name`，`value` 取 `path`，接口 `type: file` 映射为 `artifact`。这条标签由 chat-x 在发送前注入进文档，`ai-blueking` 只原样透传。
+纯文本消息（文档里没有任何标签）不写 `docSchema`。上传文件除 `content` 里的 Binary 外，文档里还会带一条 `artifact` 标签：`label` 取文件名，`value` 取上传接口 `path`，接口 `type: file` 映射为 `artifact`。这条标签由 chat-x 在发送前注入进文档，`ai-blueking` 只原样透传。
 
 标签节点只携带 5 个字段：`{ type, label, value, icon, description }`。后端识别靠 `value`：
 

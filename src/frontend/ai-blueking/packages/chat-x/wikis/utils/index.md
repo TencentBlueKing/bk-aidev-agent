@@ -12,6 +12,9 @@
 | `mergeToolsById`           | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏   |
 | `collectMessageArtifacts`  | 从会话消息里收集「会话产物」作为输入框菜单条目    |
 | `toArtifactMenuItem`       | 把单个文件产物转成输入框菜单条目                  |
+| `toArtifactTagNode`        | 把文件转成 `artifact` 标签节点（`name`→`label`、`outputId`→`value`） |
+| `appendArtifactTags`       | 发送前把附件补成一行 `artifact` 标签，按 `value` 去重 |
+| `omitArtifactTags`         | 回显 / 编辑回填前剥掉由附件卡片承载的 `artifact` 标签 |
 
 `ALLOWED_UPLOAD_EXTENSIONS` / `DEFAULT_UPLOAD_ACCEPT` 也从本模块导出，见下方 [上传常量](#上传常量)。
 
