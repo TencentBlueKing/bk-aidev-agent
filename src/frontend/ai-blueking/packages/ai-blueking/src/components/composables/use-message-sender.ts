@@ -8,7 +8,7 @@
  */
 
 import { shallowRef, watch } from 'vue';
-import type { Ref } from 'vue';
+import type { Ref, ShallowRef } from 'vue';
 
 import { applyRequestOptionsContext, buildDocSchemaPayload } from '../../utils';
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
