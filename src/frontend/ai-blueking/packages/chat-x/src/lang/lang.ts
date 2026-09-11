@@ -202,6 +202,8 @@ export const lang = {
   '文件上传中，请稍候': 'Uploading files, please wait',
   '存在上传失败的文件，请删除后重试': 'Remove failed uploads before sending',
   上传失败: 'Upload failed',
+  '有 {count} 个文件因格式不支持未添加':
+    '{count} file(s) were not added because the format is not supported',
 } as const;
 
 export const t = (key: keyof typeof lang) => {
