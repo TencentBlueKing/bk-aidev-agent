@@ -304,6 +304,7 @@ interface IAgentInfo {
   conversationSettings?: {
     commands?: IAgentCommand[];
     enableChatSession?: boolean;
+    enableWordSelectionPopup?: boolean;
     openingRemark?: string;
     predefinedQuestions?: string[];
   };

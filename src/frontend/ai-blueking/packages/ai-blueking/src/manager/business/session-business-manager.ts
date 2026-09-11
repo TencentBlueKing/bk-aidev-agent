@@ -186,6 +186,9 @@ export class SessionBusinessManager {
     if (this.config.enableChatSession === false) {
       throw new Error('Chat session is disabled');
     }
+    if (this.agentModule?.info?.value?.conversationSettings?.enableChatSession === false) {
+      throw new Error('Chat session is disabled');
+    }
 
     try {
       // model 统一由 ModelSelectionManager 解析，保证是前端可选中的模型

@@ -74,7 +74,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 ### AiSelection 文本选中弹窗
 
-当用户在页面中选中文本时，自动弹出快捷操作菜单，支持将选中文本作为上下文发送给 AI。通过 `enablePopup` 属性启用。
+当用户在页面中选中文本时，自动弹出快捷操作菜单，支持将选中文本作为上下文发送给 AI。由 `enablePopup` 与 info `conversationSettings.enableWordSelectionPopup` 联动控制；任一为 `false` 则不显示。shortcut 为空时弹窗回退内置「问问小鲸」。
 
 ## AIBlueking 独有 Props
 
@@ -82,7 +82,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `enablePopup` | `boolean` | `false` | 是否启用文本选中弹窗（AiSelection） |
+| `enablePopup` | `boolean` | `true` | 是否启用文本选中弹窗（AiSelection）；与 info `enableWordSelectionPopup` 联动 |
 | `draggable` | `boolean` | `true` | 是否启用面板拖拽 |
 | `hideHeader` | `boolean` | `false` | 是否隐藏顶部 Header 区域 |
 | `hideNimbus` | `boolean` | `false` | 是否隐藏 Nimbus 浮球入口 |
@@ -92,7 +92,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `defaultLeft` | `number` | — | 面板默认左偏移（px），不传则自动计算 |
 | `defaultTop` | `number` | — | 面板默认上偏移（px），不传则自动计算 |
 | `miniPadding` | `number` | `10` | 面板最小化时距离屏幕边缘的间距（px） |
-| `enableChatSession` | `boolean` | `true` | 是否启用会话管理功能（Header 中的会话下拉列表） |
+| `enableChatSession` | `boolean` | `true` | 是否启用会话管理（Header 历史/新建会话 icon）；与 info `enableChatSession` 联动 |
 | `showAsideToggle` | `boolean` | `true` | 是否显示侧栏展开/收起按钮（在压缩图标左侧） |
 
 > **提示**：`AIBlueking` 同样支持 `ChatBot` 的所有 Props（如 `url`、`requestOptions` 等），具体请参考 [ChatBot 页面嵌入模式](./chatbot-embedded.md)。

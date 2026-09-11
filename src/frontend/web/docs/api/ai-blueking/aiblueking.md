@@ -53,9 +53,9 @@ function openAI() {
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `enablePopup` | `boolean` | `true` | 是否启用文本选中弹窗（AiSelection） |
+| `enablePopup` | `boolean` | `true` | 是否启用文本选中弹窗（AiSelection）。与 info `conversationSettings.enableWordSelectionPopup` 联动：宿主或智能体任一为 `false` 则关闭。shortcut 为空时弹窗回退「问问小鲸」 |
 | `draggable` | `boolean` | `true` | 是否可拖拽 |
-| `enableChatSession` | `boolean` | `true` | 是否启用多会话（显示会话管理侧边栏） |
+| `enableChatSession` | `boolean` | `true` | 是否启用多会话。与 info `conversationSettings.enableChatSession` 联动：任一为 `false` 则隐藏 Header 历史/新建会话 icon |
 | `enableModelSelect` | `boolean` | `true` | 是否启用模型选择（**≥ v2.2.2**）；为 `true` 时 bootstrap 拉取 `GET llms/`，列表非空才展示 ModelSelector |
 | `models` | `ILlmItem[] \| IModelOption[]` | — | 外部模型列表（**≥ v2.2.2**）；有值时跳过内部拉取，优先使用 |
 | `hideHeader` | `boolean` | `false` | 是否隐藏头部栏 |

@@ -10,6 +10,7 @@ let capturedBootstrapOptions: ChatBootstrapOptions | undefined;
 let capturedOnErrorHandler: ((error: Error) => void) | undefined;
 let capturedOnErrorOptions: { ignoreErrors?: Array<RegExp | string> } | undefined;
 let latestBootstrapReturn: {
+  agentInfo: ReturnType<typeof ref<unknown>>;
   error: ReturnType<typeof ref<Error | null>>;
   isReady: ReturnType<typeof ref<boolean>>;
 } | null = null;
@@ -94,9 +95,10 @@ vi.mock('../use-chat-bootstrap', () => ({
     capturedBootstrapOptions = options;
     const localError = ref<Error | null>(null);
     const localIsReady = ref(false);
-    latestBootstrapReturn = { error: localError, isReady: localIsReady };
+    const localAgentInfo = ref(null);
+    latestBootstrapReturn = { agentInfo: localAgentInfo, error: localError, isReady: localIsReady };
     return {
-      agentInfo: ref(null),
+      agentInfo: localAgentInfo,
       agentName: ref(''),
       chatHelper: {
         agent: {},
@@ -322,5 +324,62 @@ describe('useAiBluekingInit error handling', () => {
     });
 
     expect(capturedOnErrorOptions).toEqual({ ignoreErrors });
+  });
+});
+
+describe('useAiBluekingInit conversation flags', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    latestBootstrapReturn = null;
+  });
+
+  it('disables chat session when agent enableChatSession is false', () => {
+    const { effectiveEnableChatSession } = useAiBluekingInit({
+      props: createDefaultProps({ enableChatSession: true }),
+      emit: vi.fn(),
+    });
+
+    latestBootstrapReturn!.agentInfo.value = {
+      conversationSettings: { enableChatSession: false },
+    };
+
+    expect(effectiveEnableChatSession.value).toBe(false);
+  });
+
+  it('disables popup when agent enableWordSelectionPopup is false', () => {
+    const { effectiveEnablePopup } = useAiBluekingInit({
+      props: createDefaultProps({ enablePopup: true }),
+      emit: vi.fn(),
+    });
+
+    latestBootstrapReturn!.agentInfo.value = {
+      conversationSettings: { enableWordSelectionPopup: false },
+    };
+
+    expect(effectiveEnablePopup.value).toBe(false);
+  });
+
+  it('keeps flags enabled when agent fields are absent', () => {
+    const { effectiveEnableChatSession, effectiveEnablePopup } = useAiBluekingInit({
+      props: createDefaultProps(),
+      emit: vi.fn(),
+    });
+
+    expect(effectiveEnableChatSession.value).toBe(true);
+    expect(effectiveEnablePopup.value).toBe(true);
+  });
+
+  it('forces flags off when host props are false even if agent enables them', () => {
+    const { effectiveEnableChatSession, effectiveEnablePopup } = useAiBluekingInit({
+      props: createDefaultProps({ enableChatSession: false, enablePopup: false }),
+      emit: vi.fn(),
+    });
+
+    latestBootstrapReturn!.agentInfo.value = {
+      conversationSettings: { enableChatSession: true, enableWordSelectionPopup: true },
+    };
+
+    expect(effectiveEnableChatSession.value).toBe(false);
+    expect(effectiveEnablePopup.value).toBe(false);
   });
 });

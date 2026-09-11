@@ -99,7 +99,7 @@ AI 小鲸提供了划词弹窗功能，用户在页面上选中文本后会自�
 
 ### 启用划词弹窗
 
-通过 `enablePopup` prop 启用（`AIBlueking` 组件，默认为 `true`）：
+通过 `enablePopup` prop 启用（`AIBlueking` 组件，默认为 `true`）。实际是否展示还受 info `conversationSettings.enableWordSelectionPopup` 约束：宿主或智能体任一为 `false` 则关闭。传入的 shortcut 为空时，弹窗回退内置「问问小鲸」。
 
 ```vue
 <template>

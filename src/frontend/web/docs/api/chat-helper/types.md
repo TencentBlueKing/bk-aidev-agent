@@ -60,10 +60,16 @@ interface IAgentInfo {
   chatGroup?: string;
   /** 会话配置 */
   conversationSettings?: {
-    /** 是否启用多会话 */
-    enableMultiSession?: boolean;
-    /** 最大会话数 */
-    maxSessionCount?: number;
+    /** 快捷指令（info `commands`） */
+    commands?: IAgentCommand[];
+    /** 是否启用多会话（info `enable_chat_session`） */
+    enableChatSession?: boolean;
+    /** 是否启用划词弹窗（info `enable_word_selection_popup`） */
+    enableWordSelectionPopup?: boolean;
+    /** 开场白 */
+    openingRemark?: string;
+    /** 预设问题 */
+    predefinedQuestions?: string[];
   };
   /** 提示词配置 */
   promptSetting?: {

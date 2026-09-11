@@ -301,13 +301,13 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | timezone | `string` | - | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
-| enableChatSession | `boolean` | `true` | 是否启用会话管理 |
+| enableChatSession | `boolean` | `true` | 是否启用会话管理；与 info `conversationSettings.enableChatSession` 联动，任一为 `false` 则隐藏 Header 历史/新建会话 icon |
 | initialSessionCode | `string` | `''` | 初始会话编码 |
 | autoSwitchToInitialSession | `boolean` | `false` | 是否自动切换到初始会话 |
 | alwaysCreateNewSession | `boolean` | `false` | 是否始终创建新会话（初始化时不判断最近会话是否有内容） |
 | loadRecentSessionOnMount | `boolean` | `true` | 挂载时是否加载最近会话 |
 | **功能开关** |||
-| enablePopup | `boolean` | `true` | 是否启用选中文本弹窗（划词） |
+| enablePopup | `boolean` | `true` | 是否启用选中文本弹窗（划词）；与 info `conversationSettings.enableWordSelectionPopup` 联动，任一为 `false` 则不渲染 AiSelection。shortcut 为空时弹窗回退「问问小鲸」 |
 | enableModelSelect | `boolean` | `true` | 是否启用模型选择（≥ v2.2.2）；bootstrap 拉取 `GET llms/` |
 | models | `ILlmItem[] \| IModelOption[]` | - | 外部模型列表（≥ v2.2.2）；有值时跳过内部拉取 |
 | disabledInput | `boolean` | `false` | 是否禁用输入 |

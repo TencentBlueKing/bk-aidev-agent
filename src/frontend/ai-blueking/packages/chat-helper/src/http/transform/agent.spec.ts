@@ -41,4 +41,34 @@ describe('transferAgentInfoApi2AgentInfo', () => {
     });
     expect(result.agentSdkVersion).toBe('2.2.2rc17');
   });
+
+  it('maps enable_word_selection_popup false to enableWordSelectionPopup', () => {
+    const result = transferAgentInfoApi2AgentInfo({
+      agent_name: 'AIDEV助手',
+      conversation_settings: {
+        enable_word_selection_popup: false,
+      },
+    });
+    expect(result.conversationSettings?.enableWordSelectionPopup).toBe(false);
+  });
+
+  it('maps enable_word_selection_popup true to enableWordSelectionPopup', () => {
+    const result = transferAgentInfoApi2AgentInfo({
+      agent_name: 'AIDEV助手',
+      conversation_settings: {
+        enable_word_selection_popup: true,
+      },
+    });
+    expect(result.conversationSettings?.enableWordSelectionPopup).toBe(true);
+  });
+
+  it('leaves enableWordSelectionPopup undefined when enable_word_selection_popup is absent', () => {
+    const result = transferAgentInfoApi2AgentInfo({
+      agent_name: 'AIDEV助手',
+      conversation_settings: {
+        enable_chat_session: true,
+      },
+    });
+    expect(result.conversationSettings?.enableWordSelectionPopup).toBeUndefined();
+  });
 });
