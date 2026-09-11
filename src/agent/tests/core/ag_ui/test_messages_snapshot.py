@@ -3,12 +3,13 @@
 
 覆盖四类场景：
 - fail/error 消息的还原（含用户取消）；
-- 多模态 user content 的结构化数组编码；
+- 多模态 user content 的原样保留；
 - reasoning 消息的还原（LLM 入口排除）；
-- createdAt 全量回传（且不进入模型 payload）。
+- createdAt 位于 builtin_property 内回传（且不进入模型 payload）。
 
-快照数据源为 lossless ChatPrompt 单账本（chat_history），经
-``contents_to_agui_messages`` 编码；LLM 入口沿用 convert 链（chat_history）。
+快照数据源为 lossless ChatPrompt 单账本（chat_history），**原样透传**（经
+``_to_ledger_dict`` 归一为 dict）而不经 AG-UI 消息转换器：不做 role 归一 /
+camelCase 改名 / status 映射 / multimodal 重排。LLM 入口沿用 convert 链。
 """
 
 import json
@@ -31,7 +32,7 @@ from langchain_openai.chat_models.base import _convert_message_to_dict
 
 
 def _build_messages_snapshot(agent: ChatCompletionAgent):
-    """与 chat._stream 中 body['messages'] 组装一致（读单账本编码）。"""
+    """与 chat._stream 中 body['messages'] 组装一致（读单账本原样透传）。"""
     return agent._build_snapshot_agui_messages()
 
 
@@ -57,53 +58,58 @@ def _failed_ledger(status: str = "error", content: str = RunId.CANCELLED_MESSAGE
 def test_messages_snapshot_entry_includes_user_cancelled():
     agent = ChatCompletionAgent(chat_history=_failed_ledger())
     snapshot = _build_messages_snapshot(agent)
-    assert [each.role for each in snapshot] == ["user", "assistant"]
-    assert snapshot[-1].content == RunId.CANCELLED_MESSAGE
-    assert snapshot[-1].status == "error"
+    assert [each["role"] for each in snapshot] == ["user", "assistant"]
+    assert snapshot[-1]["content"] == RunId.CANCELLED_MESSAGE
+    assert snapshot[-1]["builtin_property"]["status"] == "error"
 
 
-def test_messages_snapshot_entry_includes_fail_status():
-    agent = ChatCompletionAgent(chat_history=_failed_ledger(status="fail", content="模型调用失败"))
+@pytest.mark.parametrize(
+    "status, content",
+    [
+        ("error", RunId.CANCELLED_MESSAGE),
+        ("fail", "模型调用失败"),
+    ],
+)
+def test_messages_snapshot_entry_keeps_platform_status(status, content):
+    """原始平台域 status 原样透传，不做归一。"""
+    agent = ChatCompletionAgent(chat_history=_failed_ledger(status=status, content=content))
     snapshot = _build_messages_snapshot(agent)
-    assert [each.role for each in snapshot] == ["user", "assistant"]
-    assert snapshot[-1].content == "模型调用失败"
-    assert snapshot[-1].status == "error"
+    assert [each["role"] for each in snapshot] == ["user", "assistant"]
+    assert snapshot[-1]["content"] == content
+    assert snapshot[-1]["builtin_property"]["status"] == status
+
+
+def _llm_contents(agent: ChatCompletionAgent):
+    """把账本经 convert 链送入 LLM 入口视图，返回各条 content。"""
+    return [
+        each.content
+        for each in agent._filter_messages_for_llm(
+            convert_chat_history_to_messages(
+                agent.chat_history,
+                model_context_options=agent.model_context_options,
+                support_vision=agent.support_vision,
+                model_name=agent.model_name,
+                agent_info=agent.agent_info,
+                generating_keyword=agent.generating_keyword,
+                files=agent.files,
+            )
+        )
+    ]
 
 
 def test_llm_entry_keeps_cancelled_and_orphan_user_messages():
     """取消轮与连续 user 均保留入模，不再整轮剔除。"""
     cancelled_history = _failed_ledger() + [ChatPrompt(id="3", role="user", content="换个问题")]
-    agent = ChatCompletionAgent(chat_history=cancelled_history)
-    llm_messages = agent._filter_messages_for_llm(
-        convert_chat_history_to_messages(
-            agent.chat_history,
-            model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
-            model_name=agent.model_name,
-            agent_info=agent.agent_info,
-            generating_keyword=agent.generating_keyword,
-            files=agent.files,
-        )
-    )
-    assert [each.content for each in llm_messages] == ["分析图片", RunId.CANCELLED_MESSAGE, "换个问题"]
+    cancelled_agent = ChatCompletionAgent(chat_history=cancelled_history)
+    assert _llm_contents(cancelled_agent) == ["分析图片", RunId.CANCELLED_MESSAGE, "换个问题"]
 
-    orphan_history = [
-        ChatPrompt(id="1", role="user", content="孤立提问"),
-        ChatPrompt(id="2", role="user", content="新问题"),
-    ]
-    agent = ChatCompletionAgent(chat_history=orphan_history)
-    llm_messages = agent._filter_messages_for_llm(
-        convert_chat_history_to_messages(
-            agent.chat_history,
-            model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
-            model_name=agent.model_name,
-            agent_info=agent.agent_info,
-            generating_keyword=agent.generating_keyword,
-            files=agent.files,
-        )
+    orphan_agent = ChatCompletionAgent(
+        chat_history=[
+            ChatPrompt(id="1", role="user", content="孤立提问"),
+            ChatPrompt(id="2", role="user", content="新问题"),
+        ]
     )
-    assert [each.content for each in llm_messages] == ["孤立提问", "新问题"]
+    assert _llm_contents(orphan_agent) == ["孤立提问", "新问题"]
 
 
 def test_messages_snapshot_sse_includes_user_cancelled():
@@ -111,11 +117,11 @@ def test_messages_snapshot_sse_includes_user_cancelled():
     payload = _encode_snapshot_payload(_build_messages_snapshot(agent))
     assert payload["messages"][-1]["role"] == "assistant"
     assert payload["messages"][-1]["content"] == RunId.CANCELLED_MESSAGE
-    assert payload["messages"][-1]["status"] == "error"
+    assert payload["messages"][-1]["builtin_property"]["status"] == "error"
 
 
 # ---------------------------------------------------------------------------
-# 多模态 content 格式
+# 多模态 content 原样保留
 # ---------------------------------------------------------------------------
 
 MULTIMODAL_CONTENT = [
@@ -134,38 +140,26 @@ def _multimodal_ledger(raw_content):
     return [{"id": "user-1", "role": "user", "content": raw_content, "status": "complete"}]
 
 
-@pytest.mark.parametrize(
-    "raw_content",
-    [
-        MULTIMODAL_CONTENT,
-        json.dumps(MULTIMODAL_CONTENT, ensure_ascii=False),
-    ],
-    ids=["list", "json_string"],
-)
-def test_messages_snapshot_keeps_multimodal_array(raw_content):
-    """历史多模态消息转换后 content 必须为数组，不能是 JSON 字符串。"""
-    agent = ChatCompletionAgent(chat_history=_multimodal_ledger(raw_content))
-    agui_message = agent._build_snapshot_agui_messages()[0]
+def test_messages_snapshot_keeps_multimodal_list_as_is():
+    """列表形态多模态 content 原样透传，mime_type 不会被改名为 mimeType。"""
+    agent = ChatCompletionAgent(chat_history=_multimodal_ledger(MULTIMODAL_CONTENT))
+    message = agent._build_snapshot_agui_messages()[0]
 
-    assert isinstance(agui_message.content, list)
-    assert agui_message.content[0].type == "binary"
-    assert agui_message.content[0].filename == "upload_file_1785756353687_fjdwe7.jpeg"
-    assert agui_message.content[0].mime_type == "image/jpeg"
-    assert agui_message.content[1].type == "text"
-    assert agui_message.content[1].text == "图片内容是啥"
+    assert message["content"] == MULTIMODAL_CONTENT
+    assert message["content"][0]["mime_type"] == "image/jpeg"
+    assert "mimeType" not in message["content"][0]
 
 
-def test_messages_snapshot_sse_encodes_multimodal_as_array():
-    """MESSAGES_SNAPSHOT SSE 载荷中 user content 应为结构化数组。"""
-    agent = ChatCompletionAgent(chat_history=_multimodal_ledger(json.dumps(MULTIMODAL_CONTENT, ensure_ascii=False)))
+def test_messages_snapshot_keeps_multimodal_json_string_as_is():
+    """JSON 字符串形态多模态 content 不解析为数组，原样透传给前端。"""
+    raw = json.dumps(MULTIMODAL_CONTENT, ensure_ascii=False)
+    agent = ChatCompletionAgent(chat_history=_multimodal_ledger(raw))
     payload = _encode_snapshot_payload(agent._build_snapshot_agui_messages())
 
     user_message = payload["messages"][0]
     assert user_message["role"] == "user"
-    assert isinstance(user_message["content"], list)
-    assert user_message["content"][0]["type"] == "binary"
-    assert user_message["content"][0]["filename"] == "upload_file_1785756353687_fjdwe7.jpeg"
-    assert user_message["content"][1]["type"] == "text"
+    assert user_message["content"] == raw
+    assert isinstance(user_message["content"], str)
 
 
 def test_chat_history_to_langchain_parses_json_string_multimodal():
@@ -214,10 +208,11 @@ def test_parse_reasoning_content_normalizes_types():
 def test_messages_snapshot_includes_reasoning_with_duration():
     agent = ChatCompletionAgent(chat_history=_reasoning_ledger())
     snapshot = _build_messages_snapshot(agent)
-    assert [each.role for each in snapshot] == ["user", "reasoning", "assistant"]
+    assert [each["role"] for each in snapshot] == ["user", "reasoning", "assistant"]
     reasoning = snapshot[1]
-    assert reasoning.content == ["先分析用户意图", "再选择工具"]
-    assert reasoning.duration == 2.5
+    assert reasoning["content"] == ["先分析用户意图", "再选择工具"]
+    assert reasoning["builtin_property"]["duration"] == 2.5
+    assert "duration" not in reasoning
 
 
 def test_llm_entry_excludes_reasoning():
@@ -243,7 +238,7 @@ def test_messages_snapshot_sse_reasoning_payload():
     reasoning = payload["messages"][1]
     assert reasoning["role"] == "reasoning"
     assert reasoning["content"] == ["先分析用户意图", "再选择工具"]
-    assert reasoning["duration"] == 2.5
+    assert reasoning["builtin_property"]["duration"] == 2.5
 
 
 # ---------------------------------------------------------------------------
@@ -252,34 +247,32 @@ def test_messages_snapshot_sse_reasoning_payload():
 
 
 def test_messages_snapshot_includes_created_at_for_all_roles():
+    created_at_values = [
+        "2026-08-13T10:00:00+00:00",
+        "2026-08-13T10:01:00+00:00",
+        "2026-08-13T10:05:00+00:00",
+    ]
     agent = ChatCompletionAgent(
         chat_history=[
             ChatPrompt(
-                id="user-1",
-                role="user",
-                content="第一轮提问",
-                builtin_property={"created_at": "2026-08-13T10:00:00+00:00"},
+                id="user-1", role="user", content="第一轮提问", builtin_property={"created_at": created_at_values[0]}
             ),
             ChatPrompt(
                 id="assistant-1",
                 role="assistant",
                 content="第一轮回答",
-                builtin_property={"created_at": "2026-08-13T10:01:00+00:00"},
+                builtin_property={"created_at": created_at_values[1]},
             ),
             ChatPrompt(
-                id="user-2",
-                role="user",
-                content="本轮提问",
-                builtin_property={"created_at": "2026-08-13T10:05:00+00:00"},
+                id="user-2", role="user", content="本轮提问", builtin_property={"created_at": created_at_values[2]}
             ),
         ]
     )
 
     payload = _encode_snapshot_payload(agent._build_snapshot_agui_messages())
 
-    assert payload["messages"][0]["createdAt"] == "2026-08-13T10:00:00+00:00"
-    assert payload["messages"][1]["createdAt"] == "2026-08-13T10:01:00+00:00"
-    assert payload["messages"][2]["createdAt"] == "2026-08-13T10:05:00+00:00"
+    assert [each["builtin_property"]["created_at"] for each in payload["messages"]] == created_at_values
+    assert all("createdAt" not in each for each in payload["messages"])
 
 
 def test_created_at_is_not_sent_to_openai_payload():

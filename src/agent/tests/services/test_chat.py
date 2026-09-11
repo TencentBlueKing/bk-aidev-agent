@@ -1491,7 +1491,7 @@ def test_snapshot_refreshes_historical_pv_image_url(mock_get_download_url):
 
     snapshot = agent._build_snapshot_agui_messages()
 
-    assert snapshot[0].content[0].url == "https://example.test/download/old.png"
+    assert snapshot[0]["content"][0]["url"] == "https://example.test/download/old.png"
     assert agent.chat_history[0].content[0]["url"] == expired
     mock_get_download_url.assert_called_once_with(
         session_code="session-1",
@@ -1528,7 +1528,7 @@ def test_snapshot_keeps_stale_image_url_when_refresh_fails(mock_get_download_url
 
     snapshot = agent._build_snapshot_agui_messages()
 
-    assert snapshot[0].content[0].url == expired
+    assert snapshot[0]["content"][0]["url"] == expired
     assert agent.chat_history[0].content[0]["url"] == expired
     mock_get_download_url.assert_called_once()
 

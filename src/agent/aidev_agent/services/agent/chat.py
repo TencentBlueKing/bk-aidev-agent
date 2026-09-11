@@ -28,13 +28,11 @@ from aidev_agent.core.ag_ui.aidev_agent import ASK_USER_QUESTION_TOOL_NAME, Aide
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
-    ExtendMessage,
     ReasoningLangChainMessage,
     SchemaKeys,
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
-    contents_to_agui_messages,
     get_schema_keys,
     get_stream_payload_input,
 )
@@ -99,7 +97,7 @@ def _to_ledger_dict(record: Any) -> dict:
     """把 chat_history 账本记录归一为 dict 形态。
 
     账本记录以 ChatPrompt 对象为主（build 期 model_validate 承接 + 本轮 patch append）；
-    快照转换器（contents_to_agui_messages）按 dict 消费，这里统一把 ChatPrompt 对象
+    快照下发与消费方均按 dict 形态处理，这里统一把 ChatPrompt 对象
     model_dump 为 dict（role/content 顶层、status/created_at 透传顶层、builtin_property/extra 保留）。
     """
     if isinstance(record, dict):
@@ -1064,21 +1062,22 @@ class ChatCompletionAgent(BaseModel):
             async_finalizer=self._aclose_chat_models,
         )
 
-    def _build_snapshot_agui_messages(self) -> list[ExtendMessage]:
-        """构建首帧 MESSAGES_SNAPSHOT 的 AG-UI 消息列表。
+    def _build_snapshot_agui_messages(self) -> list[dict]:
+        """构建首帧 MESSAGES_SNAPSHOT 的消息列表（前端历史接口原始返回形态）。
 
         数据源为 lossless chat_history 账本（由 build_chat_history 无损承接 session_context_data 而来，
         与前端历史消息接口同源，含 system 展示类记录）；resume 命中的 interrupt 记录已被
         _prepare_pre_run_history 就地改写为终态（原 id 不变），本轮 user/tool 记录也已直接并入账本，
-        快照对账本全量转换。
+        快照对账本全量下发。
 
-        账本记录统一经 model_dump 归一为 dict 后交由快照转换器消费（role/content 顶层、
-        status/created_at 透传顶层、builtin_property/extra 保留）。
+        下发布局即账本原样：账本记录统一经 model_dump 归一为 dict（role/content 顶层、
+        builtin_property/extra 保留、字段名保持后端原样），不经 AG-UI 消息转换器，
+        不做 role 归一 / camelCase 改名 / status 映射 / multimodal 重排。
         用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
         """
         base = [copy.deepcopy(_to_ledger_dict(rec)) for rec in (self.chat_history or [])]
         self._refresh_user_image_urls(base, clear_on_failure=False)
-        return contents_to_agui_messages(base)
+        return base
 
     def _refresh_user_image_urls(
         self,
