@@ -1285,9 +1285,9 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
     });
 
-    it.each(['选择', '拖拽', '粘贴'])('%s 文件时仅允许非空且严格小于 45 MB 的文件', async entry => {
+    it.each(['选择', '拖拽', '粘贴'])('%s 文件时仅允许非空且严格小于 20 MB 的文件', async entry => {
       const onUpload = vi.fn().mockResolvedValue({ id: 'files/valid.pdf', status: 'success' });
-      const files = [45 * 1024 * 1024 - 1, 45 * 1024 * 1024, 45 * 1024 * 1024 + 1, 0].map((size, index) => {
+      const files = [20 * 1024 * 1024 - 1, 20 * 1024 * 1024, 20 * 1024 * 1024 + 1, 0].map((size, index) => {
         const file = new File(['pdf'], `${index}.pdf`, { type: 'application/pdf' });
         Object.defineProperty(file, 'size', { value: size });
         return file;
@@ -1309,7 +1309,7 @@ describe('ChatInput', () => {
       expect(onUpload).toHaveBeenCalledExactlyOnceWith([files[0]]);
       expect(wrapper.findAll('.mock-file-item')).toHaveLength(1);
       expect(mockBkMessage).toHaveBeenCalledWith(expect.objectContaining({
-        message: '有 3 个文件未上传，可能文件超过 45.0 MB或超出上传个数',
+        message: '有 3 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
       }));
     });
 
