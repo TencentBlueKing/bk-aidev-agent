@@ -1,6 +1,6 @@
 # AIBlueking 组件
 
-`AIBlueking` 是 AI 小鲸的顶层业务组件，在 `ChatBot` 基础上封装了完整的面板功能，包括弹窗模式、拖拽、缩放、会话管理侧边栏、悬浮球等能力。适用于 SaaS 平台快速集成 AI 助手场景。
+`AIBlueking` 是 AI 小鲸的顶层业务组件，在 `ChatBot` 基础上封装了完整的面板功能，包括浮窗面板、拖拽、缩放、会话管理（Header 历史下拉）、悬浮球等能力。适用于 SaaS 平台快速集成 AI 助手场景。
 
 ::: info 非 Vue 宿主
 宿主无 Vue 时，请使用 v2.1.4-beta.8+ 的 [`mountAIBlueking`](/api/ai-blueking/standalone#mountaiblueking)（`@blueking/ai-blueking/standalone`），见 [Standalone 集成指南](/guide/integration-modes/standalone-bundle)。
@@ -44,7 +44,7 @@ function openAI() {
 | `renderMode` | `RenderMode` | `'chat'` | 渲染模式：`chat`（默认）、`share`（分享）、`test`（测试） |
 | `requestOptions` | `MaybeRefOrGetter<IRequestOptions>` | `{}` | 请求配置（`headers` / `data` 支持对象、函数、`ref`、`computed`） |
 | `extCls` | `string` | `''` | 额外 CSS 类名 |
-| `placeholder` | `string` | — | 输入框占位文本 |
+| `placeholder` | `string` | — | 输入框占位文本；未传时按 Skill / Prompt / 资源动态生成（**≥ v2.2.4**） |
 | `helloText` | `string` | `'你好，我是小鲸'` | 欢迎语 |
 | `prompts` | `string[]` | `[]` | 预设提示词（`/` 触发） |
 | `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
@@ -270,9 +270,9 @@ function openAI() {
 | `headerLeft` | — | Header 标题区与右侧工具栏之间 |
 | `headerActions` | — | Header 右侧工具栏自定义图标（历史/转人工之后、压缩/关闭之前）；与 `showHistoryIcon` 独立 |
 
-## 弹窗模式
+## 浮窗面板
 
-启用 `enablePopup` 后，面板将以弹窗形式渲染，配合 `draggable` 可实现自由拖拽定位。
+`AIBlueking` 以浮窗面板渲染，配合 `draggable` 可自由拖拽。文本选中弹窗由 `enablePopup` 控制（与 info `enableWordSelectionPopup` 联动），见 [内容引用 · AiSelection](/guide/core-features/content-referencing)。
 
 ```vue
 <template>
@@ -290,11 +290,11 @@ function openAI() {
 </template>
 ```
 
-### 弹窗相关 Props 说明
+### 浮窗相关 Props 说明
 
 | 属性 | 说明 |
 | --- | --- |
-| `enablePopup` | 启用弹窗模式，面板脱离文档流 |
+| `enablePopup` | 是否启用文本选中弹窗（AiSelection）；与 info `enableWordSelectionPopup` 联动 |
 | `draggable` | 允许用户拖拽移动面板 |
 | `teleportTo` | 将面板渲染到指定 DOM 节点下 |
 | `defaultWidth` / `defaultHeight` | 面板初始尺寸 |
@@ -304,9 +304,11 @@ function openAI() {
 
 ## 会话管理
 
-设置 `enableChatSession` 后，面板左侧将显示会话列表侧边栏，支持：
+`enableChatSession` 默认 `true`，控制 Header 的历史 / 新建会话入口（会话列表在历史下拉中，不是左侧侧边栏）。与 info `conversationSettings.enableChatSession` 联动：宿主或智能体任一为 `false` 则隐藏这些 icon。
 
-- 新建会话
+支持：
+
+- 新建会话（会清空输入框引用内容）
 - 切换会话
 - 重命名会话
 - 删除会话 / 批量删除
@@ -324,7 +326,7 @@ function openAI() {
 | 能力 | ChatBot | AIBlueking |
 | --- | --- | --- |
 | 核心聊天功能 | ✅ | ✅ |
-| 弹窗模式 | ❌ | ✅ |
+| 浮窗面板 | ❌ | ✅ |
 | 拖拽 / 缩放 | ❌ | ✅ |
 | 悬浮球入口 | ❌ | ✅ |
 | 会话管理侧边栏 | ❌（业务自建列表） | ✅（Header 历史下拉） |

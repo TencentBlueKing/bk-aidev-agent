@@ -1,21 +1,47 @@
 # 更新日志
 
-## v2.2.4-beta.3
+## v2.2.4
 
-配套 `@blueking/chat-helper` 显式 `stream_mode`。ChatBot / AIBlueking 无新 Props。
+v2.2.4 正式版整合 2.2.4-beta.1 至 beta.10 的功能与修复。配套 `@blueking/chat-x` `0.0.51`、`@blueking/chat-helper` `0.0.12`。
+
+### 新功能
+
+- **Header `#headerActions` 插槽**（≥ v2.2.4）：仅 `AIBlueking`。插在右侧工具栏内（历史/转人工之后、压缩/关闭之前），用于自定义图标按钮；与 `showHistoryIcon` 独立。详见 [UI 定制](/guide/core-features/ui-customization#headerleft--headeractions-自定义-header)
+- **通用文件附件**（≥ v2.2.4）：输入区与消息态支持图片 / 文档 / 文本 / 代码；一次可多选，待发送上限 9。系统选择框带 `accept` 过滤，拖拽 / 粘贴仍会再按扩展名校验。默认走 `pv_files/upload`（旧 agent SDK 仍逐个 `upload/{fileName}/`）。详见 [聊天交互 · 文件上传](/guide/core-features/chat-interaction#文件上传)
+- **Claw 协作智能体工具栏**（≥ v2.2.4）：`agent_type: 'claw'` 时自动隐藏用户消息的编辑/删除，以及 AI 消息的重新生成与删除。详见 [UI 定制](/guide/core-features/ui-customization#消息工具栏扩展messagetools--updatetools)
+- **动态输入框 placeholder**（≥ v2.2.4）：未传 `placeholder` 时按是否有 Skill / Prompt / 资源生成换行提示；显式传入（含空字符串）不改写。详见 [UI 定制 · placeholder](/guide/core-features/ui-customization#placeholder-输入框占位符)
 
 ### 优化
 
-- **chat_completion `stream_mode`**：新开对话默认 `start`；刷新 / 切会话 / 静默重连走 `attach`，只接管已有流，避免误开新生产者。详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)
+- **chat_completion `stream_mode`**：新开对话默认 `start`；刷新 / 切会话 / 静默重连走 `attach`，只接管已有流，避免误开新生产者。ChatBot / AIBlueking 无新 Props。详见 [chat-helper SDK · stream_mode](/api/chat-helper/sdk#stream-mode)
+- **会话开关与划词弹窗跟随 info**：`enableChatSession` / `enablePopup` 与 `conversationSettings.enableChatSession` / `enableWordSelectionPopup` 联动，宿主或智能体任一为 `false` 则关闭。shortcut 为空时划词弹窗回退「问问小鲸」
+- **浮窗侧栏收起位置**：右侧空间不足时展开仍先左移再扩宽；收起回到**挪窗前**的位置。右侧空间充足时仍只扩宽/缩宽。展开后若用户手动拖动或缩放浮窗，收起只缩宽、不自动挪窗。详见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)
+- **侧栏执行情况面板**：不展示 FlowAgent 节点「重试 / 跳过」（对话流内仍展示）。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)
+- **ToolCall 按类型区分前缀**：调用工具 / 调用 MCP / 读取 Skill
+- 新建会话时清除输入框引用内容
+- 输入框最大高度 280px、未激活灰色边框、容器底距 16px；small/normal 主题下上传按钮与工具栏尺寸对齐
+- 文件产物 Tab 图标改为设计稿线性文档；引用条 hover 色
 
 ### 修复
 
-- **浮窗侧栏收起位置**：右侧空间不足时展开仍先左移再扩宽；收起回到**挪窗前**的位置（贴右边回到贴右边），不再停在左移后的位置。右侧空间充足时仍只扩宽/缩宽。展开后若用户手动拖动或缩放浮窗，收起只缩宽、不自动挪窗。详见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)
+- 侧栏展开时顶栏分割线贯穿全宽
+- 生产环境输入框 focus 渐变描边被蓝色铺满
+- Tippy 浮层 `appendTo` 默认值导致遮挡（可用 `messageToolsTippyOptions` 覆盖）
+- 批量上传重复提示；空 / 缺省 `agent_sdk_version` 分流到 `pv_files`
 
 ### 文档
 
-- 更新 [chat-helper SDK](/api/chat-helper/sdk#stream-mode)、[类型定义 StreamMode](/api/chat-helper/types#streammode)、[聊天交互 · 刷新 / 切会话续流](/guide/core-features/chat-interaction#刷新--切会话续流)
-- 更新 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating) 侧栏收起回到展开前位置的说明
+- 更新 [UI 定制](/guide/core-features/ui-customization) Header 插槽、Claw、placeholder
+- 更新 [聊天交互](/guide/core-features/chat-interaction#文件上传) 文件上传、[刷新 / 切会话续流](/guide/core-features/chat-interaction#刷新--切会话续流)
+- 更新 [内容引用](/guide/core-features/content-referencing)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)
+- 更新 [chat-helper SDK](/api/chat-helper/sdk#stream-mode)、[StreamMode](/api/chat-helper/types#streammode)、[chat-x ChatInput](/api/chat-x/components#chatinput)
+
+### 升级建议
+
+- 自定义 `streamRequest` 时，续流请传 `stream_mode: "attach"`，不要用 `last_message_id` 推断语义
+- 关闭多会话或划词弹窗：宿主 prop 与智能体 info **任一为 `false` 即关闭**
+- 原子组装 `ChatInput` 时，`onUpload` 现为 `(files: File[]) => Promise<...>`，一次多选只回调一次
+- 需要在 Header 加自定义图标时使用 `#headerActions`，不要改 `showHistoryIcon` 语义
 
 ---
 

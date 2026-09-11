@@ -1,6 +1,6 @@
 # ChatBot 组件 API
 
-> 适用版本：`@blueking/ai-blueking` `2.2.3`（含 HITL 中断/恢复、renderMode、模型选择、侧栏自定义渲染、standalone-mount、文件产物预览、消息时间 `timezone` 等能力）。
+> 适用版本：`@blueking/ai-blueking` `2.2.4`（含 HITL 中断/恢复、renderMode、模型选择、侧栏自定义渲染、standalone-mount、文件产物预览、消息时间 `timezone`、`#headerActions`、通用文件上传等能力）。
 
 ## Props
 

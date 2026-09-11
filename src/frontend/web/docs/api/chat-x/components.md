@@ -13,16 +13,17 @@
 | `modelValue` | `string` | `''` | 输入框内容（`v-model`） |
 | `cite` | `string` | - | 引用文本 |
 | `messageStatus` | `MessageStatus` | - | 当前消息状态（控制发送/停止按钮） |
-| `placeholder` | `string` | - | 输入框占位符 |
+| `placeholder` | `string` | - | 输入框占位符；未传时按 Skill / Prompt / 资源动态生成（**≥ v2.2.4**） |
 | `prompts` | `string[]` | - | 预设提示词列表（`/` 触发） |
 | `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
 | `shortcuts` | `IShortcut[]` | `[]` | 快捷指令列表 |
 | `shortcutId` | `string` | - | 当前选中的快捷指令 ID |
 | `supportUpload` | `boolean` | `false` | 是否支持文件上传 |
+| `accept` | `string` | `DEFAULT_UPLOAD_ACCEPT` | 文件选择框过滤类型，同时用于选择/拖拽/粘贴后的扩展名校验；空字符串表示不限制（**≥ v2.2.4**） |
 | `models` | `IModelOption[]` | — | 可选模型列表；传入后在发送按钮左侧展示 ModelSelector |
 | `onSendMessage` | `(message: string) => void` | - | 发送消息回调 |
 | `onStopSending` | `() => void` | - | 停止发送回调 |
-| `onUpload` | `(file: File) => void` | - | 文件上传回调 |
+| `onUpload` | `(files: File[]) => Promise<ChatInputUploadResult \| ChatInputUploadResult[]>` | - | 文件上传回调；一次多选只调用一次并传入全部文件（**≥ v2.2.4**） |
 
 ### v-model
 
@@ -78,6 +79,8 @@
   />
 </template>
 ```
+
+自 **v2.2.4** 起，传入 `onUpload` 后显示上传按钮：一次可多选，待发送上限 9，默认允许图片 / 文档 / 文本 / 代码（`accept` 可覆盖）。详见 [聊天交互 · 文件上传](/guide/core-features/chat-interaction#文件上传)。
 
 ## MessageContainer
 

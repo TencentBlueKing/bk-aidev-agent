@@ -220,7 +220,7 @@ const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
 
 ### placeholder 输入框占位符
 
-自定义输入框的占位提示文本：
+自定义输入框的占位提示文本。自 **v2.2.4** 起：未传 `placeholder` 时，按当前是否有 Skill / Prompt / 资源动态生成换行提示（如 `输入 "/" 唤出 Skill`）；显式传入（含空字符串）不改写。
 
 ```vue
 <template>
