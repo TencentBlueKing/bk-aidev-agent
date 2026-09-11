@@ -399,7 +399,7 @@ it('should initialize', async () => {
 ### Q: chat-bot.vue 的逻辑都在哪里？
 
 **A**: 模板只组装 `ChatContainer`；业务拆到 8 个 composable，`chat-bot.vue` 的 `<script setup>` 负责接线：
-1. 创建共享 ref（`selectedShortcut`、`internalEnableSelection`、`selectedResources`）
+1. 创建共享 ref（`selectedShortcut`、`internalEnableSelection`）
 2. 定义辅助函数（`scrollToBottom`、`focusInput`）
 3. 按依赖拓扑顺序调用 composable
 4. 保留 `switchSession`、`setCiteText` 等简单辅助方法
@@ -497,6 +497,24 @@ interceptors: {
 ```
 
 ---
+
+## 输入菜单与资源引用（chat-x ≥ 0.0.52）
+
+### Q: 提示词触发符是 `/` 还是 `\`？
+
+**A**: Prompt 是 **`\`**，Skill 才是 `/`。`@` 唤出知识库/产物，`+` 号是全部分组。整段 cite 工具栏已移除，但 `v-model:cite` / `setCiteText` 仍可用。
+
+### Q: 发送时还要写 `extra.resources` 吗？
+
+**A**: 不要。选中资源统一走 `property.docSchema`（与 `extra` 同级）。`extra` 只保留 `cite` / `command` / `context`。无任何标签的纯文本消息不要带 `docSchema`。上传文件除 Binary content 外，文档里还会带一条 `artifact` 标签（`label` 取上传接口 `name`，`value` 取 `path`，接口 `file` 映射为 `artifact`），该标签由 chat-x 注入，业务侧只原样透传。
+
+### Q: AIBlueking 怎么传 skills？
+
+**A**: AIBlueking **没有** `skills` prop，Skill 来自 `agent.info.relatedSkills`。只有独立使用 `ChatBot` 时可传 `skills`。`prompts` / `resources` 仍可覆盖 info 接口。
+
+### Q: HITL 用户提问从输入框作答会带上 docSchema 吗？
+
+**A**: 不会。`resumeUserQuestionWithInput` 走 `agent.streamRequest`，没有 `property` 形参。这是已知限制。
 
 ## 最佳实践检查清单
 

@@ -12,9 +12,9 @@
 | alwaysCreateNewSession | `boolean`     | `false` | 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） |
 | sessionCode     | `string`             | -       | 指定初始会话编码                               |
 | shortcuts       | `Shortcut[]`         | `[]`    | 快捷指令列表                                   |
-| resources       | `IAiSlashMenuItem[]` | `[]`    | 资源列表（@ 触发）                             |
-| skills          | `ISkillListItem[]`   | -       | 技能列表（/ 触发）                             |
-| prompts         | `string[]`           | -       | 预设提示词                                     |
+| resources       | `IHostResourceItem[]` | `[]`    | 资源列表（`@` 触发）；内部映射为 `menuSources`。优先 props，否则 `agent.info.resources` |
+| skills          | `IHostSkillItem[]`   | -       | 技能列表（`/` 触发）；仅 ChatBot 有此 prop，AIBlueking 不透传。优先 props，否则 `agent.info.relatedSkills` |
+| prompts         | `string[]`           | -       | 预设提示词（`\` 触发，不是 `/`）；全文作为 name/content，不截断 |
 | helloText       | `string`             | -       | 欢迎语                                         |
 | useAgentName    | `boolean`            | `false` | 使用 agentName 作为欢迎标题                     |
 | placeholder     | `string`             | -       | 输入框占位符；未传时按 Skill / Prompt / 资源列表动态生成 |
@@ -162,7 +162,7 @@
 
 | 方法/属性      | 类型                                     | 说明                     |
 | -------------- | ---------------------------------------- | ------------------------ |
-| sendMessage    | `(message: string) => void`              | 发送消息                 |
+| sendMessage    | `(message: string) => void`              | 发送纯文本（空 docSchema，不带 property.docSchema） |
 | stopGeneration | `() => void`                             | 停止生成                 |
 | switchSession  | `(sessionCode: string) => Promise<void>` | 切换会话                 |
 | setCiteText    | `(text: string) => void`                 | 设置引用文本             |
@@ -285,8 +285,8 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | shortcuts | `IShortcut[]` | `[]` | 快捷操作列表 |
 | shortcutLimit | `number` | `3` | 快捷操作显示数量限制 |
 | shortcutFilter | `(shortcut, selectedText) => boolean` | - | 快捷操作过滤函数 |
-| prompts | `string[]` | `[]` | 预设提示词列表 |
-| resources | `IAiSlashMenuItem[]` | - | 资源列表（@ 触发） |
+| prompts | `string[]` | `[]` | 预设提示词列表（`\` 触发）；内部映射为 menuSources。AIBlueking 不暴露 skills |
+| resources | `IHostResourceItem[]` | - | 资源列表（`@` 触发）；内部映射为 menuSources |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（透传 ChatBot） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（透传 ChatBot） |
 | dropdownMenuConfig | `DropdownMenuConfig` | `{ showRename, showAutoGenerate, showShare }` 均 `true` | Header 更多菜单开关 `{ showAutoGenerate?, showRename?, showShare? }` |

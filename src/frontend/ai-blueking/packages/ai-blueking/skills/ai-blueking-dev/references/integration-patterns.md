@@ -459,14 +459,20 @@ const handleHistoryClick = (event: Event) => {
   });
 
   // ==================== 消息处理 ====================
-  const handleSend = async (content: UserMessage['content'], _docSchema: TagSchema) => {
+  const handleSend = async (content: UserMessage['content'], docSchema: TagSchema) => {
     if (!session.current.value?.sessionCode) return;
 
     const cite = citeContent.value;
     userInput.value = '';
     citeContent.value = '';
 
-    const options = cite ? { data: { property: { extra: { cite } } } } : undefined;
+    const extra = cite ? { cite } : undefined;
+    const hasTag = docSchema?.some(line => line.some(node => node.type === 'tag'));
+    const property = {
+      ...(extra ? { extra } : {}),
+      ...(hasTag ? { docSchema } : {}),
+    };
+    const options = Object.keys(property).length ? { data: { property } } : undefined;
     await agent.chat(content as IUserMessage['content'], session.current.value.sessionCode, undefined, options);
   };
 
@@ -531,10 +537,13 @@ const handleHistoryClick = (event: Event) => {
     }
   };
 
-  const handleUserInputConfirm = async (msg: Message, content: UserMessage['content'], _docSchema: TagSchema) => {
+  const handleUserInputConfirm = async (msg: Message, content: UserMessage['content'], docSchema: TagSchema) => {
     const sessionCode = session.current.value?.sessionCode;
     if (!sessionCode || msg.id === undefined) return;
-    await agent.resendMessage(String(msg.id), sessionCode, content as IUserMessage['content']);
+    const hasTag = docSchema?.some(line => line.some(node => node.type === 'tag'));
+    const existing = (msg as { property?: Record<string, unknown> }).property;
+    const property = hasTag ? { ...existing, docSchema } : existing;
+    await agent.resendMessage(String(msg.id), sessionCode, content as IUserMessage['content'], property);
   };
 
   // ==================== 快捷指令 ====================

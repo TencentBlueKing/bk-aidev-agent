@@ -46,8 +46,8 @@ function openAI() {
 | `extCls` | `string` | `''` | 额外 CSS 类名 |
 | `placeholder` | `string` | — | 输入框占位文本 |
 | `helloText` | `string` | `'你好，我是小鲸'` | 欢迎语 |
-| `prompts` | `string[]` | `[]` | 预设提示词（`/` 触发） |
-| `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
+| `prompts` | `string[]` | `[]` | 预设提示词（`\` 触发）；内部映射为 `menuSources` |
+| `resources` | `IHostResourceItem[]` | `[]` | 资源列表（`@` 触发）；内部映射为 `menuSources`。AIBlueking 不暴露 `skills` |
 
 ### 功能开关
 

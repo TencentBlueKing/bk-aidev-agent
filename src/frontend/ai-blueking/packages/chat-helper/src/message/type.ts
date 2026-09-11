@@ -411,6 +411,8 @@ export interface IMessageProperty {
   /** 其他扩展字段 */
   [key: string]: unknown;
   artifacts?: IMessageArtifact[];
+  /** 输入框富文本文档；承载资源引用协议，与 extra 同级。不导入 chat-x 类型 */
+  docSchema?: unknown;
   extra?: {
     /** 其他扩展字段 */
     [key: string]: unknown;

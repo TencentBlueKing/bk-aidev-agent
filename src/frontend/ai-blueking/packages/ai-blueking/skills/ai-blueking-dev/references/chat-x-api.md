@@ -178,10 +178,8 @@ import {
 | modelValue | `string \| TagSchema` | - | **必填**，支持 v-model |
 | cite | `string` | `''` | 引用内容，`v-model:cite` |
 | messageStatus | `MessageStatus` | - | 控制发送/停止等按钮状态 |
-| placeholder | `string` | 动态默认 | 未传时按 skills/prompts/resources 动态拼接；传入则完全覆盖 |
-| prompts | `string[]` | `[]` | `/` 触发 |
-| resources | `IAiSlashMenuItem[]` | `[]` | `@` / `/` 触发的资源（工具、MCP 等） |
-| skills | `ISkillListItem[]` | `[]` | Skill 列表（`/` 唤出） |
+| placeholder | `string` | 动态默认 | 未传时按 menuSources 动态拼接；传入则完全覆盖 |
+| menuSources | `IInputMenuItem[]` | `[]` | 统一输入菜单。`/` skill+mcp+tool，`@` 知识库+产物，`\` prompt，`+` 全部分组 |
 | shortcuts | `Shortcut[]` | - | 快捷指令列表 |
 | shortcutId | `string` | - | 当前选中快捷指令 ID（通常与外层 `selectedShortcut` 同步） |
 | supportUpload | `boolean` | `true` | 是否显示上传按钮 |
@@ -194,7 +192,7 @@ import {
 | onStopSending | `() => Promise<void>` | - | 停止 |
 | onUpload | `(files: File[]) => Promise<{ download_url?: string; error?: string; id?: string; status?: 'failed' \| 'success' } \| Array<...>>` | - | 上传（一次选择批量传入 `File[]`）。上传中或存在失败附件时禁止发送 |
 
-> 底层编辑器为 **`AiSlashInput`**（`/` 唤起 Skill 菜单，基于 `edix` schema 的富文本）。
+> 底层编辑器为 **`AiSlashInput`**（`/` `@` `\` `+` 统一菜单，基于 `edix` schema 的富文本）。ChatBot / AIBlueking 仍对外暴露 `prompts` / `resources` / `skills`（AIBlueking 无 `skills`），内部映射为 `menuSources`。
 
 **`onSendMessage` 完整签名**（第三个 `options` 参数是 HITL 关键）：
 
@@ -208,16 +206,16 @@ onSendMessage?: (
 
 即：普通「发送」可同时承载一次中断响应（resume）——例如用户不点选项、直接在输入框打字来回答 `UserQuestion`，此时 `options.interrupt` / `options.payload` 会随发送回传。
 
-**默认占位符**：未传入 `placeholder` 时按 `skills` / `prompts` / `resources` 是否非空动态拼接（有对应能力才显示该行），始终保留换行提示：
+**默认占位符**：未传入 `placeholder` 时按 `menuSources` 是否含对应 type 动态拼接（有对应能力才显示该行），始终保留换行提示：
 
 ```
-输入 "/" 唤出 Skill          // 仅当 skills 非空
-输入 "\" 唤出 Prompt         // 仅当 prompts 非空
-输入 "@" 唤出 工具和 MCP     // 仅当 resources 非空
+输入 "/" 唤出 Skill          // 仅当有 skill/mcp/tool
+输入 "\" 唤出 Prompt         // 仅当有 prompt
+输入 "@" 唤出 知识库         // 仅当有 knowledgebase/doc/artifact
 通过 Shift + Enter 进行换行输入  // 始终显示
 ```
 
-显式传入 `placeholder`（含空字符串）时完全覆盖。三种列表都为空时只显示换行提示。ChatBot / AIBlueking 未传 `placeholder` 时，上述列表来自 `agent/info`（`relatedSkills` / `predefinedQuestions` / `resources`）。
+显式传入 `placeholder`（含空字符串）时完全覆盖。列表都为空时只显示换行提示。ChatBot / AIBlueking 未传 `placeholder` 时，上述列表来自 `agent/info`（`relatedSkills` / `predefinedQuestions` / `resources`）。
 
 ### v-model（模型）
 
@@ -231,7 +229,7 @@ onSendMessage?: (
 |--------------------------------------|------|------|
 | selectShortcut | `shortcut: Shortcut` | 选择快捷指令 |
 | deleteShortcut | - | 删除当前快捷指令 |
-| update:modelValue | `value, selectedResourceList: IAiSlashMenuItem[]` | v-model 更新 |
+| update:modelValue | `value: string \| TagSchema, selectedResourceList: IInputMenuItem[]` | v-model 更新 |
 | modelChange | `model: IModelOption` | 切换模型 |
 
 ### Slots

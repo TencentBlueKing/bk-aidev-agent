@@ -1,15 +1,25 @@
 # 提示词与资源
 
 ::: warning 重要：提示词与资源由 AIDev 后台配置
-标准流程中，提示词（Prompts）和资源（Resources）通过 `agent/info` 接口自动加载，**无需前端定义**。
-前端 `prompts` / `resources` prop 仅用于特殊场景下的覆盖或补充。
+标准流程中，提示词（Prompts）、技能（Skills）和资源（Resources）通过 `agent/info` 接口自动加载，**无需前端定义**。
+前端 `prompts` / `resources` / `skills` prop 仅用于特殊场景下的覆盖或补充。
+`AIBlueking` **没有** `skills` prop，Skill 只来自 `agent.info.relatedSkills`。
 :::
 
-AI 小鲸 v2.0 支持两种预设输入辅助：**提示词（Prompts）** 和 **资源引用（Resources）**。它们帮助用户快速发起对话或引用外部资源。
+AI 小鲸支持四类输入辅助，chat-x ≥ 0.0.52 后统一映射为 `menuSources`，宿主仍可继续传旧 props：
+
+| 触发符 | 分组 | 数据来源 |
+| --- | --- | --- |
+| `/` | Skill / MCP / 工具 | `ChatBot.skills` 或 `agent.info.relatedSkills` + `resources` |
+| `@` | 知识库 / 会话产物 | `resources` 或 `agent.info.resources`；产物由 chat-x 自动收集 |
+| `\` | Prompt | `prompts` 或 `agent.info.conversationSettings.predefinedQuestions` |
+| `+` | 全部分组 | 以上全部；含内置「文件」上传 |
+
+`prompts` 仍是 `string[]`：`name` 与 `content` 都用全文，不截断。选中 prompt 会整体替换输入框文本，不产生标签。
 
 ## 默认行为（零配置）
 
-当你在 AIDev 平台配置好 Agent 的提示词和资源后，组件初始化时会自动加载并渲染到对话窗口中。**无需在前端传入任何 `prompts` 或 `resources` prop**。
+当你在 AIDev 平台配置好 Agent 的提示词、技能和资源后，组件初始化时会自动加载。**无需在前端传入任何 `prompts` / `resources` / `skills` prop**。
 
 ## Prompt 列表配置
 
@@ -17,7 +27,7 @@ AI 小鲸 v2.0 支持两种预设输入辅助：**提示词（Prompts）** 和 *
 仅在需要覆盖或补充后端配置时使用。
 :::
 
-通过 `prompts` prop 配置预设提示词列表。`prompts` 是一个字符串数组，每个字符串代表一个可点击的提示词模板。
+通过 `prompts` prop 配置预设提示词列表。`prompts` 是一个字符串数组，每个字符串代表一条可插入的提示词。
 
 ```vue
 <template>
@@ -37,39 +47,21 @@ const prompts = [
   '请概括这段内容的主要观点',
   '请帮我分析这段文字中的问题',
   '请用简单的语言解释这个概念',
-  '帮我写一个 Python 脚本，实现...',
-  '假设你是一名数据库专家，请帮我写 SQL 查询',
-  '你是一名经验丰富的前端开发工程师，请帮我解决以下问题...',
 ];
 </script>
 ```
 
-提示词显示在对话窗口中，用户点击后，其文本内容会直接作为消息发送给 AI。
+输入 **`\`** 唤出提示词列表（不是 `/`）。选中后全文替换输入框，用户再发送。
 
-若希望 AI 回复带**颜色、加粗、背景高亮**等行内样式，除在用户提示词中说明需求外，还应在 AIDev **系统提示词**中约定「蓝鲸行内富文本」`::bk::` 语法（勿用 HTML）。可将业务模板（如撤离通知）配在用户 `prompts` 中，格式约束写在 Agent 系统提示词里。详见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。
-
-在 `ChatBot` 独立模式中同样支持：
-
-```vue
-<template>
-  <ChatBot
-    url="/api/ai/assistant/"
-    :prompts="prompts"
-  />
-</template>
-```
-
-## 触发方式：输入 "/" 唤出提示词列表
-
-`ChatInput` 组件内置了 "/" 指令触发支持。当用户在输入框中输入 `/` 字符时，会自动弹出提示词列表菜单：
-
-- 输入 `/` 后弹出可选提示词列表
-- 支持键盘导航（上下箭头选择，Enter 确认）
-- 选中后自动填入输入框
+若希望 AI 回复带**颜色、加粗、背景高亮**等行内样式，除在用户提示词中说明需求外，还应在 AIDev **系统提示词**中约定「蓝鲸行内富文本」`::bk::` 语法（勿用 HTML）。详见 [蓝鲸行内富文本](/guide/core-features/markdown-inline-style)。
 
 ## Resources 配置
 
-通过 `resources` prop 配置资源列表，用户输入 `@` 字符时触发资源选择菜单。`resources` 使用 `IAiSlashMenuItem[]` 类型：
+通过 `resources` prop 覆盖资源列表，类型为 `IHostResourceItem[]`（保持旧字段形状：`type` / `name` / `code` / `id` / `icon`）。内部会映射为 chat-x `IInputMenuItem`：
+
+- `tool` / `mcp`：菜单 `id` = `code`
+- `knowledgebase` / `doc`：菜单 `id` = `String(数值 id)`，`id` 为 null 时回退 `code`
+- `shortcut` / `file` / `artifact` / 未知 type / 空 id 会被丢弃（快捷指令走 `shortcuts`，文件走内置上传，产物由 chat-x 自动收集）
 
 ```vue
 <template>
@@ -81,89 +73,31 @@ const prompts = [
 
 <script lang="ts" setup>
 import AIBlueking from '@blueking/ai-blueking';
-import '@blueking/ai-blueking/dist/vue3/style.css';
-import type { IAiSlashMenuItem } from '@blueking/chat-x';
-
-const apiUrl = '/api/ai/assistant/';
-
-const resources: IAiSlashMenuItem[] = [
-  {
-    label: '项目文档',
-    value: 'project_docs',
-    description: '引用项目相关文档',
-  },
-  {
-    label: '知识库',
-    value: 'knowledge_base',
-    description: '引用知识库中的内容',
-  },
-  {
-    label: 'API 文档',
-    value: 'api_docs',
-    description: '引用 API 接口文档',
-  },
-];
-</script>
-```
-
-### 触发方式
-
-- 在输入框中输入 `@` 字符弹出资源选择菜单
-- 支持键盘导航选择
-- 选中后资源标识会作为上下文传递给后端
-
-## ChatInput 内置支持
-
-`ChatInput` 组件内置了对 `/` 和 `@` 触发菜单的支持：
-
-- **自动弹出**：输入特殊字符时自动检测并弹出对应的菜单
-- **键盘导航**：支持 `↑` `↓` 方向键选择菜单项，`Enter` 确认，`Escape` 关闭
-- **模糊匹配**：输入 `/` 或 `@` 后继续输入文字可以过滤候选项
-- **无缝集成**：选择后内容自动融入输入框
-
-## 代码示例：完整配置
-
-```vue
-<template>
-  <AIBlueking
-    :url="apiUrl"
-    :prompts="prompts"
-    :resources="resources"
-    :shortcuts="shortcuts"
-    hello-text="你好！我是 AI 小鲸，试试输入 / 或 @ 来快速操作吧"
-    placeholder="输入问题，或输入 / 查看提示词，@ 引用资源"
-  />
-</template>
-
-<script lang="ts" setup>
-import AIBlueking from '@blueking/ai-blueking';
+import type { IHostResourceItem } from '@blueking/ai-blueking';
 import '@blueking/ai-blueking/dist/vue3/style.css';
 
 const apiUrl = '/api/ai/assistant/';
 
-// 预设提示词（输入 / 触发）
-const prompts = [
-  '请帮我分析这段代码的性能问题',
-  '请将以下内容翻译为英文',
-  '请帮我生成单元测试',
-];
-
-// 资源列表（输入 @ 触发）
-const resources = [
-  { label: '项目 README', value: 'readme' },
-  { label: '接口文档', value: 'api_doc' },
-  { label: '变更日志', value: 'changelog' },
-];
-
-// 快捷操作
-const shortcuts = [
-  {
-    id: 'explain',
-    name: '解释',
-    components: [
-      { type: 'textarea', key: 'text', name: '内容', fillBack: true },
-    ],
-  },
+const resources: IHostResourceItem[] = [
+  { type: 'tool', name: '搜索工具', code: 'search_tool', id: 1, icon: '' },
+  { type: 'knowledgebase', name: '运维知识库', code: 'ops_kb', id: 58, icon: '' },
 ];
 </script>
 ```
+
+## 发送协议：`property.docSchema`
+
+选中资源后，发送载荷把编辑器文档**原样**放在 `property.docSchema`（与 `extra` **同级**）。**不再发送** `extra.resources`。`extra` 只保留 `cite` / `command` / `context`。
+
+纯文本消息（文档里没有任何标签）不写 `docSchema`。上传文件除 `content` 里的 Binary 外，文档里还会带一条 `artifact` 标签：`label` 取上传接口 `name`，`value` 取 `path`，接口 `type: file` 映射为 `artifact`。这条标签由 chat-x 在发送前注入进文档，`ai-blueking` 只原样透传。
+
+标签节点只携带 5 个字段：`{ type, label, value, icon, description }`。后端识别靠 `value`：
+
+| `data.type` | `value` |
+| --- | --- |
+| `skill` | `skill_code` |
+| `mcp` / `tool` | `code` |
+| `knowledgebase` / `doc` | `String(id)`，null 时回退 `code` |
+| `artifact` | PV 相对路径 |
+
+整段 cite 工具栏已移除，但 `v-model:cite` / `setCiteText` 仍可用。

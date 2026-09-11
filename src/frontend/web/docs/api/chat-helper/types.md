@@ -451,3 +451,22 @@ interface IMessagesSnapshotEvent {
   messages: IMessage[];
 }
 ```
+
+## IMessageProperty
+
+消息 `property`。资源引用走顶层 `docSchema`（与 `extra` 同级），**不再发送** `extra.resources`。
+
+```typescript
+interface IMessageProperty {
+  [key: string]: unknown;
+  artifacts?: IMessageArtifact[];
+  /** 输入框富文本文档；资源引用协议。不导入 chat-x 类型 */
+  docSchema?: unknown;
+  extra?: {
+    [key: string]: unknown;
+    cite?: string | { data: Array<{ key: string; value: string }>; title: string; type: string };
+    command?: string;
+    context?: Array<Record<string, unknown>>;
+  };
+}
+```

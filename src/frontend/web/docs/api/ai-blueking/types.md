@@ -2,6 +2,30 @@
 
 本文档列出 `@blueking/ai-blueking` 包中的核心类型定义。
 
+## IHostResourceItem / IHostSkillItem
+
+宿主传入的资源 / 技能项，保持旧字段形状。内部由 `buildMenuSources` 映射为 chat-x `IInputMenuItem`。
+
+```typescript
+interface IHostResourceItem {
+  [key: string]: unknown;
+  code?: string;
+  icon?: null | string;
+  id?: null | number | string;
+  name: string;
+  type: string;
+}
+
+interface IHostSkillItem {
+  description?: string;
+  icon?: string;
+  skill_code: string;
+  skill_name: string;
+}
+```
+
+`AIBlueking` 只有 `resources`，没有 `skills`。
+
 ## AIBluekingProps
 
 `AIBlueking` 组件的 Props 类型。
@@ -23,10 +47,10 @@ interface AIBluekingProps {
   placeholder?: string;
   /** 欢迎语 */
   helloText?: string;
-  /** 预设提示词列表 */
+  /** 预设提示词列表（`\` 触发） */
   prompts?: string[];
-  /** 资源列表（输入 @ 触发） */
-  resources?: IAiSlashMenuItem[];
+  /** 资源列表（输入 @ 触发）；内部映射为 menuSources */
+  resources?: IHostResourceItem[];
   /** 自定义 AI 消息主工具组（透传 ChatBot） */
   messageTools?: IToolBtn[];
   /** 自定义 AI 消息反馈工具组（透传 ChatBot） */
@@ -315,9 +339,11 @@ interface ChatBotProps {
   // 快捷方式与资源
   /** 快捷方式列表 */
   shortcuts?: IShortcut[];
-  /** 资源列表（输入 @ 触发） */
-  resources?: IAiSlashMenuItem[];
-  /** 预设提示词列表 */
+  /** 资源列表（输入 @ 触发）；内部映射为 menuSources */
+  resources?: IHostResourceItem[];
+  /** 技能列表（输入 / 触发）；仅 ChatBot */
+  skills?: IHostSkillItem[];
+  /** 预设提示词列表（`\` 触发） */
   prompts?: string[];
 
   // 界面配置

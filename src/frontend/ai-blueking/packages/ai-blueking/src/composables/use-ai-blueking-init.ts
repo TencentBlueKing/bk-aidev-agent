@@ -26,7 +26,6 @@ import type { DraggableContainerExpose } from '../containers';
 import type { AIBluekingProps, IShortcut, ReportSdkErrorOptions, SdkErrorApiName } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
 import type { ILlmItem } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, ISkillListItem } from '@blueking/chat-x';
 
 export type EventForwarders = ReturnType<typeof createEventForwarders>;
 export type ForwardToManagerFn = UseEventBridgeReturn['forwardToManager'];
@@ -259,25 +258,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const agentName = computed(() => bootstrapAgentName.value);
   const isWelcomeState = computed(() => chatHelper.message.list.value.length === 0);
 
-  const agentResources = computed(() => {
-    if (props.resources?.length) return props.resources;
-    return (agentInfo.value?.resources ?? []) as IAiSlashMenuItem[];
-  });
-
-  const agentPrompts = computed(() => {
-    if (props.prompts?.length) return props.prompts;
-    return agentInfo.value?.conversationSettings?.predefinedQuestions ?? [];
-  });
-
-  const agentSkills = computed<ISkillListItem[]>(() => {
-    return (agentInfo.value?.relatedSkills ?? []).map(skill => ({
-      skill_name: skill.skill_name,
-      skill_code: skill.skill_code,
-      description: skill.description,
-      icon: skill.icon,
-    }));
-  });
-
   // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败）
   watch(
     () => bootstrapError.value,
@@ -401,9 +381,6 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     currentSession,
     isCompressed,
     isWelcomeState,
-    agentResources,
-    agentPrompts,
-    agentSkills,
     handleError,
     reportSdkError,
     ensureSessionReady,

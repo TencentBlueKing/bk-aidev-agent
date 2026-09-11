@@ -10,12 +10,11 @@
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `modelValue` | `string` | `''` | 输入框内容（`v-model`） |
+| `modelValue` | `string \| TagSchema` | `''` | 输入框内容（`v-model`） |
 | `cite` | `string` | - | 引用文本 |
 | `messageStatus` | `MessageStatus` | - | 当前消息状态（控制发送/停止按钮） |
 | `placeholder` | `string` | - | 输入框占位符 |
-| `prompts` | `string[]` | - | 预设提示词列表（`/` 触发） |
-| `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
+| `menuSources` | `IInputMenuItem[]` | `[]` | 统一输入菜单（`/` `@` `\` `+`） |
 | `shortcuts` | `IShortcut[]` | `[]` | 快捷指令列表 |
 | `shortcutId` | `string` | - | 当前选中的快捷指令 ID |
 | `supportUpload` | `boolean` | `false` | 是否支持文件上传 |

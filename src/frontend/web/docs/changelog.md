@@ -1,5 +1,21 @@
 # 更新日志
 
+## v2.2.4-beta.7
+
+配套 `@blueking/chat-x` `>=0.0.52-beta.1`。ChatBot / AIBlueking 仍保留 `prompts` / `resources`（ChatBot 另有 `skills`），内部映射为 `menuSources`。
+
+### 变更
+
+- **输入菜单统一**：`/` Skill·MCP·工具，`@` 知识库·产物，`\` Prompt，`+` 全部分组。Prompt 触发符是 `\` 不是 `/`。
+- **资源引用协议**：发送写 `property.docSchema`（与 `extra` 同级），**不再发送** `extra.resources`。无标签的纯文本不带 `docSchema`。上传文件额外补 `artifact` 标签。详见 [提示词与资源](/guide/core-features/prompts)
+- **宿主零改动**：`prompts` 仍是 `string[]`；`AIBlueking` 不新增 `skills`。类型改为本地 `IHostResourceItem` / `IHostSkillItem`（旧字段形状）。
+
+### 文档
+
+- 更新 [提示词与资源](/guide/core-features/prompts)、[ChatBot API](/api/ai-blueking/chatbot)、[AIBlueking API](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)
+
+---
+
 ## v2.2.4-beta.3
 
 配套 `@blueking/chat-helper` 显式 `stream_mode`。ChatBot / AIBlueking 无新 Props。

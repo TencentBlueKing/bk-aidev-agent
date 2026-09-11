@@ -323,4 +323,18 @@ describe('useAiBluekingInit error handling', () => {
 
     expect(capturedOnErrorOptions).toEqual({ ignoreErrors });
   });
+
+  it('does not map agent.info into resources/prompts/skills; host props stay passthrough', () => {
+    const result = useAiBluekingInit({
+      props: createDefaultProps({
+        prompts: ['host prompt'],
+        resources: [{ type: 'tool', name: '搜索', code: 'search', id: 1, icon: '' }],
+      }),
+      emit: vi.fn(),
+    });
+
+    expect(result).not.toHaveProperty('agentResources');
+    expect(result).not.toHaveProperty('agentPrompts');
+    expect(result).not.toHaveProperty('agentSkills');
+  });
 });

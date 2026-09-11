@@ -356,12 +356,14 @@ type StreamMode = 'start' | 'attach';
 // 消息属性：由 chat() 第 5 个参数 / 消息 property 字段承载
 interface IMessageProperty {
   [key: string]: unknown;
+  /** 输入框富文本文档；资源引用协议，与 extra 同级。不导入 chat-x 类型 */
+  docSchema?: unknown;
   extra?: {
     [key: string]: unknown;
     cite?: string | { data: Array<{ key: string; value: string }>; title: string; type: string };
     command?: string;                          // 快捷键命令
     context?: Array<Record<string, unknown>>;  // 上下文信息
-    resources?: Array<Record<string, unknown>>;// @ 选择的资源列表
+    // 不再发送 extra.resources；选中资源走 property.docSchema
   };
 }
 ```

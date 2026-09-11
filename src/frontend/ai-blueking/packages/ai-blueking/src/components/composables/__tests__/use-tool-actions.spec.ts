@@ -233,6 +233,63 @@ describe('useToolActions', () => {
       );
     });
 
+    it('should write new docSchema at property top-level and keep extra.cite/command', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleUserInputConfirm } = useToolActions(params);
+
+      const docSchema = [
+        [
+          {
+            type: 'tag',
+            data: { type: 'tool', label: '搜索工具', value: 'search_tool', icon: '', description: '' },
+          },
+        ],
+      ];
+      const message = createMockUserMessage({
+        id: 'msg-1',
+        property: { extra: { cite: 'old cite', command: 'summary' }, docSchema: [[{ type: 'text', text: '旧' }]] },
+      } as any);
+
+      await handleUserInputConfirm(message as any, 'new content', docSchema as any);
+
+      expect(params.chatBusinessManager.value!.resendMessageWithProperty).toHaveBeenCalledWith(
+        'msg-1',
+        'session-1',
+        'new content',
+        {
+          extra: { cite: 'old cite', command: 'summary' },
+          docSchema,
+        },
+      );
+    });
+
+    it('should not overwrite original docSchema when the new document has no tags', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleUserInputConfirm } = useToolActions(params);
+
+      const originalDoc = [
+        [{ type: 'tag', data: { type: 'skill', label: '审查', value: 'code_review', icon: '', description: '' } }],
+      ];
+      const message = createMockUserMessage({
+        id: 'msg-1',
+        property: { extra: { command: 'summary' }, docSchema: originalDoc },
+      } as any);
+
+      await handleUserInputConfirm(message as any, 'plain', [[{ type: 'text', text: 'plain' }]] as any);
+
+      expect(params.chatBusinessManager.value!.resendMessageWithProperty).toHaveBeenCalledWith(
+        'msg-1',
+        'session-1',
+        'plain',
+        {
+          extra: { command: 'summary' },
+          docSchema: originalDoc,
+        },
+      );
+    });
+
     it('should not call resendMessage when no chatHelper', async () => {
       const params = createParams({ chatHelper: shallowRef(null) });
       const { handleUserInputConfirm } = useToolActions(params);

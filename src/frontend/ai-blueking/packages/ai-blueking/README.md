@@ -248,7 +248,7 @@ const handleError = (error: Error) => {
 | `messageTools` | `IToolBtn[]` | - | 自定义 AI 消息主工具组（与内置按 id 合并） |
 | `updateTools` | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（与内置按 id 合并） |
 | `prompts` | `string[]` | - | 预设提示词列表 |
-| `resources` | `IAiSlashMenuItem[]` | - | 资源列表（@ 触发） |
+| `resources` | `IHostResourceItem[]` | - | 资源列表（`@` 触发）；内部映射为 `menuSources` |
 
 > **分享功能说明**：ChatBot 在独立模式下内置了完整的消息分享能力（进入选择模式 → 调用 API → 复制分享链接 → Toast 提示），无需外部额外处理。集成模式下，`enableSelection` 和 `shareLoading` 由父组件（如 AIBlueking）通过 props 控制。自定义 `triggerSelection` 按钮确认时不会走内置分享，仅 `emit('confirm-share', messages, source)`。
 
