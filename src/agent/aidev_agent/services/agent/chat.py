@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import posixpath
@@ -27,13 +28,11 @@ from aidev_agent.core.ag_ui.aidev_agent import ASK_USER_QUESTION_TOOL_NAME, Aide
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
-    ExtendMessage,
     ReasoningLangChainMessage,
     SchemaKeys,
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
-    contents_to_agui_messages,
     get_schema_keys,
     get_stream_payload_input,
 )
@@ -75,6 +74,8 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileInvalidArgumentError,
     SandboxFileServerError,
     SandboxPvFileService,
+    fill_user_image_urls,
+    iter_user_image_binaries,
 )
 from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
@@ -96,7 +97,7 @@ def _to_ledger_dict(record: Any) -> dict:
     """把 chat_history 账本记录归一为 dict 形态。
 
     账本记录以 ChatPrompt 对象为主（build 期 model_validate 承接 + 本轮 patch append）；
-    快照转换器（contents_to_agui_messages）按 dict 消费，这里统一把 ChatPrompt 对象
+    快照下发与消费方均按 dict 形态处理，这里统一把 ChatPrompt 对象
     model_dump 为 dict（role/content 顶层、status/created_at 透传顶层、builtin_property/extra 保留）。
     """
     if isinstance(record, dict):
@@ -1061,19 +1062,55 @@ class ChatCompletionAgent(BaseModel):
             async_finalizer=self._aclose_chat_models,
         )
 
-    def _build_snapshot_agui_messages(self) -> list[ExtendMessage]:
-        """构建首帧 MESSAGES_SNAPSHOT 的 AG-UI 消息列表。
+    def _build_snapshot_agui_messages(self) -> list[dict]:
+        """构建首帧 MESSAGES_SNAPSHOT 的消息列表（前端历史接口原始返回形态）。
 
         数据源为 lossless chat_history 账本（由 build_chat_history 无损承接 session_context_data 而来，
         与前端历史消息接口同源，含 system 展示类记录）；resume 命中的 interrupt 记录已被
         _prepare_pre_run_history 就地改写为终态（原 id 不变），本轮 user/tool 记录也已直接并入账本，
-        快照对账本全量转换。
+        快照对账本全量下发。
 
-        账本记录统一经 model_dump 归一为 dict 后交由快照转换器消费（role/content 顶层、
-        status/created_at 透传顶层、builtin_property/extra 保留）。
+        下发布局即账本原样：账本记录统一经 model_dump 归一为 dict（role/content 顶层、
+        builtin_property/extra 保留、字段名保持后端原样），不经 AG-UI 消息转换器，
+        不做 role 归一 / camelCase 改名 / status 映射 / multimodal 重排。
+        用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
         """
-        base = [_to_ledger_dict(rec) for rec in (self.chat_history or [])]
-        return contents_to_agui_messages(base)
+        base = [copy.deepcopy(_to_ledger_dict(rec)) for rec in (self.chat_history or [])]
+        self._refresh_user_image_urls(base, clear_on_failure=False)
+        return base
+
+    def _refresh_user_image_urls(
+        self,
+        payloads: list[dict],
+        *,
+        clear_on_failure: bool,
+        url_cache: dict[str, str] | None = None,
+    ) -> SandboxPvFileService | None:
+        """在消息副本上重签用户图片 download_url。"""
+        if self.resource_manager is None or not self.thread_id:
+            return None
+        has_images = any(
+            payload.get("role") == PromptRole.USER.value
+            and any(iter_user_image_binaries(payload.get("content")))
+            for payload in payloads
+        )
+        if not has_images:
+            return None
+        file_service = SandboxPvFileService(
+            resource_manager=self.resource_manager,
+            executor_info=self.executor_info or {},
+        )
+        cache = url_cache if url_cache is not None else {}
+        for payload in payloads:
+            fill_user_image_urls(
+                file_service,
+                payload,
+                only_missing=False,
+                url_cache=cache,
+                session_code=self.thread_id,
+                clear_on_failure=clear_on_failure,
+            )
+        return file_service
 
     def _stream(
         self,
@@ -1490,6 +1527,25 @@ class ChatCompletionAgent(BaseModel):
     def _build_llm_history(self) -> list[ChatPrompt]:
         """构造仅供本轮模型调用使用的历史副本。"""
         chat_history = [prompt.model_copy(deep=True) for prompt in self.chat_history or []]
+        url_cache: dict[str, str] = {}
+        file_service = self._refresh_user_image_urls(
+            [
+                {"role": prompt.role, "session_code": self.thread_id, "content": prompt.content}
+                for prompt in chat_history
+            ],
+            clear_on_failure=True,
+            url_cache=url_cache,
+        )
+
+        def ensure_file_service() -> SandboxPvFileService:
+            nonlocal file_service
+            if file_service is None:
+                file_service = SandboxPvFileService(
+                    resource_manager=self.resource_manager,
+                    executor_info=self.executor_info or {},
+                )
+            return file_service
+
         if not self.file_resources:
             return chat_history
 
@@ -1529,17 +1585,17 @@ class ChatCompletionAgent(BaseModel):
         )
 
         if image_paths:
-            file_service = SandboxPvFileService(
-                resource_manager=self.resource_manager,
-                executor_info=self.executor_info or {},
-            )
+            service = ensure_file_service()
             for path in image_paths:
-                url_data = file_service.get_download_url(
-                    session_code=self.thread_id,
-                    path=path,
-                    expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-                )
-                image_url = url_data.get("download_url")
+                image_url = url_cache.get(path) or ""
+                if not image_url:
+                    url_data = service.get_download_url(
+                        session_code=self.thread_id,
+                        path=path,
+                        expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+                    )
+                    image_url = url_data.get("download_url") or ""
+                    url_cache[path] = image_url
                 if not image_url:
                     raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
                 existing = self._find_binary_by_path(content, path)
@@ -1568,6 +1624,19 @@ class ChatAgentBuilder:
     - 通用字段读 ``self.ctx.{resource_manager, username, agent_code, session_context_data, switch_agent}``。
     - Chat 专属字段读 ``self.ctx.chat.{temperature, max_tokens, auth_headers, checkpointer, ...}``。
     """
+
+    # docSchema tag 的 data.type → 装配期资源形状：tool / mcp 按 code 收窄，知识库按数字 id，
+    # 文件与产物的 value 都是 PV 相对路径；file / artifact 同等映射，避免新组件库仍发
+    # file 时附件被静默丢掉。skill 走渐进式披露（只交出描述、正文按需拉取），
+    # 全量挂载成本极低，且 options.skills 非空还是 runtime 沙箱工具链的开关，故不参与收窄。
+    DOC_SCHEMA_TAG_TYPES = {
+        "tool": ("tool", "code"),
+        "mcp": ("mcp", "code"),
+        "doc": ("knowledgebase", "id"),
+        "knowledgebase": ("knowledgebase", "id"),
+        "artifact": ("file", "path"),
+        "file": ("file", "path"),
+    }
 
     def __init__(self, ctx: AgentBuildContext):
         self.ctx = ctx
@@ -2158,9 +2227,51 @@ class ChatAgentBuilder:
                 f"ChatAgentBuilder: handling last human message with resources in session_context_data->[{item}]"
             )
             if item.get("role") == PromptRole.USER.value:
-                # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
-                extra = item.get("extra") or {}
-                resources = extra.get("resources") or []
+                resources = self._resolve_last_human_resources(item)
                 self._file_resources = [resource for resource in resources if resource.get("type") == "file"]
                 self._specific_resources = [resource for resource in resources if resource.get("type") != "file"]
                 break
+
+    @classmethod
+    def _resolve_last_human_resources(cls, item: dict) -> list[dict]:
+        """取本轮用户消息声明的资源：优先 docSchema，缺省时降级 extra.resources。
+
+        ``docSchema`` 是前端输入框富文本结构。只要该键存在就以它为唯一事实源——空数组代表
+        本轮确实没有引用任何资源，此时不回退旧字段。
+        """
+        doc_schema = item.get("docSchema")
+        if doc_schema is not None:
+            return cls._convert_doc_schema_to_resources(doc_schema)
+        # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
+        extra = item.get("extra") or {}
+        return extra.get("resources") or []
+
+    @classmethod
+    def _convert_doc_schema_to_resources(cls, doc_schema: Any) -> list[dict]:
+        """把 docSchema 的 tag 节点转成装配期资源形状，text 节点、未知 type 与空 value 忽略。"""
+        if not isinstance(doc_schema, list):
+            logger.warning("ChatAgentBuilder: docSchema 不是二维数组->[%s]", type(doc_schema).__name__)
+            return []
+        resources: list[dict] = []
+        for line in doc_schema:
+            if not isinstance(line, list):
+                continue
+            for node in line:
+                if not isinstance(node, dict) or node.get("type") != "tag":
+                    continue
+                data = node.get("data")
+                if not isinstance(data, dict):
+                    continue
+                mapping = cls.DOC_SCHEMA_TAG_TYPES.get(data.get("type") or "")
+                value = data.get("value")
+                if mapping is None or value in (None, ""):
+                    continue
+                resource_type, value_key = mapping
+                if value_key == "id":
+                    try:
+                        value = int(value)
+                    except (TypeError, ValueError):
+                        logger.warning("ChatAgentBuilder: docSchema 知识库 tag value 非数字 id->[%s]", value)
+                        continue
+                resources.append({"type": resource_type, value_key: value})
+        return resources

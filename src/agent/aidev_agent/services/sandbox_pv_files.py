@@ -79,7 +79,7 @@ TEMP_UPLOAD_SANDBOX_TTL_SECONDS = 1800
 IMAGE_DOWNLOAD_URL_EXPIRES_IN = 3600
 # 会话 PV 上传限制：平台与 SDK 插件 HTTP 入口共用，只在此维护一份。
 MAX_SESSION_UPLOAD_FILES = 9
-MAX_SESSION_UPLOAD_FILE_SIZE = int(2.4 * 1024 * 1024)
+MAX_SESSION_UPLOAD_FILE_SIZE = int(45 * 1024 * 1024)
 SESSION_UPLOAD_IMAGE_EXTENSIONS = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
 SESSION_UPLOAD_FILE_EXTENSIONS = (
     frozenset(
@@ -221,6 +221,31 @@ class SandboxUploadFile(TypedDict):
     mime_type: NotRequired[str]
 
 
+def normalize_session_pv_path(path: str | None, *, required: bool = True) -> str:
+    """清洗会话 PV 相对路径：去空白、统一分隔符、拒绝 `..`。"""
+    normalized = (path or "").strip().replace("\\", "/")
+    if required and not normalized:
+        raise SandboxFileInvalidArgumentError("path is required")
+    if ".." in normalized.split("/"):
+        raise SandboxFileInvalidArgumentError("invalid path")
+    return normalized
+
+
+def validate_session_upload_stats(files) -> None:
+    """read() 前按数量和 UploadedFile.size 做内存护栏。平台与插件 HTTP 入口共用。"""
+    if not files:
+        raise SandboxFileInvalidArgumentError("上传文件不能为空")
+    if len(files) > MAX_SESSION_UPLOAD_FILES:
+        raise SandboxFileInvalidArgumentError(f"单次上传文件不能超过 {MAX_SESSION_UPLOAD_FILES} 个")
+    for upload_file in files:
+        size = getattr(upload_file, "size", 0) or 0
+        if size > MAX_SESSION_UPLOAD_FILE_SIZE:
+            name = getattr(upload_file, "name", "") or ""
+            raise SandboxFileInvalidArgumentError(
+                f"文件 {name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
+            )
+
+
 def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
     """校验上传数量、扩展名和单文件大小。HTTP 入口与 Service 共用。"""
     if not files:
@@ -238,15 +263,12 @@ def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
             )
 
 
-def iter_user_images_missing_url(payload: dict):
-    """找出用户消息里缺展示 URL 的图片 binary。"""
-    if payload.get("role") != "user":
-        return
-    content = payload.get("content")
+def iter_user_image_binaries(content):
+    """找出用户消息里带 PV 路径的图片 binary。"""
     if not isinstance(content, list):
         return
     for item in content:
-        if not isinstance(item, dict) or item.get("type") != "binary" or item.get("url"):
+        if not isinstance(item, dict) or item.get("type") != "binary":
             continue
         if not str(item.get("mime_type") or "").startswith("image/"):
             continue
@@ -254,13 +276,48 @@ def iter_user_images_missing_url(payload: dict):
             yield item
 
 
-def fill_user_image_urls(file_service: "SandboxPvFileService", payload: dict) -> None:
-    """给缺 url 的用户图片 binary 签发 download_url。"""
-    session_code = payload.get("session_code") or ""
+def iter_user_images_missing_url(payload: dict):
+    """找出用户消息里缺展示 URL 的图片 binary。"""
+    if payload.get("role") != "user":
+        return
+    for item in iter_user_image_binaries(payload.get("content")):
+        if not item.get("url"):
+            yield item
+
+
+def fill_user_image_urls(
+    file_service: "SandboxPvFileService",
+    payload: dict,
+    *,
+    only_missing: bool = True,
+    url_cache: dict[str, str] | None = None,
+    session_code: str = "",
+    clear_on_failure: bool = False,
+) -> None:
+    """给用户图片 binary 签发 / 刷新 download_url。
+
+    ``only_missing=True``：写消息时只补缺 URL。
+    ``only_missing=False``：读历史或组模型输入时强制刷新，按 path 去重。
+    ``clear_on_failure``：签发失败时去掉旧 URL，避免把过期链接送给模型。
+    """
+    if payload.get("role") != "user":
+        return
+    session_code = session_code or payload.get("session_code") or ""
     if not session_code:
         return
-    for item in iter_user_images_missing_url(payload):
-        path = item.get("id") or item.get("path")
+    cache = url_cache if url_cache is not None else {}
+    for item in iter_user_image_binaries(payload.get("content")):
+        if only_missing and item.get("url"):
+            continue
+        path = str(item.get("id") or item.get("path") or "")
+        if not path:
+            continue
+        if path in cache:
+            if cache[path]:
+                item["url"] = cache[path]
+            elif clear_on_failure:
+                item.pop("url", None)
+            continue
         try:
             url_data = file_service.get_download_url(
                 session_code=session_code,
@@ -269,10 +326,16 @@ def fill_user_image_urls(file_service: "SandboxPvFileService", payload: dict) ->
             )
         except SandboxFileError:
             logger.exception("签发用户图片 URL 失败: session=%s path=%s", session_code, path)
+            cache[path] = ""
+            if clear_on_failure:
+                item.pop("url", None)
             continue
-        url = url_data.get("download_url")
+        url = url_data.get("download_url") or ""
+        cache[path] = url
         if url:
             item["url"] = url
+        elif clear_on_failure:
+            item.pop("url", None)
 
 
 class SandboxPvFileService:
@@ -748,12 +811,13 @@ class SandboxPvFileService:
                 "truncated": true,          # 仅在触达 max_pages 上限时附加
             }
         """
+        path = normalize_session_pv_path(path, required=False)
         volume_id = self._get_volume_id(session_code)
         client = self._get_client()
         path_params = self._build_path_params(volume_id)
 
         base_params: dict = {
-            "path": path or "",
+            "path": path,
             "is_recursive": True,
             "page_size": PV_LIST_PAGE_SIZE,
         }
@@ -800,16 +864,19 @@ class SandboxPvFileService:
         return result
 
     def delete_file(self, session_code: str, path: str) -> None:
-        """删除 PV 内指定文件（幂等）。"""
+        """删除 PV 内指定文件。文件不存在时由 PaaS 返回 404，HTTP 入口再收成幂等。"""
+        path = normalize_session_pv_path(path, required=True)
         self._call_single("delete_file", session_code, {"path": path})
 
     def stat_file(self, session_code: str, path: str) -> dict:
         """查询文件/目录元数据（不存在时 PaaS 返回 `exists=false`，透传）。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single("stat_file", session_code, {"path": path})
         return resp.json() or {}
 
     def preview_file(self, session_code: str, path: str, max_bytes: int = 65536) -> tuple[bytes, bool]:
         """返回文件前 max_bytes 字节纯文本内容，及是否被截断（`X-Truncated` header）。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single(
             "preview_file", session_code, {"path": path, "max_bytes": max_bytes}
         )
@@ -818,6 +885,7 @@ class SandboxPvFileService:
 
     def get_download_url(self, session_code: str, path: str, expires_in: int = 600) -> dict:
         """签发临时 download_url / preview_url。"""
+        path = normalize_session_pv_path(path, required=True)
         resp = self._call_single(
             "get_download_url", session_code, {"path": path, "expires_in": expires_in}
         )

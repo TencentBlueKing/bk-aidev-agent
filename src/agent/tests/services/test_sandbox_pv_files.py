@@ -21,7 +21,9 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileServerError,
     SandboxPvFileService,
     fill_user_image_urls,
+    normalize_session_pv_path,
     validate_session_upload_files,
+    validate_session_upload_stats,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
 
@@ -598,6 +600,11 @@ class TestListFiles:
         with pytest.raises(SandboxFileNotFoundError):
             service.list_files(session_code="s1")
 
+    def test_list_files_rejects_parent_path(self, service, mock_client):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            service.list_files(session_code="s1", path="../secret")
+        mock_client.list_files.request.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # delete_file / stat_file / preview_file / get_download_url
@@ -616,6 +623,16 @@ class TestOtherServiceMethods:
         mock_client.delete_file.request.side_effect = _mock_http_error(404, "AGENT_SANDBOX_FILE_NOT_FOUND")
         with pytest.raises(SandboxFileNotFoundError):
             service.delete_file(session_code="s1", path="x.txt")
+
+    def test_delete_file_rejects_parent_path(self, service, mock_client):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            service.delete_file(session_code="s1", path="files/../secret.txt")
+        mock_client.delete_file.request.assert_not_called()
+
+    def test_delete_file_normalizes_separators(self, service, mock_client):
+        mock_client.delete_file.request.return_value = _mock_paas_response()
+        service.delete_file(session_code="s1", path="  files\\a.txt  ")
+        assert mock_client.delete_file.request.call_args.kwargs["params"]["path"] == "files/a.txt"
 
     def test_stat_file_returns_paas_body(self, service, mock_client):
         mock_client.stat_file.request.return_value = _mock_paas_response({"exists": True, "size": 42})
@@ -657,6 +674,41 @@ class TestOtherServiceMethods:
         assert result == {"download_url": "https://cdn/x", "preview_url": "https://cdn/x"}
         params = mock_client.get_download_url.request.call_args.kwargs["params"]
         assert params["expires_in"] == 300
+
+
+class TestNormalizeSessionPvPath:
+    def test_required_rejects_blank(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="path is required"):
+            normalize_session_pv_path("  ")
+
+    def test_optional_keeps_empty(self):
+        assert normalize_session_pv_path("", required=False) == ""
+
+    def test_rejects_parent_segment(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            normalize_session_pv_path("files/../secret.txt")
+
+
+class TestValidateSessionUploadStats:
+    def test_rejects_too_many_files_without_reading(self):
+        files = [
+            SimpleNamespace(name=f"{index}.txt", size=1, read=MagicMock(side_effect=AssertionError("must not read")))
+            for index in range(MAX_SESSION_UPLOAD_FILES + 1)
+        ]
+        with pytest.raises(SandboxFileInvalidArgumentError, match="不能超过"):
+            validate_session_upload_stats(files)
+        for upload_file in files:
+            upload_file.read.assert_not_called()
+
+    def test_rejects_oversized_file_without_reading(self):
+        upload_file = SimpleNamespace(
+            name="big.txt",
+            size=MAX_SESSION_UPLOAD_FILE_SIZE + 1,
+            read=MagicMock(side_effect=AssertionError("must not read")),
+        )
+        with pytest.raises(SandboxFileInvalidArgumentError, match="超过单文件大小限制"):
+            validate_session_upload_stats([upload_file])
+        upload_file.read.assert_not_called()
 
 
 class TestValidateSessionUploadFiles:
@@ -726,5 +778,58 @@ class TestFillUserImageUrls:
         }
 
         fill_user_image_urls(file_service, payload)
+
+        assert "url" not in payload["content"][0]
+
+    def test_refreshes_existing_url_when_not_only_missing(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"},
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        assert payload["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/a.png", expires_in=3600
+        )
+
+    def test_dedupes_same_path_across_payloads(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        url_cache = {}
+        first = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-1"}],
+        }
+        second = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-2"}],
+        }
+
+        fill_user_image_urls(file_service, first, only_missing=False, url_cache=url_cache)
+        fill_user_image_urls(file_service, second, only_missing=False, url_cache=url_cache)
+
+        assert first["content"][0]["url"] == "https://cdn/fresh.png"
+        assert second["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once()
+
+    def test_clears_stale_url_when_refresh_fails(self):
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileError("boom")
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"}],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False, clear_on_failure=True)
 
         assert "url" not in payload["content"][0]

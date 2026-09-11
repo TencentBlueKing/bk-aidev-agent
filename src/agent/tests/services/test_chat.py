@@ -38,6 +38,7 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.agent.chat import ChatAgentBuilder
+from aidev_agent.services.sandbox_pv_files import SandboxFileServerError
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
@@ -1208,6 +1209,89 @@ def test_chat_agent_builder_separates_file_resources_from_config_resources():
     assert builder._specific_resources == [{"type": "tool", "code": "search"}]
 
 
+def _make_doc_schema_chat_ctx(doc_schema, resources: list[dict]):
+    ctx = _make_dummy_chat_ctx()
+    ctx.session_context_data = [
+        {
+            "role": PromptRole.USER.value,
+            "content": "请分析这些文件",
+            "docSchema": doc_schema,
+            "extra": {"resources": resources},
+        }
+    ]
+    return ctx
+
+
+def _tag(tag_type: str, value: str) -> dict:
+    return {"type": "tag", "data": {"label": value, "value": value, "type": tag_type}}
+
+
+@pytest.mark.parametrize(
+    "doc_schema, expected_specific, expected_files",
+    [
+        # docSchema 优先于 extra.resources；text / skill 不收窄；file 与 artifact 同等映射
+        (
+            [
+                [
+                    _tag("tool", "weather_query"),
+                    {"type": "text", "text": " "},
+                    _tag("mcp", "bk-itsm-prod-ticket"),
+                    _tag("skill", "file-kit"),
+                    _tag("file", "files/legacy.pdf"),
+                    _tag("doc", "259"),
+                    _tag("knowledgebase", "260"),
+                    _tag("artifact", "outputs/report.pdf"),
+                ]
+            ],
+            [
+                {"type": "tool", "code": "weather_query"},
+                {"type": "mcp", "code": "bk-itsm-prod-ticket"},
+                {"type": "knowledgebase", "id": 259},
+                {"type": "knowledgebase", "id": 260},
+            ],
+            [
+                {"type": "file", "path": "files/legacy.pdf"},
+                {"type": "file", "path": "outputs/report.pdf"},
+            ],
+        ),
+        # 空数组代表本轮未引用资源，不回退 extra.resources
+        ([], [], []),
+        ([[]], [], []),
+        # 非数字知识库 id 跳过；其余 tag 仍解析
+        ([[_tag("doc", "kb-foo"), _tag("tool", "weather_query")]], [{"type": "tool", "code": "weather_query"}], []),
+        # data 非 dict 忽略，不打崩装配；file tag 仍收窄
+        (
+            [[{"type": "tag", "data": "not-a-dict"}, _tag("file", "files/a.pdf"), _tag("mcp", "bk-itsm")]],
+            [{"type": "mcp", "code": "bk-itsm"}],
+            [{"type": "file", "path": "files/a.pdf"}],
+        ),
+        # 非法形状不回退 extra.resources
+        ({"type": "tag"}, [], []),
+        ("not-a-list", [], []),
+    ],
+)
+def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, expected_specific, expected_files):
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_doc_schema_chat_ctx(doc_schema, [{"type": "tool", "code": "legacy"}])
+
+    builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == expected_specific
+    assert builder.file_resources == expected_files
+
+
+def test_chat_agent_builder_warns_when_doc_schema_is_not_list(caplog):
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_doc_schema_chat_ctx({"type": "tag"}, [{"type": "tool", "code": "legacy"}])
+    with caplog.at_level("WARNING"):
+        builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == []
+    assert "docSchema 不是二维数组" in caplog.text
+
+
 def test_agent_builds_llm_history_with_exact_non_image_file_references():
     agent = ChatCompletionAgent(
         chat_history=[
@@ -1305,6 +1389,148 @@ def test_agent_builds_llm_history_with_refreshed_pv_image_url(mock_get_download_
         path="files/image.png",
         expires_in=3600,
     )
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    return_value={"download_url": "https://example.test/download/old.png"},
+)
+def test_agent_refreshes_historical_pv_image_url_without_current_file_resources(mock_get_download_url):
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/old.png",
+                        "url": "https://example.test/expired-old.png",
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "看这张图"},
+                ],
+            ),
+            ChatPrompt(role=PromptRole.USER.value, content="继续解释"),
+        ],
+        file_resources=[],
+        resource_manager=MagicMock(),
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    history = agent._build_llm_history()
+
+    assert history[0].content[0]["url"] == "https://example.test/download/old.png"
+    assert history[1].content == "继续解释"
+    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-old.png"
+    mock_get_download_url.assert_called_once_with(
+        session_code="session-1",
+        path="files/old.png",
+        expires_in=3600,
+    )
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    side_effect=SandboxFileServerError("gone"),
+)
+def test_agent_clears_stale_historical_image_url_when_refresh_fails(mock_get_download_url):
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/old.png",
+                        "url": "https://example.test/expired-old.png",
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "看这张图"},
+                ],
+            )
+        ],
+        file_resources=[],
+        resource_manager=MagicMock(),
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    history = agent._build_llm_history()
+
+    assert "url" not in history[0].content[0]
+    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-old.png"
+    mock_get_download_url.assert_called_once()
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    return_value={"download_url": "https://example.test/download/old.png"},
+)
+def test_snapshot_refreshes_historical_pv_image_url(mock_get_download_url):
+    expired = "https://example.test/expired-old.png"
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/old.png",
+                        "url": expired,
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "看这张图"},
+                ],
+            )
+        ],
+        resource_manager=MagicMock(),
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    snapshot = agent._build_snapshot_agui_messages()
+
+    assert snapshot[0]["content"][0]["url"] == "https://example.test/download/old.png"
+    assert agent.chat_history[0].content[0]["url"] == expired
+    mock_get_download_url.assert_called_once_with(
+        session_code="session-1",
+        path="files/old.png",
+        expires_in=3600,
+    )
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    side_effect=SandboxFileServerError("gone"),
+)
+def test_snapshot_keeps_stale_image_url_when_refresh_fails(mock_get_download_url):
+    expired = "https://example.test/expired-old.png"
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/old.png",
+                        "url": expired,
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "看这张图"},
+                ],
+            )
+        ],
+        resource_manager=MagicMock(),
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    snapshot = agent._build_snapshot_agui_messages()
+
+    assert snapshot[0]["content"][0]["url"] == expired
+    assert agent.chat_history[0].content[0]["url"] == expired
+    mock_get_download_url.assert_called_once()
 
 
 def test_build_chat_history_does_not_prepend_config_role_prompts():

@@ -829,26 +829,34 @@ async def test_ask_user_resume_snapshot_matches_contents():
         m.get("role") == PromptRole.USER.value and m.get("content") == "我喜欢瑜伽" for m in snapshot_messages
     ), "快照应含本轮 user 消息"
 
-    # 硬性断言：多模态 binary 项 type=="binary" 且 mimeType 键存在
+    # 硬性断言：多模态 binary 项原样透传（落库 JSON 字符串不解析，内含 type=="binary" 且 mime_type 非空）
     binary_found = False
     for m in snapshot_messages:
-        if m.get("role") != PromptRole.USER.value or not isinstance(m.get("content"), list):
+        if m.get("role") != PromptRole.USER.value:
             continue
-        for item in m["content"]:
-            if isinstance(item, dict) and item.get("type") == "binary" and item.get("mimeType"):
+        content = m.get("content")
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "binary" and item.get("mime_type"):
                 binary_found = True
-    assert binary_found, "快照应含 type==binary 且 mimeType 键非空的多模态项"
+    assert binary_found, "快照应含 type==binary 且 mime_type 键非空的多模态项"
 
-    # 硬性断言：activity 消息 content 含嵌套 referenceDocument 且引用项 originFileUrl 存在
+    # 硬性断言：activity 消息 content 原样透传（嵌套 reference_document 引用项 origin_file_url 存在）
     rag_found = False
     for m in snapshot_messages:
         if m.get("role") != PromptRole.ACTIVITY.value:
             continue
         content = m.get("content") or {}
-        ref_docs = content.get("referenceDocument") if isinstance(content, dict) else None
-        if isinstance(ref_docs, list) and any(isinstance(d, dict) and d.get("originFileUrl") for d in ref_docs):
+        ref_docs = content.get("reference_document") if isinstance(content, dict) else None
+        if isinstance(ref_docs, list) and any(isinstance(d, dict) and d.get("origin_file_url") for d in ref_docs):
             rag_found = True
-    assert rag_found, "快照应含 referenceDocument 且引用项 originFileUrl 存在的知识库召回"
+    assert rag_found, "快照应含 reference_document 且引用项 origin_file_url 存在的知识库召回"
 
 
 @pytest.mark.asyncio
@@ -856,7 +864,7 @@ async def test_ask_user_skip_snapshot_includes_tool_and_cancelled():
     """问答中断 skip 续流：首帧快照含 skip tool 记录 + CANCELLED 终态 interrupt（原 id），无 pending 残留。
 
     skip 路径改写后：interrupt 记录就地升级为 CANCELLED 终态（原 id 不变），
-    另补 skip tool 记录（content==SKIPPED、toolCallId 非空），顺序为 [..., interrupt(升级), tool]。
+    另补 skip tool 记录（content==SKIPPED、tool_call_id 非空），顺序为 [..., interrupt(升级), tool]。
     """
     mock_client = _MockBKAidevClient()
     _seed_mock_record(mock_client, role=PromptRole.USER.value, content="问我问题")
@@ -889,14 +897,16 @@ async def test_ask_user_skip_snapshot_includes_tool_and_cancelled():
     )
     snapshot_messages = _first_snapshot_messages(agent)
 
-    # skip tool 记录并入：content==SKIPPED、toolCallId 非空
+    # skip tool 记录并入：content==SKIPPED、tool_call_id 非空（账本原样键）
     skip_tools = [
         m
         for m in snapshot_messages
         if m.get("role") == PromptRole.TOOL.value and m.get("content") == ASK_USER_QUESTION_SKIPPED_CONTENT
     ]
     assert skip_tools, "快照应含 skip 路径的 tool 记录"
-    assert skip_tools[0].get("toolCallId"), f"skip tool 记录 toolCallId 应为非空: {skip_tools[0].get('toolCallId')}"
+    assert skip_tools[0].get("tool_call_id"), (
+        f"skip tool 记录 tool_call_id 应为非空: {skip_tools[0].get('tool_call_id')}"
+    )
 
     # CANCELLED 终态 interrupt 就地改写（原 id 不变）
     assert _terminal_snapshot_by_status(snapshot_messages, "cancelled"), "快照应含 CANCELLED 终态 interrupt"
