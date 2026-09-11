@@ -4,6 +4,7 @@
   "init_admin": "admin",
   "init_apigw_maintainer": "admin",
   "app_code": "ai-plugin",
+  "agent_runtime": "builtin",
   "extra_fields": {
     "space_id": ""
   },
@@ -17,6 +18,7 @@
   "bkpaas_login_url": "http://bkpaas.com/login/",
   "bkpaas_url": "http://bkpaas.bkpaas.com",
   "bkpaas_grant_apps": "bk-aidev",
+  "aidev_app_upstream_origin": "http://bkapi.bkpaas.com/api/bk-aidev/prod",
   "model_management_ns_host": "",
   "model_management_ns_port": "",
   "similarity_model_service_name": "",
