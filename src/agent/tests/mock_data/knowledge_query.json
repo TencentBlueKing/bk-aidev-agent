@@ -1,5 +1,21 @@
 {
     "conclusion": "Retrieved",
+    "decision": "PRIVATE_QA",
+    "knowledge_content": [
+        "knowledge content"
+    ],
+    "knowledge_qa_content": [],
+    "with_qa_response": false,
+    "reference_documents": [
+        {
+            "metadata": {
+                "file_path": "doc.md",
+                "preview_path": "https://example.com/preview",
+                "path": "https://example.com/source",
+                "display_name": "doc.md"
+            }
+        }
+    ],
     "documents": [
         {
             "id": null,
@@ -7,6 +23,8 @@
                 "file_path": "云桌面/【云桌面】蓝盾客户端/【云桌面】云桌面启动后黑屏",
                 "uid": "5bb8893a-2957-467e-a399-62929cf3d44e",
                 "__score__": 0.9484929740428925,
+                "fine_grained_score": 1.0,
+                "relevance_level": "high",
                 "index_content": "# 云桌面启动后黑屏解决方案\n\n## 故障现象\n云桌面启动后出现黑屏现象，无法进行任何操作。\n\n## 故障原因\n1. Console会话异常。\n2. 虚拟显示器异常。\n\n## 解决方案\n尝试重新启动云桌面；如无权限操作，可联系项目PM协助处理。\n\n## 备注\n若重启方法无效，可通过客户端点击“一键求助”获取人工服务。具体操作可参考《【云桌面】如何接入云桌面人工服务》。",
                 "tags": [
                     [

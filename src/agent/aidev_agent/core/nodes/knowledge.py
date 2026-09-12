@@ -32,10 +32,7 @@ from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
 from aidev_agent.enums import ActivityType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
-from aidev_agent.packages.langchain_core.retrievers.utils import (
-    normalize_query_for_search,
-    resolve_display_sort_key,
-)
+from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
 from aidev_agent.pydantic_models import KnowledgeSettings
 from aidev_agent.utils.migrations import migration_knowledge_query_options_from_agent_options_v1
 
@@ -58,41 +55,6 @@ class KnowledgeOutputState(KnowledgeRagRetrieveResult):
 
 class AidevKnowledgeOutputState(KnowledgeRagRetrieveResult):
     retrieved_docs: list
-
-
-def filter_and_select_topk(
-    docs: list, score_threshold: float | None = None, topk: int = 20, sort_key: str = "fine_grained_score"
-) -> list:
-    """
-    根据分数阈值过滤并选择 topk 文档。
-    用于 force_process_by_agent 场景下返回原始召回文档。
-
-    Args:
-        docs: 召回的文档列表，每个文档包含 metadata.fine_grained_score
-        score_threshold: 分数阈值，低于此阈值的文档将被过滤，None 表示不过滤
-        topk: 返回的最大文档数量
-        sort_key: 展示排序使用的分数字段；EMBEDDING（保留原始顺序）传 ``rrf_score`` 以尊重
-            资源侧多路 RRF 融合顺序，缺失时回退 ``fine_grained_score``，无回归。
-            过滤阈值仍固定用 ``fine_grained_score``，不受此参数影响。
-
-    Returns:
-        过滤并排序后的 topk 文档列表
-    """
-    if not docs:
-        return []
-
-    if score_threshold is not None:
-        docs = [doc for doc in docs if doc.get("metadata", {}).get("fine_grained_score", 0) >= score_threshold]
-
-    def _score(doc):
-        metadata = doc.get("metadata", {})
-        if sort_key in metadata:
-            return metadata.get(sort_key) or 0
-        return metadata.get("fine_grained_score", 0) or 0
-
-    sorted_docs = sorted(docs, key=_score, reverse=True)
-
-    return sorted_docs[:topk]
 
 
 class BaseKnowledgeNode:
@@ -249,8 +211,8 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
     """AIDev 产品页面检索测试的节点实现。
 
     用于 AIDev 产品页面的知识库检索测试场景 (force_process_by_agent=True)，会：
-    - 返回 knowledge_resources_emb_recalled（所有召回资源，带细粒度分数）
-    - 返回 retrieved_docs（根据分数阈值过滤后的 topk 文档）
+    - 返回 knowledge_resources_emb_recalled（WEB API 的最终候选，保留兼容字段名）
+    - 返回 WEB API 已完成相关性处理的最终文档
     """
 
     def __init__(
@@ -303,17 +265,9 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
         """
         query = self.get_query(state)
         ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query)
-        # 获取所有 embedding 召回的资源（带细粒度分数）
-        knowledge_resources_emb_recalled = ret.get("knowledge_resources_emb_recalled", [])
-
-        # 根据分数阈值过滤并选择 topk 文档
         ret = cast(AidevKnowledgeOutputState, ret)
-        ret["retrieved_docs"] = filter_and_select_topk(
-            knowledge_resources_emb_recalled,
-            self.score_threshold,
-            self.topk,
-            sort_key=resolve_display_sort_key(self.knowledge_query_options.knowledge_resource_fine_grained_score_type),
-        )
+        # 排序、阈值过滤和 topk 均由 WEB API 负责；SDK 不再二次处理知识候选。
+        ret["retrieved_docs"] = ret.get("knowledge_resources_emb_recalled", [])
         return ret
 
 
