@@ -234,6 +234,25 @@ describe('FlowAgentContent', () => {
       expect(wrapper.find('.mock-activity-layout').exists()).toBe(true);
       expect(wrapper.find('.ai-flow-agent-activity').exists()).toBe(true);
     });
+
+    it('content 从 FAILED 更新为 FINISHED 时任务状态图标应切换为成功', async () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ task_state: 'FAILED' }),
+        },
+      });
+
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-failed').exists()).toBe(true);
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-success').exists()).toBe(false);
+
+      await wrapper.setProps({
+        content: createContent({ task_state: 'FINISHED' }),
+      });
+      await nextTick();
+
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-failed').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-success').exists()).toBe(true);
+    });
   });
 
   describe('统计数据展示', () => {

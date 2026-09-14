@@ -112,9 +112,11 @@
             size="mini"
             theme="primary"
           />
+          <!-- key 绑定归一状态：FAILED→FINISHED 等同为 svg 时强制重建，避免就地 patch 复用旧图标 DOM -->
           <component
             :is="task.stateIcon"
             v-else
+            :key="task.convergedState"
           />
         </span>
         <span
