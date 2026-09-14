@@ -27,11 +27,19 @@ from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
 from langgraph.types import Command
 
+from aidev_agent.pydantic_models import SecuritySettings
+
 from .approval_wrapper import itsm_approval_async_wrapper, itsm_approval_sync_wrapper
 from .deduplication import KnowledgeToolNode, deduplicate_async, deduplicate_sync
 from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .pydantic_models import ToolNodeSettings
 from .result_limit_wrapper import build_result_limit_async_wrapper, build_result_limit_sync_wrapper
+from .security_wrapper import (
+    build_redaction_async_wrapper,
+    build_redaction_sync_wrapper,
+    build_untrusted_sanitize_async_wrapper,
+    build_untrusted_sanitize_sync_wrapper,
+)
 from .timer_wrapper import timer_async_wrapper, timer_sync_wrapper
 
 logger = logging.getLogger(__name__)
@@ -178,6 +186,7 @@ def build_tool_node(
     | tuple[type[Exception], ...] = default_tool_call_handler,
     messages_key: str = "messages",
     node_options: ToolNodeSettings | None = None,
+    security_settings: SecuritySettings | None = None,
     wrappers: Sequence[ToolCallWrapper] | None = None,
     async_wrappers: Sequence[AsyncToolCallWrapper] | None = None,
 ) -> ToolNode:
@@ -193,6 +202,11 @@ def build_tool_node(
         handle_tool_errors: 错误处理配置。True 表示捕获所有错误并返回包含错误信息的 ToolMessage。
         messages_key: 状态字典中包含消息列表的键名。
         node_options: ToolNodeSettings，用于控制内置包装器开关。
+        security_settings: 安全配置实例（总配置），供结果脱敏使用。
+            由装配层从 ``AgentConfig.security_settings`` 注入；构建边界取其 ``.redaction``
+            子配置投影给 redaction wrapper。**不做默认回落**：``security_settings`` 或其
+            ``.redaction`` 缺失时，若 ``use_tool_redaction=True`` 则跳过该 wrapper 并记 warning
+            （配置缺失不静默降级为默认规则脱敏）。
         wrappers: 可选的自定义同步包装器列表，会在内置包装器之后执行。
         async_wrappers: 可选的自定义异步包装器列表，会在内置包装器之后执行。
 
@@ -217,13 +231,34 @@ def build_tool_node(
     node_options = node_options or ToolNodeSettings()
 
     # 组合包装器：内置包装器 + 用户自定义包装器
+    sync_wrapper_list: list[ToolCallWrapper] = []
+    async_wrapper_list: list[AsyncToolCallWrapper] = []
+
+    # 安全防护置于结果出口，作为工具结果进入模型前的最后一道净化闸门。
+    # 两个维度独立开关：不可信净化在外层、结果脱敏在内层 —— 响应流为「内→外」，
+    # 故先脱敏原文、再对不可信结果做原型污染清理 + 扫描 + 包裹（等价拆分前语义）。
+    if node_options.use_tool_untrusted_sanitize:
+        sync_wrapper_list.append(build_untrusted_sanitize_sync_wrapper())
+        async_wrapper_list.append(build_untrusted_sanitize_async_wrapper())
+    if node_options.use_tool_redaction:
+        # 脱敏 wrapper 只消费脱敏配置（小模型）本体：要求 ``security_settings`` 及其
+        # ``.redaction`` 均非 None。两者任一缺失时**不构造** wrapper（也不回落默认配置），
+        # 记 warning —— 脱敏配置缺失是配置问题，不应被静默降级为「按默认规则脱敏」。
+        redaction_settings = security_settings.redaction if security_settings is not None else None
+        if redaction_settings is None:
+            logger.warning(
+                "[ToolNode] use_tool_redaction=True 但缺少脱敏配置"
+                "（security_settings=%s, security_settings.redaction=%s），跳过结果脱敏 wrapper",
+                security_settings,
+                getattr(security_settings, "redaction", None),
+            )
+        else:
+            sync_wrapper_list.append(build_redaction_sync_wrapper(settings=redaction_settings))
+            async_wrapper_list.append(build_redaction_async_wrapper(settings=redaction_settings))
+
     # ITSM 审批 wrapper（直插函数），ask_user 由工具本体直调 interrupt（D-12）
-    sync_wrapper_list: list[ToolCallWrapper] = [
-        itsm_approval_sync_wrapper,
-    ]
-    async_wrapper_list: list[AsyncToolCallWrapper] = [
-        itsm_approval_async_wrapper,
-    ]
+    sync_wrapper_list.append(itsm_approval_sync_wrapper)
+    async_wrapper_list.append(itsm_approval_async_wrapper)
     # 是否启用参数校验失败时自动修复重试（响应式）
     if node_options.use_json_repair_on_error:
         sync_wrapper_list.append(json_repair_on_error_sync_wrapper)

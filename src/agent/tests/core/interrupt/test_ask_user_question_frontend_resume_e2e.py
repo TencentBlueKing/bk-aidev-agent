@@ -46,7 +46,7 @@ from aidev_agent.packages.interrupt_manager import (
 from aidev_agent.packages.interrupt_manager.ask_user_question import AskUserQuestionOutcomeBuilder
 from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 from aidev_agent.packages.interrupt_manager.types import ResumeInputResult
-from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
+from aidev_agent.pydantic_models import AgentExecutorKwargs, ChatPrompt, ExecuteKwargs, SecuritySettings
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -193,6 +193,7 @@ def _build_graph(responses):
     builder = (
         ReActAgentBuilder()
         .set_llm(llm)
+        .set_bkai_options(AgentExecutorKwargs(security_settings=SecuritySettings()))
         .set_enable_ask_user_question_tool(True)
         .enable_security_runtime(False)
         .set_debug(False)

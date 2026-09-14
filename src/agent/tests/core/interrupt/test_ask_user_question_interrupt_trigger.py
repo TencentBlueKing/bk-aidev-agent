@@ -15,6 +15,7 @@ import pytest
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_REASON
 from aidev_agent.packages.interrupt_manager.ask_user_question import parse_resume_answers
+from aidev_agent.pydantic_models import AgentExecutorKwargs, SecuritySettings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -67,6 +68,7 @@ def _build_ask_user_question_graph(responses: list[AIMessage]):
     builder = (
         ReActAgentBuilder()
         .set_llm(llm)
+        .set_bkai_options(AgentExecutorKwargs(security_settings=SecuritySettings()))
         .set_enable_ask_user_question_tool(True)
         .enable_security_runtime(False)
         .set_debug(False)

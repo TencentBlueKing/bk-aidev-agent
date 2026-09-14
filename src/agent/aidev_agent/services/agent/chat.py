@@ -61,6 +61,7 @@ from aidev_agent.pydantic_models import (
     ExecuteKwargs,
     KnowledgeSettings,
     ModelContextSettings,
+    SecuritySettings,
 )
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
@@ -180,6 +181,15 @@ class ChatCompletionAgent(BaseModel):
     resource_manager: Any = Field(
         default=None, exclude=True, description="per-request 资源管理器（含正确 app_code / access_token）"
     )
+    security_settings: SecuritySettings = Field(
+        default_factory=SecuritySettings,
+        exclude=True,
+        description=(
+            "安全防护配置（平台下发覆盖环境变量）。生产经 build 从 AgentConfig.security_settings 填充；"
+            "直接构造 ChatCompletionAgent（不接平台配置）时回落到 SecuritySettings() 字段默认——"
+            "这是 C2 裁决下的最外层兜底。ReActAgentBuilder 自身不再回落，缺失即 raise。"
+        ),
+    )
     pv_file_service: Any = Field(
         default=None,
         exclude=True,
@@ -244,6 +254,11 @@ class ChatCompletionAgent(BaseModel):
         self.chat_model_vision = builder.build_chat_model_vision()
         # 构建需要依赖resource_manager的资源
         self.resource_manager = ctx.resource_manager
+        # 安全配置唯一来源：AgentConfig.security_settings（由 get_agent_config 从平台下发构造）。
+        # agent_config 缺失（直接构造 ChatCompletionAgent，不经 factory）时保留字段默认
+        # SecuritySettings()——C2 裁决：兜底只保留在最外层 Chat 入口，ReActAgentBuilder 不再回落。
+        if ctx.agent_config is not None:
+            self.security_settings = ctx.agent_config.security_settings
         self.skills = builder.build_skills()
         self.tools = builder.build_tools()
         self.mcp_fetch_failures = builder.mcp_fetch_failures
@@ -1571,6 +1586,7 @@ class ChatCompletionAgent(BaseModel):
             execute_kwargs=execute_kwargs,
             checkpointer=self.checkpointer,
             resource_manager=self.resource_manager,
+            security_settings=self.security_settings,
             runtime_backend_resolver=self.runtime_backend_resolver,
         )
 
@@ -1729,15 +1745,18 @@ class ChatAgentBuilder:
             关闭时构造纯路由 resolver（release 立即销毁）
         agent_code/session_code 经构造参数注入
         任一为空时 resolver 内部强制 create-only —— 无 scoping 的复用会命中其他会话/智能体的沙箱，实质导致越权。
+        安全配置经构造注入（``agent_config.security_settings``），工具工厂不再自查。
         """
         defer_manager = None
         if settings.BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED and self.ctx.agent_code and self.ctx.session_code:
             defer_manager = default_runtime_backend_defer_manager
+        agent_config = self.ctx.agent_config
         resolver = RuntimeBackendResolver(
             default_runtime="local",
             defer_manager=defer_manager,
             agent_code=self.ctx.agent_code,
             session_code=self.ctx.session_code,
+            security_settings=agent_config.security_settings if agent_config is not None else None,
         )
         self._runtime_backend_resolver = resolver
         return resolver

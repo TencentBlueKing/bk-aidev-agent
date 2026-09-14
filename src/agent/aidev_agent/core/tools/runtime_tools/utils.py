@@ -31,7 +31,7 @@ import io
 import os
 import re
 import zipfile
-from typing import Annotated, Sequence
+from typing import Annotated, Callable, Sequence
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -206,13 +206,18 @@ def check_empty_content(content: str) -> str | None:
 
 
 def format_content_with_line_numbers(lines: list[str], start_line: int = 1) -> str:
-    """为文件内容添加行号格式化。
+    """为文件内容添加行号格式化（**纯展示函数**）。
 
-    将文件行列表格式化为带有行号前缀的字符串，行号右对齐并用制表符分隔。
+    将文件行列表格式化为带有行号前缀的字符串，行号右对齐（宽度
+    :data:`LINE_NUMBER_WIDTH`）并用制表符分隔，各展示行以 ``"\\n"`` 连接。
+
+    本函数只做展示修饰：**不做脱敏、不做任何文本转换**。
+    脱敏必须在调用本函数**之前**由 provider 完成 —— 否则「格式化后的展示字符」
+    会被脱敏 guard 当成秘密正文而误报，且跨行掩码压缩行数会让行号错位。
 
     Args:
-        lines: 文件行列表
-        start_line: 起始行号，默认为 1
+        lines: 文件行列表（原始行，不含行号）
+        start_line: 片段首行在原文件中的 1-based 行号，默认为 1
 
     Returns:
         带行号的格式化内容字符串
@@ -325,10 +330,10 @@ def truncate_if_too_long(content: list[str] | str) -> str:
 def format_grep_matches(
     matches: list[dict],
     output_mode: str = "files_with_matches",
+    *,
+    transform: Callable[[str], str] | None = None,
 ) -> str:
-    """格式化 grep 搜索结果。
-
-    根据输出模式将 GrepMatch 列表格式化为字符串。
+    """格式化 grep 搜索结果（**纯展示**：路径与行号前缀最后才拼接）。
 
     Args:
         matches: GrepMatch 字典列表，每个包含 path、line、text 字段
@@ -336,6 +341,10 @@ def format_grep_matches(
             - "files_with_matches": 仅输出文件路径（默认）
             - "content": 输出匹配行及其内容
             - "count": 输出每个文件的匹配数量
+        transform: 可选的**原文**转换回调（通常是脱敏）。在拼接 ``path:line:``
+            展示前缀**之前**，对路径与按原文件连续行分组的文本调用；``None``
+            时行为与历史逐字一致。``content`` 模式下同文件乱序 / 缺行 / 重复
+            行号会断开分组，不跨文件拼接，避免把互不相邻的行误当作一个块。
 
     Returns:
         格式化后的结果字符串
@@ -354,37 +363,28 @@ def format_grep_matches(
     if not matches:
         return "未找到匹配"
 
-    if output_mode == "files_with_matches":
-        # 仅输出唯一的文件路径
-        seen = set()
-        paths = []
-        for m in matches:
-            p = m.get("path", "")
-            if p and p not in seen:
-                seen.add(p)
-                paths.append(p)
-        return "\n".join(paths)
+    def show(value: str) -> str:
+        return transform(value) if transform is not None else value
 
-    elif output_mode == "content":
-        # 输出文件路径:行号: 内容
-        lines = []
-        for m in matches:
-            path = m.get("path", "")
-            line_num = m.get("line", 0)
-            text = m.get("text", "")
-            lines.append(f"{path}:{line_num}: {text}")
-        return "\n".join(lines)
-
+    if output_mode == "content":
+        # 分组仅用于整块原文脱敏；展示顺序仍按原始匹配顺序。
+        grouped = _group_consecutive_matches(matches)
+        shown: dict[int, str] = {}
+        for group in grouped:
+            joined = "\n".join(m.get("text", "") for m in group)
+            rendered = show(joined).split("\n")
+            for member, piece in zip(group, rendered):
+                shown[id(member)] = piece
+        result = "\n".join(f"{show(m.get('path', ''))}:{m.get('line', 0)}: {shown[id(m)]}" for m in matches)
     elif output_mode == "count":
-        # 统计每个文件的匹配数
+        # 统计用**原始**路径：脱敏后的显示值碰撞不得合并计数。
         counts: dict[str, int] = {}
         for m in matches:
             p = m.get("path", "")
             counts[p] = counts.get(p, 0) + 1
-        return "\n".join(f"{path}: {count}" for path, count in counts.items())
-
+        result = "\n".join(f"{show(path)}: {count}" for path, count in counts.items())
     else:
-        # 默认行为同 files_with_matches
+        # files_with_matches（含默认回落）：按原始路径去重后再脱敏显示。
         seen = set()
         paths = []
         for m in matches:
@@ -392,7 +392,27 @@ def format_grep_matches(
             if p and p not in seen:
                 seen.add(p)
                 paths.append(p)
-        return "\n".join(paths)
+        result = "\n".join(show(p) for p in paths)
+
+    return result
+
+
+def _group_consecutive_matches(matches: list[dict]) -> list[list[dict]]:
+    """把匹配记录按「同一文件 + 行号连续」分组，供整块脱敏使用。
+
+    仅行号恰好递增 1 才并入同组；换文件、缺行、重复行号一律断开，故不会把
+    互不相邻的内容拼成一个块（否则多行 PEM 之类的结构会被误拼）。
+    """
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for m in matches:
+        if current and (m.get("path") != current[-1].get("path") or m.get("line") != current[-1].get("line", 0) + 1):
+            groups.append(current)
+            current = []
+        current.append(m)
+    if current:
+        groups.append(current)
+    return groups
 
 
 # ========== Skill 打包工具 ==========

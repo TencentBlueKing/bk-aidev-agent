@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from aidev_agent.core.tools.runtime_tools.paas_backend import ExecResult, PaasSandboxBackend
-from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, WriteResult
+from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, ReadResult, WriteResult
 from aidev_agent.utils.tracing import set_agent_tracer
 from requests.exceptions import HTTPError
 
@@ -218,58 +218,132 @@ class TestPaasSandboxBackendLsInfo:
 
 
 class TestPaasSandboxBackendRead:
-    def test_read_success(self, backend, mock_ops):
+    """read 返回**原始行数据**（ReadResult）；诊断 / 异常语义不变。
+
+    远端 awk 只做 ``print $0``（无行号），行号由 provider 统一在脱敏后添加。
+    """
+
+    @staticmethod
+    def _handler(*, total_lines: int, page: str, file_exists: bool = True):
+        """test -f 成功、END{print NR} 给行数、awk 回放远端原文分页（已含行尾换行）。"""
+
         def handler(sandbox_id, cmd, **kw):
+            if cmd.startswith("test -f "):
+                return ExecResult(stdout="", stderr="", exit_code=0 if file_exists else 1)
+            if "END{print NR}" in cmd:
+                return ExecResult(stdout=f"{total_lines}\n", stderr="", exit_code=0)
+            if cmd.startswith("awk "):
+                return ExecResult(stdout=page, stderr="", exit_code=0)
+            return ExecResult(stdout="", stderr="", exit_code=0)
+
+        return handler
+
+    def test_awk_command_emits_no_line_numbers(self, backend, mock_ops):
+        """远端 awk 程序不得格式化行号 —— 行号只能由 provider 在脱敏后添加。"""
+        captured: list[str] = []
+
+        def handler(sandbox_id, cmd, **kw):
+            captured.append(cmd)
             if cmd.startswith("test -f "):
                 return ExecResult(stdout="", stderr="", exit_code=0)
             if "END{print NR}" in cmd:
                 return ExecResult(stdout="3\n", stderr="", exit_code=0)
-            if cmd.startswith("awk "):
-                return ExecResult(stdout="     1\tline1\n     2\tline2\n", stderr="", exit_code=0)
-            return ExecResult(stdout="", stderr="", exit_code=0)
+            return ExecResult(stdout="a\nb\nc\n", stderr="", exit_code=0)
 
         mock_ops.exec_handler = handler
+        backend.read("/app/f.txt")
+
+        awk_cmds = [c for c in captured if c.startswith("awk ") and "END{print NR}" not in c]
+        assert awk_cmds, "read 应发出分页 awk 命令"
+        assert "%6d" not in awk_cmds[0]
+        assert "\\t" not in awk_cmds[0]
+
+    def test_read_success_returns_raw_lines(self, backend, mock_ops):
+        mock_ops.exec_handler = self._handler(total_lines=3, page="line1\nline2\n")
 
         out = backend.read("/app/test.txt", offset=0, limit=2)
-        assert "     1\tline1" in out
-        assert "     2\tline2" in out
+
+        assert isinstance(out, ReadResult)
+        # 远端 "line1\nline2\n" ⇒ 末尾单换行是行终止符 ⇒ ["line1", "line2"]
+        assert out.lines == ["line1", "line2"]
+        assert out.start_line == 1
+
+    def test_read_offset_sets_source_start_line(self, backend, mock_ops):
+        mock_ops.exec_handler = self._handler(total_lines=10, page="x\ny\n")
+
+        out = backend.read("/app/f.txt", offset=4, limit=2)
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["x", "y"]
+        assert out.start_line == 5
+
+    def test_read_preserves_blank_line_inside_segment(self, backend, mock_ops):
+        """片段内部 / 末尾的空行必须原样保留（不能用 rstrip 吞掉）。"""
+        mock_ops.exec_handler = self._handler(total_lines=3, page="a\n\nb\n")
+
+        out = backend.read("/app/f.txt")
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["a", "", "b"]
+
+    def test_read_segment_ending_with_blank_line(self, backend, mock_ops):
+        """片段最后一行是空行（远端输出 "...\\n\\n"）时不得被吞掉。"""
+        mock_ops.exec_handler = self._handler(total_lines=3, page="a\n\n\n")
+
+        out = backend.read("/app/f.txt")
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["a", "", ""]
+        assert "\n".join(out.lines).split("\n") == out.lines
+
+    def test_read_segment_is_single_blank_line(self, backend, mock_ops):
+        """片段为单个空行时 lines == [""]。"""
+        mock_ops.exec_handler = self._handler(total_lines=3, page="\n")
+
+        out = backend.read("/app/f.txt", offset=1, limit=1)
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == [""]
+        assert out.start_line == 2
 
     def test_read_file_not_found(self, backend, mock_ops):
-        def handler(sandbox_id, cmd, **kw):
-            if cmd.startswith("test -f "):
-                return ExecResult(stdout="", stderr="", exit_code=1)
-            return ExecResult(stdout="", stderr="", exit_code=0)
-
-        mock_ops.exec_handler = handler
+        mock_ops.exec_handler = self._handler(total_lines=0, page="", file_exists=False)
 
         with pytest.raises(FileNotFoundError, match="not found"):
             backend.read("/app/missing.txt")
 
     def test_read_empty_file(self, backend, mock_ops):
-        def handler(sandbox_id, cmd, **kw):
-            if cmd.startswith("test -f "):
-                return ExecResult(stdout="", stderr="", exit_code=0)
-            if "END{print NR}" in cmd:
-                return ExecResult(stdout="0\n", stderr="", exit_code=0)
-            return ExecResult(stdout="", stderr="", exit_code=0)
-
-        mock_ops.exec_handler = handler
+        mock_ops.exec_handler = self._handler(total_lines=0, page="")
 
         out = backend.read("/app/empty.txt")
+        assert isinstance(out, str)
         assert "文件存在但内容为空" in out
 
     def test_read_offset_exceeds(self, backend, mock_ops):
-        def handler(sandbox_id, cmd, **kw):
-            if cmd.startswith("test -f "):
-                return ExecResult(stdout="", stderr="", exit_code=0)
-            if "END{print NR}" in cmd:
-                return ExecResult(stdout="2\n", stderr="", exit_code=0)
-            return ExecResult(stdout="", stderr="", exit_code=0)
-
-        mock_ops.exec_handler = handler
+        mock_ops.exec_handler = self._handler(total_lines=2, page="")
 
         with pytest.raises(IndexError, match="exceeds file length"):
             backend.read("/app/test.txt", offset=5)
+
+    def test_read_denied_path_raises(self, backend, mock_ops):
+        """敏感路径拒绝对 read 而言仍是异常（_resolve_path 抛 ValueError）。"""
+        with pytest.raises(ValueError, match="拒绝访问敏感路径"):
+            backend.read("/root/.ssh/id_rsa")
+
+    def test_read_has_no_transform_parameter(self, backend, mock_ops):
+        """第一版的 transform 回调参数已移除，且不保留兼容路径。"""
+        params = inspect.signature(PaasSandboxBackend.read).parameters
+        assert "transform" not in params
+
+    def test_read_round_trips_through_split_newline(self, backend, mock_ops):
+        """``"\\n".join(lines)`` 必须能无损还原片段。"""
+        mock_ops.exec_handler = self._handler(total_lines=4, page="head\nbody\n\ntail\n")
+
+        out = backend.read("/app/f.txt")
+
+        assert isinstance(out, ReadResult)
+        assert "\n".join(out.lines).split("\n") == out.lines
+        assert out.lines == ["head", "body", "", "tail"]
 
 
 class TestPaasSandboxBackendWrite:
@@ -597,7 +671,7 @@ class TestTildePathIntegration:
                     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
                     return ExecResult(stdout=f"{lines}\n", stderr="", exit_code=0)
                 return ExecResult(stdout="0\n", stderr="", exit_code=0)
-            # awk 带行号输出
+            # awk 原文分页（无行号；行号由 provider 在脱敏后添加）
             if actual_cmd.startswith("awk "):
                 path = _extract_path(actual_cmd)
                 if path in mock_ops.uploaded_files:
@@ -605,8 +679,7 @@ class TestTildePathIntegration:
                     lines = content.split("\n")
                     if lines and lines[-1] == "":
                         lines = lines[:-1]
-                    out = "\n".join(f"{i + 1:>6}\t{line}" for i, line in enumerate(lines))
-                    return ExecResult(stdout=out + "\n", stderr="", exit_code=0)
+                    return ExecResult(stdout="".join(f"{line}\n" for line in lines), stderr="", exit_code=0)
                 return ExecResult(stdout="", stderr="", exit_code=0)
             # rm
             if actual_cmd.startswith("rm "):
@@ -627,7 +700,8 @@ class TestTildePathIntegration:
         assert "/root/test.txt" in mock_ops.uploaded_files
 
         r = backend.read("~/test.txt", offset=0, limit=10)
-        assert "hello tilde" in r
+        assert isinstance(r, ReadResult)
+        assert r.lines == ["hello tilde"]
 
     def test_write_tilde_duplicate_detected(self, backend, mock_ops):
         """write('~/f.txt') 两次时，第二次应抛出 FileExistsError。"""

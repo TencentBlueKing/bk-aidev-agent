@@ -15,6 +15,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.tools.a2a_tools.bkai_backend import BkAiBackend
@@ -22,6 +23,7 @@ from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentResult, AgentSpec
 from aidev_agent.packages.langchain_core.models.mock import MockChatModel, MockResponse
+from aidev_agent.pydantic_models import AgentExecutorKwargs, SecuritySettings
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
@@ -50,6 +52,7 @@ class TestAddSubagentSpecsE2E:
         )
         builder = ReActAgentBuilder()
         builder.set_llm(mock_llm)
+        builder.set_bkai_options(AgentExecutorKwargs(security_settings=SecuritySettings()))
         builder.add_subagent_specs(specs)
         graph, config = builder.build()
         config["configurable"]["thread_id"] = "test-e2e-001"
@@ -284,7 +287,6 @@ class TestBkAiBackendE2E:
 
         宽松断言策略：验证 status=completed 且 result 非空。
         """
-        from aidev_agent.api.bk_agent import BkAgentApi
 
         backend = BkAiBackend()
         client = BkAgentApi.get_client(agent_code="ai-judge-0319")
@@ -306,7 +308,6 @@ class TestBkAiBackendE2E:
 
         此测试打印完整响应，帮助理解 API 网关返回格式。
         """
-        from aidev_agent.api.bk_agent import BkAgentApi
 
         backend = BkAiBackend()
         client = BkAgentApi.get_client(agent_code="ai-judge-0319")

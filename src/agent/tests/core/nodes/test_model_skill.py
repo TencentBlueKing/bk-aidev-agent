@@ -13,7 +13,7 @@ from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver, get_exe
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
 from aidev_agent.core.tools.skill import SkillOptions
 from aidev_agent.core.tools.skill.provider import SkillRegistry
-from aidev_agent.pydantic_models import AgentExecutorKwargs
+from aidev_agent.pydantic_models import AgentExecutorKwargs, SecurityCommandSettings, SecuritySettings
 
 
 def _write_skill(root: Path, *, name: str, description: str, body: str, runtime: str | None = None) -> Path:
@@ -152,7 +152,7 @@ class TestSkillOptionsRuntime:
 
 
 class TestSkillRuntimeBackend:
-    def test_execute_in_skill_scripts_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_execute_in_skill_scripts_dir(self, tmp_path: Path):
         skills_root = tmp_path / "skills"
         skill_md = _write_skill(skills_root, name="my-skill", description="desc", body="Body")
         scripts_dir = skill_md.parent / "scripts"
@@ -161,14 +161,13 @@ class TestSkillRuntimeBackend:
 
         # 安全校验默认只允许 /workspace,/home,/tmp,/app 下的脚本，
         # 而 pytest 在 macOS 上的 tmp_path 实际是 /private/var/folders/...
-        # 这里将 tmp_path 加入白名单，保证脚本能被允许执行。
-        monkeypatch.setattr(
-            "aidev_agent.core.tools.runtime_tools.security.DEFAULT_ALLOWED_SCRIPT_DIRS",
-            [str(tmp_path)],
-        )
-
-        resolver = RuntimeBackendResolver(default_runtime="local")
-        resolver.register_runtime("local", FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True))
+        # 经平台注入路径把 tmp_path 加入白名单（原 monkeypatch 模块常量的做法已废弃）：
+        # 这同时是 D-05 传导链的端到端证据 —— 若 settings.allowed_script_dirs 到不了
+        # 白名单层，本用例会红。
+        resolver = RuntimeBackendResolver(
+            default_runtime="local",
+            security_settings=SecuritySettings(command=SecurityCommandSettings(allowed_script_dirs=[str(tmp_path)])),
+        ).register_runtime("local", FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True))
         resolver.register_runtime(
             "local_my-skill",
             FilesystemBackend(root_dir=str(scripts_dir), virtual_mode=True),
@@ -190,12 +189,8 @@ class TestReActBuilderSkillsIntegration:
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "run.sh").write_text("echo skill-run-ok\n", encoding="utf-8")
 
-        # 同上：将 tmp_path 加入安全校验白名单
-        monkeypatch.setattr(
-            "aidev_agent.core.tools.runtime_tools.security.DEFAULT_ALLOWED_SCRIPT_DIRS",
-            [str(tmp_path)],
-        )
-
+        # 同上：经平台注入路径把 tmp_path 加入白名单（原 monkeypatch 模块常量的做法已废弃），
+        # 见下方 AgentExecutorKwargs(security_settings=...)。
         llm = MagicMock()
         llm.model_name = "gpt-4o"
 
@@ -221,7 +216,18 @@ class TestReActBuilderSkillsIntegration:
                 .set_llm(llm)
                 .set_bkai_options(
                     AgentExecutorKwargs(
-                        runtime_backend_resolver=RuntimeBackendResolver(),
+                        # 经平台注入路径把 tmp_path 加入白名单：security_settings 是
+                        # RuntimeBackendResolver 的构造参数（生产见 chat.py 的
+                        # build_runtime_backend_resolver），故注入点必须在 resolver 上。
+                        runtime_backend_resolver=RuntimeBackendResolver(
+                            security_settings=SecuritySettings(
+                                command=SecurityCommandSettings(allowed_script_dirs=[str(tmp_path)])
+                            )
+                        ),
+                        # 安全配置不再回落默认：builder 构建必须显式注入 security_settings。
+                        security_settings=SecuritySettings(
+                            command=SecurityCommandSettings(allowed_script_dirs=[str(tmp_path)])
+                        ),
                     )
                 )
                 .set_enable_skills(True)

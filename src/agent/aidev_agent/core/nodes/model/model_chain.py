@@ -183,6 +183,10 @@ def _build_model_chain(
     将原 _run_recovery_loop / _arun_recovery_loop 的 while 循环逻辑
     替换为 LCEL 管道：RunnableLambda 步骤 → RunnableRetry → RunnableWithFallbacks。
 
+    链尾追加一个**结算语义**步骤（位于 with_fallbacks 之外）：模型 I/O 审计。
+    它对链的最终结果执行且仅执行一次 —— 重试不产生重复审计记录，
+    重试耗尽走 fallback 时也仍会审计一次。
+
     Args:
         llm: 语言模型
         context_assembly: 上下文装配器

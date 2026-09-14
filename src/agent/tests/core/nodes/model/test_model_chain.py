@@ -882,3 +882,28 @@ class TestExtractQueryTextAndImages:
         assert isinstance(last.content, list)
         assert {"type": "text", "text": "以下是用户最新提问内容：图片内容是啥呀"} in last.content
         assert binary in last.content
+
+
+class TestTerminalSecuritySteps:
+    """链尾结算步骤：内容安全（报告 R4 回归守卫）。"""
+
+    @pytest.fixture
+    def mock_context_assembly(self):
+        ca = Mock()
+        ca.get_choice_tools = Mock(return_value=[])
+        ca.get_chat_prompt_variables = Mock(return_value={})
+        ca.get_chat_prompt_template = Mock(
+            return_value=Mock(invoke=Mock(return_value=Mock(to_messages=Mock(return_value=[]))))
+        )
+        return ca
+
+    @staticmethod
+    def _initial_ctx() -> ProcessorContext:
+        return ProcessorContext(
+            state={"messages": []},
+            config=RunnableConfig(),
+            store=Mock(),
+            messages=[],
+            model_chain_state=ModelChainState(max_retries=3),
+            response=None,
+        )

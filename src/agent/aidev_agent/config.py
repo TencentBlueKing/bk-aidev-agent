@@ -161,6 +161,21 @@ BKAI_RUNTIME_SANDBOX_DEFERRED_DESTROY_ENABLED = env.bool("BKAI_RUNTIME_SANDBOX_D
 # SSM相关配置
 BK_SSM_ENDPOINT = env.str("BK_SSM_ENDPOINT", "https://bkssm.service.consul")  # noqa
 
+# 命令防护规则声明（``security_settings.command.rules`` 的**环境变量初始化值**）
+#
+# 取 JSON 数组字符串，元素形态与平台下发完全一致，例如：
+#   BKAI_SECURITY_COMMAND_RULES='[{"rule_id":"dynamic:execution_content","verdict":"review","enabled":false,"justification":"本地关闭"}]'
+#
+# **仅作初始化值，平台下发优先**：平台经 ``security_settings.command.rules`` 给出该键时
+# 整表覆盖本值（见 ``SecurityCommandSettings.rules`` 的取值优先级）。
+#
+# **未设置**时回落到 ``default=[]``（未配置）。**已设置**则必须是合法 JSON 数组，
+# 否则报错（fail-loud）：空串同样报错——``env.json`` 的 ``default`` 只在变量
+# **缺失**时生效，对「存在但为空」不适用；这属部署配置错误，应在启动时暴露。
+# 元素形状的校验交给 ``RuleSpecConfig``（``extra="forbid"``）在模型构造期完成，
+# 此处不另造判据。
+BKAI_SECURITY_COMMAND_RULES: list = env.json("BKAI_SECURITY_COMMAND_RULES", [])
+
 # BkAI 工具开关配置
 BKAI_TOOL_A2A_ENABLED = env.bool("BKAI_TOOL_A2A_ENABLED", True)
 BKAI_TOOL_TEAM_ENABLED = env.bool("BKAI_TOOL_TEAM_ENABLED", True)
@@ -182,8 +197,8 @@ BKAI_EVENT_DATABASE_ENABLED = env.bool("BKAI_EVENT_DATABASE_ENABLED", True)
 BKAI_AGENT_ENABLE_METRICS = env.bool("BKAI_AGENT_ENABLE_METRICS", None)
 BKAI_AGENT_MAX_ATTRIBUTE_LENGTH = max(1, env.int("BKAI_AGENT_MAX_ATTRIBUTE_LENGTH", 10000))
 # 与 LLM Gateway 的 LLM 输入、输出 Trace 属性上限保持一致。
-BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH = max(1, env.int("BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH", 80 * 1024))
-BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH = max(1, env.int("BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH", 20 * 1024))
+BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH = max(1, env.int("BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH", 500 * 1024))
+BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH = max(1, env.int("BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH", 80 * 1024))
 BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS = env.int("BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS", None)
 if BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS is not None:
     BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS = max(10_000, BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS)

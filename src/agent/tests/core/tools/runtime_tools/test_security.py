@@ -1,80 +1,105 @@
 # -*- coding: utf-8 -*-
-"""Tests for command whitelist security validation module.
+"""命令允许列表 / AST 校验（``packages.security.command``）测试。
 
-This module contains comprehensive tests for the security validation
-logic in aidev_agent.core.tools.runtime_tools.security.
+本文件覆盖：
+
+- 允许列表数据表与参数限制类（纯数据/纯谓词，行为不变）；
+- 路径规范化 ``validate_path`` 与脚本目录判定；
+- ``validate_command`` 的允许 / 拒绝 / 边界与真实结构语义
+  （注释、替换、进程替换、重定向、动态执行内容）；
+- 新增配置覆盖。
 """
 
 from __future__ import annotations
 
 import pytest
-from aidev_agent.core.tools.runtime_tools.security import (
-    ALLOWED_COMMANDS,
-    DEFAULT_ALLOWED_SCRIPT_DIRS,
-    EFFECTIVE_ALLOWED_COMMANDS,
-    AllowedFlagsOnly,
-    ForbiddenFlags,
-    ValidationResult,
-    _check_redirection_in_command,
-    _check_rejected_patterns,
-    _check_script_path_allowed,
-    _extract_bash_c_content,
-    _is_bash_c_form,
-    _is_script_file,
-    _normalize_command_name,
-    is_command_allowed,
-    redact_output,
+from aidev_agent.packages.security.command.command_allowlist import ALLOWED_COMMANDS
+from aidev_agent.packages.security.command.command_blocklist import AllowedFlagsOnly
+from aidev_agent.packages.security.command.command_parser import _check_script_path_allowed, _normalize_command_name
+from aidev_agent.packages.security.command.command_security import (
     validate_command,
     validate_path,
 )
+from aidev_agent.pydantic_models import SecurityCommandSettings
+
+
+def _settings(**overrides) -> SecurityCommandSettings:
+    """把逐字段覆盖值收成单一 settings 对象（``validate_command`` 的唯一配置入口）。
+
+    基线**显式**开启结构约束族（``enable_command_syntax_rules=True``）与动态执行内容规则
+    （``enable_command_blocklist_dynamic_exec=True``），不依赖模型默认（二者默认均为
+    ``False``）；本文件多处断言这些规则命中 / 拒绝。调用方显式传入的
+    同名覆盖优先。始终构造实例，绝不返回 ``None``：``validate_command`` 的该参数
+    必填，省略即 ``TypeError``（缺失配置属 fail-open）。
+    """
+    overrides.setdefault("enable_command_syntax_rules", True)
+    overrides.setdefault("enable_command_blocklist_dynamic_exec", True)
+    return SecurityCommandSettings(**overrides)
+
+
+def _verdict(command: str, **kwargs) -> str:
+    return validate_command(command, security_command_settings=_settings(**kwargs)).verdict
+
+
+def _rule_ids(command: str, **kwargs) -> set[str]:
+    report = validate_command(command, security_command_settings=_settings(**kwargs))
+    return {rule.rule_id for finding in report.findings for rule in finding.rules} | {
+        item.rule_id for item in report.structure_findings
+    }
+
+
+#: 「放行未知命令」的通道：经 ``rules`` 下发一条 allow 规则（``rule_id`` 未登记即新增，无需前缀）。
+#: 12-02 起请求级旁路参数不再影响判定；12-04 删除其字段定义（C-03）。
+_ALLOW_MYCMD_RULE = {
+    "rule_id": "allow_mycmd",
+    "verdict": "allow",
+    "justification": "放行 mycmd",
+    "tokens": ["mycmd"],
+}
 
 
 class TestAllowedCommands:
-    """Test ALLOWED_COMMANDS whitelist definitions."""
+    """Test ALLOWED_COMMANDS allowlist definitions."""
 
     def test_allowed_commands_is_frozenset(self):
-        """ALLOWED_COMMANDS should be a frozenset."""
         assert isinstance(ALLOWED_COMMANDS, frozenset)
 
-    def test_allowed_commands_contains_expected_categories(self):
-        """Whitelist should contain commands from all 6 categories."""
-        # Category 1: System info
-        assert "pwd" in ALLOWED_COMMANDS
-        assert "uname" in ALLOWED_COMMANDS
-        assert "df" in ALLOWED_COMMANDS
-        assert "free" in ALLOWED_COMMANDS
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pwd",
+            "uname",
+            "df",
+            "free",
+            "ls",
+            "cat",
+            "stat",
+            "cp",
+            "mv",
+            "mkdir",
+            "grep",
+            "head",
+            "tail",
+            "sed",
+            "awk",
+            "diff",
+            "echo",
+            "sleep",
+            "true",
+            "tar",
+            "gzip",
+            "bash",
+            "sh",
+            "python",
+            "python3",
+        ],
+    )
+    def test_allowed_commands_contains_categories(self, command):
+        assert command in ALLOWED_COMMANDS
 
-        # Category 2: File/dir operations
-        assert "ls" in ALLOWED_COMMANDS
-        assert "cat" in ALLOWED_COMMANDS
-        assert "stat" in ALLOWED_COMMANDS
-
-        # Category 3: File content operations
-        assert "grep" in ALLOWED_COMMANDS
-        assert "head" in ALLOWED_COMMANDS
-        assert "tail" in ALLOWED_COMMANDS
-        assert "sed" in ALLOWED_COMMANDS
-        assert "awk" in ALLOWED_COMMANDS
-        assert "diff" in ALLOWED_COMMANDS
-
-        # Category 4: Basic tools
-        assert "echo" in ALLOWED_COMMANDS
-        assert "sleep" in ALLOWED_COMMANDS
-        assert "true" in ALLOWED_COMMANDS
-
-        # Category 5: Archive
-        assert "tar" in ALLOWED_COMMANDS
-        assert "gzip" in ALLOWED_COMMANDS
-
-        # Category 6: Script execution
-        assert "bash" in ALLOWED_COMMANDS
-        assert "sh" in ALLOWED_COMMANDS
-        assert "python" in ALLOWED_COMMANDS
-        assert "python3" in ALLOWED_COMMANDS
-
-    def test_dangerous_commands_not_in_whitelist(self):
-        """Dangerous commands must NOT be in the whitelist."""
-        dangerous = {
+    @pytest.mark.parametrize(
+        "command",
+        [
             "rm",
             "kill",
             "pkill",
@@ -88,8 +113,6 @@ class TestAllowedCommands:
             "chmod",
             "chown",
             "passwd",
-            "mv",
-            "cp",
             "dd",
             "mkfs",
             "ssh",
@@ -107,344 +130,98 @@ class TestAllowedCommands:
             "disown",
             "screen",
             "tmux",
-        }
-        for cmd in dangerous:
-            assert cmd not in ALLOWED_COMMANDS, f"{cmd} should not be in whitelist"
-
-    def test_effective_includes_base(self):
-        """EFFECTIVE_ALLOWED_COMMANDS should include all base commands."""
-        assert ALLOWED_COMMANDS <= EFFECTIVE_ALLOWED_COMMANDS
+        ],
+    )
+    def test_dangerous_commands_not_in_allowlist(self, command):
+        """这些命令不在允许列表内——注意 ``cp`` / ``mv`` / ``mkdir`` **刻意在**列表内（文件操作放行）。"""
+        assert command not in ALLOWED_COMMANDS
 
 
 class TestParameterRestrictions:
     """Test parameter restriction classes."""
 
     def test_allowed_flags_only_allows_valid(self):
-        """AllowedFlagsOnly should allow specified flags."""
         restriction = AllowedFlagsOnly(flags={"", "-s", "-v"})
-        ok, _ = restriction.is_allowed([])
-        assert ok
-        ok, _ = restriction.is_allowed(["-s"])
-        assert ok
-        ok, _ = restriction.is_allowed(["-v"])
-        assert ok
-        ok, _ = restriction.is_allowed(["-s", "/tmp"])
-        assert ok
+        for args in ([], ["-s"], ["-v"], ["-s", "/tmp"]):
+            ok, _ = restriction.is_allowed(args)
+            assert ok
 
     def test_allowed_flags_only_rejects_invalid(self):
-        """AllowedFlagsOnly should reject unspecified flags."""
         restriction = AllowedFlagsOnly(flags={"", "-s", "-v"})
         ok, reason = restriction.is_allowed(["-a"])
         assert not ok
         assert "不允许" in reason
 
     def test_allowed_flags_only_allows_non_flags(self):
-        """Non-flag arguments should always pass AllowedFlagsOnly."""
         restriction = AllowedFlagsOnly(flags={"", "-h"})
         ok, _ = restriction.is_allowed(["/tmp", "file.txt"])
         assert ok
-
-    def test_forbidden_flags_blocks_specified(self):
-        """ForbiddenFlags should block specified flags."""
-        restriction = ForbiddenFlags(forbidden={"-a", "--all"})
-        ok, _ = restriction.is_allowed(["-h"])
-        assert ok
-        ok, reason = restriction.is_allowed(["-a"])
-        assert not ok
-        assert "不允许" in reason
 
 
 class TestNormalizeCommandName:
     """Test command name normalization."""
 
     def test_plain_command_name(self):
-        """Plain command names should pass through unchanged."""
         assert _normalize_command_name("ls") == "ls"
         assert _normalize_command_name("cat") == "cat"
         assert _normalize_command_name("python3") == "python3"
 
     def test_absolute_path(self):
-        """Absolute paths should have basename extracted."""
         assert _normalize_command_name("/bin/ls") == "ls"
         assert _normalize_command_name("/usr/bin/python3") == "python3"
-        assert _normalize_command_name("/bin/cat") == "cat"
 
     def test_relative_path(self):
-        """Relative paths should have basename extracted (if safe)."""
         assert _normalize_command_name("./ls") == "ls"
 
-    def test_path_traversal_rejected_in_normalize(self):
-        """Path traversal in relative path should be rejected."""
+    @pytest.mark.parametrize("name", ["../bin/cat", "../../bin/rm"])
+    def test_path_traversal_rejected(self, name):
         with pytest.raises(ValueError, match="路径遍历"):
-            _normalize_command_name("../bin/cat")
-
-    def test_path_traversal_rejected(self):
-        """Path traversal in command name should be rejected."""
-        with pytest.raises(ValueError, match="路径遍历"):
-            _normalize_command_name("../../bin/rm")
+            _normalize_command_name(name)
 
     def test_empty_command_name(self):
-        """Empty command name should raise ValueError."""
         with pytest.raises(ValueError, match="空命令名"):
             _normalize_command_name("")
 
     def test_strips_whitespace(self):
-        """Whitespace should be stripped."""
         assert _normalize_command_name("  ls  ") == "ls"
 
 
-class TestBashCMethods:
-    """Test bash -c detection and extraction helpers."""
+class TestScriptPathHelpers:
+    """脚本目录判定（保持既有精确/子目录政策）。"""
 
-    def test_is_bash_c_form_positive(self):
-        """Should detect bash -c form."""
-        assert _is_bash_c_form("bash", ["-c", "ls"])
-        assert _is_bash_c_form("sh", ["-c", "ls"])
-        assert _is_bash_c_form("zsh", ["-c", "ls"])
-
-    def test_is_bash_c_form_negative(self):
-        """Should not detect non -c forms."""
-        assert not _is_bash_c_form("bash", ["script.sh"])
-        assert not _is_bash_c_form("ls", ["-la"])
-
-    def test_extract_bash_c_content(self):
-        """Should extract content after -c."""
-        assert _extract_bash_c_content("bash", ["-c", "ls /tmp"]) == "ls /tmp"
-        assert _extract_bash_c_content("sh", ["-c", "pwd"]) == "pwd"
-
-    def test_extract_bash_c_no_content(self):
-        """Should return None when -c has no following argument."""
-        assert _extract_bash_c_content("bash", ["-c"]) is None
-        assert _extract_bash_c_content("bash", []) is None
-
-
-class TestScriptFileHelpers:
-    """Test script file detection helpers."""
-
-    def test_is_script_file_positive(self):
-        """Should detect script file extensions."""
-        assert _is_script_file("script.sh")
-        assert _is_script_file("script.py")
-        assert _is_script_file("script.pl")
-        assert _is_script_file("script.rb")
-        assert _is_script_file("script.js")
-
-    def test_is_script_file_negative(self):
-        """Should not flag non-script files."""
-        assert not _is_script_file("file.txt")
-        assert not _is_script_file("image.png")
-        assert not _is_script_file("data.csv")
-
-    def test_check_script_path_allowed(self):
-        """Script path in allowed dir should pass."""
-        ok, _ = _check_script_path_allowed("/workspace/script.py", ["/workspace", "/tmp"])
+    @pytest.mark.parametrize("path", ["/workspace/script.py", "/workspace/proj/script.py"])
+    def test_allowed(self, path):
+        ok, _ = _check_script_path_allowed(path, ["/workspace"])
         assert ok
 
-    def test_check_script_path_not_allowed(self):
-        """Script path outside allowed dirs should fail."""
-        ok, reason = _check_script_path_allowed("/etc/script.py", ["/workspace", "/tmp"])
+    @pytest.mark.parametrize("path", ["/etc/script.py", "/other/script.py"])
+    def test_not_allowed(self, path):
+        ok, reason = _check_script_path_allowed(path, ["/workspace"])
         assert not ok
         assert "不在允许" in reason
 
-    def test_check_script_path_traversal(self):
-        """Path traversal in script path should be rejected."""
-        ok, reason = _check_script_path_allowed("../evil.py", ["/workspace"])
+    def test_traversal_rejected(self):
+        ok, _ = _check_script_path_allowed("../evil.py", ["/workspace"])
         assert not ok
 
-
-class TestRejectedPatterns:
-    """Test forbidden pattern detection."""
-
-    def test_command_substitution_dollar_paren(self):
-        """$(cmd) should be detected."""
-        ok, reason = _check_rejected_patterns("echo $(rm file)")
+    def test_empty_path(self):
+        ok, reason = _check_script_path_allowed("", ["/workspace"])
         assert not ok
-        assert "命令替换" in reason
-
-    def test_command_substitution_backtick(self):
-        """`cmd` should be detected."""
-        ok, reason = _check_rejected_patterns("echo `rm file`")
-        assert not ok
-        assert "命令替换" in reason
-
-    def test_process_substitution(self):
-        """<() and >() should be detected."""
-        ok, reason = _check_rejected_patterns("diff <(ls) <(ls)")
-        assert not ok
-        assert "进程替换" in reason
-
-    def test_here_string(self):
-        """<<< should be detected."""
-        ok, reason = _check_rejected_patterns("cat <<< hello")
-        assert not ok
-        assert "Here String" in reason
-
-    def test_here_doc(self):
-        """<< should be detected."""
-        ok, reason = _check_rejected_patterns("cat << EOF")
-        assert not ok
-        assert "Here Document" in reason
-
-    def test_background_execution(self):
-        """& should be detected."""
-        ok, reason = _check_rejected_patterns("sleep 100 &")
-        assert not ok
-        assert "后台执行" in reason
-
-    def test_nohup(self):
-        """nohup should be detected."""
-        ok, reason = _check_rejected_patterns("nohup cmd")
-        assert not ok
-        assert "nohup" in reason
-
-    def test_setsid(self):
-        """setsid should be detected."""
-        ok, reason = _check_rejected_patterns("setsid cmd")
-        assert not ok
-        assert "setsid" in reason
-
-    def test_disown(self):
-        """disown should be detected."""
-        ok, reason = _check_rejected_patterns("disown")
-        assert not ok
-        assert "disown" in reason
-
-    def test_screen(self):
-        """screen should be detected."""
-        ok, reason = _check_rejected_patterns("screen -dmS session")
-        assert not ok
-        assert "screen" in reason
-
-    def test_tmux(self):
-        """tmux should be detected."""
-        ok, reason = _check_rejected_patterns("tmux new -d")
-        assert not ok
-        assert "tmux" in reason
-
-    def test_brace_expansion(self):
-        """Brace expansion should be detected."""
-        ok, reason = _check_rejected_patterns("echo {a,b,c}")
-        assert not ok
-        assert "大括号扩展" in reason
-
-    def test_pipe_not_rejected(self):
-        """Plain pipe | should NOT be rejected at pattern level (handled by splitting)."""
-        # Note: | is a valid pipe operator, not rejected at pattern level
-        # It's handled by the command splitting logic
-        ok, _ = _check_rejected_patterns("cat file | grep pattern")
-        assert ok
-
-    def test_and_not_rejected(self):
-        """&& should NOT be rejected at pattern level."""
-        ok, _ = _check_rejected_patterns("ls && pwd")
-        assert ok
-
-    def test_or_not_rejected(self):
-        """|| should NOT be rejected at pattern level."""
-        ok, _ = _check_rejected_patterns("ls || echo failed")
-        assert ok
-
-    def test_redirect_to_dev_null_not_rejected(self):
-        """Redirect to /dev/null should NOT be rejected at pattern level."""
-        ok, _ = _check_rejected_patterns("ls -la /root/.cursor/ 2>/dev/null")
-        assert ok
-
-    def test_redirect_to_dev_null_with_space_not_rejected(self):
-        """Redirect to /dev/null with space should NOT be rejected."""
-        ok, _ = _check_rejected_patterns("ls 2> /dev/null")
-        assert ok
-
-    def test_redirect_stdout_to_dev_null_not_rejected(self):
-        """Stdout redirect to /dev/null should NOT be rejected."""
-        ok, _ = _check_rejected_patterns("ls >/dev/null 2>&1")
-        # Note: 2>&1 contains >& which is still caught — only >/dev/null part is safe
-        # This specific case has >&1 which is not to /dev/null, so it should be rejected
-        assert not ok
-
-    def test_redirect_to_regular_file_still_rejected(self):
-        """Redirect to regular file should still be rejected."""
-        ok, _ = _check_rejected_patterns("ls > /tmp/output.txt")
-        assert not ok
-
-
-class TestRedirectionDetection:
-    """Test redirection operator detection."""
-
-    def test_input_redirection(self):
-        """< should be detected."""
-        ok, reason = _check_redirection_in_command("cat < file.txt")
-        assert not ok
-        assert "重定向" in reason
-
-    def test_output_redirection(self):
-        """> should be detected."""
-        ok, reason = _check_redirection_in_command("ls > file.txt")
-        assert not ok
-
-    def test_append_redirection(self):
-        """>> should be detected."""
-        ok, reason = _check_redirection_in_command("ls >> file.txt")
-        assert not ok
-
-    def test_error_redirection(self):
-        """2> should be detected."""
-        ok, reason = _check_redirection_in_command("ls 2> err.txt")
-        assert not ok
-
-    def test_all_redirection(self):
-        """>& should be detected."""
-        ok, reason = _check_redirection_in_command("ls &> all.txt")
-        assert not ok
-
-    def test_no_redirection(self):
-        """Commands without redirection should pass."""
-        ok, _ = _check_redirection_in_command("ls -la /tmp")
-        assert ok
-
-    def test_redirect_to_dev_null_allowed(self):
-        """Redirect to /dev/null should be allowed."""
-        ok, _ = _check_redirection_in_command("ls 2>/dev/null")
-        assert ok
-
-    def test_redirect_stdout_to_dev_null_allowed(self):
-        """Stdout redirect to /dev/null should be allowed."""
-        ok, _ = _check_redirection_in_command("ls >/dev/null")
-        assert ok
-
-    def test_redirect_all_to_dev_null_allowed(self):
-        """&>/dev/null should be allowed."""
-        ok, _ = _check_redirection_in_command("ls &>/dev/null")
-        assert ok
-
-    def test_redirect_append_to_dev_null_allowed(self):
-        """>>/dev/null should be allowed."""
-        ok, _ = _check_redirection_in_command("ls >>/dev/null")
-        assert ok
-
-    def test_redirect_to_dev_null_with_space_allowed(self):
-        """Redirect to /dev/null with space should be allowed."""
-        ok, _ = _check_redirection_in_command("ls 2> /dev/null")
-        assert ok
-
-    def test_redirect_to_file_still_rejected(self):
-        """Redirect to a regular file should still be rejected."""
-        ok, _ = _check_redirection_in_command("ls 2>/tmp/err.txt")
-        assert not ok
+        assert "未指定" in reason or "遍历" in reason
 
 
 class TestValidateCommandAllowed:
-    """Test validate_command with allowed commands."""
+    """``validate_command`` 放行用例。"""
 
-    def test_simple_allowed_commands(self):
-        """Basic whitelisted commands should pass."""
-        allowed = ["pwd", "ls", "cat file.txt", "echo hello", "date", "whoami"]
-        for cmd in allowed:
-            result = validate_command(cmd)
-            assert result.is_allowed, f"'{cmd}' should be allowed but got: {result.reason}"
-
-    def test_allowed_with_args(self):
-        """Whitelisted commands with valid args should pass."""
-        allowed = [
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pwd",
+            "ls",
+            "cat file.txt",
+            "echo hello",
+            "date",
+            "whoami",
             "ls -la /tmp",
             "uname -s",
             "df -h",
@@ -455,461 +232,330 @@ class TestValidateCommandAllowed:
             "sort file.txt",
             "awk '{print $1}' file.txt",
             "sed s/foo/bar/g file.txt",
-        ]
-        for cmd in allowed:
-            result = validate_command(cmd)
-            assert result.is_allowed, f"'{cmd}' should be allowed but got: {result.reason}"
+        ],
+    )
+    def test_simple_allowed_commands(self, command):
+        assert _verdict(command) == "allow"
 
-    def test_combined_commands_and(self):
-        """Combined commands with && should pass if all sub-commands are allowed."""
-        result = validate_command("ls /tmp && pwd")
-        assert result.is_allowed
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls /tmp && pwd",
+            "cd /tmp; ls; pwd",
+            "ls || echo failed",
+            "cat file.txt | grep pattern",
+            "cat file.txt | grep pattern | wc -l",
+        ],
+    )
+    def test_composite_allowed_commands(self, command):
+        """复合结构与管道只要每个内部命令都通过即放行。"""
+        assert _verdict(command) == "allow"
 
-    def test_combined_commands_semicolon(self):
-        """Combined commands with ; should pass if all sub-commands are allowed."""
-        result = validate_command("cd /tmp; ls; pwd")
-        assert result.is_allowed
-
-    def test_combined_commands_or(self):
-        """Combined commands with || should pass if all sub-commands are allowed."""
-        result = validate_command("ls || echo failed")
-        assert result.is_allowed
-
-    def test_pipeline(self):
-        """Piped commands should pass if all sub-commands are allowed."""
-        result = validate_command("cat file.txt | grep pattern")
-        assert result.is_allowed
-
-    def test_bash_c_allowed(self):
-        """bash -c with allowed inner command should pass."""
-        result = validate_command('bash -c "ls /tmp"')
-        assert result.is_allowed
-
-    def test_bash_c_combined_inner(self):
-        """bash -c with combined allowed inner commands should pass."""
-        result = validate_command('bash -c "ls / && pwd"')
-        assert result.is_allowed
-
-    def test_sh_c_allowed(self):
-        """sh -c with allowed inner command should pass."""
-        result = validate_command('sh -c "ls /tmp"')
-        assert result.is_allowed
+    @pytest.mark.parametrize("command", ["bash -c 'ls /tmp'", "bash -c 'ls / && pwd'", "sh -c 'ls /tmp'"])
+    def test_static_shell_c_allowed(self, command):
+        assert _verdict(command) == "allow"
 
     def test_comment_after_command(self):
-        """Command with trailing comment should pass (comment stripped)."""
-        result = validate_command("echo hello # this is a comment")
-        assert result.is_allowed
+        assert _verdict("echo hello # this is a comment") == "allow"
 
     def test_quoted_pipe(self):
-        """Quoted pipe character should not cause splitting."""
-        result = validate_command('echo "hello | world"')
-        assert result.is_allowed
+        assert _verdict('echo "hello | world"') == "allow"
 
     def test_long_command(self):
-        """Long but valid commands should pass."""
-        result = validate_command("echo " + "A" * 5000)
-        assert result.is_allowed
+        """5005 字符长命令仍放行（默认长度预算的回归基座）。"""
+        assert _verdict("echo " + "A" * 5000) == "allow"
 
-    def test_uname_no_args(self):
-        """uname with no args should pass."""
-        result = validate_command("uname")
-        assert result.is_allowed
+    @pytest.mark.parametrize("command", ["uname", "df"])
+    def test_no_args_allowed(self, command):
+        assert _verdict(command) == "allow"
 
-    def test_df_no_args(self):
-        """df with no args should pass."""
-        result = validate_command("df")
-        assert result.is_allowed
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "python /workspace/script.py",
+            "python3 /app/script.py",
+            "python script.py",
+            "python3 -m pytest",
+            "python3 -u script.py",
+            "cd /app && python3 script.py",
+            "python /etc/script.py",
+        ],
+    )
+    def test_python_static_execution_policy(self, command):
+        """Python **静态脚本 / -m** 政策保持（不做脚本目录限制）。
 
-    def test_python_with_allowed_script_path(self):
-        """python with script in allowed dir should pass."""
-        result = validate_command("python /workspace/script.py")
-        assert result.is_allowed
+        CR-01：``-c`` 内联代码已移出本「允许」集（见
+        :meth:`test_python_inline_code_is_blocked`）—— 内联代码无法静态确定执行内容，
+        按 D-09 归类为动态执行内容（默认 block），旧期望 ``allow`` 已被用户批准推翻。
+        """
+        assert _verdict(command) == "allow"
 
-    def test_python3_with_allowed_script_path(self):
-        """python3 with script in allowed dir should pass."""
-        result = validate_command("python3 /app/script.py")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_python_script_without_path(self):
-        """python script.py (relative path) should pass."""
-        result = validate_command("python script.py")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_python3_m_module(self):
-        """python3 -m module should pass."""
-        result = validate_command("python3 -m pytest")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_python3_u_script(self):
-        """python3 -u script.py should pass."""
-        result = validate_command("python3 -u script.py")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_cd_and_python3_script(self):
-        """cd /app && python3 script.py should pass."""
-        result = validate_command("cd /app && python3 script.py")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
+    @pytest.mark.parametrize("command", ["python -c 'print(1)'", "python3 -c 'print(hello)'"])
+    def test_python_inline_code_is_blocked(self, command):
+        """CR-01：``python -c`` 内联代码 → 动态执行内容 block（不再落到允许列表 allow）。"""
+        report = validate_command(command, security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "dynamic:execution_content" in {item.rule_id for item in report.structure_findings}
 
     def test_shell_with_allowed_script_path(self):
-        """bash with script in allowed dir should pass."""
-        result = validate_command("bash /workspace/script.sh")
-        assert result.is_allowed
+        assert _verdict("bash /workspace/script.sh") == "allow"
 
-    def test_redirect_stderr_to_dev_null_allowed(self):
-        """Command with 2>/dev/null should be allowed."""
-        result = validate_command("ls -la /root/.cursor/ 2>/dev/null")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_redirect_stdout_to_dev_null_allowed(self):
-        """Command with >/dev/null should be allowed."""
-        result = validate_command("cat /etc/passwd >/dev/null")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
-
-    def test_redirect_to_dev_null_with_space_allowed(self):
-        """Command with 2> /dev/null (with space) should be allowed."""
-        result = validate_command("ls -la /root/ 2> /dev/null")
-        assert result.is_allowed, f"Should be allowed but got: {result.reason}"
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls -la /root/.cursor/ 2>/dev/null",
+            "cat /etc/passwd >/dev/null",
+            "ls -la /root/ 2> /dev/null",
+            "ls > /dev/null",
+        ],
+    )
+    def test_redirect_to_dev_null_allowed(self, command):
+        """输出重定向到精确 ``/dev/null`` 目标豁免。"""
+        assert _verdict(command) == "allow"
 
 
 class TestValidateCommandRejected:
-    """Test validate_command with rejected commands."""
+    """``validate_command`` 拒绝用例（按 AST 新契约）。"""
 
-    def test_dangerous_commands(self):
-        """Dangerous commands should be rejected."""
-        dangerous = ["rm file.txt", "curl example.com", "sudo ls", "kill 123"]
-        for cmd in dangerous:
-            result = validate_command(cmd)
-            assert not result.is_allowed, f"'{cmd}' should be rejected"
-            assert "不在允许" in result.reason
+    @pytest.mark.parametrize("command", ["mycmd file.txt", "curl example.com", "sudo kill 123", "kill 123"])
+    def test_grey_list_commands_are_review(self, command):
+        """不在允许列表且未命中危险规则 -> review（可走审批），不是 block。
 
-    def test_uname_forbidden_flag(self):
-        """uname -a should be rejected."""
-        result = validate_command("uname -a")
-        assert not result.is_allowed
-        assert "不允许" in result.reason
+        ``sudo`` 用例取**内层不在允许列表**的命令（``kill``）：允许列表已按内层命令判定，
+        ``sudo ls`` / ``sudo cat ...`` 现在是 allow，不再是灰名单样本。
+        """
+        report = validate_command(command, security_command_settings=_settings())
+        assert report.verdict == "review"
+        # **零规则命中**（2026-09-24）：不在允许列表也不在黑名单 → ``rules == []``。
+        # 原断言 ``whitelist:review`` 命中，但该"规则"已删除（review 不是规则）。
+        assert all(not finding.rules for finding in report.findings if finding.command_name in command)
 
-    def test_df_forbidden_flag(self):
-        """df -a should be rejected."""
-        result = validate_command("df -a")
-        assert not result.is_allowed
-
-    def test_python_c_allowed(self):
-        """python -c should be allowed."""
-        result = validate_command('python -c "print(1)"')
-        assert result.is_allowed, f"python -c should be allowed but got: {result.reason}"
-
-    def test_python3_c_allowed(self):
-        """python3 -c should be allowed."""
-        result = validate_command('python3 -c "print(1)"')
-        assert result.is_allowed, f"python3 -c should be allowed but got: {result.reason}"
-
-    def test_python3_c_single_quote_allowed(self):
-        """python3 -c with single quotes should be allowed."""
-        result = validate_command("python3 -c 'print(hello)'")
-        assert result.is_allowed, f"python3 -c with single quotes should be allowed but got: {result.reason}"
+    @pytest.mark.parametrize("command", ["uname -a", "df -a"])
+    def test_forbidden_flag_is_block(self, command):
+        report = validate_command(command, security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "args:restricted" in {rule.rule_id for finding in report.findings for rule in finding.rules}
 
     def test_background_execution_rejected(self):
-        """Background execution should be rejected."""
-        result = validate_command("sleep 100 &")
-        assert not result.is_allowed
-        assert "后台" in result.reason
+        report = validate_command("sleep 100 &", security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "syntax:background" in {item.rule_id for item in report.structure_findings}
 
-    def test_nohup_rejected(self):
-        """nohup should be rejected."""
-        result = validate_command("nohup python server.py")
-        assert not result.is_allowed
+    @pytest.mark.parametrize("command", ["nohup python server.py", "nohup python server.py &"])
+    def test_nohup_rejected(self, command):
+        assert _verdict(command) == "block"
 
-    def test_nohup_with_ampersand_rejected(self):
-        """nohup with & should be rejected."""
-        result = validate_command("nohup python server.py &")
-        assert not result.is_allowed
+    def test_substitution_with_dangerous_inner_rejected(self):
+        """D-07：真替换按其**内部命令**判定（``mycmd`` 不在允许列表 -> review）。"""
+        report = validate_command("echo $(mycmd file)", security_command_settings=_settings())
+        assert report.verdict == "review"
+        assert len(report.findings) == 2
 
-    def test_command_substitution_rejected(self):
-        """Command substitution should be rejected."""
-        result = validate_command("echo $(rm file)")
-        assert not result.is_allowed
-        assert "命令替换" in result.reason
+    @pytest.mark.parametrize("command", ["echo $(pwd)", "echo `id`", "diff <(ls dir1) <(ls dir2)"])
+    def test_safe_substitutions_allowed(self, command):
+        """``$(...)`` / 反引号 / 进程替换不再仅因语法存在被拒。"""
+        assert _verdict(command) == "allow"
 
-    def test_backtick_substitution_rejected(self):
-        """Backtick command substitution should be rejected."""
-        result = validate_command("echo `rm file`")
-        assert not result.is_allowed
-
-    def test_process_substitution_rejected(self):
-        """Process substitution should be rejected."""
-        result = validate_command("diff <(ls dir1) <(ls dir2)")
-        assert not result.is_allowed
-
-    def test_redirection_rejected(self):
-        """Redirection should be rejected."""
-        result = validate_command("ls > output.txt")
-        assert not result.is_allowed
-        assert "重定向" in result.reason
-
-    def test_input_redirection_rejected(self):
-        """Input redirection should be rejected."""
-        result = validate_command("cat < file.txt")
-        assert not result.is_allowed
+    @pytest.mark.parametrize("command", ["ls > output.txt", "cat < file.txt"])
+    def test_redirection_rejected(self, command):
+        report = validate_command(command, security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "syntax:redirect" in {item.rule_id for item in report.structure_findings}
 
     def test_here_string_rejected(self):
-        """Here string should be rejected."""
-        result = validate_command("cat <<< hello")
-        assert not result.is_allowed
+        assert _verdict("cat <<< hello") == "block"
 
     def test_brace_expansion_rejected(self):
-        """Brace expansion should be rejected."""
-        result = validate_command("echo {a,b,c}")
-        assert not result.is_allowed
+        assert _verdict("echo {a,b,c}") == "block"
 
     def test_path_traversal_rejected(self):
-        """Path traversal in command should be rejected."""
-        result = validate_command("../../bin/ls")
-        assert not result.is_allowed
+        assert _verdict("../../bin/ls") == "block"
 
-    def test_absolute_path_dangerous_rejected(self):
-        """Absolute path to dangerous command should be rejected."""
-        result = validate_command("/bin/rm file")
-        assert not result.is_allowed
-
-    def test_bash_c_inner_dangerous_rejected(self):
-        """bash -c with dangerous inner command should be rejected."""
-        result = validate_command('bash -c "rm -rf /"')
-        assert not result.is_allowed
-
-    def test_nested_bash_c_rejected(self):
-        """Nested bash -c should be rejected."""
-        result = validate_command('bash -c "bash -c \\"rm -rf /\\""')
-        assert not result.is_allowed
+    @pytest.mark.parametrize(
+        "command",
+        ["/bin/rm -rf /", 'bash -c "rm -rf /"', "bash -c 'bash -c \"rm -rf /\"'"],
+    )
+    def test_dangerous_commands_and_wrappers_rejected(self, command):
+        """``/bin/rm`` 只是灰名单（review），命中黑名单 label 才 block。"""
+        assert _verdict(command) == "block"
 
     def test_bash_c_no_arg_rejected(self):
-        """bash -c with no argument should be rejected."""
-        result = validate_command("bash -c")
-        assert not result.is_allowed
+        assert _verdict("bash -c") == "block"
 
-    def test_empty_command_rejected(self):
-        """Empty command should be rejected."""
-        result = validate_command("")
-        assert not result.is_allowed
-        assert "空命令" in result.reason
-
-    def test_whitespace_only_rejected(self):
-        """Whitespace-only command should be rejected."""
-        result = validate_command("   ")
-        assert not result.is_allowed
+    @pytest.mark.parametrize("command", ["", "   "])
+    def test_empty_command_rejected(self, command):
+        report = validate_command(command, security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "empty:no_executable_command" in {item.rule_id for item in report.structure_findings}
 
     def test_comment_only_rejected(self):
-        """Comment-only should be rejected."""
-        result = validate_command("# this is a comment")
-        assert not result.is_allowed
+        report = validate_command("# this is a comment", security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "empty:no_executable_command" in {item.rule_id for item in report.structure_findings}
 
     def test_null_byte_rejected(self):
-        """Null byte should be rejected."""
-        result = validate_command("echo hello\0world")
-        assert not result.is_allowed
+        report = validate_command("echo hello\0world", security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "input:null_byte" in {item.rule_id for item in report.structure_findings}
 
     def test_unmatched_quotes_rejected(self):
-        """Unmatched quotes should be rejected."""
-        result = validate_command('echo "unclosed')
-        assert not result.is_allowed
+        report = validate_command('echo "unclosed', security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "parse:syntax_error" in {item.rule_id for item in report.structure_findings}
 
-    def test_setsid_rejected(self):
-        """setsid should be rejected."""
-        result = validate_command("setsid cmd")
-        assert not result.is_allowed
-
-    def test_disown_rejected(self):
-        """disown should be rejected."""
-        result = validate_command("disown")
-        assert not result.is_allowed
-
-    def test_screen_rejected(self):
-        """screen should be rejected."""
-        result = validate_command("screen -dmS s")
-        assert not result.is_allowed
-
-    def test_tmux_rejected(self):
-        """tmux should be rejected."""
-        result = validate_command("tmux new -d")
-        assert not result.is_allowed
+    @pytest.mark.parametrize("command", ["setsid cmd", "disown", "screen -dmS s", "tmux new -d"])
+    def test_forbidden_commands_rejected(self, command):
+        report = validate_command(
+            command,
+            security_command_settings=SecurityCommandSettings(
+                enable_command_blocklist=False, enable_command_syntax_rules=True
+            ),
+        )
+        assert report.verdict == "block"
+        assert "syntax:forbidden_command" in {item.rule_id for item in report.structure_findings}
 
     def test_pipe_ampersand_rejected(self):
-        """|& operator should be rejected."""
-        result = validate_command("ls |& grep pattern")
-        assert not result.is_allowed
-
-    def test_script_outside_allowed_dir_allowed_for_python(self):
-        """Python script outside allowed dirs should now be allowed (only -c is blocked)."""
-        result = validate_command("python /etc/script.py")
-        assert result.is_allowed
-
-    def test_bash_c_inner_python_script_allowed(self):
-        """bash -c containing python script should be allowed (python -c is not used here)."""
-        result = validate_command('bash -c "python /etc/script.py"')
-        assert result.is_allowed
+        report = validate_command("ls |& grep pattern", security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "syntax:pipe_amp" in {item.rule_id for item in report.structure_findings}
 
 
 class TestValidateCommandEdgeCases:
-    """Test edge cases and boundary conditions."""
+    """边界与真实结构语义。"""
 
-    def test_complex_nested_quotes(self):
-        """Complex nested quotes should be handled."""
-        result = validate_command('bash -c "echo \\"hello world\\""')
-        # This should parse and pass (echo is allowed)
-        assert result.is_allowed or "语法错误" in result.reason or "引号" in result.reason
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cd /app && echo \"sys.path.append('/app/scripts'); print('hello')\"",
+            "bash -c \"echo 'test' && echo 'done'\"",
+            'echo "hello" && echo "world"',
+            "echo 'say \"hello\"' && ls",
+        ],
+    )
+    def test_complex_nested_quotes_allowed(self, command):
+        """嵌套引号命令不得因引号组合被误拒。"""
+        assert _verdict(command) == "allow"
 
-    def test_multiple_pipes(self):
-        """Multiple piped commands should all be checked."""
-        result = validate_command("cat file.txt | grep pattern | wc -l")
-        assert result.is_allowed
-
-    def test_multiple_pipes_with_dangerous_end(self):
-        """Pipe ending with dangerous command should be rejected."""
-        result = validate_command("cat file.txt | grep pattern | rm file")
-        assert not result.is_allowed
+    def test_multiple_pipes_all_checked(self):
+        assert _verdict("cat file.txt | grep pattern | mycmd file") == "review"
 
     def test_and_operator_with_dangerous_second(self):
-        """&& with dangerous second command should be rejected."""
-        result = validate_command("cd /tmp && rm -rf /")
-        assert not result.is_allowed
+        assert _verdict("cd /tmp && rm -rf /") == "block"
 
-    def test_recursion_depth_limit(self):
-        """Deeply nested bash -c should hit recursion limit.
+    def test_max_depth_budget_end_to_end(self):
+        """深度超限由 ``max_depth`` 配置驱动并经真实入口断言（不再直调内部函数）。"""
+        report = validate_command('bash -c "ls"', security_command_settings=SecurityCommandSettings(max_depth=1))
+        assert report.verdict == "block"
+        assert "budget:max_depth" in {item.rule_id for item in report.structure_findings}
 
-        Note: Constructing syntactically valid deeply-nested bash -c strings
-        that bashlex parses as nested is complex. We test the recursion guard
-        by directly invoking the internal validation with forced recursion
-        through the visited-set mechanism, which also triggers the depth check
-        path.
-        """
-        from aidev_agent.core.tools.runtime_tools.security import _validate_single_command
+    def test_unquoted_glob_command_name_is_dynamic(self):
+        """执行位置的未引用 glob 无法静态确定 -> 动态策略默认 block。"""
+        report = validate_command("*.sh", security_command_settings=_settings())
+        assert report.verdict == "block"
+        assert "dynamic:execution_content" in _rule_ids("*.sh")
 
-        # Use the visited-set loop detection which also guards against infinite recursion
-        result = _validate_single_command(
-            'bash -c "ls"',
-            allowed_dirs=["/workspace"],
-            recursion_depth=11,  # Exceeds the 10-depth limit
-        )
-        assert not result.is_allowed
-        assert "层级过深" in result.reason or "嵌套" in result.reason
-        assert "层级过深" in result.reason or "嵌套" in result.reason
+    def test_quoted_glob_command_name_is_static_review(self):
+        """被引号保护的 glob 是静态字面，未命中允许列表则为 review（不是动态 block）。"""
+        report = validate_command("'*.sh'", security_command_settings=_settings())
+        assert report.verdict == "review"
 
-    def test_env_var_path_not_expanded(self):
-        """Environment variable paths should not be expanded (literal check)."""
-        # $HOME/bin/ls basename is "ls" which is allowed
-        result = validate_command("$HOME/bin/ls")
-        # This depends on whether "$HOME/bin/ls" normalizes to something with "ls" basename
-        # The basename would be "$HOME/bin/ls" which is not "ls", so it should be rejected
-        # Actually let's check what happens
-        assert isinstance(result.is_allowed, bool)
-
-    def test_wildcard_allowed(self):
-        """Wildcards should be allowed as args."""
-        result = validate_command("ls *.py")
-        assert result.is_allowed
-
-    def test_question_wildcard_allowed(self):
-        """? wildcard should be allowed."""
-        result = validate_command("ls file?.txt")
-        assert result.is_allowed
+    def test_wildcard_args_allowed(self):
+        assert _verdict("ls *.py") == "allow"
+        assert _verdict("ls file?.txt") == "allow"
 
 
-class TestNestedQuotesNotBlocked:
-    """Test that commands with nested quotes are not incorrectly blocked.
+class TestAllowRulesReachAllowlist:
+    """放行未知命令**唯一**的通道是经 ``rules`` 下发一条 allow 规则（未登记 id 即新增）。
 
-    Regression tests for the "嵌套引号命令被误拦截" fix.
-    Ensures the shell parser correctly handles nested quote combinations
-    without producing false-positive rejections due to parse errors.
+    迁移自 12-02 的「请求级旁路参数不再影响 allow 判定」用例；该字段的**定义**已在
+    12-04 删除（C-03 / 用户硬目标）。理由：请求级旁路参数只能加**命令名**、不能带参数，
+    而 ``rules`` 通道两者都能表达，两套机制并存必然漂移。
+
+    与 ``test_provider.py`` 的 ``TestAllowRulesReachAllowlistEndToEnd`` 互补：
+    本组直调 ``validate_command``，只证明**原语**可用；那组经生产装配路径钉住
+    ``build_rule_set`` 的合并连线。
     """
 
-    def test_double_quotes_with_inner_single_quotes(self):
-        """Double-quoted string containing single quotes should be parsed correctly.
+    def test_allow_rule_permits_only_when_declared(self):
+        """能力断言：未下发 → ``review``；下发 allow 规则 → ``allow``。"""
+        assert _verdict("mycmd --version") == "review"
+        assert _verdict("mycmd --version", rules=[_ALLOW_MYCMD_RULE]) == "allow"
 
-        Core scenario for the nested-quote fix: single quotes inside double
-        quotes must not cause a parsing failure or false rejection.
+    @pytest.mark.parametrize(
+        "command, rule_id",
+        [
+            ("echo x > /etc/passwd", "syntax:redirect"),
+            ("echo {a,b}", "syntax:brace_expansion"),
+            ("sleep 1 &", "syntax:background"),
+        ],
+    )
+    def test_allow_rules_do_not_weaken_hard_limits(self, command, rule_id):
+        """承重墙（**不得删除**）：放行规则只影响命令名成员判定，不削弱无条件节点限制。
+
+        原用例经「命令名列表」请求级旁路参数（``["echo", "sleep"]``）注入；
+        现改经两条 allow 规则 —— **语义等价**（都是「echo / sleep 名字命中即
+        放行」）。故这三条命令的结论必须**逐条不变**：仍因**结构层**规则被判 ``block``。
+        「命令名被允许」与「调用形态被无条件拒绝」是两回事，本用例钉住前者不会吃掉后者。
         """
-        cmd = """cd /app && echo "sys.path.append('/app/scripts'); print('hello')" """
-        result = validate_command(cmd)
-        assert result.is_allowed, f"Nested single-in-double quotes should be allowed but got: {result.reason}"
-
-    def test_bash_c_with_complex_nested_quotes(self):
-        """bash -c with nested function calls using single quotes inside double quotes."""
-        cmd = "bash -c \"echo 'test' && echo 'done'\""
-        result = validate_command(cmd)
-        assert result.is_allowed, f"bash -c with nested quotes should be allowed but got: {result.reason}"
-
-    def test_and_operator_with_quoted_arguments(self):
-        """&& separated commands each containing quoted arguments should be allowed."""
-        cmd = 'echo "hello" && echo "world"'
-        result = validate_command(cmd)
-        assert result.is_allowed, f"&& with quoted args should be allowed but got: {result.reason}"
-
-    def test_single_quotes_with_inner_double_quotes(self):
-        """Single-quoted string containing double quotes should be parsed correctly."""
-        cmd = """echo 'say "hello"' && ls"""
-        result = validate_command(cmd)
-        assert result.is_allowed, f"Nested double-in-single quotes should be allowed but got: {result.reason}"
-
-
-class TestIsCommandAllowed:
-    """Test is_command_allowed shortcut."""
-
-    def test_allowed_returns_true(self):
-        assert is_command_allowed("ls")
-
-    def test_rejected_returns_false(self):
-        assert not is_command_allowed("rm file")
-
-    def test_with_custom_dirs(self):
-        assert is_command_allowed("python /my/scripts/test.py", allowed_script_dirs=["/my/scripts"])
+        report = validate_command(
+            command,
+            security_command_settings=SecurityCommandSettings(
+                enable_command_syntax_rules=True,
+                rules=[
+                    {
+                        "rule_id": "allow_echo",
+                        "verdict": "allow",
+                        "justification": "放行 echo",
+                        "tokens": ["echo"],
+                    },
+                    {
+                        "rule_id": "allow_sleep",
+                        "verdict": "allow",
+                        "justification": "放行 sleep",
+                        "tokens": ["sleep"],
+                    },
+                ],
+            ),
+        )
+        assert report.verdict == "block"
+        assert rule_id in {item.rule_id for item in report.structure_findings}
 
 
-class TestValidationResult:
-    """Test ValidationResult dataclass."""
+class TestReportShape:
+    """唯一报告契约（无旧 ``ValidationResult`` / ``rejection_category`` 适配）。"""
 
-    def test_allowed_result(self):
-        result = ValidationResult(is_allowed=True)
-        assert result
-        assert result.is_allowed
-        assert result.reason == ""
+    def test_allow_findings_carry_allowlist_success(self):
+        report = validate_command("ls", security_command_settings=_settings())
+        assert report.verdict == "allow"
+        assert report.findings[0].rule_ids == ("allowlist:allowed",)
+        assert report.is_allowed()
 
-    def test_denied_result(self):
-        result = ValidationResult(is_allowed=False, reason="test reason")
-        assert not result
-        assert not result.is_allowed
-        assert result.reason == "test reason"
+    def test_report_has_only_four_fields(self):
+        report = validate_command("ls", security_command_settings=_settings())
+        assert set(report.__dataclass_fields__) == {"verdict", "sources", "findings", "structure_findings"}
+
+    def test_old_result_attributes_are_gone(self):
+        report = validate_command("ls", security_command_settings=_settings())
+        for attribute in ("is_allowed", "reason", "rejected_command", "rejection_category"):
+            assert not isinstance(getattr(report, attribute, None), (bool, str))
 
 
-class TestEnvironmentConfig:
-    """Test environment variable configuration."""
+class TestScriptDirFallback:
+    """默认脚本目录的真源是模型字段（``_DEFAULT_*`` 模块常量已删除）。"""
 
     def test_default_script_dirs_not_empty(self):
-        """Default allowed script dirs should not be empty."""
-        assert len(DEFAULT_ALLOWED_SCRIPT_DIRS) > 0
+        assert len(SecurityCommandSettings().allowed_script_dirs) > 0
 
-
-class TestScriptPathValidation:
-    """Test script path validation edge cases."""
-
-    def test_exact_match_allowed_dir(self):
-        """Script exactly in allowed dir should pass."""
-        ok, _ = _check_script_path_allowed("/workspace/script.py", ["/workspace"])
-        assert ok
-
-    def test_subdirectory_allowed(self):
-        """Script in subdirectory of allowed dir should pass."""
-        ok, _ = _check_script_path_allowed("/workspace/proj/script.py", ["/workspace"])
-        assert ok
-
-    def test_sibling_dir_rejected(self):
-        """Script in sibling dir should be rejected."""
-        ok, _ = _check_script_path_allowed("/other/script.py", ["/workspace"])
-        assert not ok
-
-    def test_empty_path(self):
-        """Empty script path should be rejected."""
-        ok, reason = _check_script_path_allowed("", ["/workspace"])
-        assert not ok
-        assert "未指定" in reason or "遍历" in reason
+    def test_script_dir_override_reaches_script_path_rule(self):
+        """``allowed_script_dirs`` 覆盖影响 ``syntax:script_path``（shell 脚本走目录政策）。"""
+        report = validate_command(
+            "bash /nonexistent-dir/phase10.sh",
+            security_command_settings=SecurityCommandSettings(
+                allowed_script_dirs=["/workspace"], enable_command_syntax_rules=True
+            ),
+        )
+        assert report.verdict == "block"
+        assert "syntax:script_path" in {rule.rule_id for finding in report.findings for rule in finding.rules}
 
 
 class TestValidatePath:
@@ -917,59 +563,26 @@ class TestValidatePath:
 
     @pytest.mark.parametrize(
         "path, expected",
-        [
-            ("foo/bar", "foo/bar"),
-            ("/foo/bar", "/foo/bar"),
-            ("/./foo//bar", "/foo/bar"),
-            ("a/../b", "b"),
-        ],
+        [("foo/bar", "foo/bar"), ("/foo/bar", "/foo/bar"), ("/./foo//bar", "/foo/bar"), ("a/../b", "b")],
     )
     def test_validate_path_normalizes(self, path, expected):
-        """Test path normalization."""
         assert validate_path(path) == expected
 
     def test_validate_path_prevents_traversal(self):
-        """Test that path traversal is prevented."""
         with pytest.raises(ValueError, match="Path traversal not allowed"):
             validate_path("../etc/passwd")
 
     def test_validate_path_tilde_passes_through(self):
-        """Test that tilde paths are passed through without expansion (SEC-03).
-
-        ~ expansion should happen in the sandbox context, not via os.path.expanduser.
-        """
         assert validate_path("~") == "~"
         assert validate_path("~/.bashrc") == "~/.bashrc"
 
     def test_validate_path_windows_absolute_rejected(self):
-        """Test that Windows absolute paths are rejected."""
         with pytest.raises(ValueError, match="Windows absolute paths are not supported"):
             validate_path("C:/Users/file.txt")
 
     def test_validate_path_allowed_prefixes(self):
-        """Test path with allowed prefixes."""
         assert validate_path("/data/file.txt", allowed_prefixes=["/data/", "/workspace/"]) == "/data/file.txt"
 
     def test_validate_path_not_in_allowed_prefixes(self):
-        """Test that paths outside allowed prefixes are rejected."""
         with pytest.raises(ValueError, match="must start with one of"):
             validate_path("/etc/file.txt", allowed_prefixes=["/data/", "/workspace/"])
-
-
-class TestRedactOutput:
-    """Test redact_output function."""
-
-    @pytest.mark.parametrize(
-        "text, sensitive_values, expected",
-        [
-            ("token is abc123", ["abc123"], "token is __BKAI_AGENT_REDACTED__"),
-            ("user=admin token=xyz", ["admin", "xyz"], "user=__BKAI_AGENT_REDACTED__ token=__BKAI_AGENT_REDACTED__"),
-            ("no secrets here", ["secret_token"], "no secrets here"),
-            ("some text", [], "some text"),
-            ("some text", [""], "some text"),
-            ("key=abc key=abc", ["abc"], "key=__BKAI_AGENT_REDACTED__ key=__BKAI_AGENT_REDACTED__"),
-        ],
-    )
-    def test_redact_output(self, text, sensitive_values, expected):
-        """测试脱敏函数各种场景。"""
-        assert redact_output(text, sensitive_values) == expected

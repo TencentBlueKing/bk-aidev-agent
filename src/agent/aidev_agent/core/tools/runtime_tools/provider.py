@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from functools import partial
 from typing import Annotated, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -42,10 +43,17 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.prebuilt import InjectedState
 
 from aidev_agent.config import settings
+from aidev_agent.packages.security.command import (
+    CommandRiskAssessor,
+    enforce_command_security,
+    validate_path,
+)
+from aidev_agent.packages.security.redaction.operations import redact_text
+from aidev_agent.packages.security.redaction.policy import RedactionPurpose
+from aidev_agent.pydantic_models import SecurityRedactionSettings, SecuritySettings
 
-from .security import redact_output, validate_command, validate_path
-from .types import RuntimeBackend
-from .utils import format_grep_matches, truncate_if_too_long
+from .types import RuntimeBackend, _RuntimeRedactionReceipt
+from .utils import format_content_with_line_numbers, format_grep_matches, truncate_if_too_long
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +76,81 @@ def _ensure_non_empty(value: str) -> str:
 
 
 def _get_sensitive_values(backend: RuntimeBackend | str) -> list[str]:
-    """融合 SBX_SENSITIVE_VALUES 与 backend 的额外敏感值。"""
-    values = list(settings.SBX_SENSITIVE_VALUES)
-    if hasattr(backend, "extra_sensitive_values"):
-        values.extend(backend.extra_sensitive_values)
-    return values
+    """融合 SBX_SENSITIVE_VALUES 与 backend 的额外敏感值。
+
+    融合即两个列表拼接（全局值在前）：顺序影响逐值替换的先后，
+    故必须保持「全局在前、backend 额外值在后」。
+    """
+    return list(settings.SBX_SENSITIVE_VALUES) + list(getattr(backend, "extra_sensitive_values", []) or [])
+
+
+def _redact_runtime_text(
+    text: str,
+    *,
+    security_settings: SecurityRedactionSettings,
+    preserve_line_breaks: bool = False,
+) -> str:
+    """runtime 工具的唯一原文脱敏出口。
+
+    只调一次 ``redact_text``：SBX / backend 的已知值已被合入
+    ``settings.known_sensitive_values``（见 ``_runtime_redactor``），故与同一次
+    detector 遍历里的其它命中一起替换，无需再前置一遍 ``redact_known_values``。
+    """
+    return redact_text(
+        text,
+        purpose=RedactionPurpose.MODEL_OUTPUT,
+        settings=security_settings,
+        preserve_line_breaks=preserve_line_breaks,
+    )
+
+
+def _merge_known_values(
+    security_settings: SecurityRedactionSettings, backend: RuntimeBackend
+) -> SecurityRedactionSettings:
+    """把 SBX 全局值与 backend 额外敏感值并入 settings 的已知值列表。
+
+    产出**本次调用的一份 settings 快照**（``model_copy``），不改动 resolver 持有的
+    原对象。已知值是大小写敏感 secret，只做 ``strip`` + 去重，不做任何规范化
+    （与 ``_split_known_sensitive_values`` 的刻意约定一致）。
+    """
+    merged: list[str] = []
+    sources = _get_sensitive_values(backend) + [
+        v.strip() for v in (security_settings.known_sensitive_values or "").split(",") if v.strip()
+    ]
+    for value in sources:
+        value = value.strip()
+        if value and value not in merged:
+            merged.append(value)
+    return security_settings.model_copy(update={"known_sensitive_values": ",".join(merged)})
+
+
+def _runtime_redactor(resolver: RuntimeBackendResolver, backend: RuntimeBackend):
+    """构造 runtime 工具结果脱敏器。
+
+    **出口粒度开关**：runtime 工具结果脱敏归 ``enable_tool_redaction`` 管辖
+    （与 ``security_wrapper`` 的普通工具出口同一开关，不新增独立开关）。
+    置 False 时返回**恒等 redactor**：不改动任何内容。
+
+    ``enable_redact_secrets``（总开关）与 ``enable_redact_structured_fields``
+    （分项）不在此重复判定 —— 恒等以外的路径经 :func:`redact_text` → ``scan_text``
+    → ``_detectors_for_scan``，已由引擎自然承担。
+    """
+    security_settings = resolver.security_settings
+    if security_settings is not None and not security_settings.enable_tool_redaction:
+        return SecurityRedactionSettings(), lambda text, **_kwargs: text
+
+    effective_settings = _merge_known_values(
+        security_settings.redaction.model_copy(deep=True)
+        if security_settings is not None
+        else SecurityRedactionSettings(),
+        backend,
+    )
+    return effective_settings, partial(_redact_runtime_text, security_settings=effective_settings)
+
+
+def _runtime_result(content: str, security_settings: SecurityRedactionSettings):
+    content = _ensure_non_empty(content)
+    return content, _RuntimeRedactionReceipt.create(content, security_settings)
 
 
 # ========== 工具描述常量 ==========
@@ -196,6 +274,10 @@ class RuntimeBackendResolver:
         agent_code: 智能体代码（runtime_id 的 scoping 维度，由装配层构造时注入）。
         session_code: 会话代码（同上）。延迟销毁策略要求两者齐备 —— 无 scoping 的
             复用会命中其他会话/智能体的沙箱，实质导致越权。
+        security_settings: 安全防护配置（``SecuritySettings``）。由装配层从
+            ``AgentConfig.security_settings`` 注入；工具工厂经 ``security_settings``
+            property 读取（根目录 jail 白名单、命令黑名单/审批开关）。
+            None 表示未注入 —— 文件工具不做路径限制、execute 不做黑名单/审批判断。
     """
 
     def __init__(
@@ -205,6 +287,7 @@ class RuntimeBackendResolver:
         defer_manager=None,
         agent_code: str | None = None,
         session_code: str | None = None,
+        security_settings: SecuritySettings | None = None,
     ) -> None:
         self._backends: dict[str, RuntimeBackend] = {}
         self._backend_cls: dict[str, type] = {}  # runtime 类型名 -> backend 类（唯一事实源）
@@ -214,6 +297,9 @@ class RuntimeBackendResolver:
         # 供 compose_runtime_id 幂等组合沙箱生命周期标识 runtime_id
         self._agent_code = agent_code
         self._session_code = session_code
+        # 安全配置随 resolver 一次性注入（构造期），工具工厂经只读 property 读取；
+        # 保持 None 语义 = 不做路径限制 / 不做命令级审批判断（与旧形参默认值一致）
+        self._security_settings = security_settings
         # CR：初始化时确定是否开启延迟销毁策略 —— defer_manager 就绪且
         # agent_code/session_code 齐备才开启；否则 close 立即销毁全部
         if defer_manager is not None and agent_code and session_code:
@@ -228,6 +314,12 @@ class RuntimeBackendResolver:
         """默认运行时名称。"""
 
         return self._default_runtime
+
+    @property
+    def security_settings(self) -> SecuritySettings | None:
+        """安全防护配置（构造期注入；None 表示未注入、不做安全限制）。"""
+
+        return self._security_settings
 
     def register_runtime(
         self,
@@ -432,8 +524,14 @@ class RuntimeBackendResolver:
 
 
 # ========== 工具生成器函数 ==========
-def get_ls_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 ls（列出文件）工具。"""
+def get_ls_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 ls（列出文件）工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or LIST_FILES_TOOL_DESCRIPTION
 
@@ -449,21 +547,28 @@ def get_ls_tool(resolver: RuntimeBackendResolver, custom_description: str | None
 
         validated_path = validate_path(path)
         infos = resolved_backend.ls_info(validated_path, config=config, state=state)
-        paths = [fi.get("path", "") for fi in infos]
-        result = truncate_if_too_long(paths)
-        return redact_output(_ensure_non_empty(str(result)), _get_sensitive_values(resolved_backend))
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
+        paths = [redact(fi.get("path", "")) for fi in infos]
+        return _runtime_result(truncate_if_too_long(paths), effective_settings)
 
     ls.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
 
     return StructuredTool.from_function(
         name="ls",
         description=tool_description,
+        response_format="content_and_artifact",
         func=ls,
     )
 
 
-def get_read_file_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 read_file 工具。"""
+def get_read_file_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 read_file 工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or READ_FILE_TOOL_DESCRIPTION
 
@@ -487,23 +592,41 @@ def get_read_file_tool(resolver: RuntimeBackendResolver, custom_description: str
         resolved_backend = resolver.resolve_backend(target_runtime)
 
         validated_path = validate_path(file_path)
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
+
+        # 后端只返回原始行；脱敏在这里完成，行号在脱敏之后才添加 ——
+        # 展示字符（行号 + TAB）不得进入检测器，否则空 PEM 块会被误判为有实质内容。
         result = resolved_backend.read(validated_path, offset=offset, limit=limit, config=config, state=state)
-        lines = result.splitlines(keepends=True)
-        if len(lines) > limit:
-            lines = lines[:limit]
-        return redact_output(_ensure_non_empty("".join(lines)), _get_sensitive_values(resolved_backend))
+        if isinstance(result, str):
+            # 返回型诊断（文件不存在 / 偏移越界 / 空文件提示）：脱敏，但不加文件行号。
+            # 与成功内容靠类型区分，故内容首行恰好是 "Error:" 的真实文件不会被误判。
+            return _runtime_result(redact(result, preserve_line_breaks=True), effective_settings)
+        redacted = redact("\n".join(result.lines), preserve_line_breaks=True)
+        lines = redacted.split("\n")
+        if len(lines) != len(result.lines):
+            raise ValueError("Redaction changed read result line count")
+        return _runtime_result(
+            format_content_with_line_numbers(lines, start_line=result.start_line), effective_settings
+        )
 
     read_file.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
 
     return StructuredTool.from_function(
         name="read_file",
         description=tool_description,
+        response_format="content_and_artifact",
         func=read_file,
     )
 
 
-def get_write_file_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 write_file 工具。"""
+def get_write_file_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 write_file 工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or WRITE_FILE_TOOL_DESCRIPTION
 
@@ -520,21 +643,29 @@ def get_write_file_tool(resolver: RuntimeBackendResolver, custom_description: st
 
         validated_path = validate_path(file_path)
         res = resolved_backend.write(validated_path, content, config=config, state=state)
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
         if res.error:
-            raise ValueError(redact_output(_ensure_non_empty(res.error), _get_sensitive_values(resolved_backend)))
-        return redact_output(_ensure_non_empty(f"Updated file {res.path}"), _get_sensitive_values(resolved_backend))
+            raise ValueError(redact(_ensure_non_empty(res.error)))
+        return _runtime_result(f"Updated file {redact(str(res.path))}", effective_settings)
 
     write_file.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
 
     return StructuredTool.from_function(
         name="write_file",
         description=tool_description,
+        response_format="content_and_artifact",
         func=write_file,
     )
 
 
-def get_edit_file_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 edit_file 工具。"""
+def get_edit_file_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 edit_file 工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or EDIT_FILE_TOOL_DESCRIPTION
 
@@ -559,11 +690,12 @@ def get_edit_file_tool(resolver: RuntimeBackendResolver, custom_description: str
         res = resolved_backend.edit(
             validated_path, old_string, new_string, replace_all=replace_all, config=config, state=state
         )
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
         if res.error:
-            raise ValueError(redact_output(_ensure_non_empty(res.error), _get_sensitive_values(resolved_backend)))
-        return redact_output(
-            _ensure_non_empty(f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"),
-            _get_sensitive_values(resolved_backend),
+            raise ValueError(redact(_ensure_non_empty(res.error)))
+        return _runtime_result(
+            f"Successfully replaced {res.occurrences} instance(s) of the string in '{redact(str(res.path))}'",
+            effective_settings,
         )
 
     edit_file.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
@@ -571,12 +703,19 @@ def get_edit_file_tool(resolver: RuntimeBackendResolver, custom_description: str
     return StructuredTool.from_function(
         name="edit_file",
         description=tool_description,
+        response_format="content_and_artifact",
         func=edit_file,
     )
 
 
-def get_glob_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 glob 工具。"""
+def get_glob_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 glob 工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or GLOB_TOOL_DESCRIPTION
 
@@ -591,22 +730,30 @@ def get_glob_tool(resolver: RuntimeBackendResolver, custom_description: str | No
 
         resolved_backend = resolver.resolve_backend(target_runtime)
 
-        infos = resolved_backend.glob_info(pattern, path=path, config=config, state=state)
-        paths = [fi.get("path", "") for fi in infos]
-        result = truncate_if_too_long(paths)
-        return redact_output(_ensure_non_empty(str(result)), _get_sensitive_values(resolved_backend))
+        validated_path = validate_path(path)
+        infos = resolved_backend.glob_info(pattern, path=validated_path, config=config, state=state)
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
+        paths = [redact(fi.get("path", "")) for fi in infos]
+        return _runtime_result(truncate_if_too_long(paths), effective_settings)
 
     glob.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
 
     return StructuredTool.from_function(
         name="glob",
         description=tool_description,
+        response_format="content_and_artifact",
         func=glob,
     )
 
 
-def get_grep_tool(resolver: RuntimeBackendResolver, custom_description: str | None = None) -> BaseTool:
-    """生成 grep 工具。"""
+def get_grep_tool(
+    resolver: RuntimeBackendResolver,
+    custom_description: str | None = None,
+) -> BaseTool:
+    """生成 grep 工具。
+
+    路径仅做遍历校验（``validate_path``，拒绝 ``..``/``~``/Windows 绝对路径）。
+    """
 
     tool_description = custom_description or GREP_TOOL_DESCRIPTION
 
@@ -626,19 +773,23 @@ def get_grep_tool(resolver: RuntimeBackendResolver, custom_description: str | No
 
         resolved_backend = resolver.resolve_backend(target_runtime)
 
+        # 显式指定的搜索目录做遍历校验（None 表示 cwd，由 backend 解析）
+        if path is not None:
+            path = validate_path(path)
+
         raw = resolved_backend.grep_raw(pattern, path=path, glob=glob, config=config, state=state)
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
         if isinstance(raw, str):
-            raise ValueError(redact_output(_ensure_non_empty(raw), _get_sensitive_values(resolved_backend)))
-        formatted = format_grep_matches(raw, output_mode)
-        return redact_output(
-            _ensure_non_empty(truncate_if_too_long(formatted)), _get_sensitive_values(resolved_backend)
-        )
+            raise ValueError(redact(_ensure_non_empty(raw)))
+        formatted = format_grep_matches(raw, output_mode, transform=partial(redact, preserve_line_breaks=True))
+        return _runtime_result(truncate_if_too_long(formatted), effective_settings)
 
     grep.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
 
     return StructuredTool.from_function(
         name="grep",
         description=tool_description,
+        response_format="content_and_artifact",
         func=grep,
     )
 
@@ -647,6 +798,7 @@ def get_execute_tool(
     resolver: RuntimeBackendResolver,
     custom_description: str | None = None,
     enable_security: bool | None = None,
+    risk_assessor: CommandRiskAssessor | None = None,
 ) -> BaseTool:
     """生成 execute 工具用于执行 shell 命令。
 
@@ -655,7 +807,12 @@ def get_execute_tool(
         custom_description: 自定义工具描述。
         enable_security: 是否启用命令安全校验。
             默认为 None 时启用校验（True）。
-            设为 False 可完全跳过安全校验（仅用于测试或迁移过渡期）。
+            ``True``（含默认）时若 ``resolver.security_settings`` 为 ``None``，
+            执行期抛 ``ValueError``（fail-closed）；显式 ``False`` 仍表示三层全跳（逃生门）。
+        risk_assessor: 命令风险评估器（``enable_command_review_auto`` 预分流用）。
+            None 时跳过预分流，直接按 ``command_review_disposition`` 处置 review。
+
+    安全配置（命令黑名单 / 审批开关）取自 ``resolver.security_settings``。
     """
 
     # 确定是否启用安全校验（默认启用）
@@ -674,23 +831,24 @@ def get_execute_tool(
 
         resolved_backend = resolver.resolve_backend(target_runtime)
 
-        # 【新增】安全校验：命令白名单检查
+        # 【安全】三层命令防护：黑名单 → 白名单 → 命令级审批（fail-closed）
         if enable_security:
-            result = validate_command(command)
-            if not result.is_allowed:
+            settings = resolver.security_settings
+            if settings is None:
                 raise ValueError(
-                    redact_output(
-                        _ensure_non_empty(f"命令执行被拒绝：{result.reason}"),
-                        _get_sensitive_values(resolved_backend),
-                    )
+                    "命令安全校验已启用，但未注入 security_settings（fail-closed）。"
+                    "请经 AgentConfig.security_settings 或 set_bkai_options 注入配置；"
+                    "确需跳过校验请显式调用 enable_security_runtime(False)。"
                 )
+            enforce_command_security(command, target_runtime, settings.command, risk_assessor)
 
         result = resolved_backend.execute(command, config=config, state=state)
 
-        parts = [result.output]
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
+        parts = [redact(result.output)]
         if result.truncated:
             parts.append("\n[Output was truncated due to size limits]")
-        return redact_output(_ensure_non_empty("".join(parts)), _get_sensitive_values(resolved_backend))
+        return _runtime_result("".join(parts), effective_settings)
 
     async def async_execute(
         command: Annotated[str, "Shell command to execute in the sandbox environment."],
@@ -702,23 +860,24 @@ def get_execute_tool(
 
         resolved_backend = resolver.resolve_backend(target_runtime)
 
-        # 【新增】安全校验：命令白名单检查
+        # 【安全】三层命令防护：黑名单 → 白名单 → 命令级审批（fail-closed）
         if enable_security:
-            result = validate_command(command)
-            if not result.is_allowed:
+            settings = resolver.security_settings
+            if settings is None:
                 raise ValueError(
-                    redact_output(
-                        _ensure_non_empty(f"命令执行被拒绝：{result.reason}"),
-                        _get_sensitive_values(resolved_backend),
-                    )
+                    "命令安全校验已启用，但未注入 security_settings（fail-closed）。"
+                    "请经 AgentConfig.security_settings 或 set_bkai_options 注入配置；"
+                    "确需跳过校验请显式调用 enable_security_runtime(False)。"
                 )
+            enforce_command_security(command, target_runtime, settings.command, risk_assessor)
 
         result = await resolved_backend.aexecute(command, config=config, state=state)
 
-        parts = [result.output]
+        effective_settings, redact = _runtime_redactor(resolver, resolved_backend)
+        parts = [redact(result.output)]
         if result.truncated:
             parts.append("\n[Output was truncated due to size limits]")
-        return redact_output(_ensure_non_empty("".join(parts)), _get_sensitive_values(resolved_backend))
+        return _runtime_result("".join(parts), effective_settings)
 
     execute.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
     async_execute.__annotations__["target_runtime"] = Annotated[str, resolver.runtime_param_description()]
@@ -726,6 +885,7 @@ def get_execute_tool(
     return StructuredTool.from_function(
         name="execute",
         description=tool_description,
+        response_format="content_and_artifact",
         func=execute,
         coroutine=async_execute,
     )
@@ -738,6 +898,7 @@ def get_client_tools_with_runtime(
     resolver: RuntimeBackendResolver,
     custom_tool_descriptions: dict[str, str] | None = None,
     enable_security: bool | None = None,
+    risk_assessor: CommandRiskAssessor | None = None,
 ) -> list[BaseTool]:
     """构造客户端工具集合。
 
@@ -747,7 +908,8 @@ def get_client_tools_with_runtime(
         resolver: 运行时解析器（负责 runtime -> backend 路由）。
         custom_tool_descriptions: 可选的自定义工具描述字典，key 为工具名。
         enable_security: 是否启用 execute 工具的命令安全校验。
-            默认为 None，从环境变量读取。设为 False 可跳过校验。
+            默认为 None 时启用校验（True）。设为 False 可跳过校验。
+        risk_assessor: 命令风险评估器（review 预分流），透传给 execute 工具。
 
     Returns:
         LangChain 工具列表。
@@ -763,5 +925,10 @@ def get_client_tools_with_runtime(
         get_edit_file_tool(resolver, custom_tool_descriptions.get("edit_file")),
         get_glob_tool(resolver, custom_tool_descriptions.get("glob")),
         get_grep_tool(resolver, custom_tool_descriptions.get("grep")),
-        get_execute_tool(resolver, custom_tool_descriptions.get("execute"), enable_security=enable_security),
+        get_execute_tool(
+            resolver,
+            custom_tool_descriptions.get("execute"),
+            enable_security=enable_security,
+            risk_assessor=risk_assessor,
+        ),
     ]
