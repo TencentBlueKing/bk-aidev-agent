@@ -122,6 +122,9 @@ class ChatCompletionAgent(BaseModel):
     chat_model_fast: BaseChatModel | None = None
     """快速/轻量模型；由 :meth:`ChatAgentBuilder.build_chat_model_fast` 填充。
     用于 quality_gate 判断 LLM 等辅助任务。"""
+    chat_model_vision: BaseChatModel | None = None
+    """视觉模型；由 :meth:`ChatAgentBuilder.build_chat_model_vision` 填充。
+    用于 read_image 工具识别图片；未配置时不注册该工具。"""
     non_thinking_llm: str | None = Field(default=None, deprecated="使用 chat_model_non_thinking 替代")
     chat_history: list[ChatPrompt] | None = None
     file_resources: list[dict] = Field(default_factory=list, exclude=True)
@@ -203,6 +206,7 @@ class ChatCompletionAgent(BaseModel):
         self.chat_model = builder.build_chat_model()
         self.chat_model_non_thinking = builder.build_chat_model_non_thinking()
         self.chat_model_fast = builder.build_chat_model_fast()
+        self.chat_model_vision = builder.build_chat_model_vision()
         # 构建需要依赖resource_manager的资源
         self.resource_manager = ctx.resource_manager
         self.skills = builder.build_skills()
@@ -1480,6 +1484,7 @@ class ChatCompletionAgent(BaseModel):
             llm=self.chat_model,
             non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
             fast_llm=self.chat_model_fast,
+            vision_llm=self.chat_model_vision,
             extra_tools=self.tools,
             chat_history=messages[:-1],
             tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
@@ -1744,6 +1749,43 @@ class ChatAgentBuilder:
             "model": model_name,
             "base_url": base_url,
         }
+        chat = self.ctx.chat or ChatBuildExtras()
+        if chat.auth_headers:
+            kwargs["auth_headers"] = chat.auth_headers
+        if chat.default_headers:
+            kwargs["default_headers"] = chat.default_headers
+
+        retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
+        kwargs["retry_strategy"] = retry_strategy
+        if retry_strategy == "sdk":
+            kwargs["max_retries"] = 0
+
+        return ChatModel.get_setup_instance(**kwargs)
+
+    def build_chat_model_vision(self) -> BaseChatModel | None:
+        """构建视觉模型（用于 read_image 工具识别图片）。
+
+        模型名从 ``agent_info.prompt_setting.fallback_vision_model`` 读取。
+
+        与 ``build_chat_model_fast`` 的两点差异：
+        1. 模型名来源为 ``agent_info``（平台下发的 prompt_setting），而非 ``agent_config`` 顶层字段；
+        2. 额外传递 ``session_code``，使视觉调用纳入会话归属（``build_chat_model_fast`` 未传，
+           此处为其疏漏的补正；网关侧 ``X-Session-ID`` 头依赖该项）。
+
+        未配置视觉模型时返回 ``None``，调用方据此不注册 read_image 工具。
+        """
+        agent_info = getattr(self.ctx.agent_config, "agent_info", None) or {}
+        prompt_setting = agent_info.get("prompt_setting") or {}
+        model_name = prompt_setting.get("fallback_vision_model")
+        base_url = settings.LLM_GW_ENDPOINT
+        if not model_name or not base_url:
+            return None
+        kwargs: dict[str, Any] = {
+            "model": model_name,
+            "base_url": base_url,
+        }
+        if self.ctx.session_code:
+            kwargs["session_code"] = self.ctx.session_code
         chat = self.ctx.chat or ChatBuildExtras()
         if chat.auth_headers:
             kwargs["auth_headers"] = chat.auth_headers

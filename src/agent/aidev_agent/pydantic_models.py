@@ -408,6 +408,10 @@ class AgentExecutorKwargs(BaseModel):
         default=None,
         description="快速/轻量模型（BaseChatModel），用于 quality_gate 判断 LLM 等辅助任务；未设置时回退到 non_thinking_llm",
     )
+    vision_llm: Optional[Any] = Field(
+        default=None,
+        description="视觉模型（BaseChatModel），用于 read_image 工具识别图片；未设置时不注册该工具",
+    )
 
     # 模型上下文配置（由上层从 AgentConfig 转换而来，控制 LLM 推理行为）
     model_context_options: Optional[ModelContextSettings] = Field(

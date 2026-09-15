@@ -27,9 +27,14 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
 from aidev_agent.api.paas_client import Client
+from aidev_agent.core.tools.read_image import _parse_image_uri
 from aidev_agent.pydantic_models import ExecuteKwargs
 
 logger = logging.getLogger(__name__)
+
+# 复用 read_image 的 file:// 解析规则，避免两处判定漂移导致 PV 漏建或误建。
+_PAAS_RUNTIME_PREFIX = "paas_sandbox"
+_READ_IMAGE_TOOL_NAME = "read_image"
 
 
 class PVState(TypedDict):
@@ -46,6 +51,40 @@ def _pv_identity(pv: dict) -> tuple:
     if _is_session_pv(pv):
         return ("paas-sbx-pv", "session")
     return tuple(sorted(pv.items()))
+
+
+def _read_image_target_runtime(args: dict) -> str:
+    """从 read_image 的 image_uri 解析目标运行时名；非法或缺失时返回空串。
+
+    容错是硬要求：PV 节点抛异常会阻断整条执行链，故一律降级为「不需要 PV」。
+    """
+    image_uri = args.get("image_uri") if isinstance(args, dict) else None
+    if not isinstance(image_uri, str):
+        return ""
+    try:
+        target_runtime, _ = _parse_image_uri(image_uri)
+    except ValueError:
+        return ""
+    return target_runtime
+
+
+def _tool_call_needs_pv(tool_call: dict) -> bool:
+    """判定单个 tool_call 是否需要先准备 PV。
+
+    两类命中：(1) 带 target_runtime 的 paas_sandbox 系列工具；
+    (2) read_image —— 它没有 target_runtime 参数，运行时名藏在 image_uri 里，
+    但其下载路径同样会经 _ensure_sandbox 首次创建沙箱，漏判会导致沙箱永久缺卷。
+
+    tool_call 本身非 dict 时直接降级为「不需要 PV」：PV 节点抛异常会阻断整条执行链。
+    """
+    if not isinstance(tool_call, dict):
+        return False
+    args = tool_call.get("args", {})
+    if isinstance(args, dict) and str(args.get("target_runtime") or "").startswith(_PAAS_RUNTIME_PREFIX):
+        return True
+    if tool_call.get("name") != _READ_IMAGE_TOOL_NAME:
+        return False
+    return _read_image_target_runtime(args).startswith(_PAAS_RUNTIME_PREFIX)
 
 
 def add_pv_info(existing: list[dict], new: list[dict]) -> list[dict]:
@@ -126,7 +165,8 @@ def make_pv_node(
         client: PaaS API Client 实例。
         app_code: 应用编码。
         resource_manager: per-request resource manager，用于写回 chat-session sandbox PV ID。
-        enable_pv_by_paas_runtime: 是否在检测到 paas_sandbox tool_call 时创建 PV，默认 True
+        enable_pv_by_paas_runtime: 是否在检测到 paas_sandbox tool_call 时创建 PV
+            （含 read_image —— 其运行时名由 image_uri 解析），默认 True
         enable_pv_by_subagent: 是否在检测到 Agent/sendMessages tool_call 时复用或创建 PV，默认 True
 
     Returns:
@@ -162,15 +202,15 @@ def make_pv_node(
 
         should_create_pv = False
 
-        if enable_pv_by_paas_runtime and any(
-            tc.get("args", {}).get("target_runtime", "").startswith("paas_sandbox") for tc in last_message.tool_calls
-        ):
+        if enable_pv_by_paas_runtime and any(_tool_call_needs_pv(tc) for tc in last_message.tool_calls):
             should_create_pv = True
 
         if (
             enable_pv_by_subagent
             and not should_create_pv
-            and any(tc.get("name") in ("Agent", "sendMessages") for tc in last_message.tool_calls)
+            and any(
+                isinstance(tc, dict) and tc.get("name") in ("Agent", "sendMessages") for tc in last_message.tool_calls
+            )
         ):
             should_create_pv = True
 
@@ -181,9 +221,7 @@ def make_pv_node(
         if session_code and resource_manager is not None:
             session = resource_manager.retrieve_chat_session(session_code)
             if isinstance(session, dict):
-                existing_volume_id = str(
-                    ((session.get("session_property") or {}).get("sandbox_pv_id") or "")
-                ).strip()
+                existing_volume_id = str(((session.get("session_property") or {}).get("sandbox_pv_id") or "")).strip()
                 if existing_volume_id:
                     return {
                         "runtime_paas_sbx_pv": [

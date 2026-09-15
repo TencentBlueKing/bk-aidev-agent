@@ -303,6 +303,31 @@ class TestE2BSandboxBackendGrepGlobUploadDownloadExecute:
         assert down[0]["content"] == b"content"
         assert down[1]["error"] == "file_not_found"
 
+    @pytest.mark.parametrize("state", [None, {"runtime_paas_sbx_pv": []}])
+    def test_upload_files_accepts_state_kwarg(self, state):
+        """upload_files 接受 state 关键字，行为与不传时一致（E2B 不消费该参数）。"""
+        dummy_files = DummyFiles()
+        DummySandbox._dummy_files = dummy_files
+
+        backend = E2BSandboxBackend()
+        up = backend.upload_files([("/workspace/s.txt", b"payload")], state=state)
+
+        assert up[0]["error"] is None
+        assert dummy_files._files["/workspace/s.txt"] == b"payload"
+
+    @pytest.mark.parametrize("state", [None, {"runtime_paas_sbx_pv": []}])
+    def test_download_files_accepts_state_kwarg(self, state):
+        """download_files 接受 state 关键字，行为与不传时一致（E2B 不消费该参数）。"""
+        dummy_files = DummyFiles()
+        DummySandbox._dummy_files = dummy_files
+
+        backend = E2BSandboxBackend()
+        backend.upload_files([("/workspace/s.txt", b"payload")])
+        down = backend.download_files(["/workspace/s.txt"], state=state)
+
+        assert down[0]["content"] == b"payload"
+        assert down[0]["error"] is None
+
     def test_execute(self):
         def handler(cmd: str, _timeout=None):
             if cmd == "echo hello":

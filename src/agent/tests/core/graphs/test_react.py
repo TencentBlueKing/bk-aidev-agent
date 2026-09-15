@@ -1699,3 +1699,91 @@ class TestReActAgentBuilder:
         # 验证 tool 被调用过（中间消息应包含 tool_calls）
         tool_call_msgs = [m for m in messages if isinstance(m, AIMessage) and m.tool_calls]
         assert len(tool_call_msgs) > 0, "Expected at least one tool call in the ReAct loop"
+
+
+# ============================================================================
+# vision_llm 注入与 read_image 条件注册
+# ============================================================================
+
+
+class TestVisionLlm:
+    """视觉模型注入与 read_image 工具条件注册。"""
+
+    # ----------------------------------------------------------------
+    # 注入层：set_bkai_options / set_vision_llm
+    # ----------------------------------------------------------------
+
+    def test_set_bkai_options_maps_vision_llm(self):
+        """set_bkai_options 应将 vision_llm 映射到 _vision_llm。"""
+        vision_llm = MagicMock()
+        builder = ReActAgentBuilder().set_bkai_options(AgentExecutorKwargs(vision_llm=vision_llm))
+        assert builder._vision_llm is vision_llm
+
+    def test_set_bkai_options_none_does_not_override(self):
+        """未传 vision_llm 时不应覆盖已设置的 _vision_llm。"""
+        existing = MagicMock()
+        builder = ReActAgentBuilder().set_vision_llm(existing)
+        builder.set_bkai_options(AgentExecutorKwargs())
+        assert builder._vision_llm is existing
+
+    def test_set_vision_llm_is_chainable_and_resettable(self):
+        """set_vision_llm 应支持链式调用与置空。"""
+        llm = MagicMock()
+        builder = ReActAgentBuilder()
+        assert builder.set_vision_llm(llm) is builder
+        assert builder._vision_llm is llm
+        assert builder.set_vision_llm(None)._vision_llm is None
+
+    # ----------------------------------------------------------------
+    # 条件注册层：_prepare_agent_tools
+    # ----------------------------------------------------------------
+
+    @staticmethod
+    def _build_with_vision(vision_llm):
+        """构造启用 runtime 工具 + 指定视觉模型的 builder。"""
+        return (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(MagicMock())
+            .set_vision_llm(vision_llm)
+        )
+
+    def test_read_image_registered_when_vision_llm_set(self):
+        """_vision_llm 非 None 且启用 runtime 时应注册 read_image。"""
+        tools = self._build_with_vision(MagicMock())._prepare_agent_tools(langchain_middleware=())
+        assert any(t.name == "read_image" for t in tools)
+
+    def test_read_image_absent_when_vision_llm_none(self):
+        """_vision_llm 为 None 时不应注册 read_image。"""
+        tools = self._build_with_vision(None)._prepare_agent_tools(langchain_middleware=())
+        assert not any(t.name == "read_image" for t in tools)
+
+    def test_read_image_absent_when_runtime_disabled(self):
+        """未启用 runtime 工具时不应注册 read_image。"""
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_runtime_tool(False)
+            .set_vision_llm(MagicMock())
+        )
+        tools = builder._prepare_agent_tools(langchain_middleware=())
+        assert not any(t.name == "read_image" for t in tools)
+
+    def test_read_image_built_with_resolver_and_vision_llm(self):
+        """注册点应以 (resolver, vision_llm) 调用 make_read_image_tool。"""
+        resolver = MagicMock()
+        vision_llm = MagicMock()
+        sentinel = MagicMock()
+        sentinel.name = "read_image"
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(resolver)
+            .set_vision_llm(vision_llm)
+        )
+        with patch("aidev_agent.core.graphs.react.graph.make_read_image_tool", return_value=sentinel) as build_mock:
+            tools = builder._prepare_agent_tools(langchain_middleware=())
+        build_mock.assert_called_once_with(resolver, vision_llm)
+        assert sentinel in tools
