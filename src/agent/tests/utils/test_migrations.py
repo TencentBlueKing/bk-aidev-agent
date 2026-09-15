@@ -147,3 +147,23 @@ def test_migration_chat_session_context_from_chat_session_contents_v1_merges_bui
     assert bp["status"] == "complete"  # 基底保留（平铺 None 未覆盖）
     assert bp["message_id"] == "base-mid"  # 基底独有键保留
     assert bp["artifacts"] == [{"name": "a.txt"}]  # 非 None 平铺键写入
+
+
+@pytest.mark.parametrize(
+    "property_data, expected",
+    [
+        ({"docSchema": [[{"type": "tag", "data": {"label": "t", "value": "t", "type": "tool"}}]]}, "present"),
+        ({"docSchema": []}, "present"),  # 空数组代表本轮无引用，须保留以阻止降级
+        ({"docSchema": None}, "absent"),
+        ({}, "absent"),
+    ],
+)
+def test_migration_chat_session_context_from_chat_session_contents_v1_lifts_doc_schema(property_data, expected):
+    record = {"id": "1", "role": "user", "content": "你好", "property": property_data}
+
+    result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
+
+    if expected == "present":
+        assert result["docSchema"] == property_data["docSchema"]
+    else:
+        assert "docSchema" not in result

@@ -11,9 +11,11 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileInvalidRequestError,
     SandboxFileNotFoundError,
     SandboxPvFileService,
+    SandboxVolumeNotFoundError,
     fill_user_image_urls,
     iter_user_images_missing_url,
     validate_session_upload_files,
+    validate_session_upload_stats,
 )
 from bkapi_client_core.exceptions import HTTPResponseError
 from blueapps.core.exceptions import ClientBlueException, ResourceNotFound, ServerBlueException
@@ -236,11 +238,10 @@ class ChatSessionViewSet(PluginViewSet):
     def pv_files(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
         svc = self._make_pv_file_service(request)
-        params = request.query_params
         try:
             data = svc.list_files(
                 session_code=pk,
-                path=params.get("path", ""),
+                path=request.query_params.get("path"),
                 since=None,
                 until=None,
             )
@@ -248,14 +249,29 @@ class ChatSessionViewSet(PluginViewSet):
             self._raise_pv_exc(exc)
         return Response(data=data)
 
+    @pv_files.mapping.delete
+    def delete_pv_file(self, request, pk, **kwargs):
+        self._check_session_owner(request, pk, require_access=True)
+        try:
+            self._make_pv_file_service(request).delete_file(
+                session_code=pk, path=request.query_params.get("path")
+            )
+        # 幂等只覆盖「文件不存在」；会话根本没有 PV 是真错误，不能当删除成功返回 200
+        except SandboxVolumeNotFoundError as exc:
+            self._raise_pv_exc(exc)
+        except SandboxFileNotFoundError:
+            pass
+        except SandboxFileError as exc:
+            self._raise_pv_exc(exc)
+        return Response()
+
     @action(["GET"], url_path="pv_files/stat", detail=True)
     def pv_files_stat(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         try:
-            data = self._make_pv_file_service(request).stat_file(session_code=pk, path=path)
+            data = self._make_pv_file_service(request).stat_file(
+                session_code=pk, path=request.query_params.get("path")
+            )
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)
         return Response(data=data)
@@ -263,13 +279,10 @@ class ChatSessionViewSet(PluginViewSet):
     @action(["GET"], url_path="pv_files/preview", detail=True)
     def pv_files_preview(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         max_bytes = _parse_positive_int(request.query_params.get("max_bytes"), 65536)
         try:
             content, truncated = self._make_pv_file_service(request).preview_file(
-                session_code=pk, path=path, max_bytes=max_bytes
+                session_code=pk, path=request.query_params.get("path"), max_bytes=max_bytes
             )
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)
@@ -280,13 +293,10 @@ class ChatSessionViewSet(PluginViewSet):
     @action(["GET"], url_path="pv_files/download_url", detail=True)
     def pv_files_download_url(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
-        path = request.query_params.get("path", "")
-        if not path:
-            raise ClientBlueException(message="path is required")
         expires_in = _parse_positive_int(request.query_params.get("expires_in"), 600)
         try:
             data = self._make_pv_file_service(request).get_download_url(
-                session_code=pk, path=path, expires_in=expires_in
+                session_code=pk, path=request.query_params.get("path"), expires_in=expires_in
             )
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)
@@ -302,15 +312,16 @@ class ChatSessionViewSet(PluginViewSet):
         """批量上传文件到会话 PV。"""
         self._check_session_owner(request, pk, require_access=True)
         uploaded_files = request.FILES.getlist("files")
-        files = [
-            {
-                "name": upload_file.name,
-                "content": upload_file.read(),
-                "mime_type": upload_file.content_type or "application/octet-stream",
-            }
-            for upload_file in uploaded_files
-        ]
         try:
+            validate_session_upload_stats(uploaded_files)
+            files = [
+                {
+                    "name": upload_file.name,
+                    "content": upload_file.read(),
+                    "mime_type": upload_file.content_type or "application/octet-stream",
+                }
+                for upload_file in uploaded_files
+            ]
             validate_session_upload_files(files)
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)

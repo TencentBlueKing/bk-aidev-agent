@@ -3,7 +3,7 @@
 
 覆盖点：
 - 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
-- 5 个 action 参数透传（GET list / stat / preview / download_url / upload）
+- 6 个 action 参数透传（GET list / DELETE / stat / preview / download_url / upload）
 - 上传会话归属校验与沙箱文件异常映射
 - 沙箱文件异常 → blueapps 异常映射（404 / 400 / 500）
 - preview 返回 HttpResponse(text/plain) + X-Truncated 头透传
@@ -60,6 +60,7 @@ from aidev_agent.services.sandbox_pv_files import (  # noqa: E402
     SandboxFileInvalidRequestError,
     SandboxFileNotFoundError,
     SandboxFileServerError,
+    SandboxVolumeNotFoundError,
 )
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
 
@@ -203,6 +204,7 @@ class TestPvFilesGet:
         instance.list_files.return_value = {"count": 1, "results": [{"path": "a.txt"}]}
         response = view.pv_files(_request({"path": "sub/"}), pk="s1")
         assert response.data == {"count": 1, "results": [{"path": "a.txt"}]}
+        # 视图只透传原始入参，归一化由 Service 负责
         instance.list_files.assert_called_once_with(session_code="s1", path="sub/", since=None, until=None)
 
     def test_list_translates_not_found(self, view, mock_svc):
@@ -283,6 +285,53 @@ class TestCheckSessionOwner:
 
 
 # ---------------------------------------------------------------------------
+# pv_files DELETE
+# ---------------------------------------------------------------------------
+
+
+class TestPvFilesDelete:
+    def test_delete_forwards_path_and_returns_ok(self, view, mock_svc):
+        instance, _ = mock_svc
+        instance.delete_file.return_value = None
+        response = view.delete_pv_file(_request({"path": "files/a.txt"}, method="DELETE"), pk="s1")
+        assert response.status_code == 200
+        instance.delete_file.assert_called_once_with(session_code="s1", path="files/a.txt")
+        fake_client.api.retrieve_chat_session.assert_called_once()
+
+    def test_delete_invalid_path_is_not_idempotent(self, view, mock_svc):
+        """非法路径由 Service 判定；幂等分支不能把它一起吞成 200。"""
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        instance.delete_file.side_effect = SandboxFileInvalidArgumentError("invalid path")
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.delete_pv_file(_request({"path": "files/../secret.txt"}, method="DELETE"), pk="s1")
+        assert excinfo.value.STATUS_CODE == 400
+
+    def test_delete_not_found_is_idempotent(self, view, mock_svc):
+        instance, _ = mock_svc
+        instance.delete_file.side_effect = SandboxFileNotFoundError("nf")
+        response = view.delete_pv_file(_request({"path": "files/gone.txt"}, method="DELETE"), pk="s1")
+        assert response.status_code == 200
+
+    def test_delete_missing_volume_is_not_idempotent(self, view, mock_svc):
+        """会话没有 PV 不属于「文件已删掉」，不能被幂等吞成 200。"""
+        from blueapps.core.exceptions import ResourceNotFound
+
+        instance, _ = mock_svc
+        instance.delete_file.side_effect = SandboxVolumeNotFoundError("session s1 未初始化沙箱 PersistentVolume")
+        with pytest.raises(ResourceNotFound):
+            view.delete_pv_file(_request({"path": "files/a.txt"}, method="DELETE"), pk="s1")
+
+    def test_delete_checks_owner(self, view, mock_svc):
+        from blueapps.core.exceptions import ClientBlueException
+
+        fake_client.api.retrieve_chat_session.side_effect = TestCheckSessionOwner._make_http_error(403)
+        with pytest.raises(ClientBlueException):
+            view.delete_pv_file(_request({"path": "files/a.txt"}, method="DELETE"), pk="s1")
+
+
+# ---------------------------------------------------------------------------
 # pv_files_stat
 # ---------------------------------------------------------------------------
 
@@ -294,12 +343,6 @@ class TestPvFilesStat:
         response = view.pv_files_stat(_request({"path": "x.txt"}), pk="s1")
         assert response.data == {"exists": True, "size": 42}
         instance.stat_file.assert_called_once_with(session_code="s1", path="x.txt")
-
-    def test_stat_requires_path(self, view, mock_svc):
-        from blueapps.core.exceptions import ClientBlueException
-
-        with pytest.raises(ClientBlueException):
-            view.pv_files_stat(_request({}), pk="s1")
 
     def test_stat_translates_invalid_arg(self, view, mock_svc):
         from blueapps.core.exceptions import ClientBlueException
@@ -354,12 +397,6 @@ class TestPvFilesPreview:
             view.pv_files_preview(_request({"path": "x.bin"}), pk="s1")
         assert excinfo.value.STATUS_CODE == 400
 
-    def test_preview_requires_path(self, view, mock_svc):
-        from blueapps.core.exceptions import ClientBlueException
-
-        with pytest.raises(ClientBlueException):
-            view.pv_files_preview(_request({}), pk="s1")
-
 
 # ---------------------------------------------------------------------------
 # pv_files_download_url
@@ -388,12 +425,6 @@ class TestPvFilesDownloadUrl:
         with pytest.raises(ServerBlueException) as excinfo:
             view.pv_files_download_url(_request({"path": "x.txt"}), pk="s1")
         assert excinfo.value.STATUS_CODE == 500
-
-    def test_download_url_requires_path(self, view, mock_svc):
-        from blueapps.core.exceptions import ClientBlueException
-
-        with pytest.raises(ClientBlueException):
-            view.pv_files_download_url(_request({}), pk="s1")
 
 
 class TestPvFilesUpload:
@@ -431,6 +462,50 @@ class TestPvFilesUpload:
         assert excinfo.value.STATUS_CODE == 400
         instance.upload_files.assert_not_called()
         session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image.assert_not_called()
+
+    def test_upload_rejects_oversized_file_without_reading(self, view, mock_svc):
+        from aidev_agent.services.sandbox_pv_files import MAX_SESSION_UPLOAD_FILE_SIZE
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        uploaded_file = SimpleNamespace(
+            name="big.txt",
+            size=MAX_SESSION_UPLOAD_FILE_SIZE + 1,
+            content_type="text/plain",
+            read=MagicMock(side_effect=AssertionError("oversized file must not be read")),
+        )
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
+
+        assert str(MAX_SESSION_UPLOAD_FILE_SIZE) in excinfo.value.message
+        assert excinfo.value.STATUS_CODE == 400
+        uploaded_file.read.assert_not_called()
+        instance.upload_files.assert_not_called()
+
+    def test_upload_rejects_too_many_files_without_reading(self, view, mock_svc):
+        from aidev_agent.services.sandbox_pv_files import MAX_SESSION_UPLOAD_FILES
+        from blueapps.core.exceptions import ClientBlueException
+
+        instance, _ = mock_svc
+        uploaded_files = [
+            SimpleNamespace(
+                name=f"f{index}.txt",
+                size=1,
+                content_type="text/plain",
+                read=MagicMock(side_effect=AssertionError("too many files must not be read")),
+            )
+            for index in range(MAX_SESSION_UPLOAD_FILES + 1)
+        ]
+
+        with pytest.raises(ClientBlueException) as excinfo:
+            view.pv_files_upload(_request(method="POST", files=uploaded_files), pk="s1")
+
+        assert str(MAX_SESSION_UPLOAD_FILES) in excinfo.value.message
+        assert excinfo.value.STATUS_CODE == 400
+        for uploaded_file in uploaded_files:
+            uploaded_file.read.assert_not_called()
+        instance.upload_files.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

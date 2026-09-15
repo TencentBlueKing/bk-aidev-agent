@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import posixpath
@@ -76,6 +77,10 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileInvalidArgumentError,
     SandboxFileServerError,
     SandboxPvFileService,
+    fill_user_image_urls,
+    normalize_session_pv_path,
+    session_file_identity,
+    session_file_relpath,
 )
 from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
@@ -157,6 +162,19 @@ class ChatCompletionAgent(BaseModel):
     mcp_fetch_failures: list[dict] = Field(default_factory=list, description="MCP 工具拉取失败记录，用于流式事件")
     resource_manager: Any = Field(
         default=None, exclude=True, description="per-request 资源管理器（含正确 app_code / access_token）"
+    )
+    pv_file_service: Any = Field(
+        default=None,
+        exclude=True,
+        description="会话 PV 文件服务，_pv_file_service() 惰性构造；per-request 复用以命中其 volume_id 缓存。",
+    )
+    image_url_cache: dict[tuple[str, str], str] = Field(
+        default_factory=dict,
+        exclude=True,
+        description=(
+            "仅在 per-request ChatCompletionAgent 实例内缓存本轮已签发成功的用户图片 download_url；"
+            "不跟踪 URL 过期时间，key 为 (session_code, 归一化 PV 相对路径)；失败不入缓存。"
+        ),
     )
     runtime_backend_resolver: Any = Field(
         default=None,
@@ -1131,9 +1149,40 @@ class ChatCompletionAgent(BaseModel):
 
         账本记录统一经 model_dump 归一为 dict 后交由快照转换器消费（role/content 顶层、
         status/created_at 透传顶层、builtin_property/extra 保留）。
+        用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
         """
-        base = [_to_ledger_dict(rec) for rec in (self.chat_history or [])]
+        base = []
+        for record in self.chat_history or []:
+            payload = _to_ledger_dict(record)
+            # ChatPrompt 经 model_dump 已是全新嵌套结构，重签直接改它不会污染账本；
+            # 其余形态与账本共享引用，才需要深拷贝，避免把整段历史（含大 tool 输出）无谓复制一遍。
+            base.append(payload if hasattr(record, "model_dump") else copy.deepcopy(payload))
+        file_service = self._pv_file_service()
+        if file_service is not None:
+            for payload in base:
+                fill_user_image_urls(
+                    file_service,
+                    payload,
+                    only_missing=False,
+                    url_cache=self.image_url_cache,
+                    session_code=self.thread_id,
+                )
         return contents_to_agui_messages(base)
+
+    def _pv_file_service(self) -> SandboxPvFileService | None:
+        """会话 PV 文件服务；缺 resource_manager / thread_id 时签不出 URL，不构造。
+
+        本轮复用同一实例：组模型输入和组快照各要遍历一次历史，共享实例才能命中
+        volume_id 缓存，否则每轮多一次 retrieve_chat_session。
+        """
+        if self.resource_manager is None or not self.thread_id:
+            return None
+        if self.pv_file_service is None:
+            self.pv_file_service = SandboxPvFileService(
+                resource_manager=self.resource_manager,
+                executor_info=self.executor_info or {},
+            )
+        return self.pv_file_service
 
     def _stream(
         self,
@@ -1504,25 +1553,10 @@ class ChatCompletionAgent(BaseModel):
 
     @staticmethod
     def _normalize_file_resource_path(resource: dict) -> str:
-        raw_path = resource.get("path") or resource.get("outputId") or resource.get("id")
-        if not isinstance(raw_path, str) or not raw_path.strip():
+        raw_path = session_file_identity(resource)
+        if not raw_path:
             raise SandboxFileInvalidArgumentError("文件资源缺少 path")
-
-        path = raw_path.strip().replace("\\", "/")
-        mount_prefix = f"{SESSION_VOLUME_PATH}/"
-        if path.startswith(mount_prefix):
-            path = path[len(mount_prefix) :]
-        elif path.startswith(("/", "$")):
-            raise SandboxFileInvalidArgumentError(f"文件资源 path 不属于会话 PV: {raw_path}")
-        if any(ord(char) < 32 for char in path):
-            raise SandboxFileInvalidArgumentError(f"文件资源 path 含控制字符: {raw_path}")
-        if ".." in path.split("/"):
-            raise SandboxFileInvalidArgumentError(f"文件资源 path 非法: {raw_path}")
-
-        normalized = posixpath.normpath(path)
-        if normalized in {"", "."}:
-            raise SandboxFileInvalidArgumentError("文件资源 path 不能为空")
-        return normalized
+        return normalize_session_pv_path(raw_path)
 
     @staticmethod
     def _is_image_resource(resource: dict, path: str) -> bool:
@@ -1533,11 +1567,15 @@ class ChatCompletionAgent(BaseModel):
 
     @staticmethod
     def _find_binary_by_path(content: list[dict], path: str) -> dict | None:
-        """按 PV 相对路径找到对应的展示用 binary。"""
+        """按 PV 相对路径找到对应的展示用 binary。
+
+        与资源侧共用 session_file_relpath 归一，否则历史里带卷前缀的 binary 匹配不上，
+        会重复 append 一条 image_url。
+        """
         for item in content:
             if not isinstance(item, dict) or item.get("type") != "binary":
                 continue
-            if str(item.get("id") or item.get("path") or "") == path:
+            if session_file_relpath(item) == path:
                 return item
         return None
 
@@ -1551,6 +1589,20 @@ class ChatCompletionAgent(BaseModel):
     def _build_llm_history(self) -> list[ChatPrompt]:
         """构造仅供本轮模型调用使用的历史副本。"""
         chat_history = [prompt.model_copy(deep=True) for prompt in self.chat_history or []]
+        url_cache = self.image_url_cache
+        file_service = self._pv_file_service()
+        if file_service is not None:
+            for prompt in chat_history:
+                payload = {"role": prompt.role, "content": prompt.content}
+                fill_user_image_urls(
+                    file_service,
+                    payload,
+                    only_missing=False,
+                    url_cache=url_cache,
+                    session_code=self.thread_id,
+                    clear_on_failure=True,
+                )
+                prompt.content = payload["content"]
         if not self.file_resources:
             return chat_history
 
@@ -1589,25 +1641,25 @@ class ChatCompletionAgent(BaseModel):
             }
         )
 
-        if image_paths:
-            file_service = SandboxPvFileService(
-                resource_manager=self.resource_manager,
-                executor_info=self.executor_info or {},
-            )
-            for path in image_paths:
+        for path in image_paths:
+            cache_key = (self.thread_id, path)
+            image_url = url_cache.get(cache_key) or ""
+            if not image_url:
                 url_data = file_service.get_download_url(
                     session_code=self.thread_id,
                     path=path,
                     expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
                 )
-                image_url = url_data.get("download_url")
-                if not image_url:
-                    raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
-                existing = self._find_binary_by_path(content, path)
-                if existing is not None:
-                    existing["url"] = image_url
-                else:
-                    content.append({"type": "image_url", "image_url": {"url": image_url}})
+                image_url = url_data.get("download_url") or ""
+                if image_url:
+                    url_cache[cache_key] = image_url
+            if not image_url:
+                raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
+            existing = self._find_binary_by_path(content, path)
+            if existing is not None:
+                existing["url"] = image_url
+            else:
+                content.append({"type": "image_url", "image_url": {"url": image_url}})
         last_user_prompt.content = content
         return chat_history
 
@@ -1629,6 +1681,21 @@ class ChatAgentBuilder:
     - 通用字段读 ``self.ctx.{resource_manager, username, agent_code, session_context_data, switch_agent}``。
     - Chat 专属字段读 ``self.ctx.chat.{temperature, max_tokens, auth_headers, checkpointer, ...}``。
     """
+
+    # docSchema tag 的 data.type → 装配期资源形状：tool / mcp 按 code 收窄，知识库按数字 id，
+    # 文件与产物的 value 都是 PV 相对路径；file / artifact 同等映射，避免新组件库仍发
+    # file 时附件被静默丢掉。skill 走渐进式披露（只交出描述、正文按需拉取），
+    # 全量挂载成本极低，且 options.skills 非空还是 runtime 沙箱工具链的开关，故不参与收窄。
+    DOC_SCHEMA_TAG_TYPES = {
+        "tool": ("tool", "code"),
+        "mcp": ("mcp", "code"),
+        "doc": ("knowledgebase", "id"),
+        "knowledgebase": ("knowledgebase", "id"),
+        "artifact": ("file", "path"),
+        "file": ("file", "path"),
+    }
+    # skill 走渐进式披露，shortcut 是 prompt 模板：两者都不是要挂载的资源，识别但不收窄。
+    DOC_SCHEMA_IGNORED_TAG_TYPES = frozenset({"skill", "shortcut"})
 
     def __init__(self, ctx: AgentBuildContext):
         self.ctx = ctx
@@ -2269,9 +2336,65 @@ class ChatAgentBuilder:
                 f"ChatAgentBuilder: handling last human message with resources in session_context_data->[{item}]"
             )
             if item.get("role") == PromptRole.USER.value:
-                # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
-                extra = item.get("extra") or {}
-                resources = extra.get("resources") or []
+                resources = self._resolve_last_human_resources(item)
                 self._file_resources = [resource for resource in resources if resource.get("type") == "file"]
                 self._specific_resources = [resource for resource in resources if resource.get("type") != "file"]
                 break
+
+    @classmethod
+    def _resolve_last_human_resources(cls, item: dict) -> list[dict]:
+        """取本轮用户消息声明的资源。
+
+        ``docSchema`` 是前端输入框富文本结构，只承载 slash 菜单选出的 tag（tool / mcp /
+        知识库等）；附件不进 tag，始终从 ``extra.resources`` 取，否则前端一旦开始发
+        docSchema，本轮附件就会整批丢掉。``docSchema`` 缺省时整体降级读旧字段。
+        非法 tag 立刻抛错，不静默跳过。
+        """
+        # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
+        extra = item.get("extra") or {}
+        legacy_resources = extra.get("resources") or []
+        doc_schema = item.get("docSchema")
+        if doc_schema is None:
+            return legacy_resources
+        # 文件排在前面：它们带 mime_type，_is_image_resource 判定比 docSchema 的裸 path 更准，
+        # 下游 _build_llm_history 按归一化路径去重，与 docSchema 的回显占位 tag 重叠也不会重复挂载。
+        files = [resource for resource in legacy_resources if resource.get("type") == "file"]
+        return files + cls._convert_doc_schema_to_resources(doc_schema)
+
+    @classmethod
+    def _convert_doc_schema_to_resources(cls, doc_schema: Any) -> list[dict]:
+        """把 docSchema 的 tag 节点转成装配期资源形状。
+
+        只对「声明了资源却挂不上」的情况抛 ``AgentException``：tag 的 data 畸形、
+        tag type 不认识、缺 label/value、知识库 id 不是数字。非 tag 节点一律跳过——
+        它们不声明任何资源，富文本编辑器后续新增节点类型不应该让整轮对话失败。
+        """
+        if not isinstance(doc_schema, list):
+            raise AgentException(message=f"docSchema 必须是二维数组，实际是 {type(doc_schema).__name__}")
+        resources: list[dict] = []
+        for line in doc_schema:
+            if not isinstance(line, list):
+                raise AgentException(message="docSchema 每一行必须是数组")
+            for node in line:
+                if not isinstance(node, dict) or node.get("type") != "tag":
+                    continue
+                data = node.get("data")
+                if not isinstance(data, dict):
+                    raise AgentException(message="docSchema tag 的 data 必须是对象")
+                tag_type = data.get("type") or ""
+                if tag_type in cls.DOC_SCHEMA_IGNORED_TAG_TYPES:
+                    continue
+                mapping = cls.DOC_SCHEMA_TAG_TYPES.get(tag_type)
+                if mapping is None:
+                    raise AgentException(message=f"docSchema tag type 非法: {tag_type}")
+                if data.get("label") in (None, "") or data.get("value") in (None, ""):
+                    raise AgentException(message=f"docSchema tag 缺少 label 或 value: type={tag_type}")
+                resource_type, value_key = mapping
+                value = data.get("value")
+                if value_key == "id":
+                    try:
+                        value = int(value)
+                    except (TypeError, ValueError) as exc:
+                        raise AgentException(message=f"docSchema 知识库 tag value 必须是数字 id: {value}") from exc
+                resources.append({"type": resource_type, value_key: value})
+        return resources

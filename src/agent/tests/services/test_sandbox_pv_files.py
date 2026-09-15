@@ -26,7 +26,9 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxPvFileService,
     encode_paas_query_params,
     fill_user_image_urls,
+    normalize_session_pv_path,
     validate_session_upload_files,
+    validate_session_upload_stats,
 )
 
 # ---------------------------------------------------------------------------
@@ -670,6 +672,11 @@ class TestListFiles:
             service.list_files(session_code="s1")
         assert "路径不合法" in str(exc_info.value)
 
+    def test_list_files_rejects_parent_path(self, service, mock_client):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            service.list_files(session_code="s1", path="../secret")
+        mock_client.list_files.request.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # delete_file / stat_file / preview_file / get_download_url
@@ -689,6 +696,18 @@ class TestOtherServiceMethods:
         with pytest.raises(SandboxFileNotFoundError):
             service.delete_file(session_code="s1", path="x.txt")
 
+    def test_delete_file_rejects_parent_path(self, service, mock_client):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            service.delete_file(session_code="s1", path="files/../secret.txt")
+        mock_client.delete_file.request.assert_not_called()
+
+    def test_delete_file_normalizes_separators(self, service, mock_client):
+        mock_client.delete_file.request.return_value = _mock_paas_response()
+        service.delete_file(session_code="s1", path="  files\\a.txt  ")
+        # params 在 _call_single 里已被 encode_paas_query_params 预编码成字符串
+        sent = dict(parse_qsl(mock_client.delete_file.request.call_args.kwargs["params"]))
+        assert sent["path"] == "files/a.txt"
+
     def test_stat_file_returns_paas_body(self, service, mock_client):
         mock_client.stat_file.request.return_value = _mock_paas_response({"exists": True, "size": 42})
         assert service.stat_file(session_code="s1", path="x.txt") == {"exists": True, "size": 42}
@@ -697,6 +716,18 @@ class TestOtherServiceMethods:
         """PaaS 用 exists=false 表达不存在时，Service 不应转异常。"""
         mock_client.stat_file.request.return_value = _mock_paas_response({"exists": False})
         assert service.stat_file(session_code="s1", path="x.txt") == {"exists": False}
+
+    @pytest.mark.parametrize("path", [None, "", "  ", "files/../secret.txt"])
+    def test_single_file_methods_reject_bad_path(self, service, mock_client, path):
+        """路径校验由 Service 独占，调用方（含插件视图）不再重复归一化。"""
+        for method, api in (
+            (service.stat_file, mock_client.stat_file),
+            (service.preview_file, mock_client.preview_file),
+            (service.get_download_url, mock_client.get_download_url),
+        ):
+            with pytest.raises(SandboxFileInvalidArgumentError):
+                method(session_code="s1", path=path)
+            api.request.assert_not_called()
 
     def test_preview_file_truncated_true(self, service, mock_client):
         mock_client.preview_file.request.return_value = _mock_paas_response(
@@ -787,6 +818,70 @@ class TestSafeFileName:
         )
 
 
+class TestNormalizeSessionPvPath:
+    def test_required_rejects_blank(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="path is required"):
+            normalize_session_pv_path("  ")
+
+    def test_optional_keeps_empty(self):
+        assert normalize_session_pv_path("", required=False) == ""
+
+    def test_rejects_parent_segment(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            normalize_session_pv_path("files/../secret.txt")
+
+    def test_rejects_absolute_and_foreign_mount(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            normalize_session_pv_path("/etc/passwd")
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            normalize_session_pv_path("$OTHER/secret.txt")
+
+    def test_strips_session_volume_prefix(self):
+        assert normalize_session_pv_path("$STORAGE_PATH/session/files/a.png") == "files/a.png"
+
+    def test_rejects_control_characters(self):
+        with pytest.raises(SandboxFileInvalidArgumentError, match="invalid path"):
+            normalize_session_pv_path("files/a\x00.png")
+
+    @pytest.mark.parametrize(
+        ("path", "reason"),
+        [
+            ("/etc/passwd", "不属于会话 PV"),
+            ("files/a\x00.png", "含控制字符"),
+            ("files/../secret.txt", "包含 .."),
+            ("$STORAGE_PATH/session/", "归一化后为空"),
+        ],
+    )
+    def test_message_carries_reason_and_raw_path(self, path, reason):
+        """排障要能直接看出「哪条路径、被哪条规则拒了」，不能只给一句 invalid path。"""
+        with pytest.raises(SandboxFileInvalidArgumentError) as excinfo:
+            normalize_session_pv_path(path)
+        assert reason in str(excinfo.value)
+        assert repr(path) in str(excinfo.value)
+
+
+class TestValidateSessionUploadStats:
+    def test_rejects_too_many_files_without_reading(self):
+        files = [
+            SimpleNamespace(name=f"{index}.txt", size=1, read=MagicMock(side_effect=AssertionError("must not read")))
+            for index in range(MAX_SESSION_UPLOAD_FILES + 1)
+        ]
+        with pytest.raises(SandboxFileInvalidArgumentError, match="不能超过"):
+            validate_session_upload_stats(files)
+        for upload_file in files:
+            upload_file.read.assert_not_called()
+
+    def test_rejects_oversized_file_without_reading(self):
+        upload_file = SimpleNamespace(
+            name="big.txt",
+            size=MAX_SESSION_UPLOAD_FILE_SIZE + 1,
+            read=MagicMock(side_effect=AssertionError("must not read")),
+        )
+        with pytest.raises(SandboxFileInvalidArgumentError, match="超过单文件大小限制"):
+            validate_session_upload_stats([upload_file])
+        upload_file.read.assert_not_called()
+
+
 class TestValidateSessionUploadFiles:
     def test_rejects_empty_files(self):
         with pytest.raises(SandboxFileInvalidArgumentError, match="不能为空"):
@@ -808,6 +903,32 @@ class TestValidateSessionUploadFiles:
             )
 
 
+class TestVolumeIdCache:
+    def test_repeated_calls_read_session_once(self, service, resource_manager):
+        """批量签发历史图片 URL 时每张图都会走 _call_single，volume_id 不能每次回查会话。"""
+        for path in ("files/a.png", "files/b.png", "files/c.png"):
+            service.get_download_url(session_code="s1", path=path)
+
+        assert resource_manager.retrieve_chat_session.call_count == 1
+
+    def test_cache_is_per_session(self, service, resource_manager):
+        service.get_download_url(session_code="s1", path="files/a.png")
+        service.get_download_url(session_code="s2", path="files/a.png")
+
+        assert resource_manager.retrieve_chat_session.call_count == 2
+
+    def test_missing_volume_is_not_negatively_cached(self, service, resource_manager):
+        """会话尚未初始化 PV 时不缓存失败，后续创建出来要能立刻读到。"""
+        resource_manager.retrieve_chat_session.return_value = {"session_property": {}}
+        with pytest.raises(SandboxFileNotFoundError):
+            service.get_download_url(session_code="s1", path="files/a.png")
+
+        resource_manager.retrieve_chat_session.return_value = {"session_property": {"sandbox_pv_id": "vol-new"}}
+        service.get_download_url(session_code="s1", path="files/a.png")
+
+        assert resource_manager.retrieve_chat_session.call_count == 2
+
+
 class TestFillUserImageUrls:
     def test_fills_missing_image_url(self):
         file_service = MagicMock()
@@ -824,6 +945,29 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert payload["content"][1]["url"] == "https://cdn/a.png"
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/a.png", expires_in=3600
+        )
+
+    def test_prefers_output_id_over_upload_id(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/a.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {
+                    "type": "binary",
+                    "mime_type": "image/png",
+                    "id": "upload-1",
+                    "outputId": "files/a.png",
+                },
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload)
+
+        assert payload["content"][0]["url"] == "https://cdn/a.png"
         file_service.get_download_url.assert_called_once_with(
             session_code="s1", path="files/a.png", expires_in=3600
         )
@@ -856,3 +1000,120 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert "url" not in payload["content"][0]
+
+    def test_refreshes_existing_url_when_not_only_missing(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"},
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        assert payload["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/a.png", expires_in=3600
+        )
+
+    def test_dedupes_same_path_across_payloads(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        url_cache = {}
+        first = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-1"}],
+        }
+        second = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-2"}],
+        }
+
+        fill_user_image_urls(file_service, first, only_missing=False, url_cache=url_cache)
+        fill_user_image_urls(file_service, second, only_missing=False, url_cache=url_cache)
+
+        assert first["content"][0]["url"] == "https://cdn/fresh.png"
+        assert second["content"][0]["url"] == "https://cdn/fresh.png"
+        file_service.get_download_url.assert_called_once()
+
+    def test_clears_stale_url_when_refresh_fails(self):
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileError("boom")
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old"}],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False, clear_on_failure=True)
+
+        assert "url" not in payload["content"][0]
+
+    @staticmethod
+    def _image_payload(url: str) -> dict:
+        return {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": url}],
+        }
+
+    def test_failure_not_cached_so_next_consumer_retries(self):
+        """共享缓存跨消费方复用，一次瞬时失败不能连累后面的消费方。"""
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = [
+            SandboxFileError("transient"),
+            {"download_url": "https://cdn/fresh.png"},
+        ]
+        url_cache: dict[str, str] = {}
+
+        first = self._image_payload("https://old-1")
+        fill_user_image_urls(file_service, first, only_missing=False, url_cache=url_cache)
+        assert url_cache == {}
+
+        second = self._image_payload("https://old-2")
+        fill_user_image_urls(file_service, second, only_missing=False, url_cache=url_cache)
+        assert second["content"][0]["url"] == "https://cdn/fresh.png"
+        assert file_service.get_download_url.call_count == 2
+
+    def test_cache_isolates_sessions_sharing_same_path(self):
+        """同一相对路径在不同会话下是不同文件，共享缓存不能让它们互相取到对方的 URL。"""
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = [
+            {"download_url": "https://cdn/s1.png"},
+            {"download_url": "https://cdn/s2.png"},
+        ]
+        url_cache: dict[tuple[str, str], str] = {}
+
+        first = self._image_payload("https://old")
+        second = self._image_payload("https://old")
+        second["session_code"] = "s2"
+
+        fill_user_image_urls(file_service, first, only_missing=False, url_cache=url_cache)
+        fill_user_image_urls(file_service, second, only_missing=False, url_cache=url_cache)
+
+        assert first["content"][0]["url"] == "https://cdn/s1.png"
+        assert second["content"][0]["url"] == "https://cdn/s2.png"
+        assert set(url_cache) == {("s1", "files/a.png"), ("s2", "files/a.png")}
+
+    def test_failure_deduped_within_single_call(self):
+        """失败虽不进共享缓存，同一次调用内同一路径也只尝试一次。"""
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileError("boom")
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-1"},
+                {"type": "binary", "mime_type": "image/png", "id": "files/a.png", "url": "https://old-2"},
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False, clear_on_failure=True)
+
+        file_service.get_download_url.assert_called_once()
+        assert all("url" not in item for item in payload["content"])
