@@ -15,6 +15,7 @@ import type { IMediatorModule } from '../mediator';
 
 const createMediator = (sdkVersion?: string): IMediatorModule => {
   const uploadFile = vi.fn().mockResolvedValue({ download_url: 'https://legacy.example/file.png' });
+  const deletePvFile = vi.fn().mockResolvedValue(undefined);
   const uploadPvFiles = vi.fn().mockResolvedValue({
     count: 1,
     succeeded: 1,
@@ -41,6 +42,7 @@ const createMediator = (sdkVersion?: string): IMediatorModule => {
       session: {
         uploadFile,
         uploadPvFiles,
+        deletePvFile,
       },
     },
   } as unknown as IMediatorModule;
@@ -130,5 +132,22 @@ describe('useSession.uploadFiles', () => {
     expect(mediator.http?.session.uploadPvFiles).toHaveBeenCalledWith('s1', [fileA, fileB]);
     expect(mediator.http?.session.uploadFile).not.toHaveBeenCalled();
     expect(results).toHaveLength(2);
+  });
+});
+
+describe('useSession.deletePvFile', () => {
+  it('forwards sessionCode and raw path to HTTP without encoding', async () => {
+    const mediator = createMediator();
+    const session = useSession(mediator);
+    const path = 'files/report.pdf';
+
+    await session.deletePvFile('s-abc', path);
+
+    expect(mediator.http?.session.deletePvFile).toHaveBeenCalledTimes(1);
+    expect(mediator.http?.session.deletePvFile).toHaveBeenCalledWith('s-abc', path);
+    expect(mediator.http?.session.deletePvFile).not.toHaveBeenCalledWith(
+      's-abc',
+      encodeURIComponent(path),
+    );
   });
 });

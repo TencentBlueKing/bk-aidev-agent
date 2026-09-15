@@ -209,6 +209,26 @@ const handleUpload = async (files: File[]) => {
 />
 ```
 
+取消输入框未发送附件时，ChatInput / ChatContainer 会立刻从 UI 移除并触发 `deleteFile`（`@delete-file`），参数为 `Partial<UploadFile>`。ChatBot / AIBlueking **已内置**调用 `session.deletePvFile`：
+
+- 已有 `outputId` / `id`：立即 DELETE
+- **上传尚未回包**（无 path）：记住 `File`，等 `uploadFiles` 回包后再 DELETE（用上传时的 `sessionCode`）
+- 失败 / 旧接口只有 `download_url`：不请求
+
+UI 不等待接口、失败不恢复附件。自建 ChatInput 时需同样处理「pending 时点 X」：无 path 先记下 File，upload 返回后再删。
+
+```typescript
+const handleDeleteFile = async (file: { outputId?: string; id?: string; file?: File }) => {
+  const path = file.outputId || file.id;
+  const sessionCode = chatHelper.session.current?.value?.sessionCode;
+  if (path && sessionCode) {
+    await chatHelper.session.deletePvFile(sessionCode, path);
+    return;
+  }
+  // 上传中点取消：等回包后再删，见 ChatBot useMessageSender
+};
+```
+
 ---
 
 ## 获取内部 chatHelper（独立模式进阶用法）

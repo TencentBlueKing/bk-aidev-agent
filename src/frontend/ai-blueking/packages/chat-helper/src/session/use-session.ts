@@ -315,6 +315,11 @@ export const useSession = (mediator: IMediatorModule) => {
     return mediator.http?.session.getPvFileDownloadUrl(sessionCode, path, options);
   };
 
+  /** 删除会话 PV 文件。path 为上传回包 id/path，勿二次 encode。 */
+  const deletePvFile = (sessionCode: string, path: string) => {
+    return mediator.http?.session.deletePvFile(sessionCode, path);
+  };
+
   /**
    * 重置 session 模块状态
    */
@@ -362,6 +367,7 @@ export const useSession = (mediator: IMediatorModule) => {
     uploadFile,
     uploadFiles,
     getPvFileDownloadUrl,
+    deletePvFile,
     reset,
   };
 };

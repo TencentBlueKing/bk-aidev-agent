@@ -554,6 +554,17 @@ const result = await session.uploadFile(sessionCode, file);
 
 `session.uploadFiles(sessionCode, files)` 为批量入口，分流规则相同：新接口一次 multipart 请求，旧接口仍逐个。ChatInput 一次选择多个文件时走此入口。
 
+#### deletePvFile
+
+删除会话 PV 文件。取消输入框未发送附件时调用。`path` 取上传回包 `id` 或 `path`（二者相同，形如 `files/report.pdf`），走 query，无 body。**不要二次 encode**（`URLSearchParams` 会编一次）。Plugin / OpenAPI 返回 HTTP 204；Chat / Workbench 返回信封 `{ result: true, code: "0", data: null }`。文件不存在也按成功处理（幂等）。旧 `upload/{fileName}/` 没有此接口，调用方仅在有 PV path 时请求。
+
+```typescript
+await session.deletePvFile(sessionCode, path);
+// DELETE session/{sessionCode}/pv_files/?path=files/report.pdf
+```
+
+ChatBot / AIBlueking 已监听 ChatContainer 的 `deleteFile` 并内部调用此方法：已有 path 立即删；上传未回包时先记下 `File`，等 `uploadFiles` 返回后再删。宿主无需再绑。自建 ChatInput 时需自行 `@delete-file` 并处理 pending 取消。
+
 #### isResumeSession（HITL 审批轮询端点）
 
 查询会话中断是否可恢复（审批是否通过）。通常无需手动调用，由 `agent.pollResumeSession` 内部使用。

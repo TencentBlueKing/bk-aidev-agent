@@ -81,6 +81,7 @@ vi.mock('../composables/use-message-sender', () => ({
     doSendMessage: vi.fn(),
     handleSendMessage: vi.fn(),
     handleUpload: vi.fn(),
+    handleDeleteFile: vi.fn(),
     handleArtifactClick: vi.fn(),
     handleStopSending: vi.fn(),
     stopGeneration: vi.fn(),

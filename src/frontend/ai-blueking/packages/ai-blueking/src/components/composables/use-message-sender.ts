@@ -16,7 +16,7 @@ import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { ReportChatBotError } from './use-error-reporter';
 import type { IUploadFileResult, IUserMessage } from '@blueking/chat-helper';
-import type { Interrupt, InterruptResume, OnArtifactClick, TagSchema, UserMessage } from '@blueking/chat-x';
+import type { Interrupt, InterruptResume, OnArtifactClick, TagSchema, UploadFile, UserMessage } from '@blueking/chat-x';
 
 import type { UseInterruptResumeReturn } from './use-interrupt-resume';
 
@@ -41,6 +41,7 @@ export interface UseMessageSenderReturn {
     options?: { interrupt?: Interrupt; payload?: InterruptResume },
   ) => Promise<void>;
   handleArtifactClick: OnArtifactClick;
+  handleDeleteFile: (file: Partial<UploadFile>) => Promise<void>;
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema) => void;
   handleUpload: (files: File[]) => Promise<IUploadFileResult[]>;
@@ -73,6 +74,43 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
 
   const handleUpdateModelValue = (value: string | TagSchema) => {
     userInput.value = value;
+  };
+
+  /** 上传未完成时点了取消：等回包拿到 path 再 DELETE */
+  const pendingDeleteFiles = new Set<File>();
+
+  const getUploadResultPath = (item?: IUploadFileResult): string | undefined => {
+    if (!item) {
+      return undefined;
+    }
+    if ('path' in item && item.path) {
+      return item.path;
+    }
+    if ('id' in item && item.id) {
+      return item.id;
+    }
+    return undefined;
+  };
+
+  const deleteRemotePvFile = async (sessionCode: string, path: string): Promise<void> => {
+    try {
+      await chatHelper.value!.session.deletePvFile(sessionCode, path);
+    } catch (error) {
+      reportError(error, 'Failed to delete uploaded file');
+    }
+  };
+
+  const deleteCancelledUploads = (sessionCode: string, files: File[], results: IUploadFileResult[]): void => {
+    files.forEach((file, index) => {
+      if (!pendingDeleteFiles.has(file)) {
+        return;
+      }
+      pendingDeleteFiles.delete(file);
+      const path = getUploadResultPath(results[index]);
+      if (path) {
+        void deleteRemotePvFile(sessionCode, path);
+      }
+    });
   };
 
   /**
@@ -119,12 +157,17 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       throw new Error('[ChatBot] Cannot upload: no active session');
     }
 
-    const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
-    if (!results?.length) {
-      throw new Error('[ChatBot] Upload failed: empty response');
+    try {
+      const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
+      if (!results?.length) {
+        throw new Error('[ChatBot] Upload failed: empty response');
+      }
+      deleteCancelledUploads(sessionCode, files, results);
+      return results;
+    } catch (error) {
+      files.forEach(file => pendingDeleteFiles.delete(file));
+      throw error;
     }
-
-    return results;
   };
 
   const handleArtifactClick: OnArtifactClick = async file => {
@@ -138,6 +181,28 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       download_url: result?.download_url,
       preview_url: result?.preview_url,
     };
+  };
+
+  /**
+   * 取消输入框未发送附件。UI 已立即移除，失败不恢复。
+   * 已有 PV path 立即 DELETE；上传中尚无 path 则记下 File，等 upload 回包再删。
+   */
+  const handleDeleteFile = async (file: Partial<UploadFile>): Promise<void> => {
+    const path = file.outputId || file.id;
+    if (file.file && !path) {
+      pendingDeleteFiles.add(file.file);
+      return;
+    }
+    if (file.file) {
+      pendingDeleteFiles.delete(file.file);
+    }
+
+    const sessionCode = chatHelper.value?.session.current?.value?.sessionCode;
+    if (!path || !sessionCode) {
+      return;
+    }
+
+    await deleteRemotePvFile(sessionCode, path);
   };
 
   /**
@@ -200,6 +265,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     doSendMessage,
     handleSendMessage,
     handleArtifactClick,
+    handleDeleteFile,
     handleUpload,
     handleStopSending,
     stopGeneration,

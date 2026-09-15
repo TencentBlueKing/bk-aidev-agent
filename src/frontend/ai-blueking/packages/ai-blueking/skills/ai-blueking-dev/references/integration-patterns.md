@@ -355,6 +355,7 @@ const handleHistoryClick = (event: Event) => {
       :on-send-message="handleSend"
       :on-stop-sending="handleStop"
       :on-upload="handleUpload"
+      @delete-file="handleDeleteFile"
       @select-shortcut="handleSelectShortcut"
     />
 
@@ -486,6 +487,13 @@ const handleHistoryClick = (event: Event) => {
     const sessionCode = session.current.value?.sessionCode;
     if (!sessionCode) return [];
     return await session.uploadFiles(sessionCode, files);
+  };
+
+  const handleDeleteFile = async (file: { outputId?: string; id?: string }) => {
+    const path = file.outputId || file.id;
+    const sessionCode = session.current.value?.sessionCode;
+    if (!path || !sessionCode) return;
+    await session.deletePvFile(sessionCode, path);
   };
 
   // ==================== 工具操作 ====================

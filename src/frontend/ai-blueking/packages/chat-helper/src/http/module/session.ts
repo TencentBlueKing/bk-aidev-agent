@@ -225,6 +225,13 @@ export const useSession = (fetchClient: FetchClient) => {
     );
   };
 
+  /**
+   * 删除会话 PV 文件（取消输入框未发送附件）。
+   * path 走 query，无 body；URLSearchParams 会自动编码，勿二次 encode。
+   */
+  const deletePvFile = (sessionCode: string, path: string, config?: IRequestConfig) =>
+    fetchClient.delete(`session/${sessionCode}/pv_files/`, { path }, config);
+
   // 轮询接口，判断是否可以继续聊天
   const isResumeSession = (sessionCode: string, config?: IRequestConfig) =>
     fetchClient.get<boolean>(`session/${sessionCode}/is_resume/`, undefined, config);
@@ -243,6 +250,7 @@ export const useSession = (fetchClient: FetchClient) => {
     uploadFile,
     uploadPvFiles,
     getPvFileDownloadUrl,
+    deletePvFile,
     isResumeSession,
   };
 };

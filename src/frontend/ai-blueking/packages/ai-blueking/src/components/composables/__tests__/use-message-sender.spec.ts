@@ -317,6 +317,162 @@ describe('useMessageSender', () => {
     });
   });
 
+  describe('handleDeleteFile', () => {
+    it('should call session.deletePvFile with outputId', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleDeleteFile } = useMessageSender(params);
+
+      await handleDeleteFile({ outputId: 'files/report.pdf', id: 'upload-id' });
+
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledTimes(1);
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledWith(
+        'session-1',
+        'files/report.pdf',
+      );
+    });
+
+    it('should fall back to id when outputId is missing', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleDeleteFile } = useMessageSender(params);
+
+      await handleDeleteFile({ id: 'files/report.pdf' });
+
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledWith(
+        'session-1',
+        'files/report.pdf',
+      );
+    });
+
+    it('should skip when path is missing', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { handleDeleteFile } = useMessageSender(params);
+
+      await handleDeleteFile({ url: 'https://example.com/file.png' });
+
+      expect(params.chatHelper.value!.session.deletePvFile).not.toHaveBeenCalled();
+    });
+
+    it('should skip when no active session', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = null;
+      const { handleDeleteFile } = useMessageSender(params);
+
+      await handleDeleteFile({ outputId: 'files/report.pdf' });
+
+      expect(params.chatHelper.value!.session.deletePvFile).not.toHaveBeenCalled();
+    });
+
+    it('should reportError when deletePvFile fails', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.deletePvFile as any).mockRejectedValue(new Error('delete failed'));
+      const { handleDeleteFile } = useMessageSender(params);
+
+      await handleDeleteFile({ outputId: 'files/report.pdf' });
+
+      expect(params.emit).toHaveBeenCalledWith('error', expect.any(Error));
+    });
+
+    it('should DELETE after upload returns if cancelled while pending', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      let resolveUpload!: (value: unknown) => void;
+      (params.chatHelper.value!.session.uploadFiles as any).mockImplementation(
+        () =>
+          new Promise(resolve => {
+            resolveUpload = resolve;
+          }),
+      );
+      const { handleDeleteFile, handleUpload } = useMessageSender(params);
+      const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+
+      const uploadPromise = handleUpload([file]);
+      await handleDeleteFile({ file });
+
+      expect(params.chatHelper.value!.session.deletePvFile).not.toHaveBeenCalled();
+
+      resolveUpload([
+        {
+          type: 'file',
+          id: 'files/report.pdf',
+          path: 'files/report.pdf',
+          name: 'report.pdf',
+          mime_type: 'application/pdf',
+          size: 3,
+          status: 'success',
+        },
+      ]);
+      await uploadPromise;
+
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledTimes(1);
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledWith(
+        'session-1',
+        'files/report.pdf',
+      );
+    });
+
+    it('should only DELETE the cancelled file in a pending batch', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      let resolveUpload!: (value: unknown) => void;
+      (params.chatHelper.value!.session.uploadFiles as any).mockImplementation(
+        () =>
+          new Promise(resolve => {
+            resolveUpload = resolve;
+          }),
+      );
+      const { handleDeleteFile, handleUpload } = useMessageSender(params);
+      const kept = new File(['a'], 'kept.pdf', { type: 'application/pdf' });
+      const cancelled = new File(['b'], 'gone.pdf', { type: 'application/pdf' });
+
+      const uploadPromise = handleUpload([kept, cancelled]);
+      await handleDeleteFile({ file: cancelled });
+      resolveUpload([
+        {
+          type: 'file',
+          id: 'files/kept.pdf',
+          path: 'files/kept.pdf',
+          name: 'kept.pdf',
+          mime_type: 'application/pdf',
+          size: 1,
+          status: 'success',
+        },
+        {
+          type: 'file',
+          id: 'files/gone.pdf',
+          path: 'files/gone.pdf',
+          name: 'gone.pdf',
+          mime_type: 'application/pdf',
+          size: 1,
+          status: 'success',
+        },
+      ]);
+      await uploadPromise;
+
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledTimes(1);
+      expect(params.chatHelper.value!.session.deletePvFile).toHaveBeenCalledWith(
+        'session-1',
+        'files/gone.pdf',
+      );
+    });
+
+    it('should not DELETE when pending cancel then upload fails without path', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      (params.chatHelper.value!.session.uploadFiles as any).mockRejectedValue(new Error('network'));
+      const { handleDeleteFile, handleUpload } = useMessageSender(params);
+      const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+
+      await handleDeleteFile({ file });
+      await expect(handleUpload([file])).rejects.toThrow('network');
+
+      expect(params.chatHelper.value!.session.deletePvFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleUpdateModelValue', () => {
     it('should update userInput and ignore the selected resource list', () => {
       const params = createParams();

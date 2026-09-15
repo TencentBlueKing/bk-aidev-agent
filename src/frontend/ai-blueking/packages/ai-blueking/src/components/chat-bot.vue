@@ -47,6 +47,7 @@
       :welcome-title="welcomeTitle"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
+      @delete-file="handleDeleteFile"
       @delete-shortcut="handleCloseShortcut"
       @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
@@ -246,6 +247,7 @@
     doSendMessage,
     handleSendMessage,
     handleUpload,
+    handleDeleteFile,
     handleArtifactClick,
     handleStopSending,
     stopGeneration,
