@@ -26,5 +26,6 @@
 
 export { CHAR_TRIGGERS, DEFAULT_GROUP_ITEM_LIMIT, MENU_GROUP_DEFS, TRIGGER_GROUP_KEYS } from './constants';
 export type { MenuGroupKey } from './constants';
+export { default as InputMenu } from './input-menu.vue';
 export { default as InputMenuPanel } from './input-menu-panel.vue';
 export { useInputMenu } from './use-input-menu';

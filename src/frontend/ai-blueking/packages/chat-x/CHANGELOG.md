@@ -14,6 +14,7 @@
 - 新增工具函数 `toArtifactTagNode` / `appendArtifactTags` / `omitArtifactTags`，供附件与 `artifact` 标签互转。
 - `ChatInput` / `ChatContainer` 新增 `deleteFile(file: Partial<UploadFile>)` 事件（模板监听 `@delete-file`）：取消输入框附件时携带 `id` 等文件信息，供业务方调用删除接口；UI 立即移除附件，不等待接口结果，成功或失败均不恢复附件。
 - Playground 新增上传、删除及本地文件下载 mock，上传响应包含 `id` / `path`；补充已上传文件和无 `outputId` 的历史附件示例，支持验证引用、预览及菜单过滤行为。
+- `ModelSelector` 新增 `show` 事件：下拉真正展开时触发。`ChatInput` 默认模型选择器会据此收起输入框菜单；自定义 `#model-selector` 时需自行处理。
 
 ### Changed
 
@@ -21,12 +22,15 @@
 - 上传响应 `path` 映射为附件 `outputId`，上传成功后即可引用、预览；发送时保留该身份，待发送附件、用户消息附件与助手产物共用侧栏预览和下载流程。
 
 - 单文件上传大小限制调整为严格小于 20 MB（`20 * 1024 * 1024` 字节），文件选择、拖拽、粘贴及 `FileUploadBtn` 共用此限制，大小提示同步更新。
+- 输入框菜单改由内部 `InputMenu` 用 vue-tippy 挂到输入框上（默认 `appendTo` body，与框体等宽、上方 8px），不再使用绝对定位。
 
 ### Fixed
 
 - 上传附件不再同时以文件卡片和 Mention 标签重复展示：`UserMessage` 回显与编辑回填前会剥掉 `value` 命中当前附件的 `artifact` 标签（`outputId` 与 `id` 都参与匹配，兼容只剩 `id` 的历史消息）。
 - 修复仅含 `id` 的回填附件无法取消的问题，删除时优先按文件 `id` 匹配。
 - 带 `outputId` 的图片附件在缩略图失效后仍可打开产物预览；取消或发送附件后，同步清理待发送文件的菜单与预览数据。
+- 输入框菜单不再被外层容器 `overflow` 裁切或盖住。
+- 展开模型选择器时同步收起输入框菜单。
 
 ## 0.0.52-beta.1 (2026-09-03)
 

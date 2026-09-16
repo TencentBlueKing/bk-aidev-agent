@@ -164,7 +164,7 @@ vi.mock('./model-selector', () => ({
       models: { type: Array, default: () => [] },
       modelValue: { type: String, default: '' },
     },
-    emits: ['update:modelValue', 'change'],
+    emits: ['update:modelValue', 'change', 'show'],
     setup(props, { emit }) {
       return () =>
         h(
@@ -315,32 +315,39 @@ vi.mock('../ai-buttons/add-menu-btn/add-menu-btn.vue', () => ({
   }),
 }));
 
-// Mock InputMenuPanel（面板渲染细节由 input-menu-panel.spec 覆盖；分组逻辑仍走真实 composable）
+// Mock InputMenu（面板渲染细节由 input-menu / input-menu-panel spec 覆盖；分组逻辑仍走真实 composable）
 vi.mock('./input-menu', async () => {
   const { useInputMenu } = await import('./input-menu/use-input-menu');
   const { DEFAULT_GROUP_ITEM_LIMIT } = await import('./input-menu/constants');
   return {
     useInputMenu,
     DEFAULT_GROUP_ITEM_LIMIT,
-    InputMenuPanel: defineComponent({
-      name: 'InputMenuPanel',
+    InputMenu: defineComponent({
+      name: 'InputMenu',
       props: {
         flatItems: { type: Array, default: () => [] },
         groups: { type: Array, default: () => [] },
+        tippyOptions: { type: Object, default: undefined },
+        visible: { type: Boolean, default: false },
       },
       emits: ['select', 'toggleGroup', 'close'],
-      setup(props) {
+      setup(props, { slots }) {
         return () =>
-          h('div', {
-            class: 'mock-input-menu-panel',
-            'data-groups': (props.groups as { key: string }[]).map(group => group.key).join(','),
-            'data-add-types': (
-              (props.groups as { items?: { type: string }[]; key: string }[]).find(group => group.key === 'add')
-                ?.items ?? []
-            )
-              .map(item => item.type)
-              .join(','),
-          });
+          h('div', { class: 'mock-input-menu' }, [
+            slots.default?.(),
+            props.visible
+              ? h('div', {
+                  class: 'mock-input-menu-panel',
+                  'data-groups': (props.groups as { key: string }[]).map(group => group.key).join(','),
+                  'data-add-types': (
+                    (props.groups as { items?: { type: string }[]; key: string }[]).find(group => group.key === 'add')
+                      ?.items ?? []
+                  )
+                    .map(item => item.type)
+                    .join(','),
+                })
+              : null,
+          ]);
       },
     }),
   };
@@ -1088,26 +1095,33 @@ describe('ChatInput', () => {
       expect(mockCloseMenu).toHaveBeenCalled();
     });
 
+    it('展开模型选择器时应关闭输入框菜单', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', menuSources, models: [{ id: 'gpt-4', name: 'GPT-4' }] },
+      });
+      await emitMenuChange(wrapper, '/');
+      await wrapper.findComponent({ name: 'ModelSelector' }).vm.$emit('show');
+      expect(mockCloseMenu).toHaveBeenCalled();
+    });
+
     it('选中普通条目时插入标签', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, '/');
-      await wrapper.findComponent({ name: 'InputMenuPanel' }).vm.$emit('select', menuSources[0]);
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', menuSources[0]);
       expect(mockInsertMenuItem).toHaveBeenCalledWith(menuSources[0]);
     });
 
     it('选中 Prompt 时整体替换输入框内容', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, '\\');
-      await wrapper.findComponent({ name: 'InputMenuPanel' }).vm.$emit('select', menuSources[2]);
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', menuSources[2]);
       expect(mockReplaceAll).toHaveBeenCalledWith('深圳旅游攻略？全文');
     });
 
     it('Prompt 没有 content 时回退到名称', async () => {
       wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
       await emitMenuChange(wrapper, '\\');
-      await wrapper
-        .findComponent({ name: 'InputMenuPanel' })
-        .vm.$emit('select', { id: 'p2', type: 'prompt', name: '标题' });
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', { id: 'p2', type: 'prompt', name: '标题' });
       expect(mockReplaceAll).toHaveBeenCalledWith('标题');
     });
 
@@ -1117,7 +1131,7 @@ describe('ChatInput', () => {
       const fileInput = wrapper.find('.chat-input-file-input');
       const clickSpy = vi.spyOn(fileInput.element as HTMLInputElement, 'click').mockImplementation(() => {});
       await wrapper
-        .findComponent({ name: 'InputMenuPanel' })
+        .findComponent({ name: 'InputMenu' })
         .vm.$emit('select', { id: '__built_in_file__', type: 'file', name: '文件' });
       await nextTick();
       expect(mockConsumeTriggerText).toHaveBeenCalled();
@@ -1146,16 +1160,19 @@ describe('ChatInput', () => {
       const onSendMessage = vi.fn();
       wrapper = mount(ChatInput, {
         props: {
-          modelValue: '', onSendMessage,
+          modelValue: '',
+          onSendMessage,
           onUpload: vi.fn().mockResolvedValue({ id: 'upload-id', path: 'files/report.pdf', status: 'success' }),
         },
       });
       await emitUpload(wrapper, [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
       await flushPromises();
       await emitMenuChange(wrapper, trigger);
-      const groups = wrapper.findComponent({ name: 'InputMenuPanel' }).props('groups');
+      const groups = wrapper.findComponent({ name: 'InputMenu' }).props('groups');
       expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
-        id: 'files/report.pdf', type: 'artifact', name: 'report.pdf',
+        id: 'files/report.pdf',
+        type: 'artifact',
+        name: 'report.pdf',
       });
       expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([
         { outputId: 'files/report.pdf', name: 'report.pdf', size: 3, type: 'pdf' },
@@ -1185,7 +1202,7 @@ describe('ChatInput', () => {
       await flushPromises();
       await emitMenuChange(wrapper, '@');
 
-      const groups = wrapper.findComponent({ name: 'InputMenuPanel' }).props('groups');
+      const groups = wrapper.findComponent({ name: 'InputMenu' }).props('groups');
       expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
         id: 'files/bk_apigw_7.yaml',
         type: 'artifact',
@@ -1308,9 +1325,11 @@ describe('ChatInput', () => {
 
       expect(onUpload).toHaveBeenCalledExactlyOnceWith([files[0]]);
       expect(wrapper.findAll('.mock-file-item')).toHaveLength(1);
-      expect(mockBkMessage).toHaveBeenCalledWith(expect.objectContaining({
-        message: '有 3 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
-      }));
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 3 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
+        }),
+      );
     });
 
     it.each(['成功', '失败'])('删除接口%s时都应立即移除附件并抛出完整文件信息', async result => {
@@ -1336,9 +1355,15 @@ describe('ChatInput', () => {
       await wrapper.find('.mock-file-item').trigger('click');
 
       expect(wrapper.find('.mock-file-content').exists()).toBe(false);
-      expect(wrapper.emitted('deleteFile')).toEqual([[expect.objectContaining({
-        id: 'files/report.pdf', file, status: 'success',
-      })]]);
+      expect(wrapper.emitted('deleteFile')).toEqual([
+        [
+          expect.objectContaining({
+            id: 'files/report.pdf',
+            file,
+            status: 'success',
+          }),
+        ],
+      ]);
       expect(onDeleteFile).toHaveBeenCalledTimes(1);
 
       const error = new Error('删除失败');

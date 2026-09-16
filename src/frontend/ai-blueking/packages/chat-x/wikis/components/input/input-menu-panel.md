@@ -7,10 +7,10 @@ description: 输入框上方的统一菜单面板，@ / \ 与 + 号共用一套�
 aiSummary: >
   InputMenuPanel 渲染输入框菜单：分组标题 + InputMenuOption 条目 + 「更多 +N」折叠开关，
   内置键盘上下导航与 Esc 关闭；分组数据由 useInputMenu 纯数据逻辑算出（按触发方式筛类型 → 关键字过滤 → 分组 → 折叠 → 扁平化）。
-  源码位置：src/components/chat-input/input-menu/（input-menu-panel.vue、input-menu-option.vue、use-input-menu.ts、constants.ts）。
+  源码位置：src/components/chat-input/input-menu/（input-menu.vue、input-menu-panel.vue、input-menu-option.vue、use-input-menu.ts、constants.ts）。
 relatedComponents:
   - slug: chat-input
-    relation: 上层持有触发态与数据源并渲染本面板
+    relation: 上层持有触发态与数据源，通过 InputMenu（vue-tippy）渲染本面板
   - slug: ai-slash-input
     relation: 触发方式与过滤关键字由编辑器 menuChange 抛出
   - slug: add-menu-btn
@@ -62,6 +62,7 @@ sinceVersion: 0.0.51
 ## 源码事实
 
 - **面板**：`src/components/chat-input/input-menu/input-menu-panel.vue`
+- **浮层壳**：`src/components/chat-input/input-menu/input-menu.vue`（vue-tippy，把面板挂到输入框上方）
 - **条目**：`src/components/chat-input/input-menu/input-menu-option.vue`
 - **数据逻辑**：`src/components/chat-input/input-menu/use-input-menu.ts`
 - **分组定义**：`src/components/chat-input/input-menu/constants.ts`
@@ -69,7 +70,7 @@ sinceVersion: 0.0.51
 
 ## 布局与交互
 
-- 面板由 [ChatInput](/components/input/chat-input) 绝对定位在输入框**正上方 8px**、与输入框等宽，**不跟随光标**；最大高度 400px，超出滚动。
+- 面板由 [ChatInput](/components/input/chat-input) 的 `InputMenu` 通过 **vue-tippy** 挂到输入框上：默认 `appendTo` body，位于框体**正上方 8px**、与输入框等宽，**不跟随光标**；最大高度 400px，超出滚动。浮层不再使用绝对定位，避免被外层 `overflow` 裁切。
 - 键盘导航由 [useMenuKeydown](/composables/use-menu-keydown) 提供：`↑` / `↓` 移动高亮，`Enter` 选中，高亮项滚动进可视区；结果集变化后高亮回到首项。
 - `Esc` 在**捕获阶段**监听并 emit `close`，避免被编辑器先行消费。
 - 面板滚动时关闭条目描述气泡，防止气泡与列表错位。
