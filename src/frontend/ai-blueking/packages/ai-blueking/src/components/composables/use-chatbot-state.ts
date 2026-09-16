@@ -18,7 +18,6 @@ import type { ShortcutManager } from '../../manager/business/shortcut-manager';
 import { buildMenuSources } from '../../utils';
 import type { IChatHelper, IHostResourceItem, IHostSkillItem } from '../../types';
 import type { ChatBotProps } from '../types';
-import type { ISupportUpload } from '@blueking/chat-helper';
 import type { IInputMenuItem, IToolBtn, Message, Shortcut } from '@blueking/chat-x';
 
 const CLAW_HIDDEN_MESSAGE_TOOLS: IToolBtn[] = [{ id: 'rebuild', hidden: true }];
@@ -43,7 +42,6 @@ export interface UseChatbotStateParams {
   isInitialized: Ref<boolean>;
   isStandaloneMode: Ref<boolean>;
   props: ChatBotProps;
-  selectedShortcut: Ref<null | (Shortcut & { supportUpload?: ISupportUpload })>;
   sessionBusinessManager: Ref<null | SessionBusinessManager>;
   shortcutManager: Ref<null | ShortcutManager>;
 }
@@ -76,7 +74,6 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
     shortcutManager,
     isStandaloneMode,
     isInitialized,
-    selectedShortcut,
   } = params;
 
   const messageStatus = computed(() => {
@@ -159,15 +156,9 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   );
 
   /**
-   * 是否支持上传文件（vision 模式）
-   * 选中 command 时使用 command 级别的 supportUpload，否则跟随当前选中模型的 support_vision
+   * 文件上传常驻。后端已用工具适配非多模态模型，不再按 support_vision / 快捷指令拦截。
    */
-  const effectiveSupportUpload = computed(() => {
-    if (selectedShortcut.value?.supportUpload) {
-      return selectedShortcut.value.supportUpload.vision === true;
-    }
-    return chatBusinessManager.value?.selectedModelSupportsVision.value ?? false;
-  });
+  const effectiveSupportUpload = computed(() => true);
 
   const chatbotStyle = computed(() => ({
     height: typeof props.height === 'number' ? `${props.height}px` : props.height,

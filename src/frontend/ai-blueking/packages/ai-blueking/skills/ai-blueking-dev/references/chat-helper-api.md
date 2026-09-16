@@ -124,9 +124,8 @@ const commands = agent.info.value?.conversationSettings?.commands;
 const openingRemark = agent.info.value?.conversationSettings?.openingRemark;
 const predefinedQuestions = agent.info.value?.conversationSettings?.predefinedQuestions;
 const resources = agent.info.value?.resources;
-// 上传支持：组件侧跟随选中模型 property.support_vision；快捷指令仍可用 command.supportUpload
+// 上传入口常驻：ChatBot 不再用 support_vision / command.supportUpload 开关附件
 const commandUpload = commands?.[0]?.supportUpload?.vision;
-// agent.promptSetting.supportUpload 仍可由后端返回，但 ChatBot 附件按钮不再以此为准
 const agentSupportUpload = agent.info.value?.promptSetting?.supportUpload?.vision;
 ```
 

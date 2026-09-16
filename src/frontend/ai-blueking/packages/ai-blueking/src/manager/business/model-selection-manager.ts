@@ -131,7 +131,7 @@ export class ModelSelectionManager {
     return this._selectedModelName;
   }
 
-  /** 当前选中模型是否支持 vision（附件按钮） */
+  /** 当前选中模型是否支持 vision（图生文能力标签，不再用于附件入口） */
   get selectedModelSupportsVision(): ComputedRef<boolean> {
     return this._selectedModelSupportsVision;
   }

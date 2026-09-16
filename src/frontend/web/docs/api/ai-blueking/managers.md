@@ -132,7 +132,7 @@ chatBizManager.setSelectedModelByName('混元预览');
 | `isLoading` | `Ref<boolean>` | 模型列表加载中 |
 | `selectedLlmCode` | `Ref<string \| undefined>` | 当前选中 `llm_code` |
 | `selectedModelName` | `ComputedRef<string>` | 当前选中 `llm_name` |
-| `selectedModelSupportsVision` | `ComputedRef<boolean>` | 当前选中模型是否支持 vision（附件按钮） |
+| `selectedModelSupportsVision` | `ComputedRef<boolean>` | 当前选中模型是否支持 vision（图生文能力标签，不再用于附件入口） |
 
 ### 方法
 
