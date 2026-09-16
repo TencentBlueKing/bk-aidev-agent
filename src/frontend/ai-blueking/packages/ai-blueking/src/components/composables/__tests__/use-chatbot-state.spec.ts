@@ -30,7 +30,6 @@ function createParams(overrides: Partial<UseChatbotStateParams> = {}): UseChatbo
     } as any),
     isStandaloneMode: ref(true),
     isInitialized: ref(false),
-    selectedShortcut: ref(null),
     ...overrides,
   };
 }
@@ -155,45 +154,12 @@ describe('useChatbotState', () => {
   });
 
   describe('effectiveSupportUpload', () => {
-    it('should use selectedShortcut supportUpload when available', () => {
-      const selectedShortcut = ref({ id: 's1', name: 'test', supportUpload: { vision: true } }) as any;
-      const params = createParams({ selectedShortcut });
-      const { effectiveSupportUpload } = useChatbotState(params);
-      expect(effectiveSupportUpload.value).toBe(true);
-    });
-
-    it('should use selected model property.support_vision', () => {
-      const chatBusinessManager = shallowRef(createMockChatBusinessManager());
-      (chatBusinessManager.value.selectedModelSupportsVision as any).value = true;
-      const params = createParams({ chatBusinessManager, selectedShortcut: ref(null) });
-      const { effectiveSupportUpload } = useChatbotState(params);
-      expect(effectiveSupportUpload.value).toBe(true);
-    });
-
-    it('should return false when selected model does not support vision', () => {
+    it('should always enable upload regardless of model vision', () => {
       const chatBusinessManager = shallowRef(createMockChatBusinessManager());
       (chatBusinessManager.value.selectedModelSupportsVision as any).value = false;
-      const chatHelper = shallowRef(createMockChatHelper());
-      (chatHelper.value.agent.info as any).value = {
-        promptSetting: { supportUpload: { vision: true } },
-      };
-      const params = createParams({ chatBusinessManager, chatHelper, selectedShortcut: ref(null) });
-      const { effectiveSupportUpload } = useChatbotState(params);
-      expect(effectiveSupportUpload.value).toBe(false);
-    });
-
-    it('should treat truthy support_vision as enabled via manager computed', () => {
-      const chatBusinessManager = shallowRef(createMockChatBusinessManager());
-      (chatBusinessManager.value.selectedModelSupportsVision as any).value = true;
-      const params = createParams({ chatBusinessManager, selectedShortcut: ref(null) });
+      const params = createParams({ chatBusinessManager });
       const { effectiveSupportUpload } = useChatbotState(params);
       expect(effectiveSupportUpload.value).toBe(true);
-    });
-
-    it('should return false when no upload support', () => {
-      const params = createParams({ selectedShortcut: ref(null) });
-      const { effectiveSupportUpload } = useChatbotState(params);
-      expect(effectiveSupportUpload.value).toBe(false);
     });
   });
 

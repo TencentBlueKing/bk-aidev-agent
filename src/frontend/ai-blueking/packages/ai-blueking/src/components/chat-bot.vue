@@ -297,7 +297,6 @@
     shortcutManager,
     isStandaloneMode,
     isInitialized,
-    selectedShortcut,
   });
 
   // 5. 工具栏动作

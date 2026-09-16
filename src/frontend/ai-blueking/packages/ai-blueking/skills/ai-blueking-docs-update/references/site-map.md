@@ -37,7 +37,7 @@
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill、`@` 资源；`property.docSchema` 协议（≥ chat-x 0.0.52） |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
-| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`、upload=`support_vision` |
+| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；上传入口常驻，不跟 `support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
 | `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；空态也可打开侧栏 / 产物空态（≥ v2.2.3）；侧栏固定右侧 + 嵌入模式须业务 Header |

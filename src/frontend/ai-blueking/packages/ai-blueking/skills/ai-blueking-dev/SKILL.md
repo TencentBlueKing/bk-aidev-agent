@@ -3,11 +3,11 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone。
 metadata:
   author: blueking
-  version: '5.37'
+  version: '5.38'
   packages:
-    ai-blueking: 2.2.5-beta.2
-    chat-x: 0.0.52-dev.2
-    chat-helper: 0.0.13-dev.2
+    ai-blueking: 2.2.5-beta.3
+    chat-x: 0.0.52-dev.3
+    chat-helper: 0.0.13-dev.3
 ---
 
 # AI 小鲸组件开发指南
@@ -433,7 +433,7 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | 新建 | **所有建会话路径**（含初始化 `loadRecentSession`）统一经 `resolveModelForSession`：优先当前选中 / preferred，校验落在可用列表内；`enableModelSelect=false` 时不强制写 model |
 | 空列表 | 启用模型选择但无可用模型 → 抛 `ModelUnavailableError`，阻断建会话并上报 `sdk-error`（`apiName: session`） |
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
-| 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
+| 附件按钮 | 常驻开启；不再跟随 `support_vision` 或快捷指令 `supportUpload.vision` |
 
 编排入口：`ModelSelectionManager`（`models` / `selectedLlmCode` / `resolveModelForSession` / `persistSessionModel`）。
 AIBlueking 创建实例并注入内嵌 ChatBot（`modelSelectionManager` prop），外壳层与聊天层共享同一份选中状态。

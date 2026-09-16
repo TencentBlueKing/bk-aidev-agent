@@ -60,7 +60,7 @@ const models: ILlmItem[] = [
 | 新建 | 所有建会话路径（含初始化 `loadRecentSession`）统一经 `resolveModelForSession`：优先当前选中 / preferred，校验落在可用列表内；`enableModelSelect=false` 时不强制写 `model` |
 | 空列表 | 启用模型选择但无可用模型 → 抛 `ModelUnavailableError`，阻断建会话并上报 `sdk-error`（`apiName: session`） |
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
-| 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
+| 附件按钮 | 常驻开启；不再跟随选中模型 `property.support_vision` 或快捷指令 `supportUpload.vision` |
 
 选中优先级：
 
