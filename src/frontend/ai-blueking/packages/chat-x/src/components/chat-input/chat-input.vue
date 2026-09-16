@@ -1,139 +1,131 @@
 <template>
   <div
-    ref="containerRef"
     class="ai-chat-input-container"
-    :style="{ '--chat-z-index': CHAT_Z_INDEX, '--chat-menu-z-index': EDITOR_MENU_Z_INDEX }"
+    :style="{ '--chat-z-index': CHAT_Z_INDEX }"
   >
     <slot name="top" />
     <slot name="interrupt" />
     <div class="chat-input-wrapper">
-      <InputMenuPanel
-        v-if="isMenuVisible"
-        class="chat-input-menu"
+      <InputMenu
         :flat-items="flatItems"
         :groups="menuGroups"
+        :tippy-options="tippyOptions"
+        :visible="isMenuVisible"
         @close="handleCloseMenu"
         @select="handleSelectMenuItem"
         @toggle-group="handleToggleGroup"
-      />
-      <div
-        class="chat-input"
-        :class="{ 'is-dragover': isDragOver }"
-        :style="{ maxHeight: maxHeight + 'px' }"
-        @dragenter="handleDragEnter"
-        @dragleave="handleDragLeave"
-        @dragover="handleDragOver"
-        @drop="handleDrop"
       >
-        <slot name="input-header">
-          <CiteContent
-            v-if="citeModel"
-            class="chat-input-cite"
-            :content="citeModel"
-            @close="handleCloseCite"
-          />
-        </slot>
-        <slot
-          name="files"
-          v-bind="{ files: uploadFiles }"
+        <div
+          class="chat-input"
+          :class="{ 'is-dragover': isDragOver }"
+          :style="{ maxHeight: maxHeight + 'px' }"
+          @dragenter="handleDragEnter"
+          @dragleave="handleDragLeave"
+          @dragover="handleDragOver"
+          @drop="handleDrop"
         >
-          <div
-            v-if="uploadFiles.length"
-            ref="filesRef"
-            class="chat-input-files"
+          <slot name="input-header">
+            <CiteContent
+              v-if="citeModel"
+              class="chat-input-cite"
+              :content="citeModel"
+              @close="handleCloseCite"
+            />
+          </slot>
+          <slot
+            name="files"
+            v-bind="{ files: uploadFiles }"
           >
-            <FileContent
-              :files="uploadFiles"
-              @delete-file="handleDeleteFile"
-            />
-          </div>
-        </slot>
-        <AiSlashInput
-          ref="aiSlashInputRef"
-          :model-value="modelValue"
-          :placeholder="resolvedPlaceholder"
-          @keydown="handleKeyDown"
-          @menu-change="handleMenuChange"
-          @update:model-value="handleUpdateModelValue"
-          @upload="handleUpload"
-        />
-        <InputAttachment
-          :message-state="messageState"
-          :send-disabled-tip="effectiveSendDisabledTip"
-          :tippy-options="tippyOptions"
-          @send-message="handleSendMessage"
-          @stop-sending="handleStopSending"
-        >
-          <template #default>
-            <input
-              ref="fileInputRef"
-              :accept="fileInputAccept"
-              class="chat-input-file-input"
-              multiple
-              type="file"
-              @change="handleFileInputChange"
-            />
-            <AddMenuBtn
-              v-if="hasAddMenu"
-              :active="menuTrigger === 'plus'"
-              :tippy-options="tippyOptions"
-              @toggle="handleToggleAddMenu"
-            />
-            <span
-              v-if="hasAddMenu && (shortcuts?.length || selectedShortcut)"
-              class="ai-divider"
-            />
-            <slot name="attachment">
-              <ShortcutBtns
-                v-if="shortcuts && !selectedShortcut"
-                :shortcuts="shortcuts"
-                @select-shortcut="handleSelectShortcut"
-              />
-              <ShortcutBtn
-                v-if="selectedShortcut"
-                class="selected-shortcut-btn"
-                :shortcut="selectedShortcut"
-              >
-                <template #append>
-                  <CloseIcon @click="handleDeleteShortcut" />
-                </template>
-              </ShortcutBtn>
-            </slot>
-          </template>
-          <template #before-send>
-            <slot
-              name="model-selector"
-              v-bind="{ models, selectedModel }"
+            <div
+              v-if="uploadFiles.length"
+              ref="filesRef"
+              class="chat-input-files"
             >
-              <ModelSelector
-                v-if="models?.length"
-                v-model="selectedModel"
-                class="chat-input-model-selector"
-                :models="models"
-                :tippy-options="tippyOptions"
-                @change="handleModelChange"
+              <FileContent
+                :files="uploadFiles"
+                @delete-file="handleDeleteFile"
               />
-            </slot>
-          </template>
-          <template #send-icon>
-            <slot name="send-icon" />
-          </template>
-        </InputAttachment>
-      </div>
+            </div>
+          </slot>
+          <AiSlashInput
+            ref="aiSlashInputRef"
+            :model-value="modelValue"
+            :placeholder="resolvedPlaceholder"
+            @keydown="handleKeyDown"
+            @menu-change="handleMenuChange"
+            @update:model-value="handleUpdateModelValue"
+            @upload="handleUpload"
+          />
+          <InputAttachment
+            :message-state="messageState"
+            :send-disabled-tip="effectiveSendDisabledTip"
+            :tippy-options="tippyOptions"
+            @send-message="handleSendMessage"
+            @stop-sending="handleStopSending"
+          >
+            <template #default>
+              <input
+                ref="fileInputRef"
+                :accept="fileInputAccept"
+                class="chat-input-file-input"
+                multiple
+                type="file"
+                @change="handleFileInputChange"
+              />
+              <AddMenuBtn
+                v-if="hasAddMenu"
+                :active="menuTrigger === 'plus'"
+                :tippy-options="tippyOptions"
+                @toggle="handleToggleAddMenu"
+              />
+              <span
+                v-if="hasAddMenu && (shortcuts?.length || selectedShortcut)"
+                class="ai-divider"
+              />
+              <slot name="attachment">
+                <ShortcutBtns
+                  v-if="shortcuts && !selectedShortcut"
+                  :shortcuts="shortcuts"
+                  @select-shortcut="handleSelectShortcut"
+                />
+                <ShortcutBtn
+                  v-if="selectedShortcut"
+                  class="selected-shortcut-btn"
+                  :shortcut="selectedShortcut"
+                >
+                  <template #append>
+                    <CloseIcon @click="handleDeleteShortcut" />
+                  </template>
+                </ShortcutBtn>
+              </slot>
+            </template>
+            <template #before-send>
+              <slot
+                name="model-selector"
+                v-bind="{ models, selectedModel }"
+              >
+                <ModelSelector
+                  v-if="models?.length"
+                  v-model="selectedModel"
+                  class="chat-input-model-selector"
+                  :models="models"
+                  :tippy-options="tippyOptions"
+                  @change="handleModelChange"
+                  @show="handleCloseMenu"
+                />
+              </slot>
+            </template>
+            <template #send-icon>
+              <slot name="send-icon" />
+            </template>
+          </InputAttachment>
+        </div>
+      </InputMenu>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-  import {
-    computed,
-    ref as deepRef,
-    onUnmounted,
-    reactive,
-    shallowRef,
-    useTemplateRef,
-    watch,
-    watchPostEffect,
-  } from 'vue';
+  import { computed, ref as deepRef, reactive, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
   import { Message } from 'bkui-vue';
 
@@ -144,14 +136,7 @@
     MessageContentType,
     MessageStatus,
   } from '../../ag-ui/types';
-  import {
-    CHAT_Z_INDEX,
-    DEFAULT_UPLOAD_ACCEPT,
-    EDITOR_MENU_Z_INDEX,
-    isEn,
-    MAX_UPLOAD_FILE_SIZE,
-    MAX_UPLOAD_FILES,
-  } from '../../common';
+  import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
   import { t } from '../../lang/lang';
@@ -183,7 +168,7 @@
   import { tagSchemaToMessageString } from './ai-slash-input/constants';
   import { buildDefaultPlaceholder } from './build-default-placeholder';
   import InputAttachment from './input-attachment/input-attachment.vue';
-  import { DEFAULT_GROUP_ITEM_LIMIT, InputMenuPanel, useInputMenu } from './input-menu';
+  import { DEFAULT_GROUP_ITEM_LIMIT, InputMenu, useInputMenu } from './input-menu';
   import { ModelSelector } from './model-selector';
 
   import type { AIFileInfo } from '../../ag-ui/types/file';
@@ -191,7 +176,6 @@
   import type { IModelOption } from './model-selector';
 
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
-  const containerRef = useTemplateRef<HTMLDivElement>('containerRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
   const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
   const citeModel = defineModel<string>('cite', {
@@ -645,22 +629,6 @@
     }
     target.value = '';
   };
-  // 点击输入区之外时收起菜单；用 mousedown 以便在编辑器失焦之前处理
-  const handleDocumentMouseDown = (event: MouseEvent) => {
-    if (!containerRef.value?.contains(event.target as Node)) {
-      handleCloseMenu();
-    }
-  };
-  watch(isMenuVisible, visible => {
-    if (visible) {
-      document.addEventListener('mousedown', handleDocumentMouseDown, true);
-      return;
-    }
-    document.removeEventListener('mousedown', handleDocumentMouseDown, true);
-  });
-  onUnmounted(() => {
-    document.removeEventListener('mousedown', handleDocumentMouseDown, true);
-  });
   /**
    * 聚焦输入框
    */
@@ -689,22 +657,12 @@
     width: 100%;
     padding: 0 16px 16px;
 
-    // 菜单需要溢出输入框展示，而 .chat-input 自身要 overflow: hidden，因此额外包一层定位容器
     .chat-input-wrapper {
-      position: relative;
       display: flex;
       flex-direction: column;
       width: 100%;
       min-width: variables.$chat-input-min-width;
       max-width: variables.$chat-input-max-width;
-    }
-
-    // 设计稿：菜单固定在输入框正上方并与输入框等宽，不跟随光标
-    .chat-input-menu {
-      position: absolute;
-      bottom: calc(100% + 8px);
-      left: 0;
-      z-index: var(--chat-menu-z-index);
     }
 
     .chat-input-file-input {

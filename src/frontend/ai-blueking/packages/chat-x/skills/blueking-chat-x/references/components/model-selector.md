@@ -96,6 +96,7 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 | 事件名 | 参数                    | 说明                 |
 | ------ | ----------------------- | -------------------- |
 | change | `(model: IModelOption)` | 用户选中模型时触发   |
+| show   | —                       | 下拉展开时触发（ChatInput 用来收起输入框菜单） |
 
 ## 类型定义
 

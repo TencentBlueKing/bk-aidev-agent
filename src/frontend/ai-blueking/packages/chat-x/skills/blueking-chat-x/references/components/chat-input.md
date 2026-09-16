@@ -24,16 +24,16 @@
 ai-chat-input-container（padding: 0 16px 16px）
 ├── slot#top（框体外顶部）
 ├── slot#interrupt（框体外顶部，位于 top 之后）
-└── chat-input-wrapper（相对定位；宽度 168px ~ 1000px）
-    ├── InputMenuPanel（绝对定位于框体上方 8px、与框体等宽，菜单激活且有条目时渲染）
-    └── chat-input（框体，min-height 110px，max-height 由 inputMaxHeight 控制）
-        ├── slot#input-header（默认：cite 非空时渲染 CiteContent）
-        ├── slot#files（默认：有上传文件时渲染 FileContent）
-        ├── AiSlashInput（富文本编辑区，默认保持 4 行高度）
-        └── InputAttachment（底部工具栏，固定 32px 高）
-            ├── slot#default → 隐藏 file input + AddMenuBtn（+ 号）+ 分隔线 + slot#attachment
-            ├── slot#before-send → slot#model-selector（默认 ModelSelector）
-            └── slot#send-icon（默认：发送 / 停止图标）
+└── chat-input-wrapper（宽度 168px ~ 1000px）
+    └── InputMenu（vue-tippy 挂到输入框，菜单激活且有条目时展开；面板在 body，框体上方 8px、与框体等宽）
+        └── chat-input（框体，min-height 110px，max-height 由 inputMaxHeight 控制）
+            ├── slot#input-header（默认：cite 非空时渲染 CiteContent）
+            ├── slot#files（默认：有上传文件时渲染 FileContent）
+            ├── AiSlashInput（富文本编辑区，默认保持 4 行高度）
+            └── InputAttachment（底部工具栏，固定 32px 高）
+                ├── slot#default → 隐藏 file input + AddMenuBtn（+ 号）+ 分隔线 + slot#attachment
+                ├── slot#before-send → slot#model-selector（默认 ModelSelector）
+                └── slot#send-icon（默认：发送 / 停止图标）
 ```
 
 > `slot#attachment` 只替换快捷指令区，`AddMenuBtn` 在其外部，使用该插槽不会移除 + 号。`slot#send-icon` 只替换图标，点击逻辑与按钮样式仍由组件控制。
@@ -388,7 +388,7 @@ const defaultFiles: UploadFile[] = [
 
 ## 模型选择
 
-传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象，能力标签由组件依据 `property` 自动派生。
+传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象，能力标签由组件依据 `property` 自动派生。默认选择器展开时会收起输入框菜单；自定义 `#model-selector` 时需自行处理。
 
 ```vue
 <template>
