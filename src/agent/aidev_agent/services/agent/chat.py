@@ -1839,12 +1839,13 @@ class ChatAgentBuilder:
            此处为其疏漏的补正；网关侧 ``X-Session-ID`` 头依赖该项）。
 
         未配置视觉模型时返回 ``None``，调用方据此不注册 read_image 工具。
+        ``base_url`` 允许为空/``None``，此时不再视为未配置，原样透传给模型工厂。
         """
         agent_info = getattr(self.ctx.agent_config, "agent_info", None) or {}
         prompt_setting = agent_info.get("prompt_setting") or {}
         model_name = prompt_setting.get("fallback_vision_model")
         base_url = settings.LLM_GW_ENDPOINT
-        if not model_name or not base_url:
+        if not model_name:
             return None
         kwargs: dict[str, Any] = {
             "model": model_name,

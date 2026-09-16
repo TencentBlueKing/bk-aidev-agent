@@ -61,18 +61,26 @@ def test_build_chat_model_vision_passes_model_name(monkeypatch):
     assert "fallback_model" not in captured
 
 
-def test_build_chat_model_vision_without_endpoint_returns_none(monkeypatch):
-    """网关端点为空时即使模型名有值也返回 None。"""
-    monkeypatch.setattr(
-        "aidev_agent.services.agent.chat.ChatModel.get_setup_instance",
-        lambda **kw: MagicMock(),
-    )
+@pytest.mark.parametrize("endpoint", ["", None])
+def test_build_chat_model_vision_empty_endpoint_still_builds(endpoint, monkeypatch):
+    """网关端点为空/None 时不再视为未配置，仍构造实例并原样透传 base_url。"""
+    captured: dict = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr("aidev_agent.services.agent.chat.ChatModel.get_setup_instance", _capture)
     builder = _builder(
         {"prompt_setting": {"fallback_vision_model": "gpt-4o-mini"}},
-        endpoint="",
+        endpoint=endpoint,
         monkeypatch=monkeypatch,
     )
-    assert builder.build_chat_model_vision() is None
+    assert builder.build_chat_model_vision() is not None
+
+    assert "base_url" in captured
+    assert captured["base_url"] == endpoint
+    assert captured["model"] == "gpt-4o-mini"
 
 
 def test_build_chat_model_vision_passes_session_code(monkeypatch):
