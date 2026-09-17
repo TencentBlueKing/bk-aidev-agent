@@ -17,20 +17,47 @@ _MULTIMODAL_MODEL = re.compile(r"(?P<model>.+?) is not a multimodal model", re.I
 _RAW_PAYLOAD_MARKERS = ("Error code:", "{'error'", '{"error"', "'type':", '"type":', "'trace_id'", '"trace_id"')
 
 
+_HTTP_STATUS_MIN = 100
+_HTTP_STATUS_MAX = 599
+
+
 class AIDevException(Exception):
     ERROR_CODE = "500"
     MESSAGE = "APP异常"
 
-    def __init__(self, *args, message: str | None = None):
+    def __init__(
+        self,
+        *args,
+        message: str | None = None,
+        status_code: int | None = None,
+        code: Any = None,
+        code_name: str | None = None,
+    ):
         self.message = message or self.MESSAGE
+        self.status_code = status_code
+        self.code = code
+        self.code_name = code_name
         super().__init__(self.message)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(message={self.message})"
+        return (
+            f"{self.__class__.__name__}(message={self.message!r}, "
+            f"status_code={self.status_code!r}, code={self.code!r}, code_name={self.code_name!r})"
+        )
 
 
 class AgentException(AIDevException):
     MESSAGE = "Agent异常"
+
+    @classmethod
+    def from_exception(cls, exc: BaseException, *, message: str | None = None) -> "AgentException":
+        status_code, code, code_name = extract_exception_status_fields(exc)
+        return cls(
+            message=message or (str(exc) or cls.MESSAGE),
+            status_code=status_code,
+            code=code,
+            code_name=code_name,
+        )
 
 
 class AgentDeadlineExceededError(TimeoutError):
@@ -98,6 +125,121 @@ def extract_error_message(error_string):
     return unwrap_error_message(error_string)
 
 
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _http_status(value: Any) -> int | None:
+    number = _as_int(value)
+    if number is None or not (_HTTP_STATUS_MIN <= number <= _HTTP_STATUS_MAX):
+        return None
+    return number
+
+
+def _as_code_name(value: Any) -> str | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _is_business_code(value: Any) -> bool:
+    number = _as_int(value)
+    return number is not None and _http_status(number) is None
+
+
+def _prefer_code(current: Any, incoming: Any) -> Any:
+    if incoming in (None, ""):
+        return current
+    if current in (None, ""):
+        return incoming
+    if _is_business_code(incoming) and not _is_business_code(current):
+        return incoming
+    return current
+
+
+def _mapping_candidates(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        return []
+    error = data.get("error")
+    return [error, data] if isinstance(error, dict) else [data]
+
+
+def _merge_status_fields(
+    data: Any,
+    status_code: int | None,
+    code: Any,
+    code_name: str | None,
+) -> tuple[int | None, Any, str | None]:
+    for src in _mapping_candidates(data):
+        status_code = status_code or _http_status(
+            src["status_code"] if src.get("status_code") is not None else src.get("status")
+        )
+        code = _prefer_code(code, src.get("code"))
+        code_name = code_name or _as_code_name(src.get("code_name"))
+    return status_code, code, code_name
+
+
+def _response_mapping(response: Any) -> dict[str, Any] | None:
+    if response is None:
+        return None
+    json_loader = getattr(response, "json", None)
+    if callable(json_loader):
+        try:
+            data = json_loader()
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            return data
+    text = getattr(response, "text", None)
+    if text is None:
+        content = getattr(response, "content", None)
+        text = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else content
+    return _parse_mapping(text) if isinstance(text, str) else None
+
+
+def extract_exception_status_fields(exc: Any) -> tuple[int | None, Any, str | None]:
+    """从异常链提取 HTTP status_code 与 body 中的 code / code_name。"""
+    status_code: int | None = None
+    code: Any = None
+    code_name: str | None = None
+    seen: set[int] = set()
+    stack: list[Any] = [exc] if exc is not None else []
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        status_code = status_code or _http_status(getattr(current, "status_code", None))
+        code = _prefer_code(code, getattr(current, "code", None))
+        code_name = code_name or _as_code_name(getattr(current, "code_name", None))
+        response = getattr(current, "response", None)
+        if response is not None:
+            status_code = status_code or _http_status(getattr(response, "status_code", None))
+            status_code, code, code_name = _merge_status_fields(
+                _response_mapping(response), status_code, code, code_name
+            )
+        status_code, code, code_name = _merge_status_fields(
+            getattr(current, "body", None), status_code, code, code_name
+        )
+        status_code, code, code_name = _merge_status_fields(
+            _parse_mapping(str(getattr(current, "message", current))), status_code, code, code_name
+        )
+        if getattr(current, "__cause__", None) is not None:
+            stack.append(current.__cause__)
+        elif getattr(current, "__context__", None) is not None:
+            stack.append(current.__context__)
+        nested_errors = getattr(current, "exceptions", None)
+        if isinstance(nested_errors, (list, tuple)):
+            stack.extend(item for item in nested_errors if item is not None)
+    return status_code, code, code_name
+
+
 def _friendly_known_error(message: str) -> str | None:
     match = _MULTIMODAL_MODEL.search(message)
     if not match:
@@ -108,9 +250,10 @@ def _friendly_known_error(message: str) -> str | None:
 
 def streaming_chunk_exception_handling(exception: Exception) -> str:
     message = extract_model_error_message(exception)
+    status_code, code, _code_name = extract_exception_status_fields(exception)
     ret = {
         "event": StreamEventType.ERROR.value,
-        "code": exception.code if hasattr(exception, "code") else 400,
+        "code": code if code not in (None, "") else (status_code or 400),
         "message": message,
     }
     return f"data: {json.dumps(ret)}\n\n"

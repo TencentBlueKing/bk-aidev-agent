@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from ag_ui.core import CustomEvent, EventType, RunErrorEvent, RunFinishedEvent
 from aidev_agent.config import settings
@@ -38,16 +39,17 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.agent.chat import ChatAgentBuilder
-from aidev_agent.services.sandbox_pv_files import SandboxFileServerError
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
+from aidev_agent.services.sandbox_pv_files import SandboxFileServerError
 from aidev_agent.utils.event import RunId
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import ToolException, tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
+from openai import RateLimitError
 
 
 class _ConcreteWriter(BaseSessionWriter):
@@ -902,6 +904,20 @@ class TestChatModelClientCleanup:
         assert "非流式调用不支持 resume 续流" in str(exc_info.value)
         agent_e.ainvoke.assert_not_called()
 
+    def test_invoke_preserves_rate_limit_status_fields(self):
+        from aidev_agent.exceptions import AgentException
+
+        body = {"code": 1642903, "code_name": "RATE_LIMIT_RESTRICTION", "message": "limited"}
+        response = httpx.Response(429, request=httpx.Request("POST", "https://example.com/v1"), json=body)
+        agent = ChatCompletionAgent(chat_model=MockChatModel(responses=["ok"]))
+        agent_e = MagicMock()
+        agent_e.ainvoke = AsyncMock(side_effect=RateLimitError("limited", response=response, body=body))
+        with pytest.raises(AgentException) as exc_info:
+            agent._invoke(agent_e, {}, {}, [HumanMessage(content="hi")], ExecuteKwargs(stream=False))
+        wrapped = exc_info.value
+        assert wrapped.__cause__ is not None
+        assert (wrapped.status_code, wrapped.code, wrapped.code_name) == (429, 1642903, "RATE_LIMIT_RESTRICTION")
+
     def test_execute_builds_agent_once_and_reuses_in_execute(self):
         """U-06：_get_agent 在 _execute 内构建且仅调用一次（回滚 294ff5d55，双参签名）。"""
         agent = ChatCompletionAgent(
@@ -1258,7 +1274,11 @@ def _tag(tag_type: str, value: str) -> dict:
         ([], [], []),
         ([[]], [], []),
         # shortcut 是 prompt 模板，与 skill 一样识别但不收窄
-        ([[_tag("shortcut", "daily-report"), _tag("tool", "weather_query")]], [{"type": "tool", "code": "weather_query"}], []),
+        (
+            [[_tag("shortcut", "daily-report"), _tag("tool", "weather_query")]],
+            [{"type": "tool", "code": "weather_query"}],
+            [],
+        ),
     ],
 )
 def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, expected_specific, expected_files):
@@ -1410,8 +1430,7 @@ def test_agent_builds_llm_history_with_refreshed_pv_image_url(mock_get_download_
     assert history[0].content[0]["url"] == "https://example.test/download/image.png"
     assert history[0].content[2] == {
         "type": "text",
-        "text": "用户本轮引用了以下会话文件，请优先基于这些精确路径处理：\n"
-        "- $STORAGE_PATH/session/files/image.png",
+        "text": "用户本轮引用了以下会话文件，请优先基于这些精确路径处理：\n- $STORAGE_PATH/session/files/image.png",
     }
     assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-image.png"
     mock_get_download_url.assert_called_once_with(

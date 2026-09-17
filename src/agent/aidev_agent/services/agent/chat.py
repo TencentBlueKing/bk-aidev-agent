@@ -1115,7 +1115,7 @@ class ChatCompletionAgent(BaseModel):
             raise AgentException(message=str(deadline_error)) from deadline_error
         except Exception as e:
             logger.exception(f"Error executing agent: {e}")
-            raise AgentException(message=f"Error executing agent: {e}")
+            raise AgentException.from_exception(e, message=f"Error executing agent: {e}") from e
         finally:
             # 非流式执行结束后释放资源
             self.release_resources()
