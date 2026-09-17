@@ -217,3 +217,16 @@ class TestRabbitMQConnectionPool:
         pool.release_connection(connection)
         assert connection.closed is True
         assert pool.created_count == 0
+
+    def test_keepalive_idle_connections_pumps_heartbeats(self):
+        pool = FakeConnectionPool()
+        with pool.connection() as connection:
+            pass
+        before = len(connection.operation_threads)
+
+        pool.keepalive_idle_connections()
+
+        assert len(connection.operation_threads) == before + 1
+        assert pool.available_count == 1
+        assert connection.closed is False
+        pool.close()
