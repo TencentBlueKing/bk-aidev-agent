@@ -18,6 +18,8 @@ to the current version of the project delivered to anyone in the future.
 
 import json
 import os
+import time
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Iterator, Optional, Type, Union
 
 import openai
@@ -61,6 +63,31 @@ except ImportError:  # OpenTelemetry is an optional SDK extra.
     propagate_model_failure = None
     record_model_fallback_result = None
     record_model_fallback_switch = None
+
+
+# provider 在流式 chunk 外层回传的服务端模型名。上游转换会因 finish_reason 缺失而丢弃该字段，
+# 此处用 ContextVar 单独携带：chunk 转换与消费它的流式生成器处于同一 context，并发流互不串值。
+_served_model_var: ContextVar[Optional[str]] = ContextVar("llm_gateway_served_model", default=None)
+
+
+def _carries_finish_reason(chunk: ChatGenerationChunk) -> bool:
+    """判断单个 chunk 是否携带上游 finish_reason。"""
+    return bool((chunk.generation_info or {}).get("finish_reason"))
+
+
+def _synthesize_tail_chunk(served_model: Optional[str]) -> ChatGenerationChunk:
+    """为不回传 finish_reason 的流式响应合成正常完结尾 chunk。
+
+    served 模型名只在此处挂载一次：generation_info 的字符串值在聚合时会被拼接而非覆盖，
+    逐 chunk 重复挂载会得到 "modelmodelmodel"。
+    """
+    generation_info: dict[str, Any] = {"finish_reason": "stop"}
+    if served_model:
+        generation_info["model_name"] = served_model
+    return ChatGenerationChunk(
+        message=AIMessageChunk(content="", chunk_position="last"),
+        generation_info=generation_info,
+    )
 
 
 def _runnable_model_name(runnable: Any) -> str:
@@ -402,6 +429,14 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             reasoning_content = top.get("delta", {}).get("reasoning_content")
             if reasoning_content and isinstance(generation_chunk.message, AIMessageChunk):
                 generation_chunk.message.additional_kwargs["reasoning_content"] = reasoning_content
+        # langchain_openai 会丢弃 provider 外层 chunk id，此处捞回并入 generation_info；
+        # 置于 choices 判断之外，使 usage-only chunk（choices 为空但带 id）同样携带
+        if generation_chunk is not None and (response_id := chunk.get("id")):
+            generation_chunk.generation_info = {**(generation_chunk.generation_info or {}), "id": response_id}
+        # provider 服务端模型名同样被上游丢弃（仅 finish_reason 非空时才写），
+        # 经不参与聚合的 ContextVar 带出，供流式生成器在合成尾 chunk 上写一次
+        if (served_model := chunk.get("model")) is not None:
+            _served_model_var.set(str(served_model))
         return generation_chunk
 
     def _process_reasoning_chunk(
@@ -443,6 +478,8 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
     def _stream_chunks_with_token_spans(self, chunks: Iterator[ChatGenerationChunk]) -> Iterator[ChatGenerationChunk]:
         """Split streaming wait into first-token and remaining read-stream spans."""
         chunk_iter = iter(chunks)
+        t0 = time.monotonic()
+        saw_finish = False
         with recording_span(
             "llm.first_token",
             kind=CLIENT_SPAN_KIND,
@@ -454,6 +491,9 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             except StopIteration:
                 span.set_attribute("llm.stream.empty", True)
                 return
+        # TTFC 由写侧自包含时钟（monotonic duration）携带，经首 chunk 的 generation_info 下沉到读侧
+        first.generation_info = {**(first.generation_info or {}), "time_to_first_chunk": time.monotonic() - t0}
+        saw_finish = _carries_finish_reason(first) or saw_finish
         yield first
         remaining = 0
         with recording_span(
@@ -464,14 +504,19 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         ) as span:
             for chunk in chunk_iter:
                 remaining += 1
+                saw_finish = _carries_finish_reason(chunk) or saw_finish
                 yield chunk
             span.set_attribute("llm.stream.remaining_chunks", remaining)
+            if not saw_finish:
+                yield _synthesize_tail_chunk(_served_model_var.get())
 
     async def _astream_chunks_with_token_spans(
         self, chunks: AsyncIterator[ChatGenerationChunk]
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Async counterpart of ``_stream_chunks_with_token_spans``."""
         chunk_iter = chunks.__aiter__()
+        t0 = time.monotonic()
+        saw_finish = False
         with recording_span(
             "llm.first_token",
             kind=CLIENT_SPAN_KIND,
@@ -483,6 +528,9 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             except StopAsyncIteration:
                 span.set_attribute("llm.stream.empty", True)
                 return
+        # TTFC 由写侧自包含时钟（monotonic duration）携带，经首 chunk 的 generation_info 下沉到读侧
+        first.generation_info = {**(first.generation_info or {}), "time_to_first_chunk": time.monotonic() - t0}
+        saw_finish = _carries_finish_reason(first) or saw_finish
         yield first
         remaining = 0
         with recording_span(
@@ -493,8 +541,11 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         ) as span:
             async for chunk in chunk_iter:
                 remaining += 1
+                saw_finish = _carries_finish_reason(chunk) or saw_finish
                 yield chunk
             span.set_attribute("llm.stream.remaining_chunks", remaining)
+            if not saw_finish:
+                yield _synthesize_tail_chunk(_served_model_var.get())
 
     def _stream(self, *args, **kwargs) -> Iterator[ChatGenerationChunk]:
         """对reasoning_content字段进行时间统计，并拆出首 Token / 读流 Span。"""

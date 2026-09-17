@@ -13,6 +13,8 @@ from typing import Any
 from langchain_core.outputs import LLMResult
 from opentelemetry import metrics
 
+from .utils import dont_throw
+
 METER_NAME = "aidev_agent"
 DURATION_HISTOGRAM_BOUNDARIES = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
 MESSAGE_SIZE_HISTOGRAM_BOUNDARIES = (64, 256, 1024, 4096, 16384, 65536, 262144, 1048576)
@@ -34,7 +36,7 @@ def _coerce_usage_dict(usage: Any) -> dict[str, Any] | None:
     return usage if isinstance(usage, dict) else None
 
 
-def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
+def extract_token_usage(response: LLMResult) -> dict[str, Any] | None:
     """Extract provider token details without putting them in metric labels.
 
     ``input_tokens`` is normalized to non-cache input.  Cache creation/read are
@@ -75,6 +77,11 @@ def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
     # prompt_tokens includes cached tokens, so subtract the explicit cache
     # detail before reporting the non-cache component.
     has_provider_cache_fields = any(key in usage for key in ("cache_creation_input_tokens", "cache_read_input_tokens"))
+    # presence 信号：原始载荷携带任何缓存字段（顶层 key 或嵌套 details）即为 True，
+    # 供 span 侧区分"未上报缓存"（False）与"上报了缓存但命中 0"（True）
+    has_cache_fields = has_provider_cache_fields or any(
+        key in input_details for key in ("cache_read", "cached_tokens", "cache_creation", "cache_creation_input_tokens")
+    )
     if usage.get("input_tokens") is not None:
         input_tokens = _as_int(usage.get("input_tokens"))
         # LangChain UsageMetadata expresses input_tokens as the inclusive total
@@ -93,6 +100,7 @@ def extract_token_usage(response: LLMResult) -> dict[str, int] | None:
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
+        "has_cache_fields": has_cache_fields,
     }
 
 
@@ -211,6 +219,7 @@ class AgentMetrics:
             "agent.info.sdk_version": agent_sdk_version or "unknown",
         }
 
+    @dont_throw
     def record_agent(
         self,
         duration: float,
@@ -218,12 +227,14 @@ class AgentMetrics:
         attributes: dict[str, str],
         error: BaseException | None = None,
     ) -> None:
+        """Record agent run duration and iteration count; backend failures are debug-logged, never raised."""
         attrs = dict(attributes)
         if error is not None:
             attrs["error.type"] = type(error).__name__
         self.agent_duration.record(duration, attrs)
         self.agent_iteration_count.record(iteration_count, attributes)
 
+    @dont_throw
     def record_active_agent(self, delta: int, attributes: dict[str, str]) -> None:
         """Adjust the number of Agent runs that are currently executing."""
         self.active_agents.add(delta, attributes)
@@ -234,10 +245,14 @@ class AgentMetrics:
     def record_agent_first_token(self, duration: float, attributes: dict[str, str]) -> None:
         self.agent_time_to_first_token.record(duration, attributes)
 
+    @dont_throw
     def record_agent_phase_active(self, delta: int, phase: str, attributes: dict[str, str]) -> None:
+        """Adjust the number of Agent phase runs that are currently executing; backend failures are debug-logged, never raised."""
         self.active_agent_phases.add(delta, {**attributes, "aidev.agent.phase": phase})
 
+    @dont_throw
     def record_agent_phase_duration(self, duration: float, phase: str, attributes: dict[str, str]) -> None:
+        """Record Agent phase duration; backend failures are debug-logged, never raised."""
         self.agent_phase_duration.record(duration, {**attributes, "aidev.agent.phase": phase})
 
     def record_active_llm(self, delta: int, attributes: dict[str, str]) -> None:
