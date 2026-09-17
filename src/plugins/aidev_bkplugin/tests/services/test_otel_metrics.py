@@ -236,7 +236,7 @@ def test_metric_settings_keep_direct_otlp_transport_without_bkm_config():
     settings = MetricExportSettings.from_agent_info({}, default_enabled=True)
 
     assert settings.enabled is True
-    assert settings.export_interval_millis == 10_000
+    assert settings.export_interval_millis == 30_000
     assert settings.bkm_push_mode == BKM_PUSH_MODE_CELERY
     assert settings.task_ttl_seconds == 3600
     assert settings.has_bkm_config is False

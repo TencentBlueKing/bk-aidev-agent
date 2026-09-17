@@ -45,7 +45,7 @@ from .metric_runtime import RetryableMetricPushError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 10_000
+DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 30_000
 DEFAULT_METRIC_TASK_TTL_SECONDS = 3600
 BKM_PUSH_MODE_CELERY = "celery"
 BKM_PUSH_MODE_DIRECT = "direct"

@@ -31,9 +31,9 @@ cp ./support-files/env.template .env
 
 模板默认设置 `BKAI_AGENT_ENABLE_METRICS=false`，本地运行时会强制关闭指标，即使平台下发的
 `agent_info.otel_info.metrics` 为启用状态也不会上报；需要联调指标时再显式改为 `true`。
-指标默认每 10000 毫秒上报一次，可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，最小值为
+指标默认每 30000 毫秒上报一次，可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，最小值为
 10000；智能体环境变量优先，未配置时使用平台下发的
-`agent_info.otel_info.metrics.export_interval_millis`，平台也未下发时回退为 10000。
+`agent_info.otel_info.metrics.export_interval_millis`，平台也未下发时回退为 30000。
 周期快照默认通过 Celery 异步上报；可将 `BKAI_AGENT_METRICS_PUSH_MODE` 设置为 `direct`，由周期
 导出线程直接请求 BKM。智能体环境变量优先，未配置时使用平台下发的
 `agent_info.otel_info.metrics.push_mode`，两者都未配置则使用 `celery`。

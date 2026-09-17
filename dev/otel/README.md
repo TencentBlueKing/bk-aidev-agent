@@ -192,7 +192,7 @@ make test
   "otel_token": "",
   "metrics": {
     "enabled": true,
-    "export_interval_millis": 10000,
+    "export_interval_millis": 30000,
     "export_timeout_millis": 30000,
     "push_mode": "celery",
     "task_ttl_seconds": 3600,
@@ -209,7 +209,7 @@ make test
 | 配置 | 优先级 |
 | --- | --- |
 | 是否启用 | 本地显式 `BKAI_AGENT_ENABLE_METRICS` > 平台 `enabled` > 运行时默认值 |
-| 上报周期 | 本地显式 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` > 平台 `export_interval_millis` > 10000 毫秒 |
+| 上报周期 | 本地显式 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` > 平台 `export_interval_millis` > 30000 毫秒 |
 | 推送方式 | 本地显式 `BKAI_AGENT_METRICS_PUSH_MODE` > 平台 `push_mode` > `celery` |
 | BKM 连接参数 | 本地非空 `BKAI_AGENT_METRICS_*` > 平台 `agent_*` > 空值 |
 | Celery 快照 TTL | 本地显式 `BKAI_AGENT_METRICS_TASK_TTL_SECONDS` > 平台 `task_ttl_seconds` > 3600 秒 |
@@ -243,8 +243,8 @@ OTel Counter 转成 BKM 的 `*_total`；Histogram 转成累计 `*_bucket`（`le`
 将快照交给 Celery Worker 隔离实际网络请求；`push_mode=direct` 则由周期导出线程直接请求 BKM，
 但不改变快照周期。两种模式都不要求 Worker 读取其他进程内存中的 OTel 聚合器。
 `direct` 模式不经过 Celery 的 TTL 和退避重试，失败后由下一次周期快照继续上报累计值。
-生产默认周期为 10 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，智能体
-环境变量优先，未配置时使用平台下发的 `export_interval_millis`，平台也未下发时回退为 10 秒，
+生产默认周期为 30 秒；智能体可通过 `BKAI_AGENT_METRICS_EXPORT_INTERVAL_MILLIS` 调整，智能体
+环境变量优先，未配置时使用平台下发的 `export_interval_millis`，平台也未下发时回退为 30 秒，
 且周期最小为 10 秒。本地 mock 为了缩短仪表盘验证等待时间，继续使用 1 秒周期。
 
 本地生成项目默认使用 `BKAI_AGENT_ENABLE_METRICS=false` 强制关闭指标，该显式环境变量的优先级
