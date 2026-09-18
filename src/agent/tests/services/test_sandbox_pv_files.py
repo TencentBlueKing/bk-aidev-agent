@@ -972,6 +972,46 @@ class TestFillUserImageUrls:
             session_code="s1", path="files/a.png", expires_in=3600
         )
 
+    def test_signs_url_for_legacy_camel_case_mime_type_without_rewriting_payload(self):
+        """写路径认得 mimeType 并补 URL，但不改 mime_type——payload 要原样落库。"""
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/a.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [{"type": "binary", "mimeType": "image/png", "id": "files/legacy-image"}],
+        }
+
+        fill_user_image_urls(file_service, payload)
+
+        assert payload["content"][0]["url"] == "https://cdn/a.png"
+        assert "mime_type" not in payload["content"][0]
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/legacy-image", expires_in=3600
+        )
+
+    def test_refreshes_image_without_mime_type_by_path_suffix(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/a.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {"type": "binary", "id": "files/legacy-image.png", "url": "https://old"},
+                {"type": "binary", "id": "files/report.pdf", "url": "https://old-pdf"},
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        assert payload["content"][0]["url"] == "https://cdn/a.png"
+        assert payload["content"][0]["mime_type"] == "image/png"
+        assert payload["content"][1]["url"] == "https://old-pdf"
+        assert "mime_type" not in payload["content"][1]
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/legacy-image.png", expires_in=3600
+        )
+
     def test_skips_when_url_exists_or_not_image(self):
         file_service = MagicMock()
         payload = {
@@ -1018,6 +1058,50 @@ class TestFillUserImageUrls:
         file_service.get_download_url.assert_called_once_with(
             session_code="s1", path="files/a.png", expires_in=3600
         )
+
+    def test_refreshes_nested_image_url_from_explicit_path(self):
+        """标准 image_url.url 形态按显式会话 PV 路径重签并写回嵌套字段。"""
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/fresh.png"}
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {
+                    "type": "image_url",
+                    "path": "files/a.png",
+                    "image_url": {"url": "https://old.example/download/files/a.png?expired=1", "detail": "high"},
+                }
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        assert payload["content"][0]["image_url"]["url"] == "https://cdn/fresh.png"
+        assert payload["content"][0]["image_url"]["detail"] == "high"
+        assert payload["content"][0]["mime_type"] == "image/png"
+        file_service.get_download_url.assert_called_once_with(
+            session_code="s1", path="files/a.png", expires_in=3600
+        )
+
+    def test_ignores_external_image_url_without_session_identity(self):
+        """外部图片 URL 没有显式会话路径时不反推当前会话文件。"""
+        file_service = MagicMock()
+        payload = {
+            "role": "user",
+            "session_code": "s1",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "https://attacker.example/files/a.png"},
+                }
+            ],
+        }
+
+        fill_user_image_urls(file_service, payload, only_missing=False)
+
+        file_service.get_download_url.assert_not_called()
+        assert payload["content"][0]["image_url"]["url"] == "https://attacker.example/files/a.png"
 
     def test_dedupes_same_path_across_payloads(self):
         file_service = MagicMock()

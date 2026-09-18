@@ -32,6 +32,13 @@ from requests import HTTPError as RequestsHTTPError
 
 from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+from aidev_agent.utils.file_reference import (
+    clear_image_content_url,
+    image_content_url,
+    image_session_file_path,
+    session_file_identity,  # noqa: F401 - 兼容旧模块导入路径
+    set_image_content_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +99,16 @@ IMAGE_DOWNLOAD_URL_EXPIRES_IN = 3600
 # 会话 PV 上传限制：平台与 SDK 插件 HTTP 入口共用，只在此维护一份。
 MAX_SESSION_UPLOAD_FILES = 9
 MAX_SESSION_UPLOAD_FILE_SIZE = int(20 * 1024 * 1024)
-SESSION_UPLOAD_IMAGE_EXTENSIONS = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
+# 允许的图片后缀与其 MIME 只维护这一份：上传校验、read_image 入参校验和缺失 MIME 的推断
+# 都从这里取。拆成两份的话，新增一种图片格式漏改一处，就会出现「能上传但装配链不认它是图片」。
+SESSION_UPLOAD_IMAGE_MIME_TYPES = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+SESSION_UPLOAD_IMAGE_EXTENSIONS = frozenset(SESSION_UPLOAD_IMAGE_MIME_TYPES)
 SESSION_UPLOAD_FILE_EXTENSIONS = (
     frozenset(
         {
@@ -248,14 +264,6 @@ def encode_paas_query_params(params: dict) -> str:
     return urlencode(params, doseq=True, safe="", quote_via=quote)
 
 
-def session_file_identity(item: dict) -> str:
-    """解析会话文件身份：新契约 ``outputId``（上传 ``path``），其次 ``path``，最后旧 ``id``。"""
-    raw = item.get("outputId") or item.get("path") or item.get("id")
-    if not isinstance(raw, str):
-        return ""
-    return raw.strip()
-
-
 def _invalid_path(raw: str | None, reason: str) -> SandboxFileInvalidArgumentError:
     """非法路径异常：带上拒绝原因和原始入参，装配期排障和 HTTP 400 都要能直接定位。
 
@@ -299,7 +307,7 @@ def session_file_relpath(item: dict) -> str:
     两侧必须用同一套归一规则，否则同一个文件的不同写法会被当成两个文件。
     """
     try:
-        return normalize_session_pv_path(session_file_identity(item), required=False)
+        return normalize_session_pv_path(image_session_file_path(item), required=False)
     except SandboxFileInvalidArgumentError:
         return ""
 
@@ -340,30 +348,39 @@ def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
         _validate_upload_size(name, len(upload_file.get("content") or b""))
 
 
-def iter_user_image_binaries(content):
-    """找出用户消息里带 PV 路径的图片 binary，产出 ``(item, 归一化相对路径)``。
+def image_mime_type(item: dict, path: str) -> str | None:
+    """获取图片 MIME；兼容历史字段，缺失时按已允许的图片后缀推断。"""
+    mime_type = str(
+        item.get("mime_type") or item.get("mimeType") or item.get("mime") or item.get("content_type") or ""
+    ).strip()
+    if mime_type:
+        return mime_type.lower() if mime_type.lower().startswith("image/") else None
+    return SESSION_UPLOAD_IMAGE_MIME_TYPES.get(PurePosixPath(path).suffix.lower())
 
-    路径在这里算一次就随 item 带出去，调用方不必再解析一遍身份；产出即代表这条 binary
-    有合法可用的 PV 路径，身份缺失和路径非法的脏数据在这里就被滤掉，下游不用再判一次。
+
+def iter_user_image_binaries(content):
+    """找出用户消息里带 PV 路径的图片内容项，产出 ``(item, 归一化相对路径)``。
+
+    兼容展示用 ``binary``、顶层 URL 和嵌套 ``image_url.url`` 三种形态。路径在这里算一次
+    就随 item 带出去，调用方不必再解析一遍身份；产出即代表这条图片有合法可用的 PV 路径，
+    身份缺失和路径非法的脏数据在这里就被滤掉，下游不用再判一次。
     """
     if not isinstance(content, list):
         return
     for item in content:
-        if not isinstance(item, dict) or item.get("type") != "binary":
-            continue
-        if not str(item.get("mime_type") or "").startswith("image/"):
+        if not isinstance(item, dict) or item.get("type") not in {"binary", "image", "image_url"}:
             continue
         path = session_file_relpath(item)
-        if path:
+        if path and image_mime_type(item, path):
             yield item, path
 
 
 def iter_user_images_missing_url(payload: dict):
-    """找出用户消息里缺展示 URL 的图片 binary。"""
+    """找出用户消息里缺展示 URL 的图片内容项。"""
     if payload.get("role") != "user":
         return
     for item, _ in iter_user_image_binaries(payload.get("content")):
-        if not item.get("url"):
+        if not image_content_url(item):
             yield item
 
 
@@ -376,10 +393,11 @@ def fill_user_image_urls(
     session_code: str = "",
     clear_on_failure: bool = False,
 ) -> None:
-    """给用户图片 binary 签发 / 刷新 download_url。
+    """给用户图片内容项签发 / 刷新 download_url。
 
     ``only_missing=True``：写消息时只补缺 URL。
-    ``only_missing=False``：读历史或组模型输入时强制刷新，按归一化 path 去重。
+    ``only_missing=False``：读历史或组模型输入时强制刷新，按归一化 path 去重，并把历史
+    记录里大小写不一或缺失的图片 MIME 归一到 ``mime_type``。
     ``clear_on_failure``：签发失败时去掉旧 URL，避免把过期链接送给模型。
 
     ``url_cache`` 只存签发成功的 URL，可以跨多个消费方复用，key 是 ``(session_code, path)``：
@@ -395,11 +413,14 @@ def fill_user_image_urls(
     cache = url_cache if url_cache is not None else {}
     failed: set[str] = set()
     for item, path in iter_user_image_binaries(payload.get("content")):
-        if only_missing and item.get("url"):
+        # mime_type 只在读路径归一，供前端按统一字段取；写消息只补 URL，不改调用方要落库的 payload。
+        if not only_missing and (mime_type := image_mime_type(item, path)):
+            item["mime_type"] = mime_type
+        if only_missing and image_content_url(item):
             continue
         cached = cache.get((session_code, path))
         if cached:
-            item["url"] = cached
+            set_image_content_url(item, cached)
             continue
         if path not in failed:
             try:
@@ -414,11 +435,11 @@ def fill_user_image_urls(
                 url = url_data.get("download_url") or ""
                 if url:
                     cache[(session_code, path)] = url
-                    item["url"] = url
+                    set_image_content_url(item, url)
                     continue
             failed.add(path)
         if clear_on_failure:
-            item.pop("url", None)
+            clear_image_content_url(item)
 
 
 class SandboxPvFileService:
