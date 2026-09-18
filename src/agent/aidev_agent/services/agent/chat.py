@@ -2,7 +2,6 @@ import asyncio
 import copy
 import json
 import os
-import posixpath
 import uuid
 import warnings
 from functools import partial
@@ -33,6 +32,7 @@ from aidev_agent.core.ag_ui.types import (
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
+    TOOL_CALLING_PLACEHOLDER,
     get_schema_keys,
     get_stream_payload_input,
 )
@@ -69,16 +69,13 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.sandbox_pv_files import (
-    IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-    SESSION_UPLOAD_IMAGE_EXTENSIONS,
     SESSION_VOLUME_PATH,
     SandboxFileInvalidArgumentError,
-    SandboxFileServerError,
     SandboxPvFileService,
     fill_user_image_urls,
+    image_mime_type,
     normalize_session_pv_path,
     session_file_identity,
-    session_file_relpath,
 )
 from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
@@ -86,6 +83,7 @@ from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
     migration_knowledge_query_options_from_agent_options_v1,
     migration_model_context_options_from_agent_options_v1,
+    normalize_doc_schema_payload,
 )
 
 try:
@@ -108,6 +106,27 @@ def _to_ledger_dict(record: Any) -> dict:
     if hasattr(record, "model_dump"):
         return record.model_dump()
     return dict(record)
+
+
+def _clear_tool_call_placeholder(payload: dict) -> None:
+    """清掉 assistant 工具调用占位文案，对齐平台读库接口出参。
+
+    只作用于快照副本：占位是为了避免空 content 记录被 LLM 输入视图丢弃，从账本摘掉会让
+    本轮 tool_call 与 tool 结果配对失败。
+
+    与平台 ``content_utils.flatten_builtin_property`` 里的同名清理不是重复实现，两者数据源不同：
+    平台那一处洗的是 DB 记录、供读库接口给前端；这一处洗的是 ``chat_history`` 账本、供
+    MESSAGES_SNAPSHOT 给任意接入方。``chat_history`` 并不都来自平台读库接口 —— 例如
+    ``aidev_bkplugin`` 由调用方直接传入 ``list[ChatPrompt]``，不经平台那一跳，只有在 SDK 这层
+    兜底才能保证所有接入方拿到同一种快照形态。占位文案常量由 SDK 定义，平台复用同一个常量。
+    """
+    builtin_property = payload.get("builtin_property") or {}
+    if hasattr(builtin_property, "model_dump"):
+        builtin_property = builtin_property.model_dump()
+    if not isinstance(builtin_property, dict) or not builtin_property.get("tool_calls"):
+        return
+    if payload.get("content") == TOOL_CALLING_PLACEHOLDER:
+        payload["content"] = ""
 
 
 class ChatCompletionAgent(BaseModel):
@@ -512,11 +531,12 @@ class ChatCompletionAgent(BaseModel):
             self.messages = convert_chat_history_to_messages(
                 self._build_llm_history(),
                 model_context_options=self.model_context_options,
-                support_vision=self.support_vision,
                 model_name=self.model_name,
                 agent_info=self.agent_info,
                 generating_keyword=self.generating_keyword,
                 files=self.files,
+                support_vision=self.support_vision,
+                vision_model_configured=self.chat_model_vision is not None,
             )
         messages = self.messages
         chat_models = (
@@ -1146,8 +1166,9 @@ class ChatCompletionAgent(BaseModel):
         快照对账本全量下发。
 
         下发布局即账本原样：账本记录统一经 model_dump 归一为 dict（role/content 顶层、
-        builtin_property/extra 保留、字段名保持后端原样），不经 AG-UI 消息转换器，
-        不做 role 归一 / camelCase 改名 / status 映射 / multimodal 重排。
+        builtin_property/extra 保留、字段名保持后端原样）；仅将旧顶层 docSchema 归一到
+        property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
+        status 映射 / multimodal 重排。
         用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
         """
         base = []
@@ -1155,7 +1176,10 @@ class ChatCompletionAgent(BaseModel):
             payload = _to_ledger_dict(record)
             # ChatPrompt 经 model_dump 已是全新嵌套结构，重签直接改它不会污染账本；
             # 其余形态与账本共享引用，才需要深拷贝，避免把整段历史（含大 tool 输出）无谓复制一遍。
-            base.append(payload if hasattr(record, "model_dump") else copy.deepcopy(payload))
+            payload = payload if hasattr(record, "model_dump") else copy.deepcopy(payload)
+            normalize_doc_schema_payload(payload)
+            _clear_tool_call_placeholder(payload)
+            base.append(payload)
         file_service = self._pv_file_service()
         if file_service is not None:
             for payload in base:
@@ -1550,6 +1574,35 @@ class ChatCompletionAgent(BaseModel):
             runtime_backend_resolver=self.runtime_backend_resolver,
         )
 
+    def _refresh_llm_history_image_urls(self, chat_history: list[ChatPrompt]) -> None:
+        """主模型支持多模态时，重签历史用户图片的 download_url（只改本轮模型输入副本）。
+
+        内联的前提是 URL 当下可取：账本里存的是上次签发的链接，历史轮次的早已过期，不重签
+        等于把死链送进模型输入，图片照样看不见。``clear_on_failure=True`` 让签发失败的图片
+        直接去掉 URL，网关据此退回 read_image 路径文本，而不是发一个必然 404 的链接。
+
+        非多模态主模型下图片本就要降级成路径文本，URL 用不上，跳过以免白签一轮。
+        ``image_url_cache`` 与快照重签共享，同一轮两次遍历历史只签一次。
+        """
+        if not self.support_vision:
+            return
+        file_service = self._pv_file_service()
+        if file_service is None:
+            return
+        for prompt in chat_history:
+            if prompt.role != PromptRole.USER.value or not isinstance(prompt.content, list):
+                continue
+            # 只传 fill_user_image_urls 需要的两个键：它就地改 content 里的 item，
+            # 不重新赋值 content，所以改动会落到 prompt 上
+            fill_user_image_urls(
+                file_service,
+                {"role": prompt.role, "content": prompt.content},
+                only_missing=False,
+                url_cache=self.image_url_cache,
+                session_code=self.thread_id,
+                clear_on_failure=True,
+            )
+
     @staticmethod
     def _normalize_file_resource_path(resource: dict) -> str:
         raw_path = session_file_identity(resource)
@@ -1559,24 +1612,7 @@ class ChatCompletionAgent(BaseModel):
 
     @staticmethod
     def _is_image_resource(resource: dict, path: str) -> bool:
-        mime_type = str(resource.get("mime_type") or resource.get("mime") or resource.get("content_type") or "").lower()
-        if mime_type:
-            return mime_type.startswith("image/")
-        return posixpath.splitext(path)[1].lower() in SESSION_UPLOAD_IMAGE_EXTENSIONS
-
-    @staticmethod
-    def _find_binary_by_path(content: list[dict], path: str) -> dict | None:
-        """按 PV 相对路径找到对应的展示用 binary。
-
-        与资源侧共用 session_file_relpath 归一，否则历史里带卷前缀的 binary 匹配不上，
-        会重复 append 一条 image_url。
-        """
-        for item in content:
-            if not isinstance(item, dict) or item.get("type") != "binary":
-                continue
-            if session_file_relpath(item) == path:
-                return item
-        return None
+        return image_mime_type(resource, path) is not None
 
     @staticmethod
     def _build_file_reference_context(paths: list[str]) -> str:
@@ -1586,22 +1622,14 @@ class ChatCompletionAgent(BaseModel):
         )
 
     def _build_llm_history(self) -> list[ChatPrompt]:
-        """构造仅供本轮模型调用使用的历史副本。"""
+        """构造仅供本轮模型调用使用的历史副本。
+
+        图片是否进模型输入由装配链 ``_convert_user_image_content`` 判定：主模型支持多模态
+        就走 image_url，否则降级成 PV 路径文本由模型调 read_image 识别；本轮图片与历史图片
+        同一判据。
+        """
         chat_history = [prompt.model_copy(deep=True) for prompt in self.chat_history or []]
-        url_cache = self.image_url_cache
-        file_service = self._pv_file_service()
-        if file_service is not None:
-            for prompt in chat_history:
-                payload = {"role": prompt.role, "content": prompt.content}
-                fill_user_image_urls(
-                    file_service,
-                    payload,
-                    only_missing=False,
-                    url_cache=url_cache,
-                    session_code=self.thread_id,
-                    clear_on_failure=True,
-                )
-                prompt.content = payload["content"]
+        self._refresh_llm_history_image_urls(chat_history)
         if not self.file_resources:
             return chat_history
 
@@ -1612,7 +1640,6 @@ class ChatCompletionAgent(BaseModel):
         if last_user_prompt is None:
             return chat_history
 
-        image_paths = []
         referenced_paths = []
         seen_paths = set()
         for resource in self.file_resources:
@@ -1621,8 +1648,6 @@ class ChatCompletionAgent(BaseModel):
                 continue
             seen_paths.add(path)
             referenced_paths.append(path)
-            if self._is_image_resource(resource, path):
-                image_paths.append(path)
         if not referenced_paths:
             return chat_history
 
@@ -1639,26 +1664,6 @@ class ChatCompletionAgent(BaseModel):
                 "text": self._build_file_reference_context(referenced_paths),
             }
         )
-
-        for path in image_paths:
-            cache_key = (self.thread_id, path)
-            image_url = url_cache.get(cache_key) or ""
-            if not image_url:
-                url_data = file_service.get_download_url(
-                    session_code=self.thread_id,
-                    path=path,
-                    expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-                )
-                image_url = url_data.get("download_url") or ""
-                if image_url:
-                    url_cache[cache_key] = image_url
-            if not image_url:
-                raise SandboxFileServerError(f"文件 {path} 未返回 download_url")
-            existing = self._find_binary_by_path(content, path)
-            if existing is not None:
-                existing["url"] = image_url
-            else:
-                content.append({"type": "image_url", "image_url": {"url": image_url}})
         last_user_prompt.content = content
         return chat_history
 
@@ -2353,7 +2358,12 @@ class ChatAgentBuilder:
         # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
         extra = item.get("extra") or {}
         legacy_resources = extra.get("resources") or []
-        doc_schema = item.get("docSchema")
+        property_data = item.get("property")
+        if isinstance(property_data, dict) and property_data.get("docSchema") is not None:
+            doc_schema = property_data["docSchema"]
+        else:
+            # 兼容历史 ChatPrompt 顶层 docSchema，新的持久化与快照统一走 property。
+            doc_schema = item.get("docSchema")
         if doc_schema is None:
             return legacy_resources
         # 文件排在前面：它们带 mime_type，_is_image_resource 判定比 docSchema 的裸 path 更准，

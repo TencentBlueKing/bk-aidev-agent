@@ -1292,6 +1292,24 @@ def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, 
     assert builder.file_resources == expected_files
 
 
+def test_chat_agent_builder_reads_doc_schema_from_property():
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_dummy_chat_ctx()
+    ctx.session_context_data = [
+        {
+            "role": PromptRole.USER.value,
+            "content": "请生成文件",
+            "property": {"docSchema": [[_tag("tool", "weather_query")]]},
+            "extra": {"resources": [{"type": "tool", "code": "legacy"}]},
+        }
+    ]
+
+    builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == [{"type": "tool", "code": "weather_query"}]
+
+
 def test_chat_agent_builder_keeps_attachments_when_doc_schema_present():
     """附件不进 docSchema tag，docSchema 存在时也必须继续从 extra.resources 取文件。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder
@@ -1379,6 +1397,13 @@ def test_agent_builds_llm_history_with_exact_non_image_file_references():
     assert agent.chat_history[-1].content == "请对比这两个文件"
 
 
+def test_agent_recognizes_camel_case_image_mime_type():
+    assert ChatCompletionAgent._is_image_resource(
+        {"type": "file", "mimeType": " image/png "},
+        "files/image",
+    )
+
+
 def test_agent_does_not_attach_previous_file_reference_to_new_input():
     agent = ChatCompletionAgent(
         chat_history=[
@@ -1399,194 +1424,111 @@ def test_agent_does_not_attach_previous_file_reference_to_new_input():
     assert history[1].content == "继续解释上面的结论"
 
 
-@patch(
-    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
-    return_value={"download_url": "https://example.test/download/image.png"},
-)
-def test_agent_builds_llm_history_with_refreshed_pv_image_url(mock_get_download_url):
-    agent = ChatCompletionAgent(
-        thread_id="session-1",
-        chat_history=[
-            ChatPrompt(
-                role=PromptRole.USER.value,
-                content=[
-                    {
-                        "type": "binary",
-                        "id": "files/image.png",
-                        "url": "https://example.test/expired-image.png",
-                        "mime_type": "image/png",
-                    },
-                    {"type": "text", "text": "描述这张图片"},
-                ],
-            )
-        ],
-        file_resources=[{"type": "file", "path": "files/image.png", "mime_type": "image/png"}],
-        resource_manager=MagicMock(),
-        executor_info={"app_code": "app", "executor": "luka"},
-    )
+def test_agent_builds_llm_history_without_image_urls():
+    """非多模态主模型（support_vision 缺省 False）：LLM 历史不签发 download_url、
+    不追加 image_url，只留路径引用文本，图片内容由模型自行调用 read_image 识别。
 
-    history = agent._build_llm_history()
+    多模态主模型下会重签 URL 并内联，见 test_agent_refreshes_llm_history_image_urls_with_vision。
+    快照副本仍会重签 URL，见 test_snapshot_refreshes_*。
+    """
+    with patch("aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url") as mock_get_download_url:
+        agent = ChatCompletionAgent(
+            thread_id="session-1",
+            chat_history=[
+                ChatPrompt(
+                    role=PromptRole.USER.value,
+                    content=[
+                        {
+                            "type": "binary",
+                            "id": "files/image.png",
+                            "url": "https://example.test/expired-image.png",
+                            "mime_type": "image/png",
+                        },
+                        {"type": "text", "text": "描述这张图片"},
+                    ],
+                )
+            ],
+            file_resources=[{"type": "file", "path": "files/image.png", "mime_type": "image/png"}],
+            resource_manager=MagicMock(),
+            executor_info={"app_code": "app", "executor": "luka"},
+        )
 
-    assert history[0].content[0]["url"] == "https://example.test/download/image.png"
+        history = agent._build_llm_history()
+
+    assert not any(item.get("type") == "image_url" for item in history[0].content)
+    # 过期 URL 原样留在副本里：既然不送模型，就没有重签的必要
+    assert history[0].content[0]["url"] == "https://example.test/expired-image.png"
     assert history[0].content[2] == {
         "type": "text",
         "text": "用户本轮引用了以下会话文件，请优先基于这些精确路径处理：\n- $STORAGE_PATH/session/files/image.png",
     }
-    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-image.png"
-    mock_get_download_url.assert_called_once_with(
-        session_code="session-1",
-        path="files/image.png",
-        expires_in=3600,
-    )
+    mock_get_download_url.assert_not_called()
 
 
-@patch(
-    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
-    return_value={"download_url": "https://example.test/download/image.png"},
-)
-def test_agent_matches_image_binary_by_output_id(mock_get_download_url):
-    agent = ChatCompletionAgent(
+def _vision_agent_with_historical_image(expired: str) -> ChatCompletionAgent:
+    """带一条历史图片记录、主模型支持多模态的 agent。"""
+    return ChatCompletionAgent(
         thread_id="session-1",
+        support_vision=True,
         chat_history=[
             ChatPrompt(
                 role=PromptRole.USER.value,
                 content=[
-                    {
-                        "type": "binary",
-                        "id": "upload-1",
-                        "outputId": "files/image.png",
-                        "url": "https://example.test/expired-image.png",
-                        "mime_type": "image/png",
-                    },
-                    {"type": "text", "text": "描述这张图片"},
-                ],
-            )
-        ],
-        file_resources=[{"type": "file", "outputId": "files/image.png", "mime_type": "image/png"}],
-        resource_manager=MagicMock(),
-        executor_info={"app_code": "app", "executor": "luka"},
-    )
-
-    history = agent._build_llm_history()
-
-    assert history[0].content[0]["url"] == "https://example.test/download/image.png"
-    assert not any(item.get("type") == "image_url" for item in history[0].content)
-    mock_get_download_url.assert_called_once_with(
-        session_code="session-1",
-        path="files/image.png",
-        expires_in=3600,
-    )
-
-
-@patch(
-    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
-    return_value={"download_url": "https://example.test/download/image.png"},
-)
-def test_agent_matches_image_binary_carrying_volume_prefix(mock_get_download_url):
-    """历史 binary 带卷前缀时也要命中已有项，否则模型侧会多出一张重复图、URL 也白签一次。"""
-    agent = ChatCompletionAgent(
-        thread_id="session-1",
-        chat_history=[
-            ChatPrompt(
-                role=PromptRole.USER.value,
-                content=[
-                    {
-                        "type": "binary",
-                        "outputId": "$STORAGE_PATH/session/files/image.png",
-                        "url": "https://example.test/expired-image.png",
-                        "mime_type": "image/png",
-                    },
-                    {"type": "text", "text": "描述这张图片"},
-                ],
-            )
-        ],
-        file_resources=[{"type": "file", "path": "files/image.png", "mime_type": "image/png"}],
-        resource_manager=MagicMock(),
-        executor_info={"app_code": "app", "executor": "luka"},
-    )
-
-    history = agent._build_llm_history()
-
-    assert history[0].content[0]["url"] == "https://example.test/download/image.png"
-    assert not any(item.get("type") == "image_url" for item in history[0].content)
-    # 历史重签与本轮资源共用归一化后的 path 做缓存键，同一个文件只签一次
-    mock_get_download_url.assert_called_once_with(
-        session_code="session-1",
-        path="files/image.png",
-        expires_in=3600,
-    )
-
-
-@patch(
-    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
-    return_value={"download_url": "https://example.test/download/old.png"},
-)
-def test_agent_refreshes_historical_pv_image_url_without_current_file_resources(mock_get_download_url):
-    agent = ChatCompletionAgent(
-        thread_id="session-1",
-        chat_history=[
-            ChatPrompt(
-                role=PromptRole.USER.value,
-                content=[
-                    {
-                        "type": "binary",
-                        "id": "files/old.png",
-                        "url": "https://example.test/expired-old.png",
-                        "mime_type": "image/png",
-                    },
-                    {"type": "text", "text": "看这张图"},
+                    {"type": "binary", "id": "files/old.png", "url": expired, "mime_type": "image/png"},
+                    {"type": "text", "text": "上一轮的图"},
                 ],
             ),
-            ChatPrompt(role=PromptRole.USER.value, content="继续解释"),
+            ChatPrompt(role=PromptRole.ASSISTANT.value, content="上一轮回答"),
+            ChatPrompt(role=PromptRole.USER.value, content="它和刚才那张有什么区别"),
         ],
-        file_resources=[],
         resource_manager=MagicMock(),
         executor_info={"app_code": "app", "executor": "luka"},
-    )
-
-    history = agent._build_llm_history()
-
-    assert history[0].content[0]["url"] == "https://example.test/download/old.png"
-    assert history[1].content == "继续解释"
-    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-old.png"
-    mock_get_download_url.assert_called_once_with(
-        session_code="session-1",
-        path="files/old.png",
-        expires_in=3600,
     )
 
 
 @patch(
     "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
-    side_effect=SandboxFileServerError("gone"),
+    return_value={"download_url": "https://example.test/download/fresh.png"},
 )
-def test_agent_clears_stale_historical_image_url_when_refresh_fails(mock_get_download_url):
-    agent = ChatCompletionAgent(
-        thread_id="session-1",
-        chat_history=[
-            ChatPrompt(
-                role=PromptRole.USER.value,
-                content=[
-                    {
-                        "type": "binary",
-                        "id": "files/old.png",
-                        "url": "https://example.test/expired-old.png",
-                        "mime_type": "image/png",
-                    },
-                    {"type": "text", "text": "看这张图"},
-                ],
-            )
-        ],
-        file_resources=[],
-        resource_manager=MagicMock(),
-        executor_info={"app_code": "app", "executor": "luka"},
-    )
+def test_agent_refreshes_llm_history_image_urls_with_vision(mock_get_download_url):
+    """多模态主模型：历史图片要内联，账本里的过期 URL 必须在模型输入副本上重签。
+
+    不重签等于把死链送进模型输入，图片照样看不见。
+    """
+    expired = "https://example.test/expired-old.png"
+    agent = _vision_agent_with_historical_image(expired)
+
+    history = agent._build_llm_history()
+
+    assert history[0].content[0]["url"] == "https://example.test/download/fresh.png"
+    mock_get_download_url.assert_called_once()
+    # 账本本体不受影响，避免前端看到被模型输入改过的历史
+    assert agent.chat_history[0].content[0]["url"] == expired
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    side_effect=SandboxFileServerError("签发失败"),
+)
+def test_agent_drops_image_url_when_refresh_fails_with_vision(mock_get_download_url):
+    """重签失败时去掉 URL：网关据此退回 read_image 路径文本，不发必然 404 的链接。"""
+    agent = _vision_agent_with_historical_image("https://example.test/expired-old.png")
 
     history = agent._build_llm_history()
 
     assert "url" not in history[0].content[0]
-    assert agent.chat_history[0].content[0]["url"] == "https://example.test/expired-old.png"
     mock_get_download_url.assert_called_once()
+
+
+@patch("aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url")
+def test_agent_skips_image_url_refresh_without_vision(mock_get_download_url):
+    """非多模态主模型：图片本就降级成路径文本，URL 用不上，不白签一轮。"""
+    agent = _vision_agent_with_historical_image("https://example.test/expired-old.png")
+    agent.support_vision = False
+
+    agent._build_llm_history()
+
+    mock_get_download_url.assert_not_called()
 
 
 @patch(
@@ -2041,11 +1983,11 @@ class TestLlmInputHtmlCleanup:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
 
         ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
@@ -2054,6 +1996,24 @@ class TestLlmInputHtmlCleanup:
         assert "knowledge-" not in ai_msgs[0].content
         assert agent.chat_history[0].content == original  # 账本原文不动（单账本语义）
 
+    def test_convert_recovers_think_body_when_only_html(self):
+        """只有知识库召回 + 思考 HTML 而无正文时，回捞思考正文，不能被残留知识库 HTML 干扰判空。"""
+        agent = self._make_agent([ChatPrompt(id="m1", role="assistant", content=f"{self.REF_HTML}{self.THINK_HTML}")])
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+            support_vision=agent.support_vision,
+        )
+
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert ai_msgs[0].content == "深度思考"
+
     def test_cleanup_skips_non_str_content(self):
         content_list = [{"type": "text", "text": "hi"}]
         agent = self._make_agent([ChatPrompt(id="m1", role="assistant", content=content_list)])
@@ -2061,11 +2021,11 @@ class TestLlmInputHtmlCleanup:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
 
         ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
@@ -2081,11 +2041,11 @@ class TestLlmInputHtmlCleanup:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
 
         ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
@@ -2112,11 +2072,11 @@ class TestLlmInputHtmlCleanup:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
 
         if expected_keep:
@@ -2132,11 +2092,11 @@ class TestLlmInputHtmlCleanup:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
         ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
         assert len(ai_msgs) == 1
@@ -4128,11 +4088,11 @@ class TestInjectRoleSystem:
         msgs = convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
         systems = [m for m in msgs if isinstance(m, SystemMessage) and m.content == "角色设定A"]
         assert len(systems) == 1

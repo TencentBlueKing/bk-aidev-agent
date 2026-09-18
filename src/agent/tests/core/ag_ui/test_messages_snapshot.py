@@ -87,11 +87,11 @@ def _llm_contents(agent: ChatCompletionAgent):
             convert_chat_history_to_messages(
                 agent.chat_history,
                 model_context_options=agent.model_context_options,
-                support_vision=agent.support_vision,
                 model_name=agent.model_name,
                 agent_info=agent.agent_info,
                 generating_keyword=agent.generating_keyword,
                 files=agent.files,
+                support_vision=agent.support_vision,
             )
         )
     ]
@@ -140,6 +140,25 @@ def _multimodal_ledger(raw_content):
     return [{"id": "user-1", "role": "user", "content": raw_content, "status": "complete"}]
 
 
+def test_messages_snapshot_normalizes_legacy_top_level_doc_schema_to_property():
+    doc_schema = [[{"type": "tag", "data": {"label": "file-kit", "value": "file-kit", "type": "skill"}}]]
+    agent = ChatCompletionAgent(
+        chat_history=[
+            {
+                "id": "user-1",
+                "role": "user",
+                "content": "生成文件",
+                "docSchema": doc_schema,
+            }
+        ]
+    )
+
+    message = agent._build_snapshot_agui_messages()[0]
+
+    assert message["property"]["docSchema"] == doc_schema
+    assert "docSchema" not in message
+
+
 def test_messages_snapshot_keeps_multimodal_list_as_is():
     """列表形态多模态 content 原样透传，mime_type 不会被改名为 mimeType。"""
     agent = ChatCompletionAgent(chat_history=_multimodal_ledger(MULTIMODAL_CONTENT))
@@ -169,7 +188,9 @@ def test_chat_history_to_langchain_parses_json_string_multimodal():
         role="user",
         content=json.dumps(MULTIMODAL_CONTENT, ensure_ascii=False),
     )
-    messages = _chat_history_to_langchain_messages([chat_prompt])
+    # support_vision=True 保留 binary 原形，聚焦断言 JSON 字符串已被解析成数组；
+    # 图片降级规则由 tests/core/nodes/model/test_chat_history_assembly.py 覆盖
+    messages = _chat_history_to_langchain_messages([chat_prompt], support_vision=True)
 
     assert isinstance(messages[0].content, list)
     assert messages[0].content[0]["type"] == "binary"
@@ -221,11 +242,11 @@ def test_llm_entry_excludes_reasoning():
         convert_chat_history_to_messages(
             agent.chat_history,
             model_context_options=agent.model_context_options,
-            support_vision=agent.support_vision,
             model_name=agent.model_name,
             agent_info=agent.agent_info,
             generating_keyword=agent.generating_keyword,
             files=agent.files,
+            support_vision=agent.support_vision,
         )
     )
     assert not any(isinstance(each, ReasoningLangChainMessage) for each in llm_messages)

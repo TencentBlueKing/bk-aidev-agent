@@ -43,6 +43,7 @@ from aidev_agent.api.domains import BKAIDEV_URL
 from aidev_agent.config import settings
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
+from aidev_agent.utils.file_reference import is_image_content_item
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
 
 try:
@@ -313,8 +314,12 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             content = []
             for item in message["content"]:
                 if isinstance(item, dict) and item.get("type") == "binary":
-                    # 展示用 binary 不能送给模型；图片转成 image_url，其它类型直接丢弃。
-                    if not str(item.get("mime_type") or "").startswith("image/"):
+                    # 展示用 binary 不能送给模型；图片 materialize 成 image_url，其它类型直接丢弃。
+                    # 本层只做 materialize（只有这里拿得到真正要发出去的 url / base64 data），
+                    # 不判定该不该内联 —— 内联与降级在装配链 ``_convert_user_image_content``
+                    # 一处判定完，取不到 url / data 的图片在那里就已经变成路径文本，走不到这层。
+                    # 不经装配链直接调模型的接入方（自行拼 messages）在此保持内联语义不变。
+                    if not is_image_content_item(item):
                         continue
                     image_url = item.get("url")
                     if not image_url and item.get("data"):

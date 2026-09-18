@@ -9,6 +9,7 @@ from aidev_agent.utils.migrations import (
     migration_chat_session_context_from_chat_session_contents_v1,
     migration_knowledge_query_options_from_agent_options_v1,
     migration_model_context_options_from_agent_options_v1,
+    normalize_doc_schema_payload,
 )
 
 
@@ -158,12 +159,48 @@ def test_migration_chat_session_context_from_chat_session_contents_v1_merges_bui
         ({}, "absent"),
     ],
 )
-def test_migration_chat_session_context_from_chat_session_contents_v1_lifts_doc_schema(property_data, expected):
+def test_migration_chat_session_context_from_chat_session_contents_v1_keeps_doc_schema_in_property(
+    property_data, expected
+):
     record = {"id": "1", "role": "user", "content": "你好", "property": property_data}
 
     result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
 
     if expected == "present":
-        assert result["docSchema"] == property_data["docSchema"]
+        assert result["property"]["docSchema"] == property_data["docSchema"]
+        assert "docSchema" not in result
     else:
         assert "docSchema" not in result
+
+
+def test_migration_chat_session_context_from_chat_session_contents_v1_normalizes_legacy_top_level_doc_schema():
+    doc_schema = [[{"type": "tag", "data": {"label": "t", "value": "t", "type": "tool"}}]]
+    record = {"id": "1", "role": "user", "content": "你好", "docSchema": doc_schema}
+
+    result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
+
+    assert result["property"]["docSchema"] == doc_schema
+    assert "docSchema" not in result
+
+
+def test_migration_chat_session_context_from_chat_session_contents_v1_keeps_non_dict_property_as_is():
+    """非 dict 的历史脏 property 原样保留，不替下游抹成空 dict。"""
+    record = {"id": "1", "role": "user", "content": "你好", "property": []}
+
+    result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
+
+    assert result["property"] == []
+
+
+def test_normalize_doc_schema_payload_is_shared_by_snapshot_and_migration():
+    """快照与 migration_v1 共用同一份归一：同一条记录两条路径出来的 property 必须一致。"""
+    doc_schema = [[{"type": "tag", "data": {"label": "t", "value": "t", "type": "tool"}}]]
+    record = {"id": "1", "role": "user", "content": "你好", "docSchema": doc_schema}
+
+    snapshot_payload = dict(record)
+    normalize_doc_schema_payload(snapshot_payload)
+    migrated = migration_chat_session_context_from_chat_session_contents_v1([dict(record)])[0]
+
+    assert snapshot_payload["property"] == migrated["property"] == {"docSchema": doc_schema}
+    assert "docSchema" not in snapshot_payload
+    assert "docSchema" not in migrated
