@@ -33,6 +33,7 @@ from aidev_agent.core.ag_ui.types import (
     SessionPersistenceEventNames,
 )
 from aidev_agent.core.ag_ui.utils import (
+    TOOL_CALLING_PLACEHOLDER,
     get_schema_keys,
     get_stream_payload_input,
 )
@@ -108,6 +109,38 @@ def _to_ledger_dict(record: Any) -> dict:
     if hasattr(record, "model_dump"):
         return record.model_dump()
     return dict(record)
+
+
+def _normalize_doc_schema_payload(payload: dict) -> None:
+    """将旧顶层 docSchema 归一到 property.docSchema。"""
+    raw_property = payload.get("property")
+    if hasattr(raw_property, "model_dump"):
+        property_data = raw_property.model_dump()
+    elif isinstance(raw_property, dict):
+        property_data = dict(raw_property)
+    else:
+        property_data = {}
+
+    if property_data.get("docSchema") is None and payload.get("docSchema") is not None:
+        property_data["docSchema"] = payload["docSchema"]
+    if "docSchema" in property_data:
+        payload["property"] = property_data
+    payload.pop("docSchema", None)
+
+
+def _clear_tool_call_placeholder(payload: dict) -> None:
+    """清掉 assistant 工具调用占位文案，对齐平台读库接口出参。
+
+    只作用于快照副本：占位是为了避免空 content 记录被 LLM 输入视图丢弃，从账本摘掉会让
+    本轮 tool_call 与 tool 结果配对失败。
+    """
+    builtin_property = payload.get("builtin_property") or {}
+    if hasattr(builtin_property, "model_dump"):
+        builtin_property = builtin_property.model_dump()
+    if not isinstance(builtin_property, dict) or not builtin_property.get("tool_calls"):
+        return
+    if payload.get("content") == TOOL_CALLING_PLACEHOLDER:
+        payload["content"] = ""
 
 
 class ChatCompletionAgent(BaseModel):
@@ -1146,8 +1179,9 @@ class ChatCompletionAgent(BaseModel):
         快照对账本全量下发。
 
         下发布局即账本原样：账本记录统一经 model_dump 归一为 dict（role/content 顶层、
-        builtin_property/extra 保留、字段名保持后端原样），不经 AG-UI 消息转换器，
-        不做 role 归一 / camelCase 改名 / status 映射 / multimodal 重排。
+        builtin_property/extra 保留、字段名保持后端原样）；仅将旧顶层 docSchema 归一到
+        property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
+        status 映射 / multimodal 重排。
         用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
         """
         base = []
@@ -1155,7 +1189,10 @@ class ChatCompletionAgent(BaseModel):
             payload = _to_ledger_dict(record)
             # ChatPrompt 经 model_dump 已是全新嵌套结构，重签直接改它不会污染账本；
             # 其余形态与账本共享引用，才需要深拷贝，避免把整段历史（含大 tool 输出）无谓复制一遍。
-            base.append(payload if hasattr(record, "model_dump") else copy.deepcopy(payload))
+            payload = payload if hasattr(record, "model_dump") else copy.deepcopy(payload)
+            _normalize_doc_schema_payload(payload)
+            _clear_tool_call_placeholder(payload)
+            base.append(payload)
         file_service = self._pv_file_service()
         if file_service is not None:
             for payload in base:
@@ -2353,7 +2390,12 @@ class ChatAgentBuilder:
         # item.get("extra") 有可能为 None, 和 item.get("extra", {}) 不等价
         extra = item.get("extra") or {}
         legacy_resources = extra.get("resources") or []
-        doc_schema = item.get("docSchema")
+        property_data = item.get("property")
+        if isinstance(property_data, dict) and property_data.get("docSchema") is not None:
+            doc_schema = property_data["docSchema"]
+        else:
+            # 兼容历史 ChatPrompt 顶层 docSchema，新的持久化与快照统一走 property。
+            doc_schema = item.get("docSchema")
         if doc_schema is None:
             return legacy_resources
         # 文件排在前面：它们带 mime_type，_is_image_resource 判定比 docSchema 的裸 path 更准，

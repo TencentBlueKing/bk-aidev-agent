@@ -140,6 +140,25 @@ def _multimodal_ledger(raw_content):
     return [{"id": "user-1", "role": "user", "content": raw_content, "status": "complete"}]
 
 
+def test_messages_snapshot_normalizes_legacy_top_level_doc_schema_to_property():
+    doc_schema = [[{"type": "tag", "data": {"label": "file-kit", "value": "file-kit", "type": "skill"}}]]
+    agent = ChatCompletionAgent(
+        chat_history=[
+            {
+                "id": "user-1",
+                "role": "user",
+                "content": "生成文件",
+                "docSchema": doc_schema,
+            }
+        ]
+    )
+
+    message = agent._build_snapshot_agui_messages()[0]
+
+    assert message["property"]["docSchema"] == doc_schema
+    assert "docSchema" not in message
+
+
 def test_messages_snapshot_keeps_multimodal_list_as_is():
     """列表形态多模态 content 原样透传，mime_type 不会被改名为 mimeType。"""
     agent = ChatCompletionAgent(chat_history=_multimodal_ledger(MULTIMODAL_CONTENT))

@@ -1292,6 +1292,24 @@ def test_chat_agent_builder_prefers_doc_schema_over_extra_resources(doc_schema, 
     assert builder.file_resources == expected_files
 
 
+def test_chat_agent_builder_reads_doc_schema_from_property():
+    from aidev_agent.services.agent.chat import ChatAgentBuilder
+
+    ctx = _make_dummy_chat_ctx()
+    ctx.session_context_data = [
+        {
+            "role": PromptRole.USER.value,
+            "content": "请生成文件",
+            "property": {"docSchema": [[_tag("tool", "weather_query")]]},
+            "extra": {"resources": [{"type": "tool", "code": "legacy"}]},
+        }
+    ]
+
+    builder = ChatAgentBuilder(ctx)
+
+    assert builder._specific_resources == [{"type": "tool", "code": "weather_query"}]
+
+
 def test_chat_agent_builder_keeps_attachments_when_doc_schema_present():
     """附件不进 docSchema tag，docSchema 存在时也必须继续从 extra.resources 取文件。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder
@@ -2053,6 +2071,24 @@ class TestLlmInputHtmlCleanup:
         assert "think-" not in ai_msgs[0].content
         assert "knowledge-" not in ai_msgs[0].content
         assert agent.chat_history[0].content == original  # 账本原文不动（单账本语义）
+
+    def test_convert_recovers_think_body_when_only_html(self):
+        """只有知识库召回 + 思考 HTML 而无正文时，回捞思考正文，不能被残留知识库 HTML 干扰判空。"""
+        agent = self._make_agent([ChatPrompt(id="m1", role="assistant", content=f"{self.REF_HTML}{self.THINK_HTML}")])
+
+        msgs = convert_chat_history_to_messages(
+            agent.chat_history,
+            model_context_options=agent.model_context_options,
+            support_vision=agent.support_vision,
+            model_name=agent.model_name,
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=agent.files,
+        )
+
+        ai_msgs = [m for m in msgs if isinstance(m, AIMessage)]
+        assert len(ai_msgs) == 1
+        assert ai_msgs[0].content == "深度思考"
 
     def test_cleanup_skips_non_str_content(self):
         content_list = [{"type": "text", "text": "hi"}]

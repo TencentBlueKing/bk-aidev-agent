@@ -120,8 +120,8 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
 
     - ``role``/``content`` 原样透传（非归一）。
     - ``property.extra`` → ChatPrompt ``extra`` 字段（含 command 等协议字段）。
-    - ``property.docSchema`` → ChatPrompt 顶层 ``docSchema``（前端富文本结构，声明本轮引用资源）；
-      缺省时不塞键，装配期借此判定是否降级读 ``extra.resources``。
+    - ``property.docSchema`` 保持在 ``ChatPrompt.property.docSchema``（前端富文本结构，声明本轮引用资源）；
+      旧记录若只有顶层 ``docSchema``，迁移时归一到 property，避免快照同时输出两份。
     - 平铺顶层字段回嵌 ``builtin_property``
         - tool_calls/tool_call_id/duration/message_id/error/type/activity_type
         - convert 链读取的 turn_id/status/created_at/artifacts
@@ -138,7 +138,10 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
         logger.warning("migration_chat_session_context_from_chat_session_contents_v1: 跳过缺 role 记录 %r", record)
         return None
 
-    property_data = record.get("property") or {}
+    raw_property = record.get("property")
+    property_data = dict(raw_property) if isinstance(raw_property, dict) else {}
+    if property_data.get("docSchema") is None and record.get("docSchema") is not None:
+        property_data["docSchema"] = record["docSchema"]
 
     # 平铺顶层字段回嵌 builtin_property：property.builtin_property 为基底，非 None 平铺字段覆盖
     flat_fields = {
@@ -157,8 +160,12 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
     base = property_data.get("builtin_property") or {}
     builtin_property = {**base, **{k: v for k, v in flat_fields.items() if v is not None}}
 
-    # 以原始记录为基底（全属性透传为 __pydantic_extra__），覆盖映射后的关键字段
+    # 以原始记录为基底（全属性透传为 __pydantic_extra__），覆盖映射后的关键字段。
+    # 顶层旧 docSchema 已归一到 property，避免新快照重复输出。
     prompt = dict(record)
+    prompt.pop("docSchema", None)
+    if raw_property is not None or "docSchema" in property_data:
+        prompt["property"] = property_data
     prompt.update(
         {
             "id": str(record.get("id") or uuid.uuid4().hex),
@@ -168,6 +175,4 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
             "builtin_property": builtin_property,
         }
     )
-    if property_data.get("docSchema") is not None:
-        prompt["docSchema"] = property_data["docSchema"]
     return prompt
