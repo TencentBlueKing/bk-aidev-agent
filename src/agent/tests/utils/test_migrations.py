@@ -158,12 +158,25 @@ def test_migration_chat_session_context_from_chat_session_contents_v1_merges_bui
         ({}, "absent"),
     ],
 )
-def test_migration_chat_session_context_from_chat_session_contents_v1_lifts_doc_schema(property_data, expected):
+def test_migration_chat_session_context_from_chat_session_contents_v1_keeps_doc_schema_in_property(
+    property_data, expected
+):
     record = {"id": "1", "role": "user", "content": "你好", "property": property_data}
 
     result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
 
     if expected == "present":
-        assert result["docSchema"] == property_data["docSchema"]
+        assert result["property"]["docSchema"] == property_data["docSchema"]
+        assert "docSchema" not in result
     else:
         assert "docSchema" not in result
+
+
+def test_migration_chat_session_context_from_chat_session_contents_v1_normalizes_legacy_top_level_doc_schema():
+    doc_schema = [[{"type": "tag", "data": {"label": "t", "value": "t", "type": "tool"}}]]
+    record = {"id": "1", "role": "user", "content": "你好", "docSchema": doc_schema}
+
+    result = migration_chat_session_context_from_chat_session_contents_v1([record])[0]
+
+    assert result["property"]["docSchema"] == doc_schema
+    assert "docSchema" not in result

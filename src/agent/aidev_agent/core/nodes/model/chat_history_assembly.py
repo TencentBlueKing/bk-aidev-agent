@@ -382,8 +382,10 @@ def _chat_history_to_langchain_messages(chat_history: list[ChatPrompt]) -> list[
                 # LLM 输入清理：剥离思考 HTML 与知识库召回 HTML（账本保留原文供快照忠实展示）；
                 # content 非 str（list/dict 多模态）时跳过，避免误剥结构化内容
                 if isinstance(content, str):
-                    content = _remove_think(content)
+                    # 先剥知识库召回再剥思考：思考剥空后会回捞 think-body 正文，
+                    # 顺序反了会因残留的知识库 HTML 判定非空而漏捞
                     content = _remove_reference_doc(content)
+                    content = _remove_think(content)
                 # 快照链消费：artifacts 经 builtin_property 显式读取，放入
                 # AIMessage.additional_kwargs（LangChain 标准扩展位）保留产物信息；
                 # 快照侧由 ag_ui 转换器的 _build_assistant_property 直接从账本

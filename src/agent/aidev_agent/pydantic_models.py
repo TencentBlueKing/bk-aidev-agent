@@ -139,6 +139,8 @@ class SessionContentProperty(BaseModel):
     turn_id: str = Field(default="", description="同一次 user-ai 回复的轮次 ID")
     trace_id: str = Field(default="", description="chat 入口 Trace ID；仅创建时传递，未提供时保持为空，更新时不修改")
     extra: SessionContentExtra | None = None
+    # 前端输入框富文本结构，存储协议统一放在 property.docSchema 下。
+    docSchema: list | None = Field(default=None, description="前端输入框富文本结构")  # noqa: N815
 
 
 class ChatPrompt(BaseModel):
