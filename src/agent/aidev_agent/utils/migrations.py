@@ -115,6 +115,33 @@ def migration_chat_session_context_from_chat_session_contents_v1(records: list[d
     return [prompt for each in records if (prompt := _convert_chat_session_content_v1(each)) is not None]
 
 
+def normalize_doc_schema_payload(payload: dict) -> dict:
+    """把旧顶层 ``docSchema`` 归一到 ``property.docSchema`` 并摘掉顶层键，就地修改 ``payload``。
+
+    快照下发（``ChatCompletionAgent._build_snapshot_agui_messages``）与 ``migration_v1`` 共用这一份：
+    同一条记录无论从哪条路径出去，``property`` 形态都必须一致，否则装配期双读兜底会在两条链上
+    看到不同结果。返回归一后的 property，调用方要继续读 ``extra`` / ``turn_id`` 时不必再取一次。
+
+    ``property`` 不是 dict 也不是 pydantic 模型（历史脏数据如 ``[]``）时原样保留，不抹成空 dict：
+    该报错的下游让它报，这里不替下游决定。只有同时存在顶层 ``docSchema`` 需要搬进去时才会被
+    替换成 dict —— 那条记录本来就得有个能放 docSchema 的 property，保不住脏值。
+    """
+    raw_property = payload.get("property")
+    if hasattr(raw_property, "model_dump"):
+        property_data = raw_property.model_dump()
+    elif isinstance(raw_property, dict):
+        property_data = dict(raw_property)
+    else:
+        property_data = {}
+
+    if property_data.get("docSchema") is None and payload.get("docSchema") is not None:
+        property_data["docSchema"] = payload["docSchema"]
+    if property_data:
+        payload["property"] = property_data
+    payload.pop("docSchema", None)
+    return property_data
+
+
 def _convert_chat_session_content_v1(record: dict) -> dict | None:
     """把 get_chat_session_contents 获取的单条会话记录无损转换为 ChatPrompt 形状，供装配期作为单账本使用。
 
@@ -138,10 +165,10 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
         logger.warning("migration_chat_session_context_from_chat_session_contents_v1: 跳过缺 role 记录 %r", record)
         return None
 
-    raw_property = record.get("property")
-    property_data = dict(raw_property) if isinstance(raw_property, dict) else {}
-    if property_data.get("docSchema") is None and record.get("docSchema") is not None:
-        property_data["docSchema"] = record["docSchema"]
+    # 以原始记录为基底（全属性透传为 __pydantic_extra__），顶层旧 docSchema 归一进 property，
+    # 与快照下发共用同一份归一，避免两条链输出不同的 property 形态
+    prompt = dict(record)
+    property_data = normalize_doc_schema_payload(prompt)
 
     # 平铺顶层字段回嵌 builtin_property：property.builtin_property 为基底，非 None 平铺字段覆盖
     flat_fields = {
@@ -160,12 +187,6 @@ def _convert_chat_session_content_v1(record: dict) -> dict | None:
     base = property_data.get("builtin_property") or {}
     builtin_property = {**base, **{k: v for k, v in flat_fields.items() if v is not None}}
 
-    # 以原始记录为基底（全属性透传为 __pydantic_extra__），覆盖映射后的关键字段。
-    # 顶层旧 docSchema 已归一到 property，避免新快照重复输出。
-    prompt = dict(record)
-    prompt.pop("docSchema", None)
-    if raw_property is not None or "docSchema" in property_data:
-        prompt["property"] = property_data
     prompt.update(
         {
             "id": str(record.get("id") or uuid.uuid4().hex),

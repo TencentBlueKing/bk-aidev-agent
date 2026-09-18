@@ -37,6 +37,7 @@ from aidev_agent.core.ag_ui.utils import parse_multimodal_content, parse_reasoni
 from aidev_agent.enums import PromptRole
 from aidev_agent.exceptions import AgentException
 from aidev_agent.pydantic_models import ChatPrompt, ModelContextSettings
+from aidev_agent.utils.file_reference import image_reference_text, is_image_content_item, session_file_identity
 
 logger = logging.getLogger(__name__)
 
@@ -305,9 +306,7 @@ def _truncate_chat_history(
 # ---------------------------------------------------------------------------
 
 
-def _convert_contents(
-    contents: list[ChatPrompt], *, support_vision: bool, model_name: str, files: list[dict]
-) -> list[ChatPrompt]:
+def _convert_contents(contents: list[ChatPrompt], *, model_name: str, files: list[dict]) -> list[ChatPrompt]:
     """将无需送到大模型处理的 content 去掉"""
     new_contents = []
     for each in contents:
@@ -322,13 +321,14 @@ def _convert_contents(
         if each.role == PromptRole.ROLE.value:
             each.role = PromptRole.SYSTEM.value
         if each.role == PromptRole.USER_IMAGE.value:
-            if not support_vision:
-                raise AgentException(message="当前模型不支持图片识别,请切换其他模型")
             each.role = PromptRole.USER.value
             match = _IMAGE_FILE_PATTERN.search(each.content)
             if match:
                 file_path, _ = match.group(1), match.group(2)
-                each.content = [{"type": "image_url", "image_url": {"url": file_path}}]
+                # 只归一形态、不决定是否内联：markdown 图片转成与会话上传图片同构的
+                # 「顶层带 url」形态，交给 _chat_history_to_langchain_messages 一处判定，
+                # 避免旧 USER_IMAGE 与新上传图片走两套内联规则。
+                each.content = [{"type": "image", "url": file_path, "path": file_path}]
                 # 图片不计算实际大小，但不能为 0 —— 给一个大于 0 的占位值
                 files.append({"file_name": file_path, "file_size": 100})
             else:
@@ -341,7 +341,102 @@ def _convert_contents(
     return new_contents
 
 
-def _chat_history_to_langchain_messages(chat_history: list[ChatPrompt]) -> list[BaseMessage]:
+def _image_item_kind(item: dict) -> str | None:
+    """图片内容项分类：``binary``（展示用二进制）/ ``url``（顶层带 url）；非图片返回 None。
+
+    「什么算图片」只在这里判一次：降级转换和本轮可识别性守卫共用，两处分叉会让守卫放过
+    实际会被降级的图片，或者反过来对着非图片报错。
+    """
+    if not isinstance(item, dict):
+        return None
+    if item.get("type") == "binary":
+        return "binary" if is_image_content_item(item) else None
+    return "url" if item.get("url") else None
+
+
+def _can_materialize_image(item: dict) -> bool:
+    """图片项当下能不能真发出去：要么有可取的 ``url``，要么有 base64 ``data``。
+
+    重签失败时 ``fill_user_image_urls(clear_on_failure=True)`` 会摘掉 URL，图片项就落到这里
+    判为不可内联。判定放在装配链而不是网关，是为了让「内联还是降级」只有一个决定点。
+    """
+    return bool(item.get("url") or item.get("data"))
+
+
+def _assert_current_turn_image_recognizable(
+    chat_history: list[ChatPrompt], *, support_vision: bool, vision_model_configured: bool, model_name: str
+) -> None:
+    """本轮带图、主模型又非多模态且没有视觉模型时直接报错，让用户换模型。
+
+    这种组合下系统里不存在任何视觉能力：主模型读不了 image_url，``read_image`` 也因为缺
+    视觉模型不会注册，降级成路径文本只会让模型答「看不到图」，不如明确告知换模型。
+
+    报错文案把两个条件都说清（主模型非多模态 + 未配 ``FALLBACK_VISION_MODEL``）并带上主模型
+    名：只说「不支持图片识别」的话，管理员既不知道是模型选错还是视觉模型没配，也不知道该改哪个。
+    句式对齐 ``exceptions._translate_multimodal_error`` 的网关报错翻译 —— 同一件事（模型读不了图）
+    两条路径给两种说法，用户只会以为遇到了两个问题。
+
+    只看视觉模型有没有配：它是 ``read_image`` 注册的必要条件，缺它就一定读不了图。其余
+    注册条件（``enable_runtime_tool`` / ``runtime_backend_resolver``）不在这里反推 ——
+    抄一份注册规则迟早与 ``graph.py`` 分叉，宁可漏报（软降级）也不误报（把能读图的打挂）。
+
+    只管本轮：历史带图不报错，老会话不该因为换了个模型就整段卡住，降级成路径文本即可。
+    角色与形态在 ``_convert_contents`` 里已归一，这里只认 ``PromptRole.USER`` + list content。
+    """
+    if support_vision or vision_model_configured:
+        return
+    last_user = next((each for each in reversed(chat_history) if each.role == PromptRole.USER.value), None)
+    if last_user is None or not isinstance(last_user.content, list):
+        return
+    if any(_image_item_kind(item) for item in last_user.content):
+        raise AgentException(
+            message=(
+                f"当前模型 {model_name} 不支持图片输入，且未配置视觉模型 FALLBACK_VISION_MODEL，"
+                f"read_image 无法识别图片。请更换支持多模态的模型，或联系管理员配置 FALLBACK_VISION_MODEL。"
+            )
+        )
+
+
+def _convert_user_image_content(content: list[dict], *, inline: bool) -> list[dict]:
+    """图片内容项的唯一判定点：内联则送 image_url，否则降级成 read_image 路径文本。
+
+    ``inline`` 即本轮主模型的 ``support_vision``，对本轮图片和历史图片一视同仁 —— 两条
+    路径各自都要能让模型看到图：多模态主模型自己就能读 image_url，非多模态主模型则依赖
+    ``read_image``。不按「本轮 / 历史」再切一刀：历史图片若降级成路径文本、而 read_image
+    又没注册（需同时满足 skills 已配置、runtime_backend_resolver 存在、视觉模型已配置），
+    模型就只剩一句指向不存在工具的提示，历史图片彻底看不见。
+
+    主模型热切换不会留下脏输入：判定每轮按当前模型重算，切到非多模态模型后整段历史一起
+    降级，不存在上一轮内联过的 image_url 残留下来把整轮打挂 —— 这正是本次要修的故障。
+
+    两种图片形态在此汇合，保证同一轮里不同来源的图片行为一致：
+
+    - ``type=binary``：展示用二进制（会话上传）。内联时原样保留，由网关
+      ``ChatModel._get_request_payload`` 依据 ``url`` / base64 ``data`` materialize 成
+      image_url —— 只有网关那一层拿得到真正要发出去的字节；
+    - 顶层带 ``url``：会话上传文件，以及 ``_convert_contents`` 归一后的旧 USER_IMAGE。
+
+    取不到 ``url`` / ``data`` 的图片（重签失败被摘掉 URL）也在这里降级，不留给网关兜底：
+    网关只负责 materialize，降级判定全在本函数，否则「该不该内联」会散在两层。
+
+    非图片项（文本、非图片 binary）原样透传，由各自下游处理；非图片 binary 交给网关按原有
+    规则丢弃，不在此多判一次类型。
+    """
+    new_content: list[dict] = []
+    for item in content:
+        kind = _image_item_kind(item)
+        if kind is None:
+            new_content.append(item)
+        elif not inline or not _can_materialize_image(item):
+            new_content.append({"type": "text", "text": image_reference_text(session_file_identity(item))})
+        elif kind == "binary":
+            new_content.append(item)
+        else:
+            new_content.append({"type": "image_url", "image_url": {"url": item["url"]}})
+    return new_content
+
+
+def _chat_history_to_langchain_messages(chat_history: list[ChatPrompt], *, support_vision: bool) -> list[BaseMessage]:
     """
     将 ChatPrompt 列表转换为 LangChain 消息列表
     支持从 builtin_property 中提取 tool_calls 和 tool_call_id 等协议字段，
@@ -364,15 +459,7 @@ def _chat_history_to_langchain_messages(chat_history: list[ChatPrompt]) -> list[
                 if multimodal is not None:
                     each.content = multimodal
                 if isinstance(each.content, list):
-                    new_content = []
-                    for each_content in each.content:
-                        if each_content.get("type") == "binary":
-                            new_content.append(each_content)
-                        elif each_content.get("url"):
-                            new_content.append({"type": "image_url", "image_url": {"url": each_content.get("url")}})
-                        else:
-                            new_content.append(each_content)
-                    each.content = new_content
+                    each.content = _convert_user_image_content(each.content, inline=support_vision)
                     messages.append(HumanMessage(id=each.id, content=each.content, additional_kwargs=turn_kwargs))
                 else:
                     messages.append(HumanMessage(id=each.id, content=str(each.content), additional_kwargs=turn_kwargs))
@@ -511,23 +598,38 @@ def convert_chat_history_to_messages(
     chat_history: list[ChatPrompt],
     *,
     model_context_options: ModelContextSettings | None,
-    support_vision: bool,
     model_name: str,
     agent_info: dict | None,
     generating_keyword: str | None,
     files: list[dict],
+    support_vision: bool,
+    vision_model_configured: bool = True,
 ) -> list[BaseMessage]:
     """编排整条装配链：视图 → status 过滤 → 截断 → 角色归一 → LangChain 转换 → 预设注入。
 
     链序与 ChatCompletionAgent.execute() 的消费形态一致；``files`` 传引用，
     USER_IMAGE 记录会在链内对调用方列表原地 append。
+
+    ``support_vision`` 为本轮实际执行的主模型是否支持多模态，决定用户图片走 image_url
+    还是降级成 read_image 路径文本；本轮图片与历史图片按同一判据处理。保持必填 —— 给它
+    默认值等于允许调用方忘传后静默把图片降级掉，而这正是本次要修的故障形态。
+
+    ``vision_model_configured`` 为是否配了视觉模型（即 ``prompt_setting.fallback_vision_model``
+    非空，平台侧由 ``FALLBACK_VISION_MODEL`` 与租户公开多模态模型解析而来），只用于本轮可识别性
+    守卫：与 ``support_vision`` 同时为假才说明系统里没有任何视觉能力。默认 True 表示「假设
+    read_image 可用」，不给自行拼装历史的接入方凭空加一种异常。
     """
     if not chat_history:
         return []
     llm_history = _build_llm_history_view(chat_history, generating_keyword=generating_keyword)
     filtered = _filter_status_for_llm(llm_history)
     truncated = _truncate_chat_history(filtered, model_context_options=model_context_options)
-    converted = _chat_history_to_langchain_messages(
-        _convert_contents(truncated, support_vision=support_vision, model_name=model_name, files=files)
+    normalized = _convert_contents(truncated, model_name=model_name, files=files)
+    _assert_current_turn_image_recognizable(
+        normalized,
+        support_vision=support_vision,
+        vision_model_configured=vision_model_configured,
+        model_name=model_name,
     )
+    converted = _chat_history_to_langchain_messages(normalized, support_vision=support_vision)
     return inject_role_system(converted, agent_info=agent_info, model_name=model_name)
