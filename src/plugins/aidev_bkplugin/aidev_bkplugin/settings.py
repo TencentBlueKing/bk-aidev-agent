@@ -37,6 +37,15 @@ RUN_VER = "ieod" if os.environ.get("BKPAAS_ENGINE_REGION", "default") == "ieod" 
 # OAuth 认证配置
 BKAUTH_BACKEND_TYPE = "bk_ticket" if RUN_VER == "ieod" else "bk_token"
 
+# Celery worker 连上 broker 后禁止假活重连；断连以非 0 退出，由 PaaS 拉起新 worker。
+# 启动阶段仍允许重试。Django 无 namespace 与 CELERY_ 前缀两套都写，兼容 blueapps。
+BROKER_CONNECTION_RETRY = False
+BROKER_CONNECTION_RETRY_ON_STARTUP = True
+WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+CELERY_BROKER_CONNECTION_RETRY = False
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS = True
+
 # 仅社区版需要配置，其它版本已由开发框架处理
 if BKAUTH_BACKEND_TYPE == 'bk_token':
     OAUTH_COOKIES_PARAMS = {"bk_token": "bk_token", "bk_uid": "bk_uid"}

@@ -224,6 +224,11 @@ class AgentConfig(AppConfig):
         if custom_resource_manager:
             resource_manager.replace_defaults(import_string(custom_resource_manager)())
 
+        # Celery worker 断连退出，避免 consumers=0 假活。
+        from aidev_bkplugin.celery_runtime import install_celery_exit_on_broker_loss
+
+        install_celery_exit_on_broker_loss()
+
         # 初始化 OpenTelemetry
         init_bk_aidev_agent_otel()
 
