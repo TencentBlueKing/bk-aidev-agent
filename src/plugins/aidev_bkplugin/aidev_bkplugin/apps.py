@@ -8,6 +8,7 @@ from aidev_agent.utils.module_loading import import_string
 from django.apps import AppConfig
 from django.conf import settings
 
+from aidev_bkplugin.celery_runtime import install_celery_exit_on_broker_loss
 from aidev_bkplugin.services.metric_runtime import set_metric_service
 
 try:
@@ -225,8 +226,6 @@ class AgentConfig(AppConfig):
             resource_manager.replace_defaults(import_string(custom_resource_manager)())
 
         # Celery worker 断连退出，避免 consumers=0 假活。
-        from aidev_bkplugin.celery_runtime import install_celery_exit_on_broker_loss
-
         install_celery_exit_on_broker_loss()
 
         # 初始化 OpenTelemetry
