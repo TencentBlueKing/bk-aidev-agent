@@ -16,6 +16,7 @@ def _make_handler():
     handler = object.__new__(RabbitMQMessageHandler)
     handler._producer_lock_connections = {}
     handler._producer_lock_guard = threading.Lock()
+    handler._producer_lock_io_lock = threading.Lock()
     return handler
 
 
@@ -26,6 +27,13 @@ class _FakeConnection:
         self.is_open = True
         self._channel_error = channel_error
         self.closed = False
+        self.process_calls = 0
+        self.fail_keepalive = False
+
+    def process_data_events(self, time_limit: float = 0) -> None:
+        self.process_calls += 1
+        if self.fail_keepalive:
+            raise ConnectionResetError(104, "Connection reset by peer")
 
     def channel(self):
         raise self._channel_error
@@ -126,3 +134,38 @@ def test_has_active_producer_returns_false_when_lock_queue_is_missing():
 def test_rabbitmq_read_write_intervals_are_half_second():
     assert RabbitMQMessageHandler.BUFFER_FLUSH_INTERVAL == 0.5
     assert RabbitMQMessageHandler.REPLAY_MESSAGE_RETRY_INTERVAL == 0.5
+
+
+def test_keepalive_pumps_held_producer_lock():
+    handler = _make_handler()
+    conn = _FakeConnection(None)
+    handler._producer_lock_connections["tid-keepalive"] = conn
+
+    handler._keepalive_held_connections()
+
+    assert conn.process_calls == 1
+    assert "tid-keepalive" in handler._producer_lock_connections
+
+
+def test_keepalive_does_not_block_release_producer():
+    handler = _make_handler()
+    conn = _FakeConnection(StreamLostError("Stream connection lost"))
+    handler._producer_lock_connections["tid-race"] = conn
+
+    handler._keepalive_held_connections()
+    handler.release_producer("tid-race")
+
+    assert "tid-race" not in handler._producer_lock_connections
+    assert conn.closed is True
+
+
+def test_keepalive_drops_dead_producer_lock():
+    handler = _make_handler()
+    conn = _FakeConnection(None)
+    conn.fail_keepalive = True
+    handler._producer_lock_connections["tid-dead"] = conn
+
+    handler._keepalive_held_connections()
+
+    assert "tid-dead" not in handler._producer_lock_connections
+    assert conn.closed is True

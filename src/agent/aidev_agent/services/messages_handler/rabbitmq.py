@@ -1,5 +1,6 @@
 import contextlib
 import json
+import logging
 import os
 import pickle
 import queue
@@ -8,7 +9,6 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from logging import getLogger
 from typing import Any, ClassVar, Optional
 from urllib.parse import quote
 
@@ -20,9 +20,47 @@ from .constants import EOD_CHUNK, QueueNamePrefixes
 from .replay_buffer_mixin import ReplayBufferMixin
 from .telemetry import record_message_publish_metrics
 
-logger = getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 env = Env()
+
+_AMQP_CLIENT_LOGGING_CONFIGURED = False
+_AMQP_CLIENT_LOGGING_LOCK = threading.Lock()
+_PIKA_EXPECTED_DISCONNECT_MARKERS = (
+    "ConnectionResetError",
+    "StreamLostError",
+    "Transport indicated EOF",
+    "connection lost",
+)
+
+
+class _PikaExpectedDisconnectFilter(logging.Filter):
+    """Broker RST / idle disconnect is recovered by the SDK; do not keep it as ERROR."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.ERROR:
+            return True
+        message = record.getMessage()
+        if record.exc_info and record.exc_info[1] is not None:
+            message = f"{message} {record.exc_info[1]!r}"
+        if any(marker in message for marker in _PIKA_EXPECTED_DISCONNECT_MARKERS):
+            record.levelno = logging.WARNING
+            record.levelname = "WARNING"
+        return True
+
+
+def configure_amqp_client_logging() -> None:
+    """Silence pika/rstream handshake INFO and demote expected broker RST."""
+    global _AMQP_CLIENT_LOGGING_CONFIGURED
+    with _AMQP_CLIENT_LOGGING_LOCK:
+        if _AMQP_CLIENT_LOGGING_CONFIGURED:
+            return
+        pika_logger = logging.getLogger("pika")
+        pika_logger.setLevel(logging.WARNING)
+        if not any(isinstance(item, _PikaExpectedDisconnectFilter) for item in pika_logger.filters):
+            pika_logger.addFilter(_PikaExpectedDisconnectFilter())
+        logging.getLogger("rstream").setLevel(logging.WARNING)
+        _AMQP_CLIENT_LOGGING_CONFIGURED = True
 
 
 class _RabbitMQConsumerMixin:
@@ -167,7 +205,7 @@ class _RabbitMQConsumerMixin:
                     f"Consumer preempted for thread_id={thread_id}: old={old_consumer_id[:8]}, new={consumer_id[:8]}"
                 )
 
-        logger.info(
+        logger.debug(
             "[RabbitMQ] consumer acquired thread_id=%s consumer_id=%s preempted_old=%s",
             thread_id,
             consumer_id[:8],
@@ -282,7 +320,7 @@ class _RabbitMQConsumerMixin:
             try:
                 channel.queue_declare(queue=consumer_queue, passive=True)
             except Exception:
-                logger.info(
+                logger.debug(
                     "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=missing_queue",
                     thread_id,
                     consumer_id[:8],
@@ -318,7 +356,7 @@ class _RabbitMQConsumerMixin:
             )
             self._send_exit_signal(thread_id, consumer_id)
 
-        logger.info(
+        logger.debug(
             "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=%s",
             thread_id,
             consumer_id[:8],
@@ -1089,6 +1127,23 @@ class RabbitMQConnectionPool:
         # 连接失效或池已满，关闭连接
         self._discard_connection(connection)
 
+    def keepalive_idle_connections(self) -> None:
+        """Pump heartbeats on idle pooled connections so broker RST happens before lease."""
+        idle: list[pika.BlockingConnection] = []
+        while True:
+            try:
+                idle.append(self._pool.get_nowait())
+            except queue.Empty:
+                break
+        for connection in idle:
+            if self._is_connection_valid(connection):
+                try:
+                    self._pool.put_nowait(connection)
+                    continue
+                except queue.Full:
+                    pass
+            self._discard_connection(connection)
+
     def _close_connection(self, connection: pika.BlockingConnection) -> None:
         """安全关闭连接"""
         try:
@@ -1249,6 +1304,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
 
     def _init_rabbitmq(self):
         """初始化 RabbitMQ 连接"""
+        configure_amqp_client_logging()
         self._rabbitmq_url = self._get_rabbitmq_url()
 
         # 创建连接池
@@ -1267,6 +1323,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
         self._replay_wait_condition = threading.Condition()
         self._producer_lock_connections: dict[str, pika.BlockingConnection] = {}
         self._producer_lock_guard = threading.Lock()
+        self._producer_lock_io_lock = threading.Lock()
 
         # flush 与 replay peek 的互斥锁（per thread_id，进程内）
         # 避免 replay 读取到本进程尚未完整发布的 flush 批次
@@ -1517,10 +1574,10 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
             try:
                 connection = self._acquire_dedicated_exclusive_queue_connection(lock_queue)
                 self._producer_lock_connections[thread_id] = connection
-                logger.info("[RabbitMQ] producer lock acquired thread_id=%s queue=%s", thread_id, lock_queue)
+                logger.debug("[RabbitMQ] producer lock acquired thread_id=%s queue=%s", thread_id, lock_queue)
                 return True
             except Exception as e:
-                logger.info("[RabbitMQ] producer lock busy thread_id=%s queue=%s error=%s", thread_id, lock_queue, e)
+                logger.debug("[RabbitMQ] producer lock busy thread_id=%s queue=%s error=%s", thread_id, lock_queue, e)
                 if connection and getattr(connection, "is_open", False):
                     with contextlib.suppress(Exception):
                         connection.close()
@@ -1550,56 +1607,82 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
     def release_producer(self, thread_id: str) -> None:
         """释放会话级生产者写入权。"""
         lock_queue = self._get_producer_lock_queue_name(thread_id)
-        with self._producer_lock_guard:
-            connection = self._producer_lock_connections.pop(thread_id, None)
+        with self._producer_lock_io_lock:
+            with self._producer_lock_guard:
+                connection = self._producer_lock_connections.pop(thread_id, None)
 
-        if not connection:
-            logger.info(
-                "[RabbitMQ] producer lock release skipped (no connection) thread_id=%s queue=%s",
+            if not connection:
+                logger.debug(
+                    "[RabbitMQ] producer lock release skipped (no connection) thread_id=%s queue=%s",
+                    thread_id,
+                    lock_queue,
+                )
+                return
+
+            logger.debug(
+                "[RabbitMQ] release_producer enter thread_id=%s queue=%s connection_is_open=%s",
                 thread_id,
                 lock_queue,
+                getattr(connection, "is_open", None),
             )
-            return
-
-        logger.info(
-            "[RabbitMQ] release_producer enter thread_id=%s queue=%s connection_is_open=%s",
-            thread_id,
-            lock_queue,
-            getattr(connection, "is_open", None),
-        )
-        channel = None
-        connection_already_closed = False
-        try:
-            if getattr(connection, "is_open", False):
-                try:
-                    channel = connection.channel()
+            channel = None
+            connection_already_closed = False
+            try:
+                if getattr(connection, "is_open", False):
+                    try:
+                        channel = connection.channel()
+                        with contextlib.suppress(Exception):
+                            channel.queue_delete(queue=lock_queue)
+                    except Exception as e:
+                        # 连接已被对端重置/关闭：exclusive queue 随连接断开自动删除，
+                        # 无需再 queue_delete，降级走连接清理路径，不让异常冒泡
+                        connection_already_closed = True
+                        channel = None
+                        logger.warning(
+                            "[RabbitMQ] producer lock connection already closed, skip queue_delete "
+                            "thread_id=%s queue=%s error=%s",
+                            thread_id,
+                            lock_queue,
+                            e,
+                        )
+            finally:
+                if channel and getattr(channel, "is_open", False):
                     with contextlib.suppress(Exception):
-                        channel.queue_delete(queue=lock_queue)
+                        channel.close()
+                if getattr(connection, "is_open", False):
+                    with contextlib.suppress(Exception):
+                        connection.close()
+                logger.debug(
+                    "[RabbitMQ] producer lock released thread_id=%s queue=%s connection_already_closed=%s",
+                    thread_id,
+                    lock_queue,
+                    connection_already_closed,
+                )
+
+    def _keepalive_held_connections(self) -> None:
+        """Pump heartbeats on dedicated producer-lock connections held across LLM waits."""
+        with self._producer_lock_io_lock:
+            with self._producer_lock_guard:
+                held = list(self._producer_lock_connections.items())
+            for thread_id, connection in held:
+                try:
+                    if getattr(connection, "is_open", False):
+                        connection.process_data_events(time_limit=0)
                 except Exception as e:
-                    # 连接已被对端重置/关闭：exclusive queue 随连接断开自动删除，
-                    # 无需再 queue_delete，降级走连接清理路径，不让异常冒泡
-                    connection_already_closed = True
-                    channel = None
                     logger.warning(
-                        "[RabbitMQ] producer lock connection already closed, skip queue_delete "
-                        "thread_id=%s queue=%s error=%s",
+                        "[RabbitMQ] producer lock keepalive failed, dropping connection thread_id=%s error=%s",
                         thread_id,
-                        lock_queue,
                         e,
                     )
-        finally:
-            if channel and getattr(channel, "is_open", False):
-                with contextlib.suppress(Exception):
-                    channel.close()
-            if getattr(connection, "is_open", False):
-                with contextlib.suppress(Exception):
-                    connection.close()
-            logger.info(
-                "[RabbitMQ] producer lock released thread_id=%s queue=%s connection_already_closed=%s",
-                thread_id,
-                lock_queue,
-                connection_already_closed,
-            )
+                    with self._producer_lock_guard:
+                        if self._producer_lock_connections.get(thread_id) is connection:
+                            self._producer_lock_connections.pop(thread_id, None)
+                    with contextlib.suppress(Exception):
+                        if getattr(connection, "is_open", False):
+                            connection.close()
+        pool = getattr(self, "_connection_pool", None)
+        if pool is not None:
+            pool.keepalive_idle_connections()
 
     def _ensure_active_consumer_queue(self, channel: Any, thread_id: str) -> str:
         queue_name = self._get_active_consumer_queue_name(thread_id)
@@ -1622,7 +1705,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                 body=payload,
                 properties=pika.BasicProperties(delivery_mode=2),
             )
-        logger.info("[RabbitMQ] consumer acquired thread_id=%s consumer_id=%s", thread_id, consumer_id[:8])
+        logger.debug("[RabbitMQ] consumer acquired thread_id=%s consumer_id=%s", thread_id, consumer_id[:8])
         return consumer_id
 
     def wait_for_previous_consumer(self, thread_id: str, timeout: float = 3.0) -> bool:
@@ -1651,7 +1734,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                 queue_name = self._ensure_active_consumer_queue(channel, thread_id)
                 queue_info = channel.queue_declare(queue=queue_name, durable=True, passive=True)
             except Exception:
-                logger.info(
+                logger.debug(
                     "[RabbitMQ] consumer released thread_id=%s consumer_id=%s reason=missing_queue",
                     thread_id,
                     consumer_id[:8],
@@ -1681,7 +1764,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                     properties=pika.BasicProperties(delivery_mode=2),
                 )
 
-        logger.info(
+        logger.debug(
             "[RabbitMQ] consumer released thread_id=%s consumer_id=%s removed=%s",
             thread_id,
             consumer_id[:8],
@@ -1776,8 +1859,10 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
                 if self._daemon_stop_event.wait(timeout=self.BUFFER_FLUSH_INTERVAL):
                     break
 
-                # 批量推送消息
-                self._flush_messages()
+                try:
+                    self._flush_messages()
+                finally:
+                    self._keepalive_held_connections()
             except Exception as e:
                 logger.error(f"Error in daemon worker: {e}")
 
@@ -2195,7 +2280,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
     def __del__(self):
         """析构函数：停止守护线程并关闭连接池"""
         with contextlib.suppress(Exception):
-            with self._producer_lock_guard:
+            with self._producer_lock_io_lock, self._producer_lock_guard:
                 lock_connections = list(self._producer_lock_connections.values())
                 self._producer_lock_connections.clear()
             for connection in lock_connections:
