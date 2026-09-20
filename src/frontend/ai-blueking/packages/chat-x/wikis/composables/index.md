@@ -17,6 +17,8 @@
 | `useCustomTabConsumer`       | 自定义 Tab 管理 Consumer；在后代组件中注入并操作 Tab（添加/移除/选中）                                                            | [查看](./use-custom-tab.md)       |
 | `useArtifactPreviewProvider` | 文件产物预览 Provider；维护命中文件 `outputId`，通过 `onOpen` 触发侧栏「文件产物」Tab                                               | [查看](./use-artifact-preview.md) |
 | `useArtifactPreviewConsumer` | 文件产物预览 Consumer；在深层文件卡片中注入，点击触发 `openPreview`                                                               | [查看](./use-artifact-preview.md) |
+| `triggerArtifactDownload`    | 用临时 `<a download>` 触发浏览器下载；与产物预览同文件导出                                                                        | [查看](./use-artifact-preview.md) |
+| `useUserQuestion`            | UserQuestion 答题分页 / 完成态 / resume payload；实现在 interrupt 子模块，经包入口导出                                             | [查看](/components/agent/user-question-card) |
 | `useInputMentionProvider`    | 「资源插入输入框」Provider；由持有 `ChatInput` 的容器提供 `insertMention`                                                          | [查看](./use-input-mention.md)    |
 | `useInputMentionConsumer`    | 「资源插入输入框」Consumer；无 Provider（只读 / 分享态）时返回 `undefined`，调用方据此隐藏引用入口                                  | [查看](./use-input-mention.md)    |
 | `useFullScreen`              | 浏览器原生全屏控制；嗅探标准/WebKit API，`isFullScreen` 与 ESC 退出同步；`ChatContainer` 侧栏全屏使用                               | [查看](./use-full-screen.md)      |
@@ -32,6 +34,8 @@
 | `useGlobalConfig`        | 根容器组件                    | 向后代 provide 全局展示配置（`size` / `supportUpload` / `timezone` / `menuSources`）    | [查看](./use-global-config.md)         |
 | `injectGlobalConfig`     | 任意后代组件                  | 取出全局展示配置，无 Provider 时返回 `undefined`                                        | [查看](./use-global-config.md)         |
 | `useCommandSelection`    | `AiSlashInput`                | edix 编辑器的光标位置快照工具；返回 `GetCursorPosition` 命令和 `commandSelection`       | [查看](./use-command-selection.md)     |
+| `useFlowNodeActions`     | `FlowAgentContent`            | **未从包入口导出**。源码在 `src/components/chat-content/flow-agent-content/use-flow-node-actions.ts` | [查看](./use-flow-node-actions.md) |
+| `use-common.ts`          | `ChatContainer` 等            | **未从包入口导出**。含 `useKeywordProvider` / `useRenderModeProvider` / `useCommonTippyProvider` / `useExecutionPanelProvider` / `useExecutionPanelInject` 等，无独立文档 | — |
 
 ## 引入方式
 
@@ -58,6 +62,10 @@ import {
   useArtifactPreviewProvider,
   useArtifactPreviewConsumer,
   FILE_ARTIFACT_TAB_NAME,
+  triggerArtifactDownload,
+
+  // UserQuestion（实现在 interrupt 子模块）
+  useUserQuestion,
 
   // 资源插入输入框（Provider/Consumer）
   useInputMentionProvider,

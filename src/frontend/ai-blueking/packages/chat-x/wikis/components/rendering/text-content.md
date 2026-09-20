@@ -15,6 +15,7 @@ relatedComponents:
   - slug: mention-text
     relation: 文档含资源标签时的替代渲染
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -22,6 +23,10 @@ sinceVersion: 1.0.0
 </script>
 
 # TextContent 文本内容
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ContentRender](/components/rendering/content-render) / [MessageRender](/components/message/message-render) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { TextContent } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/text-content/text-content.vue`
@@ -57,7 +62,7 @@ div.ai-text-content
 </template>
 
 <script setup lang="ts">
-  import { TextContent } from '@blueking/chat-x';
+  // TextContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
 </script>
 ```
 

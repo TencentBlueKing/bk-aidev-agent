@@ -244,6 +244,37 @@ const payload = buildSkipResumePayload(interrupt);
 // }
 ```
 
+## useUserQuestion 与选项辅助
+
+以下符号经 interrupt 子 barrel 从 `@blueking/chat-x` 导出，实现在 `src/components/chat-message/interrupt-message/user-question/use-user-question.ts`（不在 `composables/index.ts`）。
+
+| 符号 | 说明 |
+| --- | --- |
+| `useUserQuestion` | 答题分页、完成态、`setAnswer` / `buildResolvePayload` / `buildSkipPayload` |
+| `buildSkipResumePayload` | 构造 skip resume（`status: 'cancelled'`，`answers: []`） |
+| `OTHERS_OPTION_LABEL` | Others 选项的固定 `label`（`'others'`） |
+| `toLetter` | 选项序号：0 → A，超过 26 回退数字 |
+| `NormalizedUserQuestionOption` | 选择题内部展示类型（含 `letter` / `isOthers`） |
+
+```typescript
+import {
+  OTHERS_OPTION_LABEL,
+  toLetter,
+  useUserQuestion,
+  type NormalizedUserQuestionOption,
+} from '@blueking/chat-x';
+
+const {
+  questions,
+  currentIndex,
+  completed,
+  setAnswer,
+  buildResolvePayload,
+} = useUserQuestion(() => pendingInterrupt);
+```
+
+自定义 `#question` 面板时，作答有效调用 slot 的 `setAnswer`（即 composable 的 `setAnswer`），无需自己拼 resume。
+
 ## 自定义题目渲染（#question slot）
 
 默认每道题由 [UserQuestionChoice](/components/agent/user-question-choice) 渲染；业务可覆盖 `#question` slot 接入自定义表单：

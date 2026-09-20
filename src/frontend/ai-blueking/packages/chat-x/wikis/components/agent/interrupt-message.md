@@ -1,8 +1,10 @@
 ---
-name: InterruptMessage 中断消息
+name: InterruptMessageRender 中断消息
 slug: interrupt-message
 kind: component
 domain: agent
+exportSymbol: InterruptMessageRender
+exportStatus: public
 description: 渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果。
 aiSummary: >
   渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果（审批单 / 用户回答）。
@@ -166,7 +168,12 @@ sinceVersion: 1.0.0
   }
 </script>
 
-# InterruptMessage 中断消息
+# InterruptMessageRender 中断消息
+
+| 名称 | 种类 |
+| --- | --- |
+| `InterruptMessage` | TS 消息类型 |
+| `InterruptMessageRender` | 包入口 Vue 组件 |
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/interrupt-message/interrupt-message.vue`

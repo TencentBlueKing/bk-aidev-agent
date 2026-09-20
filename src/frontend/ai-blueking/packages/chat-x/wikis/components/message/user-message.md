@@ -24,6 +24,7 @@ relatedComponents:
   - slug: chat-input
     relation: 编辑态普通消息使用 ChatInput
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

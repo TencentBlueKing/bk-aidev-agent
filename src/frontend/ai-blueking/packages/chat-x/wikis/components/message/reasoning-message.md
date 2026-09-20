@@ -15,6 +15,7 @@ relatedComponents:
   - slug: markdown-content
     relation: 内容区通过 Markdown 渲染推理文本
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

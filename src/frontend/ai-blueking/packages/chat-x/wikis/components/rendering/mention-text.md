@@ -17,6 +17,7 @@ relatedComponents:
   - slug: text-content
     relation: 纯文本消息仍走 TextContent
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -47,6 +48,9 @@ sinceVersion: 0.0.51
 </script>
 
 # MentionText 标签文本
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [UserMessage](/components/message/user-message) / [MessageRender](/components/message/message-render) 使用。
 
 > **能力域**：内容渲染
 

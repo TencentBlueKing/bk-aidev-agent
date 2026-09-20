@@ -14,6 +14,7 @@ relatedComponents:
   - slug: activity-layout
     relation: 活动消息的另一种折叠布局
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

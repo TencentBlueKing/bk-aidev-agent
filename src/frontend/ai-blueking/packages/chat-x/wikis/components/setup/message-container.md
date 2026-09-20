@@ -3,9 +3,9 @@ name: MessageContainer 消息列表容器
 slug: message-container
 kind: component
 domain: setup
-description: 负责消息分组渲染、滚动控制、工具栏和消息插槽透传。
+description: 负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
 aiSummary: >
-  负责消息分组渲染、滚动控制、工具栏和消息插槽透传。
+  负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
   源码位置：src/components/chat-message/message-container/message-container.vue。
 relatedComponents:
   - slug: message-render
@@ -276,7 +276,7 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-message/message-container/message-container.vue`
 - **能力域**：对话搭建
-- **能力说明**：负责消息分组渲染、滚动控制、工具栏和消息插槽透传。
+- **能力说明**：负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
 
 
 
@@ -1041,7 +1041,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | 属性名                   | 类型                                                                                         | 默认值  | 说明                                                                                                                                     |
 | ------------------------ | -------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
-| messageGroups            | `MessageGroup[]`                                                                             | —       | 预计算的消息分组；传入时跳过内部分组逻辑，由 `ChatContainer` 通过 `useMessageGroup` 提供                                                 |
+| messageGroups            | `MessageGroup[]`                                                                             | —       | **必填**。本组件不分组；由调用方用 `useMessageGroup` 算好后传入。`ChatContainer` 会代为计算。 |
 | messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态，控制底部「停止生成」按钮显示；`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入                                                                                                   |
 | messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
 | updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
@@ -1082,7 +1082,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 ```typescript
 import { MessageRole, MessageStatus, MessageToolsStatus, type Message, type MessageGroup, type IToolBtn } from '@blueking/chat-x';
 
-// 消息组（由 useMessageGroup 生成，也可手动传入 messageGroups）
+// 消息组（必须传入 useMessageGroup 的结果）
 interface MessageGroup {
   checked: boolean;
   isHover: boolean;

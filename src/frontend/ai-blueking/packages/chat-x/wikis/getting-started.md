@@ -70,10 +70,13 @@ import { ChatInput, MessageContainer } from '@blueking/chat-x';
 import { MessageStatus } from '@blueking/chat-x';
 
 MessageStatus.Pending; // 等待响应
+MessageStatus.Fetching; // 请求中
 MessageStatus.Streaming; // 流式输出中
 MessageStatus.Complete; // 已完成
+MessageStatus.Completed; // 与 Complete 语义相同，兼容外部协议
 MessageStatus.Error; // 出错
 MessageStatus.Stop; // 已停止
+MessageStatus.StopLoading; // 停止中的加载态
 MessageStatus.Success; // 成功
 MessageStatus.Disabled; // 已禁用
 ```

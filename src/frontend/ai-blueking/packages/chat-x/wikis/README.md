@@ -110,7 +110,7 @@ const handleUserAction = (tool) => {
 - [MessageRender 消息渲染器](./components/message/message-render)
 - [ContentRender 内容渲染器](./components/rendering/content-render)
 - [ChatInput 聊天输入框](./components/input/chat-input)
-- [ToolcallRender 工具调用渲染器](./components/agent/toolcall-render)
+- [ToolCallRender 工具调用渲染器](./components/agent/toolcall-render)
 - [MessageTools 消息工具栏](./components/feedback/message-tools)
 - [AiImage 图片展示](./components/medias/ai-image)
 
@@ -141,16 +141,16 @@ const handleUserAction = (tool) => {
 - [常量枚举](./types/constants.md)
 
 ### 图标
-- [图标使用指南](./icons/README.md)
+- [图标使用指南](./icons/index.md)
 
 ### 工具函数
-- [工具函数](./utils/README.md)
+- [工具函数](./utils/index.md)
 
 ### 国际化
-- [国际化](./i18n/README.md)
+- [国际化](./i18n/index.md)
 
 ### 编辑器引擎
-- [Edix 编辑器引擎](./edix/README.md)
+- [Edix 编辑器引擎](./edix/index.md)
 
 ## 依赖说明
 
@@ -175,4 +175,4 @@ const handleUserAction = (tool) => {
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](../LICENSE)
+MIT License - 详见仓库根目录 [LICENSE.txt](../../../../../../LICENSE.txt)

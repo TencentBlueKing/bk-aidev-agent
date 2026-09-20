@@ -16,9 +16,14 @@ relatedComponents:
   - slug: mention-tag
     relation: 文档中的 tag 节点由 MentionTag 渲染
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 # AiSlashInput 富文本命令输入
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ChatInput](/components/input/chat-input) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { AiSlashInput } from '@blueking/chat-x'`。
 
 > **能力域**：输入交互
 

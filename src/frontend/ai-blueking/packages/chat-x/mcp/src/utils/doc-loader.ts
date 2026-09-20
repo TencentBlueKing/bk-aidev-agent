@@ -31,6 +31,7 @@ export interface DocEntry {
   description: string;
   docFile: string;
   domain?: string;
+  exportStatus?: 'internal' | 'placeholder' | 'public';
   kind: string;
   name: string;
   relatedComponents: Array<{ relation: string; slug: string }>;

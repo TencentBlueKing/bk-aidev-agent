@@ -1,8 +1,10 @@
 ---
-name: ToolcallRender 工具调用渲染器
+name: ToolCallRender 工具调用渲染器
 slug: toolcall-render
 kind: component
 domain: agent
+exportSymbol: ToolCallRender
+exportStatus: public
 description: 渲染 assistant toolCalls，展示工具调用状态、参数和结果。
 aiSummary: >
   渲染 assistant toolCalls，展示工具调用状态、参数和结果。
@@ -125,7 +127,7 @@ sinceVersion: 1.0.0
   };
 </script>
 
-# ToolcallRender 工具调用渲染器
+# ToolCallRender 工具调用渲染器
 ## 源码事实
 
 - **源码位置**：`src/components/tool-call/toolcall-render/toolcall-render.vue`
@@ -163,14 +165,14 @@ sinceVersion: 1.0.0
 
 ```vue
 <template>
-  <ToolcallRender
+  <ToolCallRender
     :tool-call="toolCall"
     :status="MessageStatus.Complete"
   />
 </template>
 
 <script setup lang="ts">
-  import { ToolcallRender, MessageStatus, MessageContentType, type ToolCall } from '@blueking/chat-x';
+  import { ToolCallRender, MessageStatus, MessageContentType, type ToolCall } from '@blueking/chat-x';
 
   const toolCall: ToolCall = {
     id: 'call_1',
@@ -307,10 +309,10 @@ durationDisplay = formatDuration(props.duration || toolCall?.toolMessage?.durati
 
 ```vue
 <!-- 方式一：直接传 duration prop（优先） -->
-<ToolcallRender :tool-call="toolCall" status="complete" :duration="1200" />
+<ToolCallRender :tool-call="toolCall" status="complete" :duration="1200" />
 
 <!-- 方式二（推荐）：duration 放在 toolMessage 中，无需额外 prop -->
-<ToolcallRender :tool-call="toolCallWithDuration" status="complete" />
+<ToolCallRender :tool-call="toolCallWithDuration" status="complete" />
 ```
 
 ```typescript
@@ -386,7 +388,7 @@ const failedToolCall: ToolCall = {
 
 ## 与 AssistantMessage 配合
 
-`ToolcallRender` 通常不需要单独使用，将 `toolCalls` 传给 `AssistantMessage`，会自动为每个工具调用渲染 `ToolcallRender`：
+`ToolCallRender` 通常不需要单独使用，将 `toolCalls` 传给 `AssistantMessage`，会自动为每个工具调用渲染 `ToolCallRender`：
 
 ```typescript
 const assistantMessage = {
@@ -418,7 +420,7 @@ const assistantMessage = {
 
 ```vue
 <template>
-  <ToolcallRender
+  <ToolCallRender
     v-for="toolCall in assistantMessage.toolCalls"
     :key="toolCall.id"
     :tool-call="toolCall"
@@ -482,7 +484,7 @@ interface ToolMessage {
   role: 'tool';
   content: string; // 返回内容（通常为 JSON 字符串）
   status: MessageStatus;
-  duration: number; // 调用耗时（毫秒），被 ToolcallRender 自动读取
+  duration: number; // 调用耗时（毫秒），被 ToolCallRender 自动读取
   error?: string; // 错误信息（仅当 content 为空时由 ToolMessage 展示）
   toolCallId: string; // 对应 ToolCall.id
 }

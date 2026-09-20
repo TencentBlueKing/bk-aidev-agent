@@ -19,6 +19,7 @@ relatedComponents:
   - slug: chat-container
     relation: uid / onInterruptResume / 侧栏 Tab 与 ChatContainer 联动
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -448,7 +449,7 @@ const messages = [
 
 ### 节点详情 Tab
 
-点击节点的「详情」按钮，内部调用 `useCustomTabConsumer().addCustomTab()` 在 `ChatContainer` 侧边栏新开一个 Tab，渲染 `BkFlowNodeDetail`（或 `getSideRenderComponent` 返回的自定义组件），该组件提供：
+点击节点的「详情」按钮，内部调用 `useCustomTabConsumer().addCustomTab()` 在 `ChatContainer` 侧边栏新开一个 Tab，渲染 `FlowAgentNodeDetail`（或 `getSideRenderComponent` 返回的自定义组件），该组件提供：
 
 - **节点配置** Tab：基础信息表单（流程模板、节点名称、步骤名称、失败处理、超时控制）+ 输入参数表 + 输出参数表
 - **节点输出** Tab：结构化输出参数表

@@ -4,17 +4,27 @@
 
 ## 函数列表
 
-| 函数名                     | 说明                                              |
-| -------------------------- | ------------------------------------------------- |
-| `completeMarkdown`         | Markdown 语法补全                                 |
-| `completeMarkdownSyntax`   | 流式 Markdown 语法补全                            |
-| `getCookieByName`          | 获取 Cookie 值                                    |
-| `mergeToolsById`           | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏   |
-| `collectMessageArtifacts`  | 从会话消息里收集「会话产物」作为输入框菜单条目    |
-| `toArtifactMenuItem`       | 把单个文件产物转成输入框菜单条目                  |
-| `toArtifactTagNode`        | 把文件转成 `artifact` 标签节点（`name`→`label`、`outputId`→`value`） |
-| `appendArtifactTags`       | 发送前把附件补成一行 `artifact` 标签，按 `value` 去重 |
-| `omitArtifactTags`         | 回显 / 编辑回填前剥掉由附件卡片承载的 `artifact` 标签 |
+| 函数名 | 说明 |
+| --- | --- |
+| `completeMarkdownSyntax` | 流式 Markdown 语法补全，返回 `{ content, suffix; isIncomplete?: boolean }` |
+| `needsMarkdownCompletion` | 是否仍缺闭合语法（行切分实现） |
+| `removeCompletionSuffix` | 去掉上一轮补全后缀（行切分实现） |
+| `MarkdownCompleteOptions` / `MarkdownCompleteResult` | 行切分补全器的选项与结果类型；同名函数已被 stream 版覆盖 |
+| `getCookieByName` | 获取 Cookie 值 |
+| `formatDuration` / `formatElapsedTime` / `generateUUID` | 耗时格式化与 id |
+| `mergeToolsById` | 按 id 合并消息工具栏按钮，`hidden: true` 可隐藏 |
+| `collectMessageArtifacts` | 从会话消息收集产物菜单条目 |
+| `getMessageArtifacts` | 从单条消息提取带 `outputId` 的产物 |
+| `toArtifactMenuItem` | 把单个文件产物转成输入框菜单条目 |
+| `toArtifactTagNode` | 把文件转成 `artifact` 标签节点 |
+| `appendArtifactTags` / `omitArtifactTags` | 发送前补标签 / 回显前剥标签 |
+| `ArtifactIdentityLike` | `omitArtifactTags` 用来匹配待剥离标签的身份类型 |
+| `isImageFile` / `getFilePreviewUrl` / `getFileExtension` | 文件类型与预览 URL |
+| `formatBytes` / `formatFileSize` / `formatUploadNotAddedMessage` | 体积与「未添加」文案 |
+| `normalizeAcceptTokens` / `isDefaultUploadAccept` / `isFileAcceptedByAccept` / `formatDefaultUploadAcceptTip` | accept 校验与提示 |
+| `UploadFileLike` / `getFileIdentity` / `getUploadFileKey` / `isUploadImageFile` | 上传附件身份 |
+| `getUploadFileName` / `getUploadFileSize` / `formatUploadFileSize` / `splitUploadFiles` / `toUploadArtifact` | 上传附件取值与分组 |
+| `AIFileKind` / `normalizeFileExtension` / `resolveFileKind` | 文件分类（图标与预览策略） |
 
 `ALLOWED_UPLOAD_EXTENSIONS` / `DEFAULT_UPLOAD_ACCEPT` 也从本模块导出，见下方 [上传常量](#上传常量)。
 
@@ -22,20 +32,14 @@
 
 ### completeMarkdownSyntax
 
-用于流式输入时自动补全未闭合的 Markdown 语法：
+用于流式输入时自动补全未闭合的 Markdown 语法。包入口导出的是 `src/utils/stream-markdown-completer.ts` 的实现，签名为 `completeMarkdownSyntax(content: string)`，返回 `{ content, suffix; isIncomplete?: boolean }`，**不是**字符串。该文件里的 `CompletionResult` 类型与 `guessEnvironmentName` **没有**经 `utils/index.ts` 再导出，不能 `from '@blueking/chat-x'`。
 
 ````typescript
 import { completeMarkdownSyntax } from '@blueking/chat-x';
 
-// 补全未闭合的代码块
 const incomplete = '```javascript\nconst a = 1;';
-const completed = completeMarkdownSyntax(incomplete);
-// => '```javascript\nconst a = 1;\n```'
-
-// 补全未闭合的粗体
-const incomplete2 = '这是 **粗体';
-const completed2 = completeMarkdownSyntax(incomplete2);
-// => '这是 **粗体**'
+const { content, suffix } = completeMarkdownSyntax(incomplete);
+// content 为补全后的全文；suffix 为追加的闭合标记
 ````
 
 ### 支持补全的语法
@@ -144,9 +148,7 @@ console.log(notExist); // null
   const rawContent = ref('');
 
   // 自动补全未闭合的语法
-  const completedContent = computed(() => {
-    return completeMarkdownSyntax(rawContent.value);
-  });
+  const completedContent = computed(() => completeMarkdownSyntax(rawContent.value).content);
 
   // 模拟流式输入
   const simulateStreaming = async () => {
@@ -185,6 +187,7 @@ import { DEFAULT_UPLOAD_ACCEPT } from '@blueking/chat-x';
 
 ## 注意事项
 
-1. `completeMarkdownSyntax` 主要用于流式渲染场景
-2. 语法补全不会修改原始内容，只返回补全后的副本
-3. `getCookieByName` 在服务端渲染时需要注意 `document` 不可用
+1. `completeMarkdownSyntax` 主要用于流式渲染场景，请使用返回值的 `.content`
+2. `src/utils/markdown-completer.ts` 另有行切分实现，但同名函数被 stream 版覆盖；`needsMarkdownCompletion` / `removeCompletionSuffix` / `MarkdownCompleteOptions` / `MarkdownCompleteResult` 仍从该文件公开导出
+3. `tokens-to-vnodes.ts`、`guessEnvironmentName`、`CompletionResult` **不是**包入口 API
+4. `getCookieByName` 在服务端渲染时 `document` 不可用，会返回 `null`

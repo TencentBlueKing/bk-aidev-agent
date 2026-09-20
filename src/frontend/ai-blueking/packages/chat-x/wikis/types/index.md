@@ -11,6 +11,21 @@
 | Interrupt | 中断类型 | [查看](./interrupt.md) |
 | Schema    | 用户问题 Schema | [查看](./schema.md) |
 
+## 源码文件地图
+
+| 源文件 | 职责 | 文档 |
+| --- | --- | --- |
+| `src/ag-ui/types/*` | 消息 / 内容 / 常量 | [messages](./messages.md)、[constants](./constants.md) |
+| interrupt 相关 | HITL | [interrupt](./interrupt.md) |
+| schema | 用户问题 schema | [schema](./schema.md) |
+| `src/types/input-menu.ts` | `IInputMenuItem` 等 | 本页引入示例 + [ChatInput](/components/input/chat-input) |
+| `src/types/input.ts` | `TagSchema` / `UploadFile` | 本页引入示例 |
+| `src/types/tool.ts` | `IToolBtn` | 本页引入示例 |
+| `src/types/custom.ts` | `CustomTab` | [自定义侧栏](/ai/custom-side-tab) |
+| `src/types/shortcut.ts` | `Shortcut` | 本页引入示例 |
+| `src/types/image.ts` | 预览项类型 | [ImagePreview](/components/medias/image-preview) |
+| `src/types/editor.ts` | `noop` 等编辑器辅助 | 无独立页 |
+
 ## 引入类型
 
 ```typescript

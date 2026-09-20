@@ -16,6 +16,7 @@ relatedComponents:
   - slug: file-upload-btn
     relation: 被本按钮取代的旧上传入口
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

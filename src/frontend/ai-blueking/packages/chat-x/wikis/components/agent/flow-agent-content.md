@@ -15,6 +15,7 @@ relatedComponents:
   - slug: chat-container
     relation: 通过自定义 Tab 在侧栏展示节点详情
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -71,6 +72,10 @@ sinceVersion: 1.0.0
 
 # FlowAgentContent FlowAgent 执行内容
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [MessageRender](/components/message/message-render) 渲染 `role: 'activity'`（见本页「推荐入口」）。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { FlowAgentContent } from '@blueking/chat-x'`。
+
 > **能力域**：Agent 能力
 
 渲染 FlowAgent（标准运维 / 流程编排）执行过程的活动组件，以「任务 → 节点」两级结构展示执行状态、耗时统计与详情入口。组件内部消费 `useCustomTabConsumer`，点击节点「详情」会向侧栏的自定义 Tab 注入 `FlowAgentNodeDetail` 渲染节点输入输出。
@@ -120,8 +125,8 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import { FlowAgentContent } from '@blueking/chat-x';
   import type { BkFlowMessageContent, OnInterruptResume } from '@blueking/chat-x';
+  // FlowAgentContent 未从包入口导出；文档站 demo 使用相对路径 FlowAgentContentComp
 
   const messageUid = 'flow-msg-1';
   const status = 'success';
@@ -217,7 +222,7 @@ addCustomTab?.({
   label: node.name,
   name: `${task.task_id}|${node.id}|${node.name}`,
   data: {
-    component: BkFlowNodeDetail,
+    component: FlowAgentNodeDetail,
     messageUid: props.messageUid,
     props: {
       loading: true,
@@ -264,14 +269,17 @@ ActivityLayout（activity-type=flow_agent，v-model:collapsed）
 
 | 属性名     | 类型                     | 必填 | 默认值      | 说明                                                                       |
 | ---------- | ------------------------ | ---- | ----------- | -------------------------------------------------------------------------- |
-| content    | `BkFlowMessageContent`   | 否   | `[{}]`      | 任务数组；传入单个 `BkFlowTask` 时自动包装为单元素数组                       |
+| content    | `BkFlowMessageContent`   | 否   | —           | 任务数组；传入单个 `BkFlowTask` 时自动包装为单元素数组                       |
+| collapsed  | `boolean`                | 否   | `false`     | `v-model:collapsed`，控制活动布局折叠                                       |
 | messageUid | `string`                 | 否   | —           | 所属消息唯一标识，注入到节点详情 Tab 的 `data.messageUid`，用于异步回填数据 |
 | onInterruptResume | `OnInterruptResume` | 否   | —           | 节点「重试 / 跳过」与第三方审批取消复用同一回调，按 `payload.operation` 分流；流程节点操作时不传 `interrupt` |
 | status     | `MessageStatus`          | 否   | —           | 消息状态；`pending` / `streaming` 时标题栏显示加载动画                       |
 
 ### Emits
 
-- 无。
+| 事件名 | 说明 |
+| --- | --- |
+| `update:collapsed` | `v-model:collapsed` 回写 |
 
 ### Slots
 
@@ -319,7 +327,7 @@ interface BkFlowNode {
 
 - `AiLoading` — 标题栏流式加载动画
 - `ActivityLayout` — 可折叠活动容器外壳
-- `BkFlowNodeDetail` — 节点详情面板（经自定义 Tab 挂载）
+- `FlowAgentNodeDetail` — 节点详情面板（经自定义 Tab 挂载）
 - `Loading`（bkui-vue） — 运行中状态的旋转指示
 - `HighlightKeyword` — 任务 / 节点名称的搜索关键词高亮
 

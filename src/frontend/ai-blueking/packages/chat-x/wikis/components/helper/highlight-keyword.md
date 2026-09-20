@@ -117,42 +117,20 @@ ExecutionSummary
             └── HighlightKeyword(:text)  ← inject(keyword)
 ```
 
-## 配套 Composables
+## 配套 Composables（内部，未从包入口导出）
 
-### useKeywordProvider
+`useKeywordProvider` / `useKeywordInject` / `useKeywordMatch` 在 `src/composables/use-common.ts`，**不能** `from '@blueking/chat-x'`。业务侧把 `HighlightKeyword` 放在 [ChatContainer](/components/setup/chat-container) / [ExecutionSummary](/components/agent/execution-summary) 子树即可，库已注入关键词。
 
-在上层组件中创建关键词并 `provide`，后代组件通过 `useKeywordInject` 消费：
+库内或文档站高级用法用相对路径：
 
 ```typescript
-import { useKeywordProvider } from '@blueking/chat-x';
+import { useKeywordProvider, useKeywordInject, useKeywordMatch } from '../../../src/composables/use-common';
 
 const { keyword } = useKeywordProvider();
 keyword.value = '搜索词';
-```
 
-### useKeywordInject
-
-在后代组件中注入关键词，返回 `ComputedRef<string> | undefined`：
-
-```typescript
-import { useKeywordInject } from '@blueking/chat-x';
-
-const keyword = useKeywordInject();
-console.log(keyword?.value); // 当前搜索关键词
-```
-
-### useKeywordMatch
-
-用于判断组件的可搜索文本是否与当前关键词匹配。内部调用 `useKeywordInject` 获取关键词，根据传入的文本提取函数判断是否命中：
-
-```typescript
-import { useKeywordMatch } from '@blueking/chat-x';
-
+const injected = useKeywordInject();
 const { keywordMatched } = useKeywordMatch(() => [props.title, props.description, props.content]);
-
-// keywordMatched.value === true 表示命中搜索
-// keywordMatched.value === false 表示未命中（可据此隐藏组件）
-// keyword 为空时始终返回 true
 ```
 
 `useKeywordMatch` 的典型用途是在 `ExecutionSummary` 的搜索过滤中，让组件自行判断是否匹配搜索词，与 `HighlightKeyword` 配合实现搜索 + 高亮。
@@ -175,9 +153,9 @@ const { keywordMatched } = useKeywordMatch(() => [props.title, props.description
 
 | 函数名               | 参数                                            | 返回值                                     | 说明                                          |
 | -------------------- | ----------------------------------------------- | ------------------------------------------ | --------------------------------------------- |
-| `useKeywordProvider` | —                                               | `{ keyword: ShallowRef<string> }`          | 创建并 `provide` 关键词，用于上层组件         |
-| `useKeywordInject`   | —                                               | `ComputedRef<string> \| undefined`         | 注入关键词，用于后代组件                      |
-| `useKeywordMatch`    | `getSearchTexts: () => (string \| undefined)[]` | `{ keywordMatched: ComputedRef<boolean> }` | 判断组件文本是否匹配关键词，空关键词返回 true |
+| `useKeywordProvider` | —                                               | `{ keyword: ShallowRef<string> }`          | 内部 API，见 `src/composables/use-common.ts` |
+| `useKeywordInject`   | —                                               | `ComputedRef<string> \| undefined`         | 内部 API，见 `src/composables/use-common.ts` |
+| `useKeywordMatch`    | `getSearchTexts: () => (string \| undefined)[]` | `{ keywordMatched: ComputedRef<boolean> }` | 内部 API；空关键词返回 true |
 
 ### CSS 类名
 
@@ -187,6 +165,6 @@ const { keywordMatched } = useKeywordMatch(() => [props.title, props.description
 
 ## 关联组件
 
-- [ToolcallRender](/components/agent/toolcall-render) — 工具调用头部高亮
+- [ToolCallRender](/components/agent/toolcall-render) — 工具调用头部高亮
 - [DescPanel](/components/rendering/desc-panel) — 详情面板键值高亮
 - [ExecutionSummary](/components/agent/execution-summary) — 执行摘要搜索

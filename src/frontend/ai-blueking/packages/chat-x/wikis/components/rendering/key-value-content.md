@@ -11,6 +11,7 @@ relatedComponents:
   - slug: user-message
     relation: 用户消息内展示结构化附加信息
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -36,6 +37,11 @@ sinceVersion: 1.0.0
 </script>
 
 # KeyValueContent 键值对内容
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [UserMessage](/components/message/user-message) / [MessageRender](/components/message/message-render) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { KeyValueContent } from '@blueking/chat-x'`。
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/key-value-content/key-value-content.vue`
@@ -76,7 +82,7 @@ div.ai-key-value-content（flex column，gap: 8px，font-size: 12px，color: #4d
 </template>
 
 <script setup lang="ts">
-  import { KeyValueContent } from '@blueking/chat-x';
+  // KeyValueContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const data = [
     { key: '名称', value: '蓝鲸智云' },

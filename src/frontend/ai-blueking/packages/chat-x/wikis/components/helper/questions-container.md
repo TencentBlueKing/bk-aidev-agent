@@ -15,6 +15,7 @@ relatedComponents:
   - slug: interrupt-message
     relation: HITL 中断消息由 InterruptMessage 分发到具体问题组件
 sinceVersion: 1.0.0
+exportStatus: placeholder
 ---
 
 # QuestionsContainer 问题容器占位

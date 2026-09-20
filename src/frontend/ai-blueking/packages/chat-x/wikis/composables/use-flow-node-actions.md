@@ -13,9 +13,14 @@ relatedComponents:
   - slug: flow-agent-content
     relation: FlowAgentContent 内部消费，驱动节点行尾按钮组渲染
 sinceVersion: 2.0.0
+exportStatus: internal
 ---
 
 # useFlowNodeActions 节点行尾操作
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 实现位于 `src/components/chat-content/flow-agent-content/use-flow-node-actions.ts`，未进入 `src/composables/index.ts`。
+> 由 [FlowAgentContent](/components/agent/flow-agent-content) 内部消费。
 
 > **分类**：composable
 
@@ -121,8 +126,7 @@ onInterruptResume?.({
 
 ```typescript
 import { toRef } from 'vue';
-import { useFlowNodeActions } from '@blueking/chat-x';
-// 或相对路径：'./use-flow-node-actions'
+import { useFlowNodeActions } from '../../src/components/chat-content/flow-agent-content/use-flow-node-actions';
 
 // 是否处于侧栏「执行情况」面板内；缺省 false，即对话流内渲染
 // useExecutionPanelInject 来自内部 src/composables/use-common.ts，未从包入口导出

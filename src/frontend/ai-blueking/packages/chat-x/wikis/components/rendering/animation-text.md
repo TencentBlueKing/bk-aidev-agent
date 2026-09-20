@@ -15,6 +15,7 @@ relatedComponents:
   - slug: markdown-content
     relation: 流式 Markdown 中可与渐显策略配合
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -55,6 +56,10 @@ sinceVersion: 1.0.0
 </script>
 
 # AnimationText 动画文本
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 流式场景请使用公开的 [useAnimationText](/composables/use-animation-text)。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { AnimationText } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/animation-text/animation-text.vue`
@@ -98,7 +103,7 @@ animationStyle = {
 </template>
 
 <script setup lang="ts">
-  import { AnimationText } from '@blueking/chat-x';
+  // AnimationText 组件未导出；公开 API 是 useAnimationText
 </script>
 ```
 
