@@ -21,6 +21,8 @@ _BOUND_TOKEN: ContextVar[str] = ContextVar("bkai_craw_user_access_token", defaul
 
 SHARED_IDENTITY_ID = "shared"
 EGRESS_URL_ENV = "BKAI_MCP_EGRESS_URL"
+EGRESS_KEY_ENV = "BKAI_MCP_EGRESS_KEY"
+EGRESS_KEY_HEADER = "X-Bkai-Egress-Key"
 IDENTITY_HEADER = "X-Bkai-Access-Token"
 IDENTITY_HEADER_ALIAS = "X-Aidev-Access-Token"
 
@@ -80,6 +82,9 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
     if not base or not token:
         yield
         return
+    egress_key = (os.getenv(EGRESS_KEY_ENV) or "").strip()
+    if not egress_key:
+        raise CrawLeaseError("MCP 身份出口缺少内部鉴权 key，已拒绝本次执行")
     try:
         import httpx
     except ImportError as exc:
@@ -87,7 +92,11 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
     timeout = float(os.getenv("BKAI_MCP_EGRESS_LEASE_TIMEOUT", "30"))
     with httpx.Client(timeout=timeout) as client:
         try:
-            response = client.post(f"{base}/internal/acquire", json={"token": token})
+            response = client.post(
+                f"{base}/internal/acquire",
+                json={"token": token},
+                headers={EGRESS_KEY_HEADER: egress_key},
+            )
             response.raise_for_status()
             lease_id = str(response.json().get("leaseId") or "")
         except Exception as exc:
@@ -98,6 +107,11 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
             yield
         finally:
             try:
-                client.post(f"{base}/internal/release", json={"leaseId": lease_id})
+                response = client.post(
+                    f"{base}/internal/release",
+                    json={"leaseId": lease_id},
+                    headers={EGRESS_KEY_HEADER: egress_key},
+                )
+                response.raise_for_status()
             except Exception as exc:
                 _logger.warning("[CRAW] MCP 身份租约释放失败: %s", exc)

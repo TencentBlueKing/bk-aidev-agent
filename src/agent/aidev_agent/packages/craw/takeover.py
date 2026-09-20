@@ -8,7 +8,7 @@
 门控（``BKAI_CRAW_BACKEND``，未设 = 零影响保持原生 ReAct）：
 - ``openclaw`` / ``hermes`` / 其他已注册内核名 → ``CrawCompletionAgent``
   接管 CHAT，连接参数由对应后端的 env 回落链装配；
-- 未注册的值 → 记 warning，保持原生（接管失败不拖垮宿主启动）。
+- 未注册或接管失败 → 启动失败。显式启用 Craw 后禁止静默降级为原生 ReAct。
 
 宿主接入：推荐在 **ROOT_URLCONF 尾部**（bk_plugin 形态即 ``patch/urls.py``
 末尾）调用一次——settings 已就绪、早于首个请求的 registry 查找；避免在
@@ -36,20 +36,13 @@ logger = getLogger(__name__)
 def enable_chat_takeover() -> bool:
     """按 env ``BKAI_CRAW_BACKEND`` 接管 ``AgentType.CHAT``。
 
-    :return: 是否完成接管。env 未设 / 内核未注册 / 接管异常均返回 ``False``
-        并保持原生 ``ChatCompletionAgent``（可逆、失败降级）。
+    :return: 是否完成接管。仅 env 未设时返回 ``False``；显式启用后的错误会抛出。
     """
     name = (os.getenv(BACKEND_ENV) or "").strip().lower()
     if not name:
         return False
     if name not in craw_backend_registry:
-        logger.warning(
-            "[CRAW] 未注册的 %s=%r（已注册: %s），保持原生 CHAT agent",
-            BACKEND_ENV,
-            name,
-            list(craw_backend_registry.keys()),
-        )
-        return False
+        raise RuntimeError(f"未注册的 {BACKEND_ENV}={name!r}（已注册: {list(craw_backend_registry.keys())}）")
     try:
         from aidev_agent.enums import AgentType
         from aidev_agent.packages.craw.agent import CrawCompletionAgent
@@ -61,9 +54,9 @@ def enable_chat_takeover() -> bool:
         # 还未被动过，不会出现「报告失败但 CHAT 已被接管」的中间态。
         backend = get_backend(name)
         backend_info = (backend.name, backend.api_url, backend.model)
-    except Exception as exc:  # 接管失败不应拖垮宿主启动，保持原生
-        logger.exception("[CRAW] 接管 CHAT 失败（后端装配 / 校验未通过），保持原生 ChatCompletionAgent: %s", exc)
-        return False
+    except Exception as exc:
+        logger.exception("[CRAW] 接管 CHAT 失败（后端装配 / 校验未通过）: %s", exc)
+        raise RuntimeError("Craw 后端装配失败，拒绝降级为原生 ChatCompletionAgent") from exc
 
     previous = agent_registry.values.get(AgentType.CHAT)
     try:
@@ -73,8 +66,8 @@ def enable_chat_takeover() -> bool:
         agent_registry.remove(AgentType.CHAT)
         if previous is not None:
             agent_registry.register(AgentType.CHAT, previous.value, priority=previous.priority)
-        logger.exception("[CRAW] 接管 CHAT 失败（registry 变更已回滚），保持原生 ChatCompletionAgent: %s", exc)
-        return False
+        logger.exception("[CRAW] 接管 CHAT 失败（registry 变更已回滚）: %s", exc)
+        raise RuntimeError("Craw registry 接管失败，已回滚原生注册") from exc
     logger.warning(
         "[CRAW] CrawCompletionAgent 已接管 AgentType.CHAT（backend=%s, api_url=%s, model=%s）",
         *backend_info,
