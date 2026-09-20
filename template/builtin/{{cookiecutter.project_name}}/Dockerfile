@@ -1,6 +1,6 @@
 # check=skip=InvalidDefaultArgInFrom
-# AIDEV Craw PaaS runtime. The base image is injected by create_ai_agent_app
-# through bkapp_spec.build_config.docker_build_args; no private registry or
+# AIDEV Craw PaaS runtime. The base image is injected when AIDEV uploads the
+# source package through docker_build_args; no private registry or
 # environment-specific value is stored in this public repository.
 ARG CRAW_BASE_IMAGE
 FROM ${CRAW_BASE_IMAGE}
