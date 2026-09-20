@@ -70,6 +70,8 @@ export type {
   DropdownMenuConfig,
   GetSideRenderComponent,
   GetSideTabRenderComponent,
+  IHostResourceItem,
+  IHostSkillItem,
   IShortcut,
   OnCustomTabChange,
 } from './types';

@@ -3,6 +3,8 @@ name: UserFeedback 用户反馈
 slug: user-feedback
 kind: component
 domain: feedback
+# 包入口导出名与组件名不同，显式声明避免 skill references 把它误判为内部组件
+exportSymbol: MessageUserFeedback
 description: 用户反馈弹层，提交踩/反馈原因。
 aiSummary: >
   用户反馈弹层，提交踩/反馈原因。

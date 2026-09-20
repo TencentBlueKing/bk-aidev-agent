@@ -49,9 +49,9 @@ yarn add @blueking/chat-x
     <ChatContainer
       :messages="messages"
       :on-agent-action="handleAgentAction"
+      :menu-sources="menuSources"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
-      :prompts="prompts"
       :shortcuts="shortcuts"
       @update:model-value="val => (userInput = val)"
     />
@@ -64,6 +64,7 @@ yarn add @blueking/chat-x
     ChatContainer,
     MessageRole,
     MessageStatus,
+    type IInputMenuItem,
     type IToolBtn,
     type Message,
     type Shortcut,
@@ -73,7 +74,11 @@ yarn add @blueking/chat-x
 
   const messages = deepRef<Message[]>([]);
   const userInput = shallowRef<string | TagSchema>('');
-  const prompts = shallowRef(['帮我写一段代码', '解释这段报错', '总结这篇文档']);
+  // 输入框菜单统一数据源：按 type 分发到 "/"、"@"、"\" 与左下角 + 号
+  const menuSources = shallowRef<IInputMenuItem[]>([
+    { id: 'prompt-code', name: '写代码', type: 'prompt', content: '帮我写一段代码' },
+    { id: 'kb-ops', name: '运维知识库', type: 'knowledgebase' },
+  ]);
   const shortcuts = shallowRef<Shortcut[]>([
     { id: 'ask', name: '问问小鲸', description: '向 AI 助手提问' },
     { id: 'code-review', name: '代码审查', description: '让 AI 审查你的代码' },
@@ -366,8 +371,9 @@ import type {
   InputContent,
   UploadFile,
   ImageItem,
-  IAiSlashMenuItem,
-  IAiSlashGroupItem,
+  IInputMenuItem,
+  MenuItemType,
+  MenuTrigger,
 } from '@blueking/chat-x';
 ```
 
@@ -378,8 +384,8 @@ import {
   MessageRole,
   MessageStatus,
   MessageContentType,
-  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、引用、重新生成、分享
-  CONST_USER_MESSAGE_TOOLS, // 用户消息默认工具：复制、引用、编辑、删除
+  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、重新生成、分享
+  CONST_USER_MESSAGE_TOOLS, // 用户消息默认工具：复制、编辑、删除
   CONST_UPDATE_TOOLS, // 更新工具：点赞、不满意、删除
 } from '@blueking/chat-x';
 ```
@@ -406,8 +412,9 @@ ChatContainer                          ← 一站式对话布局
 ├── ShortcutBtns                       ← 快捷指令引导
 ├── ShortcutRender                     ← 快捷指令表单
 ├── ChatInput                          ← 输入区
-│   ├── AiSlashEditor                  ← 富文本编辑器（/ @ 触发）
-│   └── InputAttachment                ← 文件附件
+│   ├── InputMenuPanel                 ← 统一菜单（/ @ \ 与 + 号共用）
+│   ├── AiSlashInput                   ← 富文本编辑区（触发符识别 + 资源标签）
+│   └── InputAttachment                ← 底部工具栏（+ 号 / 快捷指令 / 模型 / 发送）
 └── SelectionFooter                    ← 多选操作栏
 ```
 

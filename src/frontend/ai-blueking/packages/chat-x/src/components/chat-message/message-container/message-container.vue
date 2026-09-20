@@ -174,10 +174,10 @@
     onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
-    // 自定义用户消息工具组（copy/cite/edit/delete）；以内置列表为基底，按 id 覆盖同名项、追加新项；{ id, hidden: true } 可隐藏
-    userMessageTools?: IToolBtn[];
     // 自定义 AI 消息反馈工具组（like/unlike/delete 一排）；以内置列表为基底，按 id 覆盖同名项、追加新项
     updateTools?: IToolBtn[];
+    // 自定义用户消息工具组（copy/cite/edit/delete）；以内置列表为基底，按 id 覆盖同名项、追加新项；{ id, hidden: true } 可隐藏
+    userMessageTools?: IToolBtn[];
   } & {
     onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
     onUserShortcutConfirm?: (message: Message, formModel: Record<string, unknown>) => Promise<void>;

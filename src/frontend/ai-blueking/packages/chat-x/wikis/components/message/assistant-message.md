@@ -159,7 +159,8 @@ AssistantMessage（根类名：ai-assistant-message）
 ├── ai-assistant-message-toolcalls（v-if toolCalls 非空，flex column，gap: 8px）
 │   └── ToolCallRender × N（toolCalls，不受 slot 影响）
 └── MessageArtifacts（v-if property.artifacts 非空）
-      └── ArtifactFileCard × N（点击 → useArtifactPreview → 侧栏 FileArtifactPanel → ArtifactPreviewHost）
+      └── ArtifactFileCard × N（点击卡片 → useArtifactPreview → 侧栏 FileArtifactPanel → ArtifactPreviewHost；
+            右侧操作区：引用（useInputMention）+ 下载）
 ```
 
 - **内容区**：`content` 经 `ContentRender`（`MessageContentType.Text`）由 `MarkdownContent` 渲染；default slot 仅收到 `{ content }`
@@ -625,6 +626,11 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 ## 文件产物
 
 当 `property.artifacts` 非空时，在工具调用区下方渲染 `MessageArtifacts` 文件卡片列表。点击卡片会通过 `useArtifactPreview` 打开 `ChatContainer` 侧栏「文件产物」Tab（见 [FileArtifactPanel](/components/message/file-artifact-panel)）。
+
+卡片右侧的操作区在 hover 时出现，按设计稿顺序为「引用」「下载」：
+
+- **引用**：仅当存在 [useInputMention](/composables/use-input-mention) 上下文（即页面有输入框）时渲染，点击后文件以资源标签形态进入输入框
+- **下载**：有外部 `onDownload` 或容器具备异步取链能力（传了 `onArtifactClick`）时渲染，取链期间图标切为 Loading
 
 `AIFileInfo` 仅含元信息（`name` / `outputId` / `size` / `type`）；`download_url` / `preview_url` 由容器 `onArtifactClick` 异步获取。命中唯一文件依赖 `messageUid = uid ?? String(id)` + 卡片下标 + `outputId`。
 

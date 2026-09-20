@@ -238,7 +238,8 @@ export function useChatbotInit(params: UseChatbotInitParams): UseChatbotInitRetu
       managerErrorBridge,
       {
         openingRemark: props.helloText,
-        predefinedQuestions: props.prompts,
+        // 空数组视为未传，与 useChatbotState 同源：由 agent.info.predefinedQuestions 兜底
+        predefinedQuestions: props.prompts?.length ? props.prompts : undefined,
         placeholder: props.placeholder,
         // 首条消息自动重命名成功 → ChatBot rename → AIBlueking forwarders.rename
         onSessionRenamed: (newName: string, sessionCode: string) => emit('rename', newName, sessionCode),

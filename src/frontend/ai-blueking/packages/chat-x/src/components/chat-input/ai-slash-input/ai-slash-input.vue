@@ -17,19 +17,14 @@
               :key="columnIndex"
             >
               <span v-if="item.type === 'text'">{{ item.text }}</span>
-              <span
+              <MentionTag
                 v-else-if="item.type === 'tag'"
-                :class="`mention-tag-${item.data.type}`"
-                contenteditable="false"
-                :data-tag-type="item.data.type"
-                :data-tag-value="item.data.value"
-              >
-                {{ item.data.label }}
-                <RemoveIcon
-                  class="mention-tag-remove-icon"
-                  @click="handleRemoveTag(line, item, columnIndex, index)"
-                />
-              </span>
+                :description="item.data.description"
+                :icon="item.data.icon"
+                :label="item.data.label"
+                :type="item.data.type"
+                :value="item.data.value"
+              />
             </template>
           </template>
           <template v-else>
@@ -38,82 +33,38 @@
         </div>
       </template>
     </div>
-    <Tippy
-      ref="tippyRef"
-      :append-to="getBody"
-      :arrow="false"
-      :hide-on-click="true"
-      :interactive="true"
-      :offset="[0, 0]"
-      placement="right-start"
-      theme="light ai-slash-editor-theme"
-      trigger="manual"
-      :trigger-target="editorRef!"
-      :z-index="EDITOR_MENU_Z_INDEX"
-      @hidden="handleTippyHidden"
-      @show="handleTippyShow"
-    >
-      <template #content>
-        <AiSlashMenu
-          v-if="menuType === 'slash'"
-          :on-select="insertTagAtCursor"
-          :resource-list="filteredResourceList"
-        />
-        <AiSkillList
-          v-else-if="menuType === 'skill'"
-          :on-select="insertSkillAtCursor"
-          :skills="filteredSkills"
-        />
-        <AiPromptList
-          v-else-if="menuType === 'prompt'"
-          :on-select="insertPromptAtCursor"
-          :prompts="filteredPrompts"
-        />
-      </template>
-    </Tippy>
   </div>
 </template>
 <script setup lang="ts">
-  import { customRef, onMounted, onUnmounted, shallowRef, useTemplateRef, watch, watchEffect } from 'vue';
+  import { customRef, onMounted, onUnmounted, useTemplateRef, watch } from 'vue';
 
-  import { Tippy, useTippy } from 'vue-tippy';
-
-  import { EDITOR_MENU_Z_INDEX, isEn } from '../../../common';
+  import { isEn } from '../../../common';
   import { useCommandSelection } from '../../../composables';
   import { type KeyboardPayload, createEditor, docToString, ReplaceAll, stringToDoc } from '../../../edix';
-  import { RemoveIcon } from '../../../icons';
-  import AiPromptList from './ai-prompt-list/ai-prompt-list.vue';
-  import AiSkillList from './ai-skill-list/ai-skill-list.vue';
-  import AiSlashMenu from './ai-slash-menu/ai-slash-menu.vue';
-  import { DeleteTag, InsertSkillTag, InsertTag, InsertText } from './command';
+  import { MentionTag } from '../../mention';
+  import { CHAR_TRIGGERS } from '../input-menu/constants';
+  import { DeleteTag, InsertMenuTag, InsertText } from './command';
   import { tagSchema } from './constants';
+  import { useMenuTrigger } from './use-menu-trigger';
 
-  import type { IAiSlashMenuItem, ISkillListItem } from '../../../types/editor';
-  import type { MentionState, TagSchema } from '../../../types/input';
-
-  import 'tippy.js/dist/tippy.css';
+  import type { TagSchema } from '../../../types/input';
+  import type { IInputMenuItem, MenuTrigger } from '../../../types/input-menu';
 
   const editorRef = useTemplateRef<HTMLDivElement>('editorRef');
-  const tippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>>('tippyRef');
   const emit = defineEmits<{
-    (e: 'update:modelValue', value: TagSchema, selectedResourceList: IAiSlashMenuItem[]): void;
+    (e: 'update:modelValue', value: TagSchema): void;
     (e: 'keydown', event: KeyboardEvent & KeyboardPayload): void;
     (e: 'upload', files: File[]): void;
+    (e: 'menuChange', payload: { keyword: string; trigger: MenuTrigger | null }): void;
   }>();
 
   const props = withDefaults(
     defineProps<{
       modelValue: string | TagSchema;
       placeholder?: string;
-      prompts?: string[];
-      resources?: IAiSlashMenuItem[];
-      skills?: ISkillListItem[];
     }>(),
     {
       placeholder: isEn ? `Please enter content` : `请输入内容`,
-      prompts: () => [],
-      resources: () => [],
-      skills: () => [],
     },
   );
 
@@ -127,51 +78,31 @@
         return props.modelValue;
       },
       set(value: TagSchema) {
-        const selectedResourceList =
-          value
-            ?.flat()
-            ?.filter(item => item.type === 'tag')
-            ?.map(item => {
-              return (
-                props.resources?.find(
-                  resource =>
-                    (resource.id === item.data.value || resource.name === item.data.value) &&
-                    resource.type === item.data.type,
-                ) || null
-              );
-            })
-            ?.filter((item): item is IAiSlashMenuItem => Boolean(item)) || [];
-        emit('update:modelValue', value, selectedResourceList);
+        emit('update:modelValue', value);
         trigger();
       },
     };
   });
 
-  const menuType = shallowRef<'' | 'prompt' | 'skill' | 'slash'>('slash');
-  const keyword = shallowRef<string>('');
-  const filteredResourceList = shallowRef<IAiSlashMenuItem[]>([]);
-  const filteredSkills = shallowRef<ISkillListItem[]>([]);
-  const filteredPrompts = shallowRef<string[]>([]);
+  const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
+  const menuTrigger = useMenuTrigger();
 
   let editor: ReturnType<typeof createEditor>;
   /* 清理编辑器 */
   let cleanup: () => void;
   // 卸载前需清理延迟任务，避免 setTimeout 回调在 window 已销毁后仍执行
-  let suggestionTimer: null | ReturnType<typeof setTimeout> = null;
+  let syncTimer: null | ReturnType<typeof setTimeout> = null;
   let focusTimer: null | ReturnType<typeof setTimeout> = null;
   const clearPendingTimers = () => {
-    if (suggestionTimer !== null) {
-      clearTimeout(suggestionTimer);
-      suggestionTimer = null;
+    if (syncTimer !== null) {
+      clearTimeout(syncTimer);
+      syncTimer = null;
     }
     if (focusTimer !== null) {
       clearTimeout(focusTimer);
       focusTimer = null;
     }
   };
-  const getBody = () => document.body;
-
-  const { commandSelection, GetCursorPosition, GetDocSnapshot, docSnapshot } = useCommandSelection();
 
   watch(
     () => props.modelValue,
@@ -186,33 +117,22 @@
       deep: false,
     },
   );
-  /* 显示提示 */
-  const handleShowSuggestions = () => {
-    if (suggestionTimer !== null) {
-      clearTimeout(suggestionTimer);
+
+  watch([menuTrigger.trigger, menuTrigger.keyword], () => {
+    emit('menuChange', { trigger: menuTrigger.trigger.value, keyword: menuTrigger.keyword.value });
+  });
+
+  /** 编辑器内容/光标变动后重算触发态；下一帧再读取，确保 DOM 已应用本次输入 */
+  const scheduleSync = () => {
+    if (syncTimer !== null) {
+      clearTimeout(syncTimer);
     }
-    suggestionTimer = setTimeout(() => {
-      suggestionTimer = null;
-      const mentionState = getMentionState();
-      keyword.value = mentionState.query || '';
-      // 设置 tippy 位置（仅在 keyword 为空时，即刚输入 '/' 或 '@' 时）
-      if (mentionState.isActive) {
-        tippyRef.value?.setProps({
-          getReferenceClientRect: () => {
-            return {
-              left: mentionState.coordinates?.left || 0,
-              top: mentionState.coordinates?.top || 0,
-              width: 0,
-              height: 0,
-            };
-          },
-        });
-        tippyRef.value?.show();
-      } else {
-        tippyRef.value?.hide();
-      }
+    syncTimer = setTimeout(() => {
+      syncTimer = null;
+      menuTrigger.sync();
     }, 16);
   };
+
   const handleKeyDown = (event: KeyboardEvent & KeyboardPayload) => {
     emit('keydown', event);
     if (event.key === 'Enter' || event.key === 'NumpadEnter') {
@@ -222,103 +142,25 @@
       event.preventDefault?.();
       return false;
     }
-    if (event.key === '@') {
-      menuType.value = 'slash';
-      handleShowSuggestions();
+    if ((CHAR_TRIGGERS as readonly string[]).includes(event.key)) {
+      menuTrigger.activateChar(event.key as Exclude<MenuTrigger, 'plus'>);
     }
-    if (event.key === '/') {
-      menuType.value = 'skill';
-      handleShowSuggestions();
-    }
-    if (event.key === '\\') {
-      menuType.value = 'prompt';
-      handleShowSuggestions();
-    }
+    scheduleSync();
+    return undefined;
   };
-  const handleTippyHidden = () => {
-    keyword.value = '';
-  };
-  const getMentionState = (): MentionState => {
-    const defaultState: MentionState = {
-      isActive: false,
-      query: '',
-      rect: null,
-      coordinates: null,
-    };
 
-    if (typeof window === 'undefined') return defaultState;
-
+  /** 聚焦编辑器并把光标放到末尾；只设选区不 focus 的话元素拿不到焦点，敲键盘不会有反应 */
+  const setCaretToEnd = () => {
+    if (typeof window === 'undefined' || !editorRef.value) return;
+    editorRef.value.focus();
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return defaultState;
-
-    const range = selection.getRangeAt(0);
-    const node = range.startContainer;
-    const offset = range.startOffset;
-    if (node.nodeType !== Node.TEXT_NODE) return defaultState;
-    const text = node.textContent || '';
-    const textBeforeCursor = text.slice(0, offset);
-
-    // 2. 正则匹配：查找光标前的最后一个触发字符
-    const triggerChar = menuType.value === 'slash' ? '@' : menuType.value === 'skill' ? '/' : '\\';
-    const escapedChar = triggerChar === '\\' ? '\\\\' : triggerChar;
-    const regex = new RegExp(`(${escapedChar}[^\\s]*)$`);
-    const match = textBeforeCursor.match(regex);
-
-    if (!match) return defaultState;
-
-    // match[1] 是捕获到的 "@xxx"
-    const matchText = match[1];
-    const query = matchText?.slice(1); // 去掉 @，得到搜索词
-
-    // 3. 计算 "@" 符号在文本节点中的精确索引
-    // match.index 是匹配开始的位置（可能包含前导空格），我们需要调整到 @ 的位置
-    const matchIndex = match.index! + match[0].indexOf(triggerChar);
-
-    try {
-      const rangeOfAt = document.createRange();
-      rangeOfAt.setStart(node, matchIndex);
-      rangeOfAt.setEnd(node, matchIndex + 1);
-
-      // 5. 获取 "@" 的物理坐标
-      const rect = rangeOfAt.getBoundingClientRect();
-
-      return {
-        isActive: true,
-        query: query,
-        rect: rect,
-        coordinates: {
-          top: rect.bottom,
-          left: rect.left,
-          height: rect.height,
-        },
-      };
-    } catch {
-      return defaultState;
+    const range = document.createRange();
+    if (selection) {
+      range.selectNodeContents(editorRef.value);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
     }
-  };
-  const getStartPosition = (line: TagSchema[number], columnIndex: number) => {
-    const startIndex = line.reduce((acc, item, index) => {
-      if (index >= columnIndex) {
-        return acc;
-      }
-      if (item.type === 'text') {
-        acc += item.text?.length || 0;
-      }
-      if (item.type === 'tag') {
-        acc += 1;
-      }
-      return acc;
-    }, 0);
-    return startIndex;
-  };
-  const insertTagAtCursor = (tag: IAiSlashMenuItem) => {
-    editor.command(GetCursorPosition);
-    const { column, line } = commandSelection.value;
-    editor.command(DeleteTag, [line, column - keyword.value.length - 1], [line, column]);
-    editor.command(InsertTag, [line, column], tag);
-    editor.command(InsertText, [line, column + keyword.value.length + 1 + 1], ' ');
-    tippyRef.value?.hide();
-    focusToEnd();
   };
   const focusToEnd = () => {
     if (focusTimer !== null) {
@@ -326,81 +168,67 @@
     }
     focusTimer = setTimeout(() => {
       focusTimer = null;
-      if (typeof window === 'undefined') return;
-
-      const selection = window.getSelection();
-      const range = document.createRange();
-      if (editorRef.value && selection) {
-        range.selectNodeContents(editorRef.value);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
+      setCaretToEnd();
     }, 100);
   };
-  const insertPromptAtCursor = (prompt: string) => {
-    editor.command(ReplaceAll, prompt);
-    focusToEnd();
-  };
-  const insertSkillAtCursor = (skill: ISkillListItem) => {
+
+  /** 删除「触发符 + 过滤词」，返回删除后的起始位置 */
+  const consumeTriggerText = (): [number, number] => {
     editor.command(GetCursorPosition);
     const { column, line } = commandSelection.value;
-    editor.command(DeleteTag, [line, column - keyword.value.length - 1], [line, column]);
-    editor.command(InsertSkillTag, [line, column], skill);
-    editor.command(InsertText, [line, column + keyword.value.length + 1 + 1], ' ');
-    tippyRef.value?.hide();
+    const start = Math.max(column - menuTrigger.getConsumeLength(), 0);
+    if (start < column) {
+      editor.command(DeleteTag, [line, start], [line, column]);
+    }
+    return [line, start];
+  };
+
+  /** 插入菜单选项：先吃掉「触发符 + 过滤词」，再插入标签并补一个空格 */
+  const insertMenuItem = (item: IInputMenuItem) => {
+    const [line, start] = consumeTriggerText();
+    editor.command(InsertMenuTag, [line, start], item);
+    // 标签在文档中占一列，空格补在它之后
+    editor.command(InsertText, [line, start + 1], ' ');
+    menuTrigger.close();
     focusToEnd();
   };
-  watchEffect(() => {
-    const resourceList = props.resources?.filter(
-      item =>
-        !text.value?.some(line =>
-          line.some(
-            lineItem => lineItem.type === 'tag' && lineItem.data.value === item.id && lineItem.data.type === item.type,
-          ),
-        ),
-    );
-    const skillList = props.skills?.filter(
-      skill =>
-        !text.value?.some(line =>
-          line.some(
-            lineItem =>
-              lineItem.type === 'tag' && lineItem.data.value === skill.skill_code && lineItem.data.type === 'skill',
-          ),
-        ),
-    );
-    if (!keyword.value) {
-      filteredResourceList.value = resourceList;
-      filteredSkills.value = skillList;
-      filteredPrompts.value = props.prompts;
-    } else {
-      filteredResourceList.value = resourceList.filter(item =>
-        item.name.toLowerCase().includes(keyword.value.toLowerCase()),
-      );
-      filteredSkills.value = skillList.filter(
-        skill =>
-          skill.skill_name.toLowerCase().includes(keyword.value.toLowerCase()) ||
-          skill.skill_code.toLowerCase().includes(keyword.value.toLowerCase()),
-      );
-      filteredPrompts.value = props.prompts.filter(prompt =>
-        prompt.toLowerCase().includes(keyword.value.toLowerCase()),
-      );
-    }
-    if (!filteredResourceList.value.length && !filteredSkills.value.length && !filteredPrompts.value.length) {
-      tippyRef.value?.hide();
-    }
-  });
-  const handleRemoveTag = (
-    line: TagSchema[number],
-    item: TagSchema[number][number],
-    columnIndex: number,
-    lineIndex: number,
-  ) => {
-    if (item.type === 'tag') {
-      const startIndex = getStartPosition(line, columnIndex);
-      editor.command(DeleteTag, [lineIndex, startIndex], [lineIndex, startIndex + 1]);
-    }
+
+  const replaceAll = (value: string) => {
+    editor.command(ReplaceAll, value);
+    menuTrigger.close();
+    focusToEnd();
   };
+
+  /**
+   * 由外部（如文件产物面板）追加标签。
+   *
+   * 位置直接由文档末尾算出，不读光标：外部调用时编辑器通常没有焦点，
+   * 而 DOM 选区与编辑器内部选区是异步同步的，依赖光标会插到错误的位置。
+   */
+  const appendMention = (item: IInputMenuItem) => {
+    const doc = text.value ?? [];
+    const line = Math.max(doc.length - 1, 0);
+    // 文本节点按字符数计长，标签节点固定占一列（与 edix 的节点尺寸规则一致）
+    const column = (doc[line] ?? []).reduce((acc, node) => acc + (node.type === 'text' ? node.text.length : 1), 0);
+    editor.command(InsertMenuTag, [line, column], item);
+    editor.command(InsertText, [line, column + 1], ' ');
+    focusToEnd();
+  };
+
+  /**
+   * + 号唤起聚合菜单。
+   * 光标已在编辑器内时一律保持原位：contenteditable 上的 focus() 在未聚焦时会把光标顶到最前面，
+   * 因此必须先判断再决定要不要接管光标；只有编辑器从未获得过光标时才落到末尾。
+   */
+  const openPlusMenu = () => {
+    if (!editorRef.value) return;
+    const anchorNode = window.getSelection()?.anchorNode ?? null;
+    if (!anchorNode || !editorRef.value.contains(anchorNode)) {
+      setCaretToEnd();
+    }
+    menuTrigger.activatePlus();
+  };
+
   const handlePaste = (event: ClipboardEvent) => {
     const items = event.clipboardData?.items;
     if (!items) return;
@@ -428,22 +256,13 @@
       schema: tagSchema,
       onChange: async doc => {
         text.value = doc;
-        handleShowSuggestions();
+        scheduleSync();
       },
       onKeyDown: keyboard => {
         return handleKeyDown(keyboard as KeyboardEvent & KeyboardPayload);
       },
     });
     cleanup = editor.input(editorRef.value!);
-  };
-  const handleTippyShow = (): false | void => {
-    if (menuType.value === 'slash') {
-      return filteredResourceList.value.length < 1 ? false : undefined;
-    }
-    if (menuType.value === 'skill') {
-      return filteredSkills.value.length < 1 ? false : undefined;
-    }
-    return filteredPrompts.value.length < 1 ? false : undefined;
   };
   onMounted(() => {
     initEditor();
@@ -456,14 +275,20 @@
     editorRef.value?.removeEventListener('paste', handlePaste);
   });
   defineExpose({
+    appendMention,
     cleanup: () => {
       editor.command(ReplaceAll, '');
+      menuTrigger.close();
     },
+    closeMenu: menuTrigger.close,
+    consumeTriggerText,
     focus: focusToEnd,
+    insertMenuItem,
+    openPlusMenu,
+    replaceAll,
   });
 </script>
 <style lang="scss">
-  @use 'sass:list';
   @use '../../../styles/variables.scss' as variables;
 
   .ai-slash-input-wrapper {
@@ -471,48 +296,9 @@
     flex: 1;
     flex-direction: column;
     width: 100%;
-    min-height: 0; // 父级触达 max-height 后允许收缩并内部滚动
     height: fit-content;
+    min-height: 0; // 父级触达 max-height 后允许收缩并内部滚动
     overflow: auto;
-
-    @each $type, $color in variables.$resourceTypeMap {
-      $iconColor: list.nth($color, 3);
-      .mention-tag-#{$type} {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        height: 18px;
-        padding: 0 2px 0 6px;
-        font-size: var(--ai-font-size, 12px);
-        color: list.nth($color, 2);
-        background: list.nth($color, 1);
-        border-radius: 2px;
-
-        .mention-tag-remove-icon {
-          position: absolute;
-          top: -7px;
-          right: -7px;
-          z-index: 1;
-          display: none;
-          align-items: center;
-          justify-content: center;
-          width: 14px;
-          height: 14px;
-          font-size: 14px;
-          color: #4d4f56;
-          cursor: pointer;
-        }
-
-        &:hover {
-          color: list.nth($color, 5);
-          background: list.nth($color, 4);
-
-          .mention-tag-remove-icon {
-            display: flex;
-          }
-        }
-      }
-    }
 
     .ai-slash-input {
       box-sizing: border-box;
@@ -523,7 +309,7 @@
       padding: var(--ai-spacing-comfortable, 8px);
       font-size: var(--ai-font-size, 12px);
       line-height: var(--ai-line-height-compact, 20px);
-      color: #4d4f56;
+      color: variables.$color-text;
       outline: none;
       border: none;
       border-radius: 8px;
@@ -533,18 +319,6 @@
       color: #c4c6cc;
       pointer-events: none;
       content: attr(aria-placeholder) / '';
-    }
-  }
-
-  .tippy-box[data-theme~='ai-slash-editor-theme'] {
-    box-shadow: none !important;
-
-    &[data-theme~='light'] {
-      background-color: white;
-    }
-
-    .tippy-content {
-      padding: 0 !important;
     }
   }
 </style>

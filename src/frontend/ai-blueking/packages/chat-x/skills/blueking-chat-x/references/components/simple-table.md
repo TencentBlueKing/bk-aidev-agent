@@ -1,6 +1,6 @@
 # SimpleTable 简易表格
 
-> 能力域：Agent 能力 ｜ 导入：`import { SimpleTable } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 FlowAgent 节点详情中的轻量表格展示组件。 源码位置：src/components/chat-content/flow-agent-content/simple-table.vue。
 

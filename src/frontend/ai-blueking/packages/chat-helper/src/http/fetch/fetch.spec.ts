@@ -37,3 +37,18 @@ describe('FetchClient.prepareRequest FormData', () => {
     expect((fetchConfig.headers as Headers).get('Content-Type')).toBe('application/json');
   });
 });
+
+describe('FetchClient.prepareRequest DELETE query', () => {
+  it('puts path on query via URLSearchParams without a body', () => {
+    const client = new FetchClient({ baseURL: 'https://example.com/' });
+    const { url, fetchConfig } = client.prepareRequest({
+      url: 'session/s-abc/pv_files/',
+      method: 'DELETE',
+      params: { path: 'files/report.pdf' },
+    });
+
+    expect(url).toBe('https://example.com/session/s-abc/pv_files/?path=files%2Freport.pdf');
+    expect(fetchConfig.body).toBeUndefined();
+    expect(fetchConfig.method).toBe('DELETE');
+  });
+});

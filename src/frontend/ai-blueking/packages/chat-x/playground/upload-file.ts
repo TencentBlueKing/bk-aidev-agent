@@ -44,21 +44,52 @@ export interface UploadFileResponse {
 /** mock 上传延时区间（毫秒）：模拟网络往返，便于观察附件从 pending 到 success */
 const MOCK_UPLOAD_DELAY_RANGE = [300, 800] as const;
 
-/**
- * 本地 mock 上传：不依赖后端网关与 access_token，playground 开箱即用。
- *
- * 返回原文件的 blob URL 作为 download_url —— 发送后的消息里附件只剩
- * `url / filename / mimeType / size`（没有 File 引用），只有 url 真实可达
- * 才能看到图片缩略图与全屏预览的实际效果。
- *
- * blob URL 在页面存活期内一直有效，playground 不做回收。
- */
-export async function mockUploadFileToSession(file: File): Promise<{ download_url: string }> {
+/** 本地上传文件按永久 path 保存；预览、下载和删除共用同一份数据。 */
+const mockUploadedFiles = new Map<string, { file: File; url: string }>();
+
+/** 注册预置样例或用户选中的文件，响应结构与上传 API 一致。 */
+export const createMockUploadedFile = (file: File) => {
+  const path = `files/${crypto.randomUUID()}-${file.name}`;
+  const url = URL.createObjectURL(file);
+  mockUploadedFiles.set(path, { file, url });
+  return {
+    type: 'file' as const,
+    id: path,
+    path,
+    name: file.name,
+    mime_type: file.type,
+    size: file.size,
+    status: 'success' as const,
+    download_url: url,
+  };
+};
+
+/** 文本、代码使用 download_url；图片和 PDF 可直接预览，其他二进制格式需后端转码。 */
+export const getMockUploadedFileUrls = (outputId: string) => {
+  const item = mockUploadedFiles.get(outputId);
+  if (!item) return undefined;
+  return {
+    download_url: item.url,
+    preview_url: item.file.type.startsWith('image/') || item.file.name.toLowerCase().endsWith('.pdf')
+      ? item.url
+      : undefined,
+  };
+};
+
+/** 本地 mock 上传保留延时，便于观察 pending → success → 可引用和预览。 */
+export async function mockUploadFileToSession(file: File) {
   const [minDelay, maxDelay] = MOCK_UPLOAD_DELAY_RANGE;
   await new Promise(resolve => setTimeout(resolve, minDelay + Math.random() * (maxDelay - minDelay)));
-
-  return { download_url: URL.createObjectURL(file) };
+  return createMockUploadedFile(file);
 }
+
+export const mockDeleteUploadedFile = async (outputId: string) => {
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const item = mockUploadedFiles.get(outputId);
+  if (!item) return;
+  mockUploadedFiles.delete(outputId);
+  URL.revokeObjectURL(item.url);
+};
 
 /**
  * 批量上传文件

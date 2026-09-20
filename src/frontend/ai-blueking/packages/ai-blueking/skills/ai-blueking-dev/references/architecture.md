@@ -250,7 +250,7 @@ ChatBot (`chat-bot.vue`) 采用 composable 拆分模式：模板只组装 `ChatC
 | `useErrorReporter` | `components/composables/use-error-reporter.ts` | 统一错误出口：`toError` 归一化 + 按 Error 实例去重 + emit `error`；同时提供注入业务管理器的 `managerErrorBridge` |
 | `useChatbotInit` | `components/composables/use-chatbot-init.ts` | Props 校验、chatHelper 创建/复用、Manager 实例化、onMounted/onBeforeUnmount 生命周期 |
 | `useInterruptResume` | `components/composables/use-interrupt-resume.ts` | HITL 中断恢复编排（`handleInterruptResume`）：审批取消 / 用户提问作答 / 流程节点重试跳过，翻译成 `agent.streamRequest` / `agent.userOperationStreamRequest` |
-| `useChatbotState` | `components/composables/use-chatbot-state.ts` | 所有 computed 属性（messageStatus、isWelcomeState、effectiveResources 等） |
+| `useChatbotState` | `components/composables/use-chatbot-state.ts` | 所有 computed 属性（messageStatus、isWelcomeState、effectiveMenuSources 等） |
 | `useMessageSender` | `components/composables/use-message-sender.ts` | 输入状态 + 消息发送编排（doSendMessage、handleUpload、stopGeneration；发送时携带活跃 UserQuestion 中断的恢复负载） |
 | `useShortcuts` | `components/composables/use-shortcuts.ts` | 快捷指令选择、fillBack、property 构建、表单提交、直接发送 |
 | `useToolActions` | `components/composables/use-tool-actions.ts` | 所有消息工具栏交互（cite、rebuild、delete、share、like/unlike、编辑确认） |
@@ -261,7 +261,7 @@ ChatBot (`chat-bot.vue`) 采用 composable 拆分模式：模板只组装 `ChatC
 ```
 chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 │
-│  共享 ref: selectedShortcut, internalEnableSelection, selectedResources
+│  共享 ref: selectedShortcut, internalEnableSelection
 │  辅助函数: scrollToBottom(), focusInput()
 │
 ├─ 0. useErrorReporter ───→ reportError, managerErrorBridge
@@ -280,7 +280,7 @@ chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 ├─ 4. useShortcuts ───────→ selectShortcutWithText, buildShortcutProperty, getShortcutFromMessage, sendShortcutDirectly
 │      ↑ 接收 doSendMessage 回调 + selectedShortcut ref（解决循环依赖）
 │
-├─ 5. useChatbotState ────→ messageStatus, messages, isWelcomeState, effectiveResources, ...
+├─ 5. useChatbotState ────→ messageStatus, messages, isWelcomeState, effectiveMenuSources, ...
 │      (纯 computed，无副作用)
 │
 ├─ 6. useToolActions ─────→ handleAgentAction, handleUserAction, handleUserInputConfirm, ...

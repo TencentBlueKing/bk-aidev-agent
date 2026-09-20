@@ -1,6 +1,6 @@
 # DescPanel 描述面板
 
-> 能力域：内容渲染 ｜ 导入：`import { DescPanel } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 将文本或 JSON 内容降级为可读描述面板。 源码位置：src/components/tool-call/desc-panel/desc-panel.vue。
 

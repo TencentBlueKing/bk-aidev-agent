@@ -1,6 +1,6 @@
 # InputAttachment 输入附件区
 
-> 能力域：输入交互 ｜ 导入：`import { InputAttachment } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：输入交互 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 ChatInput 底部附件区布局，承载快捷按钮、文件与发送图标。 源码位置：src/components/chat-input/input-attachment/input-attachment.vue。
 

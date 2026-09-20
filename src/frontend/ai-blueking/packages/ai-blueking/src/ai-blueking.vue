@@ -89,16 +89,15 @@
             :models="props.models"
             :on-custom-tab-change="props.onCustomTabChange"
             :placeholder="props.placeholder"
-            :prompts="agentPrompts"
+            :prompts="props.prompts"
             :render-mode="props.renderMode"
             :request-options="props.requestOptions"
             :resize-props="props.resizeProps"
-            :resources="agentResources"
+            :resources="props.resources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
             :shortcuts="props.shortcuts"
             :size="props.size"
-            :skills="agentSkills"
             :timezone="props.timezone"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
             :update-tools="props.updateTools"
@@ -235,9 +234,6 @@
     currentSession,
     isCompressed,
     isWelcomeState,
-    agentResources,
-    agentPrompts,
-    agentSkills,
     effectiveEnableChatSession,
     effectiveEnablePopup,
     handleError,

@@ -1,6 +1,6 @@
 # ToolcallRender 工具调用渲染器
 
-> 能力域：Agent 能力 ｜ 导入：`import { ToolcallRender } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 导入：`import { ToolCallRender } from '@blueking/chat-x'` ｜ since 1.0.0
 
 渲染 assistant toolCalls，展示工具调用状态、参数和结果。 源码位置：src/components/tool-call/toolcall-render/toolcall-render.vue。
 

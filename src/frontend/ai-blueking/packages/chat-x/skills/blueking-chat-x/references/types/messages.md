@@ -57,6 +57,9 @@ interface BaseMessage<T extends MessageType, C = string> {
 
   // 消息属性（可选）
   property?: {
+    // 发送时输入框的富文本文档；content 仍是纯文本（不改后端契约），
+    // 有这份文档时用户消息会把 @ 选中的资源原样还原成标签，编辑回填也不会丢标签
+    docSchema?: TagSchema;
     extra?: {
       // 引用内容
       cite:

@@ -60,6 +60,7 @@
   );
   const emit = defineEmits<{
     (e: 'change', model: IModelOption): void;
+    (e: 'show'): void;
   }>();
   /** 当前选中的模型（值为 llm_name，v-model） */
   const selectedModel = defineModel<string>();
@@ -93,6 +94,7 @@
     }
     isExpanded.value = true;
     resetKeyword();
+    emit('show');
     // 展开后自动聚焦搜索框（设计稿 annotation）
     panelRef.value?.focusSearch();
   };

@@ -329,7 +329,7 @@ class LangGraphAgent:
 
         # 终态 STATE_SNAPSHOT 单事件（Phase 42 换源后终态 MESSAGES_SNAPSHOT 死信分支移除，
         # 续流/中断出口的消息快照由 AidevAGUIAgent.run 首帧从 input.messages（DB 账本
-        # 经 contents_to_agui_messages 转换）统一下发）。
+        # 经 ChatCompletionAgent._build_snapshot_agui_messages 归一）统一下发）。
         final_snapshot_event = self._build_terminal_snapshot_events(result.state_values)
         yield self._dispatch_event(final_snapshot_event)
 
@@ -464,8 +464,8 @@ class LangGraphAgent:
         Phase 42 换源后终态 MESSAGES_SNAPSHOT 不再从 checkpoint state values 派生
         （``langchain_messages_to_agui`` 已随换源移除）——消息快照统一由
         :meth:`AidevAGUIAgent.run` 首帧从 ``input.messages``（DB 账本经
-        ``contents_to_agui_messages`` 转换）下发，天然与 DB 展示同源，
-        无需 D-05 方向 a 的同源复算过滤。
+        ``ChatCompletionAgent._build_snapshot_agui_messages`` 归一）下发，
+        天然与 DB 展示同源，无需 D-05 方向 a 的同源复算过滤。
         """
         return StateSnapshotEvent(
             type=EventType.STATE_SNAPSHOT,

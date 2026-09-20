@@ -443,6 +443,29 @@ class TestFilesystemBackendUploadDownload:
             assert len(results) == 1
             assert results[0]["error"] == "file_not_found"
 
+    @pytest.mark.parametrize("extra", [{}, {"state": None}, {"state": {"runtime_paas_sbx_pv": []}}])
+    def test_upload_files_accepts_state_kwarg(self, extra):
+        """upload_files 接受 state 关键字（与 PaasSandboxBackend 签名对齐），行为不变。"""
+        with TemporaryDirectory() as tmpdir:
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            results = backend.upload_files([("test.txt", b"test content")], **extra)
+
+            assert results[0]["error"] is None
+            assert (Path(tmpdir) / "test.txt").read_bytes() == b"test content"
+
+    @pytest.mark.parametrize("extra", [{}, {"state": None}, {"state": {"runtime_paas_sbx_pv": []}}])
+    def test_download_files_accepts_state_kwarg(self, extra):
+        """download_files 接受 state 关键字（与 PaasSandboxBackend 签名对齐），行为不变。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "test.txt").write_bytes(b"test content")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            results = backend.download_files(["test.txt"], **extra)
+
+            assert results[0]["content"] == b"test content"
+            assert results[0]["error"] is None
+
 
 class TestFilesystemBackendExecute:
     """Test execute method."""

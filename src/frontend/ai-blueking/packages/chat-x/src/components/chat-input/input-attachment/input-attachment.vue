@@ -85,6 +85,7 @@
     padding: 0 var(--ai-spacing-comfortable, 8px);
 
     &-default {
+      z-index: 22;
       display: flex;
       flex: 1;
       gap: 8px;

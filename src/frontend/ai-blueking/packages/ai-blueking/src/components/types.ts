@@ -14,13 +14,15 @@ import type {
   GetSideRenderComponent,
   GetSideTabRenderComponent,
   IChatHelper,
+  IHostResourceItem,
+  IHostSkillItem,
   IRequestOptions,
   IShortcut,
   OnCustomTabChange,
 } from '../types';
 import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
 import type { RenderMode } from '@blueking/chat-x';
-import type { AiSizeMode, IAiSlashMenuItem, IModelOption, ISkillListItem, IToolBtn, Message } from '@blueking/chat-x';
+import type { AiSizeMode, IModelOption, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -212,8 +214,8 @@ export interface ChatBotProps {
   /** 请求选项（仅独立模式有效；支持 ref/computed） */
   requestOptions?: MaybeRefOrGetter<IRequestOptions>;
 
-  /** 资源列表（输入 @ 触发） */
-  resources?: IAiSlashMenuItem[];
+  /** 资源列表（输入 @ 触发）；内部映射为 menuSources */
+  resources?: IHostResourceItem[];
   // === 会话配置 ===
   /** 会话编码 */
   sessionCode?: string;
@@ -238,8 +240,8 @@ export interface ChatBotProps {
    */
   timezone?: string;
 
-  /** 技能列表（输入 / 触发） */
-  skills?: ISkillListItem[];
+  /** 技能列表（输入 / 触发）；内部映射为 menuSources。AIBlueking 不透传此 prop */
+  skills?: IHostSkillItem[];
 
   /**
    * 自定义 AI 消息反馈工具组（like/unlike/delete 一排）
@@ -264,7 +266,7 @@ export interface ChatBotProps {
   };
 }
 
-export type { GetSideRenderComponent, GetSideTabRenderComponent, OnCustomTabChange };
+export type { GetSideRenderComponent, GetSideTabRenderComponent, IHostResourceItem, IHostSkillItem, OnCustomTabChange };
 
 export type { IRequestOptions } from '../types';
 

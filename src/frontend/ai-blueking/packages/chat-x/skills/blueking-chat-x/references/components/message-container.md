@@ -539,7 +539,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 `MessageContainer` 内部对 `copy` 工具操作进行了特殊处理：当 `tool.id === 'copy'` 时，自动将当前消息组中所有**非 reasoning 消息**的内容拼接后复制到剪贴板，**无需在 `onAgentAction` 中自行实现**。
 
-其他工具操作（`like`、`unlike`、`cite` 等）仍正常转发给 `onAgentAction` 回调。
+其他工具操作（`like`、`unlike`、`share` 等）仍正常转发给 `onAgentAction` 回调。
 
 ## 滚动控制
 

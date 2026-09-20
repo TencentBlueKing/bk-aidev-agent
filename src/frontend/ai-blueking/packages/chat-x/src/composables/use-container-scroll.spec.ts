@@ -63,7 +63,9 @@ const setup = (options: { clientHeight: number; scrollHeight: number; scrollTop:
   const container = createContainer(options);
   const bottom = document.createElement('div');
   const scrollIntoView = vi.fn();
+  const scrollTo = vi.fn();
   bottom.scrollIntoView = scrollIntoView;
+  container.scrollTo = scrollTo;
 
   let api: ReturnType<typeof useContainerScrollProvider>;
   const wrapper = mount(
@@ -75,13 +77,13 @@ const setup = (options: { clientHeight: number; scrollHeight: number; scrollTop:
     }),
   );
 
-  return { api: api!, container, scrollIntoView, wrapper };
+  return { api: api!, container, scrollIntoView, scrollTo, wrapper };
 };
 
 describe('useContainerScrollProvider', () => {
   describe('toScrollBottom', () => {
     it('距底部超过阈值时瞬时贴底，不触发平滑滚动动画', () => {
-      const { api, container, scrollIntoView } = setup({
+      const { api, container, scrollIntoView, scrollTo } = setup({
         scrollHeight: 5000,
         clientHeight: 500,
         scrollTop: 0,
@@ -90,11 +92,12 @@ describe('useContainerScrollProvider', () => {
       api.toScrollBottom();
 
       expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollTo).not.toHaveBeenCalled();
       expect(container.scrollTop).toBe(5000);
     });
 
     it('距底部在阈值内时使用平滑滚动', () => {
-      const { api, scrollIntoView } = setup({
+      const { api, scrollIntoView, scrollTo } = setup({
         scrollHeight: 1000,
         clientHeight: 500,
         scrollTop: 480,
@@ -102,11 +105,12 @@ describe('useContainerScrollProvider', () => {
 
       api.toScrollBottom();
 
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
     });
 
     it('显式指定 smooth 时即使距底部很远也保持平滑滚动', () => {
-      const { api, container, scrollIntoView } = setup({
+      const { api, container, scrollIntoView, scrollTo } = setup({
         scrollHeight: 5000,
         clientHeight: 500,
         scrollTop: 0,
@@ -114,12 +118,13 @@ describe('useContainerScrollProvider', () => {
 
       api.toScrollBottom('smooth');
 
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollTo).toHaveBeenCalledWith({ top: 5000, behavior: 'smooth' });
       expect(container.scrollTop).toBe(0);
     });
 
     it('恰好等于阈值时仍使用平滑滚动', () => {
-      const { api, scrollIntoView } = setup({
+      const { api, scrollIntoView, scrollTo } = setup({
         scrollHeight: 500 + INSTANT_SCROLL_DISTANCE,
         clientHeight: 500,
         scrollTop: 0,
@@ -127,7 +132,11 @@ describe('useContainerScrollProvider', () => {
 
       api.toScrollBottom();
 
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollTo).toHaveBeenCalledWith({
+        top: 500 + INSTANT_SCROLL_DISTANCE,
+        behavior: 'smooth',
+      });
     });
   });
 

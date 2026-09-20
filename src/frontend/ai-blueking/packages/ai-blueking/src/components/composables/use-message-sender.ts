@@ -10,20 +10,13 @@
 import { shallowRef, watch } from 'vue';
 import type { Ref, ShallowRef } from 'vue';
 
-import { applyRequestOptionsContext } from '../../utils';
+import { applyRequestOptionsContext, buildDocSchemaPayload } from '../../utils';
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { IChatHelper, IRequestOptions } from '../../types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 import type { ReportChatBotError } from './use-error-reporter';
 import type { IUploadFileResult, IUserMessage } from '@blueking/chat-helper';
-import type {
-  IAiSlashMenuItem,
-  Interrupt,
-  InterruptResume,
-  OnArtifactClick,
-  TagSchema,
-  UserMessage,
-} from '@blueking/chat-x';
+import type { Interrupt, InterruptResume, OnArtifactClick, TagSchema, UploadFile, UserMessage } from '@blueking/chat-x';
 
 import type { UseInterruptResumeReturn } from './use-interrupt-resume';
 
@@ -35,7 +28,6 @@ export interface UseMessageSenderParams {
   getRequestOptions?: () => IRequestOptions | undefined;
   reportError: ReportChatBotError;
   resumeUserQuestionWithInput?: UseInterruptResumeReturn['resumeUserQuestionWithInput'];
-  selectedResources: ShallowRef<IAiSlashMenuItem[]>;
   selectedShortcut: Ref<null | { id?: string }>;
 }
 
@@ -49,8 +41,9 @@ export interface UseMessageSenderReturn {
     options?: { interrupt?: Interrupt; payload?: InterruptResume },
   ) => Promise<void>;
   handleArtifactClick: OnArtifactClick;
+  handleDeleteFile: (file: Partial<UploadFile>) => Promise<void>;
   handleStopSending: () => Promise<void>;
-  handleUpdateModelValue: (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => void;
+  handleUpdateModelValue: (value: string | TagSchema) => void;
   handleUpload: (files: File[]) => Promise<IUploadFileResult[]>;
   stopGeneration: () => Promise<void>;
 }
@@ -64,7 +57,6 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     reportError,
     resumeUserQuestionWithInput,
     selectedShortcut,
-    selectedResources,
   } = params;
 
   const userInput = shallowRef<string | TagSchema>([[]]);
@@ -80,9 +72,45 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     },
   );
 
-  const handleUpdateModelValue = (value: string | TagSchema, resourceList: IAiSlashMenuItem[]) => {
+  const handleUpdateModelValue = (value: string | TagSchema) => {
     userInput.value = value;
-    selectedResources.value = resourceList;
+  };
+
+  /** 上传未完成时点了取消：等回包拿到 path 再 DELETE */
+  const pendingDeleteFiles = new Set<File>();
+
+  const getUploadResultPath = (item?: IUploadFileResult): string | undefined => {
+    if (!item) {
+      return undefined;
+    }
+    if ('path' in item && item.path) {
+      return item.path;
+    }
+    if ('id' in item && item.id) {
+      return item.id;
+    }
+    return undefined;
+  };
+
+  const deleteRemotePvFile = async (sessionCode: string, path: string): Promise<void> => {
+    try {
+      await chatHelper.value!.session.deletePvFile(sessionCode, path);
+    } catch (error) {
+      reportError(error, 'Failed to delete uploaded file');
+    }
+  };
+
+  const deleteCancelledUploads = (sessionCode: string, files: File[], results: IUploadFileResult[]): void => {
+    files.forEach((file, index) => {
+      if (!pendingDeleteFiles.has(file)) {
+        return;
+      }
+      pendingDeleteFiles.delete(file);
+      const path = getUploadResultPath(results[index]);
+      if (path) {
+        void deleteRemotePvFile(sessionCode, path);
+      }
+    });
   };
 
   /**
@@ -101,10 +129,9 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       throw new Error('[ChatBot] Cannot send message: no active session');
     }
 
-    // 清空输入框、引用和已选资源
+    // 清空输入框和引用
     userInput.value = [[]];
     cite.value = '';
-    selectedResources.value = [];
 
     // 通知外部
     const messageText = typeof message === 'string' ? message : '';
@@ -130,12 +157,17 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
       throw new Error('[ChatBot] Cannot upload: no active session');
     }
 
-    const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
-    if (!results?.length) {
-      throw new Error('[ChatBot] Upload failed: empty response');
+    try {
+      const results = await chatHelper.value!.session.uploadFiles(sessionCode, files);
+      if (!results?.length) {
+        throw new Error('[ChatBot] Upload failed: empty response');
+      }
+      deleteCancelledUploads(sessionCode, files, results);
+      return results;
+    } catch (error) {
+      files.forEach(file => pendingDeleteFiles.delete(file));
+      throw error;
     }
-
-    return results;
   };
 
   const handleArtifactClick: OnArtifactClick = async file => {
@@ -152,34 +184,55 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
   };
 
   /**
+   * 取消输入框未发送附件。UI 已立即移除，失败不恢复。
+   * 已有 PV path 立即 DELETE；上传中尚无 path 则记下 File，等 upload 回包再删。
+   */
+  const handleDeleteFile = async (file: Partial<UploadFile>): Promise<void> => {
+    const path = file.outputId || file.id;
+    if (file.file && !path) {
+      pendingDeleteFiles.add(file.file);
+      return;
+    }
+    if (file.file) {
+      pendingDeleteFiles.delete(file.file);
+    }
+
+    const sessionCode = chatHelper.value?.session.current?.value?.sessionCode;
+    if (!path || !sessionCode) {
+      return;
+    }
+
+    await deleteRemotePvFile(sessionCode, path);
+  };
+
+  /**
    * 处理发送消息
    */
   const handleSendMessage = async (
     content: UserMessage['content'],
-    _docSchema: TagSchema,
+    docSchema: TagSchema,
     options?: { interrupt?: Interrupt; payload?: InterruptResume },
   ) => {
     try {
       if (options?.payload && resumeUserQuestionWithInput) {
         userInput.value = [[]];
         cite.value = '';
-        selectedResources.value = [];
         await resumeUserQuestionWithInput(content, options);
         return;
       }
 
       const extra: Record<string, unknown> = {};
-      if (cite.value) {
-        extra.cite = cite.value;
-      }
-      if (selectedShortcut.value) {
-        extra.command = selectedShortcut.value.id;
-      }
-      if (selectedResources.value.length) {
-        extra.resources = selectedResources.value;
-      }
-      const sendOptions = Object.keys(extra).length ? { property: { extra } } : {};
-      await doSendMessage(content as IUserMessage['content'], sendOptions);
+      if (cite.value) extra.cite = cite.value;
+      if (selectedShortcut.value) extra.command = selectedShortcut.value.id;
+      // 不再写 extra.resources —— 新协议统一走 property.docSchema
+
+      // 上传文件的 artifact 标签由 chat-x 在发送前注入进 docSchema，这里只透传
+      const docSchemaPayload = buildDocSchemaPayload(docSchema);
+      const property = {
+        ...(Object.keys(extra).length ? { extra } : {}),
+        ...(docSchemaPayload ? { docSchema: docSchemaPayload } : {}),
+      };
+      await doSendMessage(content as IUserMessage['content'], Object.keys(property).length ? { property } : {});
     } catch (error) {
       reportError(error, 'Failed to send message');
     }
@@ -212,6 +265,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     doSendMessage,
     handleSendMessage,
     handleArtifactClick,
+    handleDeleteFile,
     handleUpload,
     handleStopSending,
     stopGeneration,

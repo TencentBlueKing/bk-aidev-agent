@@ -1,6 +1,6 @@
 # FileContent 文件内容
 
-> 能力域：媒体文件 ｜ 导入：`import { FileContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：媒体文件 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染文件附件，支持图片预览、上传中/失败态和下载事件。 源码位置：src/components/chat-content/file-content/file-content.vue。
 
@@ -124,7 +124,7 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 </script>
 ```
 
-> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败与上传中/失败的图片被自动过滤。
+> **预览行为**：组件内部自动维护 `ImagePreview` 实例，无需外部管理预览状态。只有加载成功的图片才会进入预览列表，加载失败的图片被自动过滤。
 
 ## 上传中 / 上传失败
 
@@ -136,7 +136,7 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 | `error`   | 背景 `#fff0f0`、边框 `#ea3636`，第二行「上传失败」 | 与加载失败相同的破图占位（18px `ImageErrorIcon`） |
 | `success` / 未设置 | 正常卡片 | 正常缩略图，可预览 |
 
-上传中与上传失败的图片都不会进入 `ImagePreview` 列表。`ChatInput` 在存在 `pending` / `error` 附件时会拦截发送。
+上传中与上传失败的图片都不会进入 `ImagePreview` 列表。`ChatInput` 在存在 `pending` / `error` 附件时会拦截发送（见 [ChatInput](/components/input/chat-input)）。
 
 ## 图片加载失败
 
@@ -217,6 +217,10 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
   </ChatInput>
 </template>
 ```
+
+## 上传文件预览
+
+具有 `outputId` 且不处于上传中 / 失败态的附件，在 `ChatContainer` 内点击会通过统一的文件产物侧栏预览，使用 `onArtifactClick` 获取预览和下载链接。图片缩略图链接失效时仍可按 `outputId` 重新取链；无 `outputId` 的图片继续使用原有图片预览。
 
 ## API
 

@@ -62,11 +62,12 @@ export const CONST_MESSAGE_TOOLS = [
     id: 'copy',
     name: t('复制'),
   },
-  {
-    description: t('引用'),
-    id: 'cite',
-    name: t('引用'),
-  },
+  // 引用功能隐藏，后续不再支持
+  // {
+  //   description: t('引用'),
+  //   id: 'cite',
+  //   name: t('引用'),
+  // },
   {
     description: t('重新生成将清空下文内容'),
     id: 'rebuild',
@@ -79,17 +80,21 @@ export const CONST_MESSAGE_TOOLS = [
   },
 ] as IToolBtn[];
 
+/** 设计稿标注：用户消息正文最高显示 200px，超出后折叠并展示「显示更多」 */
+export const CONST_USER_MESSAGE_MAX_HEIGHT = 200;
+
 export const CONST_USER_MESSAGE_TOOLS = [
   {
     description: t('复制'),
     id: 'copy',
     name: t('复制'),
   },
-  {
-    description: t('引用'),
-    id: 'cite',
-    name: t('引用'),
-  },
+  // 引用功能隐藏，后续不再支持
+  // {
+  //   description: t('引用'),
+  //   id: 'cite',
+  //   name: t('引用'),
+  // },
   {
     description: t('编辑'),
     id: 'edit',
@@ -125,7 +130,7 @@ export const CONST_UPDATE_TOOLS = [
 
 export const MAX_UPLOAD_FILES = 9; // 最大上传文件数量
 
-export const MAX_UPLOAD_FILE_SIZE = 2.4 * 1024 * 1024; // 最大上传文件大小 2.5MB
+export const MAX_UPLOAD_FILE_SIZE = 20 * 1024 * 1024; // 单文件大小须严格小于 20MB
 
 export { ALLOWED_UPLOAD_EXTENSIONS, DEFAULT_UPLOAD_ACCEPT } from '../utils/upload-accept';
 

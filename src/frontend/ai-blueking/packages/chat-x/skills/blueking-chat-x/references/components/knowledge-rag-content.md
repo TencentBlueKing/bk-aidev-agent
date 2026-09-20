@@ -1,6 +1,6 @@
 # KnowledgeRagContent 知识召回内容
 
-> 能力域：Agent 能力 ｜ 导入：`import { KnowledgeRagContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：Agent 能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染知识召回活动，包含加载态、Markdown 内容与引用来源。 源码位置：src/components/chat-content/knowledge-rag-content/knowledge-rag-content.vue。
 

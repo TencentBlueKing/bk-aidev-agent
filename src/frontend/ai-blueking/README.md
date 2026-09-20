@@ -39,7 +39,7 @@ AI 小鲸智能对话组件的完整生态，基于 pnpm workspace 的 monorepo 
 
 ```
 @blueking/ai-blueking
-  ├─ peerDep: vue ^3.5.24, @blueking/chat-x >=0.0.19
+  ├─ peerDep: vue ^3.5.24, @blueking/chat-x >=0.0.52-beta.1
   └─ dep: @blueking/chat-helper, bkui-vue, tippy.js, vue-draggable-resizable, vue-tippy
 
 @blueking/chat-x

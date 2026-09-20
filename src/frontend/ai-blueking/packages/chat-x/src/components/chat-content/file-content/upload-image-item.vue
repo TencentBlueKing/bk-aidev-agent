@@ -1,7 +1,8 @@
 <template>
   <div
     class="ai-upload-image-item"
-    :class="{ 'is-pending': isPending }"
+    :class="{ 'is-pending': isPending, 'is-previewable': previewable }"
+    @click="handlePreview"
   >
     <img
       v-if="!showError"
@@ -9,7 +10,6 @@
       class="ai-upload-image-item-thumb"
       :class="`is-${variant}`"
       :src="src"
-      @click="handlePreview"
       @error="emit('error')"
     />
     <div
@@ -51,6 +51,7 @@
       hasError?: boolean;
       name?: string;
       readonly?: boolean;
+      previewable?: boolean;
       src?: string;
       status?: UploadStatus;
       variant?: UploadFileVariant;
@@ -67,7 +68,7 @@
   const showError = computed(() => !!props.hasError || props.status === UploadStatus.Error);
 
   const handlePreview = () => {
-    if (isPending.value) {
+    if (isPending.value || (showError.value && !props.previewable)) {
       return;
     }
     emit('preview');
@@ -123,6 +124,10 @@
       pointer-events: none;
       background: rgb(0 0 0 / 50%);
       border-radius: 8px;
+    }
+
+    &.is-previewable &-thumb {
+      cursor: pointer;
     }
 
     &-error-icon {

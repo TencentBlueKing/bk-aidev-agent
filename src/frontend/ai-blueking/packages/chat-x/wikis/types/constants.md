@@ -232,8 +232,7 @@ const SELECTION_Z_INDEX = 10003;
 ```typescript
 const CONST_MESSAGE_TOOLS: IToolBtn[] = [
   { id: 'copy', name: '复制', description: '复制' },
-  { id: 'cite', name: '引用', description: '引用' },
-  { id: 'rebuild', name: '重新生成', description: '重新生成' },
+  { id: 'rebuild', name: '重新生成', description: '重新生成将清空下文内容' },
   { id: 'share', name: '分享', description: '分享' },
 ];
 ```
@@ -245,10 +244,19 @@ const CONST_MESSAGE_TOOLS: IToolBtn[] = [
 ```typescript
 const CONST_USER_MESSAGE_TOOLS: IToolBtn[] = [
   { id: 'copy', name: '复制', description: '复制' },
-  { id: 'cite', name: '引用', description: '引用' },
   { id: 'edit', name: '编辑', description: '编辑' },
   { id: 'delete', name: '删除', description: '删除' },
 ];
+```
+
+> `cite`（引用）已从两份列表移除，后续不再支持。
+
+### CONST_USER_MESSAGE_MAX_HEIGHT
+
+用户消息正文的折叠阈值（px），超出后由 [CollapsibleContent](/components/rendering/collapsible-content) 折叠并展示「显示更多」：
+
+```typescript
+const CONST_USER_MESSAGE_MAX_HEIGHT = 200;
 ```
 
 ### CONST_UPDATE_TOOLS
@@ -273,6 +281,27 @@ const CONST_UPDATE_TOOLS: IToolBtn[] = [
 const DEFAULT_SHORTCUTS: Shortcut[] = [{ id: 'ask-whale', name: '问问小鲸' }];
 ```
 
+## 上传常量
+
+与 [ChatInput 文件上传](/components/input/chat-input#file-upload) 共用。完整扩展名列表见源码 `src/utils/upload-accept.ts`。
+
+```typescript
+const ALLOWED_UPLOAD_EXTENSIONS = {
+  image: ['.gif', '.jpeg', '.jpg', '.png', '.webp'],
+  document: ['.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.pdf' /* ... */],
+  text: ['.txt', '.md', '.json' /* ... */],
+  code: ['.py', '.js', '.ts', '.vue' /* ... */],
+};
+
+/** 「文件」项 / 拖拽 / 粘贴的默认 accept，以及入队校验默认值 */
+const DEFAULT_UPLOAD_ACCEPT = Object.values(ALLOWED_UPLOAD_EXTENSIONS).flat().join(',');
+```
+
+| 常量 | 说明 |
+| ---- | ---- |
+| `ALLOWED_UPLOAD_EXTENSIONS` | 默认允许的扩展名分类（含点）；分类用于 tooltip 展示 |
+| `DEFAULT_UPLOAD_ACCEPT` | `ChatInput.accept` 缺省值 |
+
 ## 使用示例
 
 ```typescript
@@ -285,6 +314,7 @@ import {
   CHAT_Z_INDEX,
   CONST_MESSAGE_TOOLS,
   DEFAULT_SHORTCUTS,
+  DEFAULT_UPLOAD_ACCEPT,
 } from '@blueking/chat-x';
 
 // 创建消息
@@ -306,6 +336,9 @@ console.log(
   '可用工具:',
   CONST_MESSAGE_TOOLS.map(t => t.name),
 );
+
+// 上传：「文件」项 / 拖拽 / 粘贴用 DEFAULT_UPLOAD_ACCEPT（已含图片扩展名）
+const filePickerAccept = DEFAULT_UPLOAD_ACCEPT;
 ```
 
 ## 关联组件

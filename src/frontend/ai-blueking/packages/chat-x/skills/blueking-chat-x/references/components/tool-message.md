@@ -1,6 +1,6 @@
 # ToolMessage 工具消息
 
-> 能力域：消息系统 ｜ 导入：`import { ToolMessage } from '@blueking/chat-x'` ｜ since 0.0.20
+> 能力域：消息系统 ｜ 未从包入口导出：内部组件（入口的同名导出是 TS 类型，不是组件） ｜ since 0.0.20
 
 渲染工具返回内容；DescPanel 解析 JSON 为 key-value，嵌套值 JSON.stringify 后经 HighlightKeyword 展示。 源码位置：src/components/chat-message/tool-message/tool-message.vue。
 

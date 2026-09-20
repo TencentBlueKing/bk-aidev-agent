@@ -1,6 +1,6 @@
 # ReferenceContent 引用来源
 
-> 能力域：内容渲染 ｜ 导入：`import { ReferenceContent } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：内容渲染 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 渲染引用文档/来源列表。 源码位置：src/components/chat-content/reference-content/reference-content.vue。
 

@@ -1,6 +1,6 @@
 # UserFeedback 用户反馈
 
-> 能力域：工具与反馈 ｜ 导入：`import { UserFeedback } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：工具与反馈 ｜ 导入：`import { MessageUserFeedback } from '@blueking/chat-x'` ｜ since 1.0.0
 
 用户反馈弹层，提交踩/反馈原因。 源码位置：src/components/message-tools/user-feedback/user-feedback.vue。
 

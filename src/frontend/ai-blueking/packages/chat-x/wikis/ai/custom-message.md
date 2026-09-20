@@ -157,7 +157,7 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 </ChatContainer>
 ```
 
-自定义整条消息时，在 `#message` 内分支 `message.role`，**其余 role 仍交给 `MessageRender`**，避免漏掉用户消息工具链（删除/编辑/复制/引用等）：
+自定义整条消息时，在 `#message` 内分支 `message.role`，**其余 role 仍交给 `MessageRender`**，避免漏掉用户消息工具链（删除/编辑/复制等）：
 
 ```vue
 <template #message="{ message, messageToolsStatus }">

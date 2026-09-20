@@ -11,7 +11,12 @@ import type { Ref } from 'vue';
 
 import { MessageRole } from '@blueking/chat-x';
 
-import { applyRequestOptionsContext, findLastUserMessageBefore, findLastUserMessageIdBefore } from '../../utils';
+import {
+  applyRequestOptionsContext,
+  buildDocSchemaPayload,
+  findLastUserMessageBefore,
+  findLastUserMessageIdBefore,
+} from '../../utils';
 
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { IShortcut } from '../../manager/business/types';
@@ -249,7 +254,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
   /**
    * 处理用户消息编辑确认
    */
-  const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], _docSchema: TagSchema) => {
+  const handleUserInputConfirm = async (message: Message, content: UserMessage['content'], docSchema: TagSchema) => {
     if (!chatHelper.value) {
       console.error('[ChatBot] Cannot edit message: chatHelper not initialized');
       return;
@@ -269,7 +274,11 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
 
     try {
       const existingProperty = (message as unknown as { property?: Record<string, unknown> }).property;
-      const mergedProperty = applyRequestOptionsContext(existingProperty, getRequestOptions);
+      const docSchemaPayload = buildDocSchemaPayload(docSchema);
+      const nextProperty = docSchemaPayload
+        ? { ...existingProperty, docSchema: docSchemaPayload }
+        : existingProperty;
+      const mergedProperty = applyRequestOptionsContext(nextProperty, getRequestOptions);
       await chatBusinessManager.value?.resendMessageWithProperty(
         String(messageId),
         sessionCode,

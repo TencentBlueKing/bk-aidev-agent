@@ -3,15 +3,13 @@
     class="ai-model-selector-trigger"
     :class="{ 'is-expanded': expanded, 'is-disabled': disabled }"
   >
-    <span
+    <ResourceIcon
       v-if="model?.icon"
       class="ai-model-selector-trigger-icon"
-    >
-      <img
-        alt=""
-        :src="model.icon"
-      />
-    </span>
+      :icon="model.icon"
+      :name="model.llm_name"
+      type="model"
+    />
     <span class="ai-model-selector-trigger-name">
       {{ model?.llm_name || placeholder }}
     </span>
@@ -21,6 +19,7 @@
 
 <script setup lang="ts">
   import { ArrowLeftIcon } from '../../../icons';
+  import { ResourceIcon } from '../../resource-icon';
 
   import type { IModelOption } from './types';
 
@@ -61,20 +60,9 @@
       background: transparent;
     }
 
+    // 尺寸与圆角由 ResourceIcon 自带，此处只做定位约束
     &-icon {
-      display: flex;
       flex: 0 0 16px;
-      align-items: center;
-      justify-content: center;
-      width: 16px;
-      height: 16px;
-      font-size: 16px;
-
-      img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-      }
     }
 
     &-name {

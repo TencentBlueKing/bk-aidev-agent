@@ -317,6 +317,10 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 </template>
 ```
 
+## 上传文件预览
+
+具有 `outputId` 且不处于上传中 / 失败态的附件，在 `ChatContainer` 内点击会通过统一的文件产物侧栏预览，使用 `onArtifactClick` 获取预览和下载链接。图片缩略图链接失效时仍可按 `outputId` 重新取链；无 `outputId` 的图片继续使用原有图片预览。
+
 ## API
 
 ### Props

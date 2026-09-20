@@ -29,7 +29,7 @@ import {
   // type AssistantMessage,
   type AIFileInfo,
   type BkFlowMessageContent,
-  type IAiSlashMenuItem,
+  type IInputMenuItem,
   type IModelOption,
   // type InfoMessage,
   type Message,
@@ -46,6 +46,7 @@ import {
   ShareIcon,
   t,
 } from '../src';
+import { createMockUploadedFile, getMockUploadedFileUrls } from './upload-file';
 
 // 模型图标示例：图标为图片地址（string），贴合后端返回的 icon 字段
 const DEEPSEEK_ICON =
@@ -758,6 +759,8 @@ export const MOCK_ARTIFACT_URL_MAP: Record<string, MockArtifactUrl> = MOCK_ARTIF
 export const mockArtifactClick = async (file: AIFileInfo): Promise<MockArtifactUrl> => {
   console.info('mockArtifactClick', file);
   await new Promise(resolve => setTimeout(resolve, 600));
+  const uploadedUrls = getMockUploadedFileUrls(file.outputId);
+  if (uploadedUrls) return uploadedUrls;
   const staticUrls = MOCK_ARTIFACT_STATIC_URL[file.outputId] ?? {};
   const textDownloadUrl = getMockTextDownloadUrl(file.outputId);
   return {
@@ -810,12 +813,30 @@ const mockCreatedAt = (dayOffset: number, hours: number, minutes: number, yearOf
   return date.toISOString();
 };
 
+// 已上传文件样例：可在 @ / + 中引用，也可点击附件在侧栏预览与下载。
+const MOCK_UPLOADED_FILES = [
+  new File(['# 上传文件接入说明\n\n上传响应的 `path` 会保存为 `outputId`。\n\n- 在 @ 或 + 中引用文件\n- 点击附件或标签打开侧栏\n- 在侧栏下载原文件\n'], '上传文件接入说明.md', { type: 'text/markdown' }),
+  new File(['{\n  "service": "chat-x",\n  "uploadLimitMB": 45,\n  "previewEnabled": true\n}'], '上传配置示例.json', { type: 'application/json' }),
+].map(createMockUploadedFile);
+
 // 带文件产物的会话消息，用于 playground 调试 artifacts 展示与 outputId 去重
 export const MOCK_ARTIFACTS_MESSAGES = [
   {
     id: 'mock-artifacts-user',
     role: MessageRole.User,
-    content: '帮我把本周监控方案相关的产出文件都整理出来，方便评审。',
+    content: [
+      { type: MessageContentType.Text, text: '帮我检查上传的接入说明和配置。旧版附件没有 outputId，只展示在消息中，不进入 @ / + 菜单。' },
+      ...MOCK_UPLOADED_FILES.map(file => ({
+        type: MessageContentType.Binary,
+        id: file.id,
+        outputId: file.path,
+        filename: file.name,
+        mimeType: file.mime_type,
+        size: file.size,
+        url: file.download_url,
+      })),
+      { type: MessageContentType.Binary, id: 'legacy-file', filename: '旧版附件（无outputId）.txt', mimeType: 'text/plain', size: 128 },
+    ],
     name: 'user',
     status: MessageStatus.Complete,
     messageId: 'mock-artifacts-user',
@@ -1415,55 +1436,86 @@ export const MOCK_FLOW_AGENT_MESSAGES = [
   },
 ] as Message[];
 
-// @ 资源列表
-export const MOCK_RESOURCES = [
+// 内联图标，避免用假路径触发一片 404；不同类型给不同色块便于肉眼区分
+const createMenuIcon = (color: string) =>
+  `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='14' height='14' rx='3' fill='%23${color}'/%3E%3C/svg%3E`;
+
+const SKILL_ICON = createMenuIcon('7c5cff');
+const MCP_ICON = createMenuIcon('3a84ff');
+const TOOL_ICON = createMenuIcon('1cab88');
+const KNOWLEDGE_ICON = createMenuIcon('f59500');
+
+/**
+ * 输入框菜单数据源：`@`（知识库 / 会话产物）、`/`（Skill / MCP / 工具）、`\`（Prompt）与左下角 + 号共用。
+ *
+ * 覆盖的验证点：
+ * - Skill 6 条、MCP 5 条：超过默认阈值 4，出现「更多 +N」折叠行
+ * - 部分条目带 description：hover 弹出气泡
+ * - knowledgebase 与 doc 混用：面板里应合并成同一个「知识库」分组
+ * - prompt 带 content：选中后用 content 整体替换输入框
+ * - 故意留空 icon 的条目：走内置兜底图标
+ * - 一条 disabled：不可点击、不参与键盘选择
+ *
+ * 未包含 artifact（会话产物）：交给 ChatContainer 从 messages 自动收集。
+ */
+export const MOCK_MENU_SOURCES: IInputMenuItem[] = [
+  { id: 'skill_hangzhou', type: 'skill', name: 'Hangzhou', icon: SKILL_ICON, description: '杭州区域巡检 Skill' },
+  { id: 'skill_guangzhou', type: 'skill', name: 'Guangzhou', icon: SKILL_ICON, description: '广州区域巡检 Skill' },
+  { id: 'skill_shenzhen', type: 'skill', name: 'Shenzhen', icon: SKILL_ICON },
+  { id: 'skill_beijing', type: 'skill', name: 'Beijing', icon: SKILL_ICON },
+  { id: 'skill_shanghai', type: 'skill', name: 'Shanghai', icon: SKILL_ICON },
+  // 无 icon：验证兜底图标
+  { id: 'skill_chengdu', type: 'skill', name: 'Chengdu' },
+
+  { id: 'mcp_1', type: 'mcp', name: 'Mcp_1', description: '描述介绍描述介绍描述介绍描述介绍描述介绍' },
+  { id: 'mcp_2', type: 'mcp', name: 'Mcp_2', description: '描述介绍描述介绍描述介绍描述介绍描述介绍' },
+  { id: 'mcp_3', type: 'mcp', name: 'Mcp_3' },
+  { id: 'mcp_4', type: 'mcp', name: 'Mcp_4' },
+  { id: 'mcp_5', type: 'mcp', name: 'Mcp_5' },
+
+  { id: 'tool_1', type: 'tool', name: '告警收敛分析', description: '按服务聚合近 7 天 P1 告警' },
+  { id: 'tool_2', type: 'tool', name: '日志检索' },
+  // 超长名称：验证省略号与溢出 tips
   {
+    id: 'tool_3',
     type: 'tool',
-    name: '工具1撒旦法收到了客服',
-    id: 'tool1',
-    icon: 'icon-tool1',
+    name: '这是一个名称特别长的工具用来验证列表项的文本省略与溢出提示效果',
   },
-  {
-    type: 'shortcut',
-    name: '快捷1撒旦法收到',
-    id: 'shortcut1',
-    icon: 'icon-shortcut1',
-  },
-  {
-    type: 'doc',
-    name: '文档1',
-    id: 'doc1',
-    icon: 'icon-doc1',
-  },
-  {
-    type: 'mcp',
-    name: 'MCP1',
-    id: 'mcp1',
-    icon: 'icon-mcp1',
-  },
-  {
-    type: 'tool',
-    name: '工具2',
-    id: 'tool2',
-    icon: 'icon-tool2',
-  },
+  // 禁用态
+  { id: 'tool_4', type: 'tool', name: '容量预测（未授权）', disabled: true },
+
+  { id: 'kb_01', type: 'knowledgebase', name: '知识库01', icon: KNOWLEDGE_ICON, description: '运维通用知识库' },
+  { id: 'kb_02', type: 'knowledgebase', name: '知识库02', icon: KNOWLEDGE_ICON },
+  // doc 与 knowledgebase 应合并进同一个「知识库」分组
+  { id: 'doc_01', type: 'doc', name: '知识库03（doc 类型）' },
 
   {
-    type: 'shortcut',
-    name: '快捷2',
-    id: 'shortcut2',
-    icon: 'icon-shortcut2',
+    id: 'prompt_travel',
+    type: 'prompt',
+    name: '深圳旅游攻略？',
+    content: '深圳旅游攻略？帮我按三天两夜规划行程，包含交通、住宿与必去景点。',
   },
-
   {
-    type: 'doc',
-    name: '文档2',
-    id: 'doc2',
-    icon: 'icon-doc2',
+    id: 'prompt_weather',
+    type: 'prompt',
+    name: '深圳今日天气如何？',
+    content: '深圳今日天气如何？顺便给出未来三天的趋势。',
   },
-] as IAiSlashMenuItem[];
-// @ 提示词列表
-export const MOCK_PROMPTS = ['你好', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊', '你好啊'];
+  {
+    id: 'prompt_alarm',
+    type: 'prompt',
+    name: '帮我分析最近的告警',
+    content: '帮我分析最近 24 小时的告警，按服务归类。',
+  },
+  { id: 'prompt_report', type: 'prompt', name: '生成周报', content: '根据本周的会话记录，帮我生成一份运维周报。' },
+  { id: 'prompt_review', type: 'prompt', name: '代码评审', content: '帮我评审这段代码，重点关注边界条件与异常处理。' },
+  {
+    id: 'prompt_long',
+    type: 'prompt',
+    name: '深圳今日天气预报深圳今日天气预报深圳今日天气预报深圳今日天气预报',
+    content: '深圳今日天气预报，需要包含温度、湿度、风力与穿衣建议。',
+  },
+];
 
 export const MOCK_MARKDOWN_CONTENT = `
 ---

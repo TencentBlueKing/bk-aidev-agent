@@ -29,6 +29,17 @@ import { isEn } from '../common/lang';
 export const lang = {
   发送: 'Send',
   停止: 'Stop',
+  添加: 'Add',
+  Skill: 'Skill',
+  MCP: 'MCP',
+  Prompt: 'Prompt',
+  文件: 'File',
+  图片: 'Image',
+  工具: 'Tool',
+  知识库: 'Knowledge Base',
+  会话产物: 'Conversation Files',
+  收起: 'Collapse',
+  显示更多: 'Show More',
   问问小鲸: 'Ask AI',
   复制: 'Copy',
   分享: 'Share',
@@ -193,6 +204,8 @@ export const lang = {
   '文件上传中，请稍候': 'Uploading files, please wait',
   '存在上传失败的文件，请删除后重试': 'Remove failed uploads before sending',
   上传失败: 'Upload failed',
+  '有 {count} 个文件因格式不支持未添加':
+    '{count} file(s) were not added because the format is not supported',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

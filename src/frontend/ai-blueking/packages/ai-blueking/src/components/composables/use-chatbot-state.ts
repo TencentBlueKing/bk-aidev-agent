@@ -15,10 +15,10 @@ import { MessageStatus, MessageToolsStatus } from '@blueking/chat-x';
 import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { SessionBusinessManager } from '../../manager/business/session-business-manager';
 import type { ShortcutManager } from '../../manager/business/shortcut-manager';
-import type { IChatHelper } from '../../types';
+import { buildMenuSources } from '../../utils';
+import type { IChatHelper, IHostResourceItem, IHostSkillItem } from '../../types';
 import type { ChatBotProps } from '../types';
-import type { ISupportUpload } from '@blueking/chat-helper';
-import type { IAiSlashMenuItem, ISkillListItem, IToolBtn, Message, Shortcut } from '@blueking/chat-x';
+import type { IInputMenuItem, IToolBtn, Message, Shortcut } from '@blueking/chat-x';
 
 const CLAW_HIDDEN_MESSAGE_TOOLS: IToolBtn[] = [{ id: 'rebuild', hidden: true }];
 const CLAW_HIDDEN_UPDATE_TOOLS: IToolBtn[] = [{ id: 'delete', hidden: true }];
@@ -42,7 +42,6 @@ export interface UseChatbotStateParams {
   isInitialized: Ref<boolean>;
   isStandaloneMode: Ref<boolean>;
   props: ChatBotProps;
-  selectedShortcut: Ref<null | (Shortcut & { supportUpload?: ISupportUpload })>;
   sessionBusinessManager: Ref<null | SessionBusinessManager>;
   shortcutManager: Ref<null | ShortcutManager>;
 }
@@ -50,10 +49,8 @@ export interface UseChatbotStateParams {
 export interface UseChatbotStateReturn {
   chatbotStyle: ComputedRef<Record<string, string | undefined>>;
   currentSession: ComputedRef<any>;
+  effectiveMenuSources: ComputedRef<IInputMenuItem[]>;
   effectiveMessageTools: ComputedRef<IToolBtn[] | undefined>;
-  effectivePrompts: ComputedRef<string[]>;
-  effectiveResources: ComputedRef<IAiSlashMenuItem[]>;
-  effectiveSkills: ComputedRef<ISkillListItem[]>;
   effectiveSupportUpload: ComputedRef<boolean>;
   effectiveUpdateTools: ComputedRef<IToolBtn[] | undefined>;
   effectiveUserMessageTools: ComputedRef<IToolBtn[] | undefined>;
@@ -77,7 +74,6 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
     shortcutManager,
     isStandaloneMode,
     isInitialized,
-    selectedShortcut,
   } = params;
 
   const messageStatus = computed(() => {
@@ -129,28 +125,19 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   });
 
   /**
-   * 资源列表（输入 @ 触发）
-   * 优先级：props 传入 > info 接口返回 > 空数组
+   * 输入菜单数据源：props 优先，否则回退 agent.info，再映射为 chat-x menuSources。
    */
-  const effectiveResources = computed(() => {
+  const hostResources = computed<IHostResourceItem[]>(() => {
     if (props.resources?.length) return props.resources;
-    return (chatHelper.value?.agent.info.value?.resources ?? []) as IAiSlashMenuItem[];
+    return (chatHelper.value?.agent.info.value?.resources ?? []) as IHostResourceItem[];
   });
 
-  /**
-   * 预设提示词列表（输入 \ 触发）
-   * 优先级：props 传入 > info 接口返回 > 空数组
-   */
-  const effectivePrompts = computed(() => {
+  const hostPrompts = computed<string[]>(() => {
     if (props.prompts?.length) return props.prompts;
     return chatHelper.value?.agent.info.value?.conversationSettings?.predefinedQuestions ?? [];
   });
 
-  /**
-   * 技能列表（输入 / 触发）
-   * 优先级：props 传入 > info 接口返回 > 空数组
-   */
-  const effectiveSkills = computed<ISkillListItem[]>(() => {
+  const hostSkills = computed<IHostSkillItem[]>(() => {
     if (props.skills?.length) return props.skills;
     return (chatHelper.value?.agent.info.value?.relatedSkills ?? []).map(skill => ({
       skill_name: skill.skill_name,
@@ -160,16 +147,18 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
     }));
   });
 
+  const effectiveMenuSources = computed(() =>
+    buildMenuSources({
+      skills: hostSkills.value,
+      resources: hostResources.value,
+      prompts: hostPrompts.value,
+    }),
+  );
+
   /**
-   * 是否支持上传文件（vision 模式）
-   * 选中 command 时使用 command 级别的 supportUpload，否则跟随当前选中模型的 support_vision
+   * 文件上传常驻。后端已用工具适配非多模态模型，不再按 support_vision / 快捷指令拦截。
    */
-  const effectiveSupportUpload = computed(() => {
-    if (selectedShortcut.value?.supportUpload) {
-      return selectedShortcut.value.supportUpload.vision === true;
-    }
-    return chatBusinessManager.value?.selectedModelSupportsVision.value ?? false;
-  });
+  const effectiveSupportUpload = computed(() => true);
 
   const chatbotStyle = computed(() => ({
     height: typeof props.height === 'number' ? `${props.height}px` : props.height,
@@ -191,9 +180,7 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
     currentSession,
     isWelcomeState,
     openingRemark,
-    effectiveResources,
-    effectivePrompts,
-    effectiveSkills,
+    effectiveMenuSources,
     effectiveSupportUpload,
     chatbotStyle,
     filteredShortcuts,

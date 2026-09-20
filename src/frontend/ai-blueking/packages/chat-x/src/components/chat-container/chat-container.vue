@@ -51,7 +51,7 @@
                         class: 'ai-execution-summary-label',
                         onVnodeMounted: (node: VNode) => {
                           if (selectedTab.name === tab.name) {
-                            node.el?.scrollIntoView({ behavior: 'smooth' });
+                            scrollActiveTabLabelIntoView(node.el);
                           }
                         },
                       },
@@ -240,8 +240,10 @@
           />
           <template v-else>
             <ChatInput
+              ref="chatInputRef"
               v-model:cite="cite"
               v-model:selected-model="selectedModel"
+              :menu-sources="resolvedMenuSources"
               :message-status="inputStatus"
               :model-value="modelValue"
               :models="models"
@@ -249,14 +251,12 @@
               :on-stop-sending="onStopSending"
               :on-upload="onUpload"
               :placeholder="placeholder"
-              :prompts="prompts"
-              :resources="resources"
               :send-disabled-tip="pendingApprovalTipText"
               :shortcut-id="selectedShortcut?.id"
               :shortcuts="shortcuts"
-              :skills="skills"
               :support-upload="supportUpload"
               :tippy-options="commonTippyOptions"
+              @delete-file="emits('deleteFile', $event)"
               @delete-shortcut="handleCloseShortcut"
               @model-change="emits('modelChange', $event)"
               @select-shortcut="handleSelectShortcut"
@@ -311,11 +311,13 @@
   import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
   import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
+  import { useInputMentionProvider } from '../../composables/use-input-mention';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
   import { AIBluekingBannerIcon, ArtifactTabIcon } from '../../icons';
   import { t } from '../../lang/lang';
+  import { collectMessageArtifacts } from '../../utils';
   import ToolBtn from '../ai-buttons/tool-btn/tool-btn.vue';
   import ShortcutRender from '../ai-shortcut/shortcut-render/shortcut-render.vue';
   import ContentRender from '../chat-content/content-render/content-render.vue';
@@ -336,7 +338,7 @@
     AITippyProps,
     CustomBkFlowTabData,
     CustomTab,
-    IAiSlashMenuItem,
+    IInputMenuItem,
     IToolBtn,
     Shortcut,
     TagSchema,
@@ -442,7 +444,25 @@
   const sideRenderComponent = computed(() => {
     return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
   });
+  /**
+   * 输入框菜单数据源：会话产物默认由容器从消息里自动收集；
+   * 业务方在 menuSources 里自行传入 artifact 时以传入的为准。
+   */
+  const resolvedMenuSources = computed(() => {
+    const sources = props.menuSources ?? [];
+    if (sources.some(item => item.type === 'artifact')) {
+      return sources;
+    }
+    return [...sources, ...collectMessageArtifacts(props.messages)];
+  });
+  // 消息区文件卡片、侧栏产物面板据此把文件「@ 进输入框」
+  const chatInputRef = useTemplateRef<InstanceType<typeof ChatInput>>('chatInputRef');
+  useInputMentionProvider({
+    insertMention: item => chatInputRef.value?.insertMention?.(item),
+  });
   useGlobalConfig({
+    // 消息编辑态会就地渲染 ChatInput，菜单数据源经此下发，避免逐层透传
+    menuSources: resolvedMenuSources,
     size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
     timezone: computed(() => props.timezone),
@@ -575,7 +595,7 @@
   const {
     messageGroups,
     executionGroups,
-    sessionArtifacts,
+    sessionArtifacts: messageArtifacts,
     isShareMode,
     isAllSelected,
     onToggleShareAll,
@@ -588,6 +608,15 @@
     messages: computed(() => props.messages),
     renderMode: computed(() => renderMode.value),
     selectedUserMessages,
+  });
+
+  // 输入框里上传成功但尚未发送的文件也可立即预览，移除附件后同步移出侧栏。
+  const sessionArtifacts = computed(() => {
+    const files = new Map(messageArtifacts.value.map(file => [file.outputId, file]));
+    for (const file of chatInputRef.value?.uploadedArtifacts ?? []) {
+      files.set(file.outputId, file);
+    }
+    return [...files.values()];
   });
 
   // 文件卡片点击 → 命中文件并展开侧栏、切到「文件产物」Tab
@@ -646,7 +675,7 @@
   const handleSelectShortcut = (shortcut: Shortcut) => {
     emits('selectShortcut', shortcut);
   };
-  const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IAiSlashMenuItem[]) => {
+  const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IInputMenuItem[]) => {
     emits('update:modelValue', value, selectedResourceList);
   };
 
@@ -685,6 +714,16 @@
       return;
     }
     dom.scrollIntoView({ behavior: 'smooth' });
+  };
+  /**
+   * 把选中的侧栏 Tab 标签滚进 tab 栏。
+   * 标签不在视口内时跳过：scrollIntoView 会带动 window，文档页多个示例会把页面拖到最后一个容器。
+   */
+  const scrollActiveTabLabelIntoView = (el: unknown) => {
+    if (!(el instanceof HTMLElement)) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   };
   // 侧栏 Tab 默认图标：执行情况用 ExecutionIcon，文件产物用 ArtifactTabIcon，其余用 NodeTabIcon
   const getSideTabIcon = (name: string) => {
@@ -899,8 +938,8 @@
 
       > main {
         position: relative;
-        width: var(--resize-main-width);
         box-sizing: border-box;
+        width: var(--resize-main-width);
 
         // overflow: visible;
 

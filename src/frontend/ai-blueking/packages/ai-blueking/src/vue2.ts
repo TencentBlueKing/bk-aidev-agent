@@ -258,6 +258,7 @@ export default createVue2Wrapper(AIBlueking, {
         showShare: true,
       }),
     },
+    /** IHostResourceItem[]；内部映射为 menuSources。AIBluekingV2 不注册 skills */
     resources: {
       type: Array,
       default: undefined,
@@ -463,6 +464,7 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
       type: Array,
       default: () => [],
     },
+    /** IHostResourceItem[]；内部映射为 menuSources。ChatBotV2 不注册 skills */
     resources: {
       type: Array,
       default: () => [],

@@ -159,6 +159,8 @@ export interface IBinaryInputContent {
   filename?: string;
   id?: string;
   mimeType: string;
+  /** 上传接口返回的 path，文件在会话内的永久身份，用于引用、预览与下载 */
+  outputId?: string;
   size?: number;
   type: MessageType.Binary;
   url?: string;
@@ -169,6 +171,7 @@ export interface IBinaryInputContentApi {
   filename?: string;
   id?: string;
   mime_type: string;
+  output_id?: string;
   size?: number;
   type: MessageType.Binary;
   url?: string;
@@ -411,6 +414,8 @@ export interface IMessageProperty {
   /** 其他扩展字段 */
   [key: string]: unknown;
   artifacts?: IMessageArtifact[];
+  /** 输入框富文本文档；承载资源引用协议，与 extra 同级。不导入 chat-x 类型 */
+  docSchema?: unknown;
   extra?: {
     /** 其他扩展字段 */
     [key: string]: unknown;

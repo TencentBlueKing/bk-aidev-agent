@@ -65,7 +65,8 @@ useContainerScrollProvider(containerRef, bottomRef)
   ├── jumpToBottom()   → autoScrollEnabled=true + container.scrollTop = scrollHeight（瞬时）
   ├── toScrollBottom(behavior?) → autoScrollEnabled=true；
   │     behavior 缺省时：距底部 > INSTANT_SCROLL_DISTANCE(600) → jumpToBottom()
-  │     否则 / 显式 'smooth' → bottomRef.scrollIntoView({ behavior:'smooth', block:'end' })
+  │     否则 / 显式 'smooth' → container.scrollTo({ top: scrollHeight, behavior:'smooth' })
+  │     （只滚消息容器，不用 scrollIntoView，避免带动 window）
   ├── toScrollTop()    → containerRef.scrollTo({ top:0, behavior:'smooth' })
   │
   └── provide(CONTAINER_SCROLL_TOKEN, computed(() => ({
@@ -266,7 +267,7 @@ function useContainerScrollProvider(
 | `autoScrollEnabled`            | `ShallowRef<boolean>`                   | `true`  | 是否允许自动滚底；向上滚时置 `false`，到达底部或调用 `toScrollBottom` / `jumpToBottom` 时恢复 `true`                  |
 | `debouncedShowScrollBottomBtn` | `Ref<boolean>`                          | `false` | 防抖版"返回底部"按钮显隐标志：距底部 > `SHOW_SCROLL_BOTTOM_BTN_DISTANCE`（100px）时触发，显示延迟 300ms，隐藏立即生效 |
 | `jumpToBottom`                 | `() => void`                            | —       | 瞬时贴底（直接写 `scrollTop`），不产生滚动动画                                                                        |
-| `toScrollBottom`               | `(behavior?: ScrollBehavior) => void`   | —       | 滚动到底部。**缺省按距底部距离自动选择**：超过 `INSTANT_SCROLL_DISTANCE`（600px）时瞬时贴底，否则平滑滚动；可显式传 `'smooth'` / `'auto'` |
+| `toScrollBottom`               | `(behavior?: ScrollBehavior) => void`   | —       | 滚动到底部。**只滚消息容器**（`container.scrollTo`），不会带动 window。缺省按距底部距离自动选择：超过 `INSTANT_SCROLL_DISTANCE`（600px）时瞬时贴底，否则平滑滚动；可显式传 `'smooth'` / `'auto'` |
 | `toScrollTop`                  | `() => void`                            | —       | 滚动到顶部（`scrollTo({ top: 0, behavior: 'smooth' })`）                                                              |
 
 ### useContainerScrollConsumer

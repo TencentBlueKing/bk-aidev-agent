@@ -190,6 +190,22 @@ describe('ModelSelector', () => {
       const visibleNames = wrapper.findAll('.ai-model-selector-panel-option-name').map(node => node.text());
       expect(visibleNames).toEqual(['DeepSeek']);
     });
+
+    it('展开时应抛出 show', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: mockModels },
+      });
+      await wrapper.findComponent({ name: 'Tippy' }).vm.$emit('show');
+      expect(wrapper.emitted('show')).toHaveLength(1);
+    });
+
+    it('disabled 时不应展开也不抛出 show', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: mockModels, disabled: true },
+      });
+      await wrapper.findComponent({ name: 'Tippy' }).vm.$emit('show');
+      expect(wrapper.emitted('show')).toBeFalsy();
+    });
   });
 
   describe('Props 测试', () => {

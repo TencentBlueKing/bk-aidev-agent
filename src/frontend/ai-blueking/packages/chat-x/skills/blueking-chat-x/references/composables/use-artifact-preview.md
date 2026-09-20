@@ -1,6 +1,6 @@
 # useArtifactPreview
 
-> 导入：`import { useArtifactPreview } from '@blueking/chat-x'` ｜ since 0.0.20
+> 导入：`import { useArtifactPreviewConsumer, useArtifactPreviewProvider } from '@blueking/chat-x'` ｜ since 0.0.20
 
 useArtifactPreviewProvider 维护 activeArtifactId（值为 outputId），openPreview 命中文件并触发 onOpen 打开侧栏 Tab； 并通过 getOnArtifactClick 封装 resolveArtifactUrls（每次重新取链，并发去重）； useArtifactPreviewConsumer 在后代注入同一套 API。SessionArtifact 即 AIFileInfo，会话内以 outputId 为唯一键。 正文加载与分类型渲染不在本 composable，由 FileArtifactPanel 内 ArtifactPreviewHost 完成（重载键 outputId:type）。 FILE_ARTIFACT_TAB_NAME 标识固定「文件产物」Tab。
 
@@ -160,7 +160,7 @@ const onArtifactClick = async (file: AIFileInfo) => {
 | ------------------- | ----------------------------------------- | -------------------------------------------------------------------- |
 | activeArtifactId    | `ShallowRef<string>`                      | 当前命中的文件 `outputId`                                            |
 | canResolveArtifactUrl | `ComputedRef<boolean>`                  | 是否具备异步取链能力（有 `onArtifactClick` 时为 true，下载按钮据此显隐） |
-| openPreview         | `(payload: OpenArtifactPreviewPayload) => void` | 由文件卡片触发：以 `file.outputId` 更新命中态、调用 `onOpen`   |
+| openPreview         | `(payload: OpenArtifactPreviewPayload) => void` | 由文件卡片或 `artifact` 资源标签触发：以 `file.outputId` 更新命中态、调用 `onOpen`；入参只需 `{ file: { outputId } }` |
 | resolveArtifactUrls | `(file: AIFileInfo) => Promise<ArtifactUrlResult>` | 调用 `onArtifactClick` 取链；每次重新获取，不缓存；同文件并发去重 |
 | setActiveArtifactId | `(id: string) => void`                    | 直接设置命中文件 `outputId`；侧栏列表内切换选中时使用                |
 
@@ -169,9 +169,13 @@ const onArtifactClick = async (file: AIFileInfo) => {
 ```typescript
 import type { AIFileInfo, ArtifactUrlResult, OnArtifactClick } from '@blueking/chat-x';
 
-/** 打开预览时的入参 */
+/**
+ * 打开预览时的入参。
+ * 命中逻辑只依赖 outputId，因此不要求完整的 AIFileInfo——
+ * 输入框内的 @ 文件标签只持有 id 与名称，无需为了调用而伪造 size / type。
+ */
 type OpenArtifactPreviewPayload = {
-  file: AIFileInfo;
+  file: Pick<AIFileInfo, 'outputId'>;
 };
 
 /**

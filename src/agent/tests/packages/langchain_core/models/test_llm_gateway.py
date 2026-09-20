@@ -405,3 +405,20 @@ def test_chat_model_vision_streaming(model_name):
     assert len(full_content) > 0
     print(f"\n[{model_name}] 图片流式响应完整内容长度: {len(full_content)}")
     print(f"[{model_name}] 图片流式响应内容: {full_content[:200]}")
+
+
+def test_chat_model_payload_preserves_image_url_parts():
+    """已是 image_url 形态的多模态 parts 应逐字存活（read_image 依赖的直通契约）。"""
+    model = ChatModel.get_setup_instance(model="test", base_url=TEST_BASE_URL)
+    content = [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1hZ2U="}},
+        {"type": "text", "text": "这张图是什么？"},
+    ]
+    messages = [HumanMessage(content=content)]
+
+    try:
+        payload = model._get_request_payload(messages)
+    finally:
+        asyncio.run(model.http_async_client.aclose())
+
+    assert payload["messages"][0]["content"] == content

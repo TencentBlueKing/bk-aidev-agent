@@ -61,8 +61,11 @@ describe('formatElapsedTime', () => {
 });
 
 describe('index 再导出', () => {
-  it('应导出 mergeToolsById', async () => {
+  it('应导出 mergeToolsById 与 artifact 标签工具', async () => {
     const barrel = await import('.');
     expect(typeof barrel.mergeToolsById).toBe('function');
+    expect(typeof barrel.toArtifactTagNode).toBe('function');
+    expect(typeof barrel.appendArtifactTags).toBe('function');
+    expect(typeof barrel.omitArtifactTags).toBe('function');
   });
 });

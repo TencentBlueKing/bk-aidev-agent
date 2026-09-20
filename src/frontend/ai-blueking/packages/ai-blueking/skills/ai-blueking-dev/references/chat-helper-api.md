@@ -124,9 +124,8 @@ const commands = agent.info.value?.conversationSettings?.commands;
 const openingRemark = agent.info.value?.conversationSettings?.openingRemark;
 const predefinedQuestions = agent.info.value?.conversationSettings?.predefinedQuestions;
 const resources = agent.info.value?.resources;
-// 上传支持：组件侧跟随选中模型 property.support_vision；快捷指令仍可用 command.supportUpload
+// 上传入口常驻：ChatBot 不再用 support_vision / command.supportUpload 开关附件
 const commandUpload = commands?.[0]?.supportUpload?.vision;
-// agent.promptSetting.supportUpload 仍可由后端返回，但 ChatBot 附件按钮不再以此为准
 const agentSupportUpload = agent.info.value?.promptSetting?.supportUpload?.vision;
 ```
 
@@ -357,12 +356,14 @@ type StreamMode = 'start' | 'attach';
 // 消息属性：由 chat() 第 5 个参数 / 消息 property 字段承载
 interface IMessageProperty {
   [key: string]: unknown;
+  /** 输入框富文本文档；资源引用协议，与 extra 同级。不导入 chat-x 类型 */
+  docSchema?: unknown;
   extra?: {
     [key: string]: unknown;
     cite?: string | { data: Array<{ key: string; value: string }>; title: string; type: string };
     command?: string;                          // 快捷键命令
     context?: Array<Record<string, unknown>>;  // 上下文信息
-    resources?: Array<Record<string, unknown>>;// @ 选择的资源列表
+    // 不再发送 extra.resources；选中资源走 property.docSchema
   };
 }
 ```
@@ -552,6 +553,17 @@ const result = await session.uploadFile(sessionCode, file);
 ```
 
 `session.uploadFiles(sessionCode, files)` 为批量入口，分流规则相同：新接口一次 multipart 请求，旧接口仍逐个。ChatInput 一次选择多个文件时走此入口。
+
+#### deletePvFile
+
+删除会话 PV 文件。取消输入框未发送附件时调用。`path` 取上传回包 `id` 或 `path`（二者相同，形如 `files/report.pdf`），走 query，无 body。**不要二次 encode**（`URLSearchParams` 会编一次）。Plugin / OpenAPI 返回 HTTP 204；Chat / Workbench 返回信封 `{ result: true, code: "0", data: null }`。文件不存在也按成功处理（幂等）。旧 `upload/{fileName}/` 没有此接口，调用方仅在有 PV path 时请求。
+
+```typescript
+await session.deletePvFile(sessionCode, path);
+// DELETE session/{sessionCode}/pv_files/?path=files/report.pdf
+```
+
+ChatBot / AIBlueking 已监听 ChatContainer 的 `deleteFile` 并内部调用此方法：已有 path 立即删；上传未回包时先记下 `File`，等 `uploadFiles` 返回后再删。宿主无需再绑。自建 ChatInput 时需自行 `@delete-file` 并处理 pending 取消。
 
 #### isResumeSession（HITL 审批轮询端点）
 

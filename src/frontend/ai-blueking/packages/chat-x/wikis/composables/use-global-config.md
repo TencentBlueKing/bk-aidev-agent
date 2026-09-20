@@ -2,10 +2,10 @@
 name: useGlobalConfig
 slug: use-global-config
 category: composable
-description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区等）。
+description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区、输入框菜单数据源）。
 aiSummary: >
-  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>、timezone?: ComputedRef<string | undefined>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
-  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size、supportUpload 与 timezone；
+  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>、timezone?: ComputedRef<string | undefined>、menuSources?: ComputedRef<IInputMenuItem[]>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
+  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size、supportUpload、timezone 与 menuSources；
   后代组件可通过 injectGlobalConfig 读取配置；字号主题主要通过根节点 data-ai-size 与 CSS 变量生效。
 relatedComponents:
   - slug: chat-container
@@ -31,7 +31,7 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前包括字号主题档位 `size`、是否支持上传 `supportUpload`、消息时间时区 `timezone`）。与 Teleport 插槽 ID 无关。
+在聊天容器根组件与子组件之间通过 Vue `provide` / `inject` 共享**全局展示相关配置**（当前包括字号主题档位 `size`、是否支持上传 `supportUpload`、消息时间时区 `timezone`、输入框菜单数据源 `menuSources`）。与 Teleport 插槽 ID 无关。
 
 > 字号主题主要通过 `ChatContainer` 根节点的 `data-ai-size` 与 CSS 变量（`--ai-font-size` 等）生效；`GlobalConfig.size` 供后代在逻辑层读取当前档位，样式层无需逐组件传参。
 
@@ -44,8 +44,9 @@ ChatContainer（根）
   │     size: computed(() => props.size ?? 'small'),
   │     supportUpload: computed(() => props.supportUpload ?? false),
   │     timezone: computed(() => props.timezone),
+  │     menuSources: resolvedMenuSources,
   │   })
-  │     └── provide(GLOBAL_CONFIG_TOKEN, { size, supportUpload, timezone })
+  │     └── provide(GLOBAL_CONFIG_TOKEN, { size, supportUpload, timezone, menuSources })
   │
   └── MessageContainer → … → UserMessage / MessageTime 等
 
@@ -135,12 +136,15 @@ export type GlobalConfig = {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
   timezone?: ComputedRef<string | undefined>;
+  /** 输入框菜单数据源；消息编辑态的内嵌输入框据此渲染 @ / \ 与 + 号菜单 */
+  menuSources?: ComputedRef<IInputMenuItem[]>;
 };
 
 export function useGlobalConfig(options: GlobalConfig): {
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
   timezone?: ComputedRef<string | undefined>;
+  menuSources?: ComputedRef<IInputMenuItem[]>;
 };
 
 export function injectGlobalConfig(): GlobalConfig | undefined;
@@ -158,7 +162,9 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 | --------------- | ------------------------------------------------------------------------ |
 | `size`          | 可选。字号主题档位 `normal`（14px）/ `small`（12px），与 `ChatContainer.size` 对齐 |
 | `supportUpload` | 是否支持上传，与根容器 `ChatContainer` 的 `supportUpload` 等展示策略对齐 |
+| `menuSources`   | 可选。输入框菜单数据源，供消息编辑态的内嵌 `ChatInput` 使用 |
 | `timezone`      | 可选。消息时间展示所用的 IANA 时区名，与 `ChatContainer.timezone` 对齐；未配置时 `MessageTime` 按浏览器时区展示 |
+| `menuSources`   | 可选。输入框菜单数据源，与 `ChatInput.menuSources` 同源（`ChatContainer` 传入的是补齐会话产物后的结果）；[UserMessage](../components/message/user-message) 编辑态据此渲染菜单，未配置时编辑态无菜单 |
 
 ### `useGlobalConfig(options)`
 
@@ -186,6 +192,7 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 ## 关联组件
 
-- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size`、`supportUpload` 与 `timezone`
+- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size`、`supportUpload`、`timezone` 与 `menuSources`
+- [UserMessage](../components/message/user-message) — 编辑态读取 `supportUpload` 与 `menuSources`
 - [MessageTime](../components/feedback/message-time) — 读取 `timezone` 展示消息时间
 - [主题配置](../theme/theme) — `data-ai-size` 与 CSS 变量说明

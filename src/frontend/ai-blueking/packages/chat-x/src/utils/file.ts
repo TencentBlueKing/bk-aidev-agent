@@ -114,30 +114,6 @@ export const isDefaultUploadAccept = (accept?: string): boolean => {
   return current.length === defaults.length && current.every((token, index) => token === defaults[index]);
 };
 
-/** tooltip 每一类最多展示的扩展名数量，超出用「等」收尾 */
-const UPLOAD_ACCEPT_TIP_PREVIEW_COUNT = 5;
-
-/** 类别扩展名预览：最多 5 个，超出追加「等」 */
-const formatExtensionPreview = (extensions: readonly string[], isEn: boolean): string => {
-  const shown = extensions.slice(0, UPLOAD_ACCEPT_TIP_PREVIEW_COUNT).join(' ');
-  if (extensions.length <= UPLOAD_ACCEPT_TIP_PREVIEW_COUNT) {
-    return shown;
-  }
-  return isEn ? `${shown} etc.` : `${shown} 等`;
-};
-
-/** 默认允许列表的分类说明，与 ALLOWED_UPLOAD_EXTENSIONS 同源；每一类单独一行 */
-export const formatDefaultUploadAcceptTip = (isEn: boolean): string => {
-  const image = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.image, isEn);
-  const document = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.document, isEn);
-  const text = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.text, isEn);
-  const code = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.code, isEn);
-  if (isEn) {
-    return [`Images: ${image}`, `Documents: ${document}`, `Text: ${text}`, `Code: ${code}`].join('\n');
-  }
-  return [`图片: ${image}`, `文档: ${document}`, `文本: ${text}`, `代码: ${code}`].join('\n');
-};
-
 /** 取文件名最后一段扩展名（含点）；无扩展名返回空串 */
 const getFileNameExtension = (fileName: string): string => {
   const lastDot = fileName.lastIndexOf('.');
@@ -149,7 +125,7 @@ const getFileNameExtension = (fileName: string): string => {
 
 /**
  * 按 input accept 规则判断文件是否允许上传。
- * accept 为空表示不限制；支持扩展名、精确 mime、以及 mime 通配（含全部类型）。
+ * accept 为空表示不限制；支持扩展名、精确 mime、类型通配（如 image/*）以及任意类型。
  */
 export const isFileAcceptedByAccept = (file: File, accept?: string): boolean => {
   if (!accept?.trim()) {
@@ -170,4 +146,26 @@ export const isFileAcceptedByAccept = (file: File, accept?: string): boolean => 
     }
     return mime === token;
   });
+};
+
+/** tooltip 每一类最多展示的扩展名数量，超出用「等」收尾 */
+const UPLOAD_ACCEPT_TIP_PREVIEW_COUNT = 5;
+
+/** 类别扩展名预览：最多 5 个，超出追加「等」 */
+const formatExtensionPreview = (extensions: readonly string[], ellipsis: string): string =>
+  extensions.length > UPLOAD_ACCEPT_TIP_PREVIEW_COUNT
+    ? `${extensions.slice(0, UPLOAD_ACCEPT_TIP_PREVIEW_COUNT).join(' ')}${ellipsis}`
+    : extensions.join(' ');
+
+/** 默认允许列表的分类说明，与 ALLOWED_UPLOAD_EXTENSIONS 同源；每一类单独一行 */
+export const formatDefaultUploadAcceptTip = (isEn: boolean): string => {
+  const ellipsis = isEn ? ' etc.' : ' 等';
+  const image = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.image, ellipsis);
+  const document = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.document, ellipsis);
+  const text = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.text, ellipsis);
+  const code = formatExtensionPreview(ALLOWED_UPLOAD_EXTENSIONS.code, ellipsis);
+  if (isEn) {
+    return [`Images: ${image}`, `Documents: ${document}`, `Text: ${text}`, `Code: ${code}`].join('\n');
+  }
+  return [`图片: ${image}`, `文档: ${document}`, `文本: ${text}`, `代码: ${code}`].join('\n');
 };

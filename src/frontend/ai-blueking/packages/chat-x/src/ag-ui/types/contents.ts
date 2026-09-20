@@ -32,6 +32,8 @@ export interface BinaryInputContent {
   filename?: string;
   id?: string;
   mimeType: string;
+  /** 上传接口返回的 path，用于文件引用、下载与预览 */
+  outputId?: string;
   /** 文件字节数；发送时由原始 File 写入，用于消息态附件卡片展示大小 */
   size?: number;
   type: MessageContentType.Binary;

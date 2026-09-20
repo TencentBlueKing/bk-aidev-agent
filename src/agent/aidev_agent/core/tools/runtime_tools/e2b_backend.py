@@ -622,8 +622,13 @@ class E2BSandboxBackend(RuntimeBackend):
         results.sort(key=lambda x: x.get("path", ""))
         return results
 
-    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        """上传多个文件到沙箱文件系统。"""
+    def upload_files(self, files: list[tuple[str, bytes]], *, state: dict | None = None) -> list[FileUploadResponse]:
+        """上传多个文件到沙箱文件系统。
+
+        Args:
+            files: (路径, 内容) 元组列表，其中内容为 bytes
+            state: 预留的 LangGraph state（与 PaasSandboxBackend 的签名对齐，本后端不消费）。
+        """
 
         sandbox = self._ensure_sandbox()
         responses: list[FileUploadResponse] = []
@@ -637,8 +642,13 @@ class E2BSandboxBackend(RuntimeBackend):
 
         return responses
 
-    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
-        """从沙箱文件系统下载多个文件。"""
+    def download_files(self, paths: list[str], *, state: dict | None = None) -> list[FileDownloadResponse]:
+        """从沙箱文件系统下载多个文件。
+
+        Args:
+            paths: 要下载的文件路径列表
+            state: 预留的 LangGraph state（与 PaasSandboxBackend 的签名对齐，本后端不消费）。
+        """
 
         sandbox = self._ensure_sandbox()
         responses: list[FileDownloadResponse] = []

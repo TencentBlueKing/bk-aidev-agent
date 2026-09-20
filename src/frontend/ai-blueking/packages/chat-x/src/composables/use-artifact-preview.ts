@@ -35,8 +35,11 @@ export const ARTIFACT_PREVIEW_TOKEN = Symbol('ARTIFACT_PREVIEW_TOKEN');
 export const FILE_ARTIFACT_TAB_NAME = 'file-artifact';
 
 export type OpenArtifactPreviewPayload = {
-  /** 被点击的文件 */
-  file: AIFileInfo;
+  /**
+   * 被点击的文件。命中逻辑只依赖 outputId，因此这里不要求完整的 AIFileInfo——
+   * 输入框内的 @ 文件标签只持有 id 与名称，无需为了调用而伪造 size / type。
+   */
+  file: Pick<AIFileInfo, 'outputId'>;
 };
 
 /**

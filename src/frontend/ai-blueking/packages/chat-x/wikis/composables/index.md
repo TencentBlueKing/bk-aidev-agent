@@ -17,6 +17,8 @@
 | `useCustomTabConsumer`       | 自定义 Tab 管理 Consumer；在后代组件中注入并操作 Tab（添加/移除/选中）                                                            | [查看](./use-custom-tab.md)       |
 | `useArtifactPreviewProvider` | 文件产物预览 Provider；维护命中文件 `outputId`，通过 `onOpen` 触发侧栏「文件产物」Tab                                               | [查看](./use-artifact-preview.md) |
 | `useArtifactPreviewConsumer` | 文件产物预览 Consumer；在深层文件卡片中注入，点击触发 `openPreview`                                                               | [查看](./use-artifact-preview.md) |
+| `useInputMentionProvider`    | 「资源插入输入框」Provider；由持有 `ChatInput` 的容器提供 `insertMention`                                                          | [查看](./use-input-mention.md)    |
+| `useInputMentionConsumer`    | 「资源插入输入框」Consumer；无 Provider（只读 / 分享态）时返回 `undefined`，调用方据此隐藏引用入口                                  | [查看](./use-input-mention.md)    |
 | `useFullScreen`              | 浏览器原生全屏控制；嗅探标准/WebKit API，`isFullScreen` 与 ESC 退出同步；`ChatContainer` 侧栏全屏使用                               | [查看](./use-full-screen.md)      |
 | `useParentScrolling`         | 查找最近可滚动祖先并监听 `scroll`/`scrollend`；提供 `isScrolling` 状态，常用于滚动时隐藏浮层                                      | [查看](./use-parent-scrolling.md) |
 | `getScrollParent`            | 独立辅助函数；递归向上查找第一个 `overflowY` 可滚动的祖先元素                                                                     | [查看](./use-parent-scrolling.md) |
@@ -25,10 +27,10 @@
 
 | 函数名                   | 内部使用方                    | 说明                                                                                    | 文档                                   |
 | ------------------------ | ----------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------- |
-| `useMenuKeydown`         | `AiSlashMenu`、`AiPromptList` | 在 `window` 捕获阶段注册键盘监听，管理菜单 `activeIndex`，支持 ↑↓ 循环导航和 Enter 确认 | [查看](./use-menu-keydown.md)          |
+| `useMenuKeydown`         | `InputMenuPanel`、`ModelSelectorPanel` | 在 `window` 捕获阶段注册键盘监听，管理菜单 `activeIndex`，支持 ↑↓ 循环导航和 Enter 确认 | [查看](./use-menu-keydown.md)          |
 | `useObserverVisibleList` | `ShortcutBtns`                | 基于 `ResizeObserver` + 贪心算法计算容器内可见项子集，为"更多"按钮动态预留空间          | [查看](./use-observer-visible-list.md) |
-| `useGlobalConfig`        | 根容器组件                    | 注册 Teleport 目标插槽 ID（`#ai-blueking-message-slot`）并向后代 provide                | [查看](./use-global-config.md)         |
-| `useMessageSlotId`       | 自定义消息组件                | 注入 `useGlobalConfig` 提供的插槽 CSS 选择器，用于 `<Teleport :to="messageSlotId">`     | [查看](./use-global-config.md)         |
+| `useGlobalConfig`        | 根容器组件                    | 向后代 provide 全局展示配置（`size` / `supportUpload` / `timezone` / `menuSources`）    | [查看](./use-global-config.md)         |
+| `injectGlobalConfig`     | 任意后代组件                  | 取出全局展示配置，无 Provider 时返回 `undefined`                                        | [查看](./use-global-config.md)         |
 | `useCommandSelection`    | `AiSlashInput`                | edix 编辑器的光标位置快照工具；返回 `GetCursorPosition` 命令和 `commandSelection`       | [查看](./use-command-selection.md)     |
 
 ## 引入方式
@@ -57,6 +59,10 @@ import {
   useArtifactPreviewConsumer,
   FILE_ARTIFACT_TAB_NAME,
 
+  // 资源插入输入框（Provider/Consumer）
+  useInputMentionProvider,
+  useInputMentionConsumer,
+
   // 全屏控制
   useFullScreen,
 
@@ -70,9 +76,9 @@ import {
   // 内部：可见列表计算
   useObserverVisibleList,
 
-  // 内部：Teleport 插槽
+  // 内部：全局展示配置
   useGlobalConfig,
-  useMessageSlotId,
+  injectGlobalConfig,
 
   // 内部：edix 光标追踪
   useCommandSelection,
@@ -143,6 +149,19 @@ const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
 // Consumer（文件卡片）
 const artifactPreview = useArtifactPreviewConsumer();
 artifactPreview?.openPreview({ file });
+```
+
+### useInputMentionProvider / Consumer
+
+```typescript
+// Provider（ChatContainer）
+useInputMentionProvider({
+  insertMention: item => chatInputRef.value?.insertMention?.(item),
+});
+
+// Consumer（文件卡片 / 侧栏产物面板）
+const inputMention = useInputMentionConsumer();
+inputMention?.insertMention(toArtifactMenuItem(file));
 ```
 
 ### useParentScrolling

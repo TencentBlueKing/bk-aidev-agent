@@ -8,7 +8,6 @@ from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallStartEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
-    ExtendAssistantMessage,
     MessageSnapshotEventExtend,
     ResumeItem,
     RunFinishedInterruptOutcome,
@@ -25,7 +24,7 @@ async def test_aidev_agent_run_exposes_messages_snapshot(monkeypatch):
         yield RunStartedEvent(type=EventType.RUN_STARTED, thread_id="thread-3", run_id="run-3")
         yield MessageSnapshotEventExtend(
             type=EventType.MESSAGES_SNAPSHOT,
-            messages=[ExtendAssistantMessage(id="assistant-3", role="assistant", content="snapshot message")],
+            messages=[{"id": "assistant-3", "role": "assistant", "content": "snapshot message"}],
         )
         yield RunFinishedEvent(
             type=EventType.RUN_FINISHED,

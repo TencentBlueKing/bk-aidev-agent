@@ -1,6 +1,6 @@
 # SelectionQuestion 选择问题占位
 
-> 能力域：辅助能力 ｜ 导入：`import { SelectionQuestion } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：辅助能力 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 源码为空文件，没有 props、emits、slots 或渲染能力；不建议作为功能组件使用。 源码位置：src/components/ai-questions/selection-question.vue。
 

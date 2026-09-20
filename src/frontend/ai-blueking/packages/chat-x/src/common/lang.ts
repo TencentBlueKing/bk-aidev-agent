@@ -24,6 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { getCookieByName } from '../utils';
+// 只取 getCookieByName，避免走 utils 桶文件：桶里的 collect-message-artifacts 会再导入 lang，形成循环
+import { getCookieByName } from '../utils/utils';
 
 export const isEn = getCookieByName('blueking_language') === 'en';

@@ -1,6 +1,6 @@
 # DeleteTool 删除确认按钮
 
-> 能力域：工具与反馈 ｜ 导入：`import { DeleteTool } from '@blueking/chat-x'` ｜ since 1.0.0
+> 能力域：工具与反馈 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 1.0.0
 
 消息删除二次确认工具。 源码位置：src/components/message-tools/delete-tool/delete-tool.vue。
 

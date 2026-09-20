@@ -8,7 +8,7 @@ description: >-
 aiSummary: >
   v-overflow-tips 在元素水平溢出（scrollWidth > clientWidth）时于 mouseenter 懒创建 Tippy，展示完整文本或自定义 text/content。
   结合 IntersectionObserver 仅在可见时绑定悬停；隐藏时销毁实例。指令值为 Partial<TippyProps> 与 disabled 等。
-  DescPanel、ExecutionSummary、ToolcallRender、AiSlashMenu 等用于标题或列表溢出提示。
+  DescPanel、ExecutionSummary、ToolcallRender、InputMenuPanel 等用于标题或列表溢出提示。
 relatedComponents:
   - slug: desc-panel
     relation: 工具描述面板溢出
@@ -16,8 +16,8 @@ relatedComponents:
     relation: 执行摘要标签溢出
   - slug: toolcall-render
     relation: 工具标题行溢出
-  - slug: chat-input
-    relation: AiSlashMenu 资源项（侧栏子模块）
+  - slug: input-menu-panel
+    relation: 菜单条目名称溢出
 sinceVersion: 1.0.0
 ---
 
@@ -270,4 +270,4 @@ type OverflowTipsValue = Partial<TippyProps> & {
 - [DescPanel](../components/rendering/desc-panel) — 描述区溢出
 - [ExecutionSummary](../components/agent/execution-summary) — 侧栏摘要标签
 - [ToolcallRender](../components/agent/toolcall-render) — 工具调用标题
-- [ChatInput](../components/input/chat-input) — `@` 菜单项（内部 AiSlashMenu）
+- [InputMenuPanel](../components/input/input-menu-panel) — 菜单条目名称溢出

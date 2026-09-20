@@ -1,3 +1,6 @@
+import { type Ref, defineComponent, h, nextTick } from 'vue';
+
+import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
@@ -26,10 +29,6 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { type Ref, defineComponent, h, nextTick } from 'vue';
-
-import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APPROVAL_STATUS, InterruptReason, MessageRole, MessageStatus } from '../../ag-ui/types';
@@ -82,6 +81,10 @@ const mockExecutionGroupsRef = vi.hoisted(() => {
 /** 供 useMessageGroup mock 注入会话级文件产物，验证 ensureCustomTab 常驻挂载 */
 const mockSessionArtifactsRef = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref: vueRef } = require('vue');
+  return vueRef([]) as Ref<Array<{ name: string; outputId: string; size: number; type: string }>>;
+});
+const mockUploadedArtifactsRef = vi.hoisted(() => {
   const { ref: vueRef } = require('vue');
   return vueRef([]) as Ref<Array<{ name: string; outputId: string; size: number; type: string }>>;
 });
@@ -410,10 +413,8 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       modelValue: [String, Array],
       messageStatus: String,
       placeholder: String,
-      prompts: Array,
-      resources: Array,
+      menuSources: Array,
       shortcuts: Array,
-      skills: Array,
       models: Array,
       selectedModel: String,
       supportUpload: Boolean,
@@ -431,9 +432,11 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       'update:selectedModel',
       'selectShortcut',
       'deleteShortcut',
+      'deleteFile',
       'modelChange',
     ],
-    setup(_, { slots }) {
+    setup(_, { slots, expose }) {
+      expose({ uploadedArtifacts: mockUploadedArtifactsRef });
       return () => h('div', { class: 'mock-chat-input' }, [slots.top?.(), slots.interrupt?.()]);
     },
   }),
@@ -647,6 +650,7 @@ describe('ChatContainer', () => {
     mockMessageGroupsRef.value = [];
     mockExecutionGroupsRef.value = [];
     mockSessionArtifactsRef.value = [];
+    mockUploadedArtifactsRef.value = [];
   });
 
   afterEach(() => {
@@ -859,15 +863,80 @@ describe('ChatContainer', () => {
       expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
     });
 
-    it('应该将 skills 属性透传给 ChatInput', () => {
-      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
+    it('应该将 menuSources 属性透传给 ChatInput', () => {
+      const menuSources = [{ id: 'test_skill', type: 'skill', name: 'Test Skill', description: 'A test skill' }];
 
       wrapper = mount(ChatContainer, {
-        props: { ...defaultProps, skills },
+        props: { ...defaultProps, menuSources },
       });
 
       const ci = wrapper.findComponent({ name: 'ChatInput' });
-      expect(ci.props('skills')).toEqual(skills);
+      expect(ci.props('menuSources')).toEqual(menuSources);
+    });
+
+    it('未传入 artifact 时自动从消息里收集会话产物', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources: [] },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual([{ id: 'o1', type: 'artifact', name: '操作文档.docx' }]);
+    });
+
+    it('业务方传入 artifact 时不再自动收集', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+      const menuSources = [{ id: 'custom', type: 'artifact', name: '自定义产物' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual(menuSources);
+    });
+
+    it('menuSources 没有 artifact 时仍会把消息里收集到的产物拼在后面', () => {
+      const messages = [
+        {
+          id: 1,
+          messageId: 1,
+          role: 'assistant',
+          status: MessageStatus.Success,
+          content: '',
+          property: { artifacts: [{ name: '操作文档.docx', outputId: 'o1', size: 1, type: 'docx' }] },
+        },
+      ];
+      const menuSources = [{ id: 'test_skill', type: 'skill', name: 'Test Skill' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, menuSources },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('menuSources')).toEqual([
+        { id: 'test_skill', type: 'skill', name: 'Test Skill' },
+        { id: 'o1', type: 'artifact', name: '操作文档.docx' },
+      ]);
     });
 
     it('应该将 models 与 selectedModel 透传给 ChatInput', () => {
@@ -880,6 +949,14 @@ describe('ChatContainer', () => {
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(ci.props('models')).toEqual(models);
       expect(ci.props('selectedModel')).toBe('GPT-4');
+    });
+
+    it('ChatInput 取消附件时应向上透传 deleteFile 及完整附件信息', async () => {
+      wrapper = mount(ChatContainer, { props: defaultProps });
+      const file = { id: 'files/report.pdf', filename: 'report.pdf', status: 'success' };
+      await wrapper.findComponent({ name: 'ChatInput' }).vm.$emit('deleteFile', file);
+
+      expect(wrapper.emitted('deleteFile')).toEqual([[file]]);
     });
 
     it('ChatInput 触发 modelChange 时应向上冒泡', async () => {
@@ -1428,6 +1505,7 @@ describe('ChatContainer', () => {
     it('无 executionGroups、无产物时 asideCollapsed 为 false 仍应展开并渲染 Tab', async () => {
       mockExecutionGroupsRef.value = [];
       mockSessionArtifactsRef.value = [];
+    mockUploadedArtifactsRef.value = [];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, asideCollapsed: false },
@@ -1501,6 +1579,31 @@ describe('ChatContainer', () => {
 
       expect(getSideTabRenderComponent).toHaveBeenCalled();
       expect(wrapper.find('.custom-tab-label').exists()).toBe(true);
+    });
+
+    it('待发送的上传文件应进入预览侧栏，发送入消息后去重，取消后移除', async () => {
+      const file = { name: 'report.pdf', outputId: 'files/report.pdf', size: 3, type: 'pdf' };
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, asideCollapsed: false },
+        global: { stubs: { FileArtifactPanel: defineComponent({
+          name: 'FileArtifactPanel', props: ['artifacts', 'activeId'], render: () => h('div'),
+        }) } },
+      });
+      getChatContainerExposed(wrapper).selectCustomTab({ name: 'file-artifact', label: '文件产物' });
+      mockUploadedArtifactsRef.value = [file];
+      await nextTick();
+      const panel = wrapper.findComponent({ name: 'FileArtifactPanel' });
+      expect(panel.props('artifacts')).toEqual([file]);
+
+      mockSessionArtifactsRef.value = [file];
+      await nextTick();
+      expect(panel.props('artifacts')).toEqual([file]);
+      mockUploadedArtifactsRef.value = [];
+      await nextTick();
+      expect(panel.props('artifacts')).toEqual([file]);
+      mockSessionArtifactsRef.value = [];
+      await nextTick();
+      expect(panel.props('artifacts')).toEqual([]);
     });
 
     it('无文件产物时也应常驻挂上文件产物 Tab', async () => {

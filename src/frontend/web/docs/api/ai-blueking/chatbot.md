@@ -55,8 +55,9 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `shortcuts` | `IShortcut[]` | `[]` | 快捷指令列表 |
-| `resources` | `IAiSlashMenuItem[]` | `[]` | 资源列表（`@` 触发） |
-| `prompts` | `string[]` | — | 预设提示词（`/` 触发） |
+| `resources` | `IHostResourceItem[]` | `[]` | 资源列表（`@` 触发）；内部映射为 `menuSources` |
+| `skills` | `IHostSkillItem[]` | — | 技能列表（`/` 触发）；仅 ChatBot 有此 prop |
+| `prompts` | `string[]` | — | 预设提示词（`\` 触发） |
 
 ### 界面配置
 

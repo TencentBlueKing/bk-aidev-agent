@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import { type VNode, cloneVNode } from 'vue';
+import { type VNode, cloneVNode, isVNode } from 'vue';
 
 import {
   BkFlowFailedIcon,
@@ -123,8 +123,24 @@ export const getStateColor = (state: ConvergedState): string => STATE_DEF_MAP[st
 export const getStateDotColor = (state: ConvergedState): string =>
   STATE_DEF_MAP[state].dotColor ?? STATE_DEF_MAP[state].color;
 
-/** 取状态图标，返回克隆的 VNode 以支持多处复用；running 无图标返回 null */
+/**
+ * 深拷贝图标 VNode（含 children），并断开 el / anchor。
+ * Vue 的 cloneVNode 是浅拷贝：子 VNode 仍与模块级 h() 源节点共享。
+ * 主聊天窗与侧边栏「执行情况」会同时挂载两份 FlowAgentContent，
+ * 共享的 path.el 会在 patch 时写到其中一份 DOM，导致另一份状态图标停在旧态。
+ */
+const cloneIconVNode = (vnode: VNode): VNode => {
+  const cloned = cloneVNode(vnode);
+  cloned.el = null;
+  cloned.anchor = null;
+  if (Array.isArray(vnode.children)) {
+    cloned.children = vnode.children.map(child => (isVNode(child) ? cloneIconVNode(child) : child));
+  }
+  return cloned;
+};
+
+/** 取状态图标，返回深拷贝的 VNode 以支持多处复用；running 无图标返回 null */
 export const getStateIcon = (state: ConvergedState): null | VNode => {
   const icon = STATE_DEF_MAP[state].icon;
-  return icon ? cloneVNode(icon) : null;
+  return icon ? cloneIconVNode(icon) : null;
 };

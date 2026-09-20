@@ -33,7 +33,6 @@ import {
   MessageStatus,
   MessageType,
   formatEventTimestampToCreatedAt,
-  resolveMessageCreatedAt,
 } from '../message';
 import {
   type IActivityDeltaEvent,
@@ -78,6 +77,9 @@ import {
   IFlowAgentRestartCustomValue,
   RunFinishedOutcomeType,
 } from './type';
+import {
+  transferMessageApi2Message
+} from '../http/transform'
 
 import type { ISSEProtocol } from '../http/fetch';
 
@@ -336,7 +338,7 @@ export class AGUIProtocol implements ISSEProtocol {
    */
   handleMessagesSnapshotEvent(event: IMessagesSnapshotEvent) {
     if (event.messages && event.messages.length > 0) {
-      this.messageModule.list.value = event.messages.map(normalizeSnapshotMessage);
+      this.messageModule.list.value = event.messages.map(transferMessageApi2Message);
     }
   }
 
@@ -753,12 +755,6 @@ export class AGUIProtocol implements ISSEProtocol {
   onStart() {
     this.onStartCallback?.();
   }
-}
-
-/** chat_completion 快照可能是 camelCase 或 REST snake_case，统一落到 createdAt */
-function normalizeSnapshotMessage(message: IMessage): IMessage {
-  const createdAt = resolveMessageCreatedAt(message as IMessage & { created_at?: string });
-  return createdAt ? { ...message, createdAt } : message;
 }
 
 /** 从列表尾部向前，给本轮尚未带时间的消息补 createdAt，遇到已有时间的历史消息即停 */

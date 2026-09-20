@@ -2,9 +2,9 @@
 
 > 导入：`import { useMenuKeydown } from '@blueking/chat-x'` ｜ since 1.0.0
 
-useMenuKeydown 接收 items、menuRef、onSelect，在 window 捕获阶段监听 keydown；菜单不可见（offsetParent 为空）或列表为空时不响应。 维护 activeIndex，处理 ArrowUp/ArrowDown 循环与 Enter 选中，并 scrollIntoView 当前 .is-active 项。 AiSlashMenu、AiPromptList（ChatInput 子模块）内部使用。
+useMenuKeydown 接收 items、menuRef、onSelect，在 window 捕获阶段监听 keydown；菜单不可见（offsetParent 为空）或列表为空时不响应。 维护 activeIndex，处理 ArrowUp/ArrowDown 循环与 Enter 选中，并 scrollIntoView 当前 .is-active 项。 InputMenuPanel（输入框统一菜单）与 ModelSelectorPanel（模型下拉）内部使用。
 
-**关联**：chat-input（AiSlashMenu / AiPromptList 键盘导航）
+**关联**：input-menu-panel（输入框菜单的键盘导航）、model-selector（模型下拉的键盘导航）
 
 ---
 
@@ -93,25 +93,23 @@ scrollToActive()：nextTick → menuRef.querySelector('.is-active')?.scrollIntoV
 </style>
 ```
 
-## 在 AiSlashInput 内部的实际用法
+## 库内部的实际用法
 
-`useMenuKeydown` 被 `AiSlashMenu`（`@` 资源菜单）和 `AiPromptList`（`/` 提示词列表）内部使用：
+`useMenuKeydown` 被 [InputMenuPanel](/components/input/input-menu-panel)（输入框统一菜单）与 [ModelSelector](/components/input/model-selector) 的下拉面板内部使用：
 
 ```typescript
-// AiPromptList 中
-const promptListRef = useTemplateRef<HTMLElement>('promptListRef');
-const { activeIndex } = useMenuKeydown<string>({
-  items: computed(() => props.prompts), // ComputedRef 也可传入
-  onSelect: props.onSelect,
-  menuRef: promptListRef,
+// InputMenuPanel 中：items 为跨分组扁平化后的可选条目
+const panelRef = useTemplateRef<HTMLElement>('panelRef');
+const flatItems = computed(() => props.flatItems);
+const { activeIndex } = useMenuKeydown<IInputMenuItem>({
+  items: flatItems, // ComputedRef 也可传入
+  onSelect: item => emit('select', item),
+  menuRef: panelRef,
 });
 
-// AiSlashMenu 中
-const menuRef = useTemplateRef<HTMLElement>('menuRef');
-const { activeIndex } = useMenuKeydown<IAiSlashMenuItem>({
-  items: sortedResourceList,
-  onSelect: props.onSelect,
-  menuRef,
+// 结果集变化后旧的高亮下标已无意义，回到首项
+watch(flatItems, () => {
+  activeIndex.value = 0;
 });
 ```
 

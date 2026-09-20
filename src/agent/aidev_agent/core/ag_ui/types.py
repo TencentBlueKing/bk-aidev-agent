@@ -274,7 +274,7 @@ ExtendMessage = Annotated[
 
 
 class MessageSnapshotEventExtend(MessagesSnapshotEvent):
-    messages: list[ExtendMessage]
+    messages: list[dict]
 
 
 class ResumeItem(ConfiguredBaseModel):
@@ -290,7 +290,7 @@ class AgentInput(RunAgentInput):
 
     thread_id: str
     run_id: str | None = None
-    messages: list[ExtendMessage]
+    messages: list[dict]
     tools: list[Tool] = Field(default_factory=list)
     context: list[Context] = Field(default_factory=list)
     forwarded_props: Any = Field(default_factory=dict)

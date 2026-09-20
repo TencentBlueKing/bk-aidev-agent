@@ -3,6 +3,8 @@ name: AnimationText 动画文本
 slug: animation-text
 kind: component
 domain: rendering
+# 组件本身不导出，包入口只导出同名 composable useAnimationText
+exportSymbol: false
 description: 按文本增量播放流式动画。
 aiSummary: >
   按文本增量播放流式动画。

@@ -5,7 +5,7 @@ kind: component
 domain: message
 description: 汇总当前会话全部文件产物，支持搜索、选中与分类型预览，挂载在 ChatContainer 侧栏「文件产物」Tab。
 aiSummary: >
-  汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中与下载；
+  汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中、复制、引用到输入框与下载；
   预览区委托 ArtifactPreviewHost：由 resolveFileKind 把扩展名归入 code / markdown / html / text / image / binary 六类，
   前四类走 text_from_download 拉正文（code 交给 highlight.js 高亮），image / binary 走 preview_url；
   download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）；
@@ -20,6 +20,8 @@ relatedComponents:
     relation: 同为 ChatContainer 侧栏 Tab 面板，交互形态一致
   - slug: message-loading
     relation: ArtifactPreviewHost 取链 / 拉取正文过程使用 MessageLoading
+  - slug: mention-tag
+    relation: 引用后文件以资源标签形态进入输入框
 sinceVersion: 0.0.20
 ---
 
@@ -65,9 +67,10 @@ sinceVersion: 0.0.20
 - **唯一命中**：以 `outputId` 作为会话内唯一键（同 `outputId` 视为同一文件）；文件名可能重复，不可作唯一键
 - **关键词搜索**：按文件名实时过滤列表
 - **整块空态**：`artifacts` 为空时不渲染列表与预览区，整块展示 bkui `Exception`「暂无数据」（Tab 常驻，无数据也可正常打开侧栏）
-- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（TTL 8 分钟缓存；预览重试会 `force` 刷新）
+- **异步取链**：`AIFileInfo` 本身不含 `url` / `previewUrl`，通过 `ChatContainer` 的 `onArtifactClick` 按 `outputId` 获取 `download_url` / `preview_url`（不做 URL 缓存，每次重新取链；同文件进行中的请求并发去重）
+- **引用到输入框**：预览头提供「引用」按钮（位于下载左侧），点击后该文件以资源标签形态进入输入框
 - **职责拆分**：
-  - **面板本身**：列表、搜索、预览头（文件名 / 图标 / 下载）
+  - **面板本身**：列表、搜索、预览头（文件名 / 图标 / 复制 / 引用 / 下载）
   - **`ArtifactPreviewHost`**：按策略加载正文或预览 URL，分派到对应 renderer；展示 loading / empty / error（含重试）
 - **未传 `onArtifactClick`**：下载按钮隐藏，预览区展示无数据
 
@@ -218,6 +221,21 @@ ArtifactFileCard（点击文件卡片）
 - `ChatContainer` 通过 `useArtifactPreviewProvider` 提供上下文，并把「打开侧栏 Tab」这一副作用以 `onOpen` 注入，保持 composable 职责单一
 - 侧栏「文件产物」Tab 固定不可关闭，`order: -1` 排在「执行情况」之前；**常驻不随产物有无增删**，无产物时由面板展示整块空态
 
+## 引用到输入框
+
+预览头与消息区文件卡片都提供「引用」入口（设计稿中位于下载左侧），点击后文件以资源标签形态追加进输入框，等价于用户在 `@` 菜单里选中它：
+
+```
+预览头 / 文件卡片「引用」
+  └─ useInputMentionConsumer()?.insertMention(toArtifactMenuItem(file))
+       └─ ChatContainer 提供的 insertMention
+            └─ ChatInput.insertMention → AiSlashInput.appendMention（追加到文档末尾）
+```
+
+- **入口显隐**：`useInputMentionConsumer()` 为 `undefined`（没有输入框，如 `Share` 只读态）时不渲染引用按钮，无需额外开关
+- **id 一致性**：统一走 [`toArtifactMenuItem`](/utils/#会话产物收集) 生成菜单条目，与 `@` 菜单里自动收集的产物同源；id 不一致会导致去重与已插入标签匹配同时失效
+- **消息区文件卡片**：`ArtifactFileCard` 右侧操作区 hover 时显示，引用在下载左侧
+
 ## 唯一键规则
 
 会话内以 **`outputId`** 作为文件产物唯一键：
@@ -326,7 +344,7 @@ type AIFileInfo = {
 
 ## 关联 Composable
 
-预览**命中与取链**由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider / Consumer + `ARTIFACT_PREVIEW_TOKEN`）。**正文加载与渲染**由内部 `useArtifactPreviewLoader` + `ArtifactPreviewHost` 完成，不在该 composable 内。
+预览**命中与取链**由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider / Consumer + `ARTIFACT_PREVIEW_TOKEN`）。**正文加载与渲染**由内部 `useArtifactPreviewLoader` + `ArtifactPreviewHost` 完成，不在该 composable 内。**引用到输入框**由 [useInputMention](/composables/use-input-mention) 提供。
 
 ## 关联组件
 
@@ -334,3 +352,5 @@ type AIFileInfo = {
 - [ChatContainer](/components/setup/chat-container) — 侧栏「文件产物」Tab 挂载场景，提供 `onArtifactClick`
 - [MessageLoading](/components/helper/message-loading) — Host 预览区异步加载态
 - [ExecutionSummary](/components/agent/execution-summary) — 同为侧栏 Tab 面板
+- [MentionTag](/components/rendering/mention-tag) — 引用后在输入框内的标签形态
+- [useInputMention](/composables/use-input-mention) — 引用入口的上下文来源

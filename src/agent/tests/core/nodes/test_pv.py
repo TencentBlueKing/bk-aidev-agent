@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from aidev_agent.pydantic_models import ExecuteKwargs
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -33,6 +34,7 @@ sys.modules["aidev_agent.core.nodes.pv"] = _pv_mod
 
 add_pv_info = _pv_mod.add_pv_info
 make_pv_node = _pv_mod.make_pv_node
+_tool_call_needs_pv = _pv_mod._tool_call_needs_pv
 
 
 # ---------------------------------------------------------------------------
@@ -210,9 +212,7 @@ def test_pv_node_reuses_platform_volume_without_create():
     """创建前读到会话已绑定的卷时，直接复用，不新建。"""
     client = _make_mock_client()
     resource_manager = _make_mock_resource_manager()
-    resource_manager.retrieve_chat_session.return_value = {
-        "session_property": {"sandbox_pv_id": "vol-uploaded"}
-    }
+    resource_manager.retrieve_chat_session.return_value = {"session_property": {"sandbox_pv_id": "vol-uploaded"}}
     pv_node = make_pv_node(client=client, app_code="test-app", resource_manager=resource_manager)
 
     state = {
@@ -677,3 +677,63 @@ def test_pv_node_paas_runtime_disabled_ignores_paas_sandbox():
     result = pv_node(state, config)
     assert result == {}
     client.create_agent_sandbox_volume.request.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# tool_call 判定：read_image 经 image_uri 解析目标运行时
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tool_call, expected",
+    [
+        # read_image：image_uri 的 runtime 名以 paas_sandbox 开头 → 需要 PV
+        ({"name": "read_image", "args": {"image_uri": "file://paas_sandbox_my-skill/a/s.png"}}, True),
+        ({"name": "read_image", "args": {"image_uri": "file://paas_sandbox/a.png"}}, True),
+        # 非 paas runtime → 不需要 PV
+        ({"name": "read_image", "args": {"image_uri": "file://local/a.png"}}, False),
+        # 非法/缺失 image_uri → 不抛异常且不需要 PV
+        ({"name": "read_image", "args": {"image_uri": "/abs/a.png"}}, False),
+        ({"name": "read_image", "args": {"image_uri": ""}}, False),
+        ({"name": "read_image", "args": {"image_uri": "file://paas_sandbox"}}, False),
+        ({"name": "read_image", "args": {}}, False),
+        ({"name": "read_image", "args": {"image_uri": None}}, False),
+        # 既有 target_runtime 判定零回归
+        ({"name": "activate_skill", "args": {"target_runtime": "paas_sandbox_x"}}, True),
+        ({"name": "activate_skill", "args": {"target_runtime": "local"}}, False),
+        ({"name": "activate_skill", "args": {}}, False),
+        # 其他工具不受影响
+        ({"name": "ls", "args": {"target_runtime": "paas_sandbox_x"}}, True),
+        ({"name": "ls", "args": {}}, False),
+    ],
+)
+def test_tool_call_needs_pv(tool_call, expected):
+    """read_image 经 image_uri 解析 runtime；非法输入降级为不需要 PV 且不抛异常。"""
+    assert _tool_call_needs_pv(tool_call) is expected
+
+
+@pytest.mark.parametrize("args", [None, "not-a-dict", ["a"], 42])
+def test_tool_call_needs_pv_tolerates_non_dict_args(args):
+    """args 非 dict（流式未闭合场景）时降级为不需要 PV，绝不抛异常。"""
+    assert _tool_call_needs_pv({"name": "read_image", "args": args}) is False
+
+
+@pytest.mark.parametrize("tool_call", [None, "not-a-dict", 42, ["read_image"]])
+def test_tool_call_needs_pv_tolerates_non_dict_tool_call(tool_call):
+    """tool_call 本身非 dict 时降级为不需要 PV，绝不抛异常（否则阻断整条执行链）。"""
+    assert _tool_call_needs_pv(tool_call) is False
+
+
+def test_pv_node_creates_pv_for_read_image_paas_runtime():
+    """read_image 指向 paas_sandbox runtime 时，pv_node 创建 PV（原漏判路径）。"""
+    client = _make_mock_client()
+    pv_node = make_pv_node(client=client, app_code="test-app")
+    ai_message = AIMessage(
+        content="",
+        tool_calls=[{"name": "read_image", "args": {"image_uri": "file://paas_sandbox_my-skill/a/s.png"}, "id": "tc9"}],
+    )
+
+    result = pv_node({"runtime_paas_sbx_pv": [], "messages": [ai_message]}, _make_config())
+
+    client.create_agent_sandbox_volume.request.assert_called_once()
+    assert result["runtime_paas_sbx_pv"][0]["mount_path"] == "session"

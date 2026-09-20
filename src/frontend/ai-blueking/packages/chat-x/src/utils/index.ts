@@ -24,6 +24,8 @@
  * IN THE SOFTWARE.
  */
 
+export * from './artifact-tags';
+export * from './collect-message-artifacts';
 export * from './file';
 export * from './file-type';
 export * from './markdown-completer';

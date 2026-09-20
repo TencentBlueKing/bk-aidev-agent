@@ -24,9 +24,9 @@
  * IN THE SOFTWARE.
  */
 
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, nextTick } from 'vue';
 
-import { type VueWrapper, mount } from '@vue/test-utils';
+import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,8 +36,7 @@ import { MessageStatus } from '../../ag-ui/types';
 import { DEFAULT_UPLOAD_ACCEPT } from '../../common';
 import ChatInput from './chat-input.vue';
 
-import type { UploadFile } from '../../types';
-import type { IAiSlashMenuItem } from '../../types/editor';
+import type { IInputMenuItem, UploadFile } from '../../types';
 
 const chatInputSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-input.vue'), 'utf-8');
 
@@ -64,7 +63,6 @@ vi.mock('../../common', async importOriginal => {
     CHAT_Z_INDEX: 1000,
     isEn: false,
     MAX_UPLOAD_FILES: 9,
-    MAX_UPLOAD_FILE_SIZE: 2.5 * 1024 * 1024,
     commonSVGProps: {
       class: 'mock-svg-icon',
       xmlns: 'http://www.w3.org/2000/svg',
@@ -123,21 +121,30 @@ vi.mock('../chat-content/cite-content/cite-content.vue', () => ({
 
 // Mock AiSlashInput
 const mockInputFocus = vi.fn();
+const mockCloseMenu = vi.fn();
+const mockOpenPlusMenu = vi.fn();
+const mockInsertMenuItem = vi.fn();
+const mockReplaceAll = vi.fn();
+const mockAppendMention = vi.fn();
+const mockConsumeTriggerText = vi.fn();
 vi.mock('./ai-slash-input/ai-slash-input.vue', () => ({
   default: defineComponent({
     name: 'AiSlashInput',
     props: {
       modelValue: { type: [String, Array], default: '' },
       placeholder: { type: String, default: '' },
-      prompts: { type: Array, default: () => [] },
-      resources: { type: Array, default: () => [] },
-      skills: { type: Array, default: () => [] },
     },
-    emits: ['update:modelValue', 'keydown', 'upload'],
+    emits: ['update:modelValue', 'keydown', 'upload', 'menuChange'],
     setup(props, { emit, expose }) {
       expose({
         cleanup: vi.fn(),
+        closeMenu: mockCloseMenu,
+        consumeTriggerText: mockConsumeTriggerText,
         focus: mockInputFocus,
+        insertMenuItem: mockInsertMenuItem,
+        openPlusMenu: mockOpenPlusMenu,
+        replaceAll: mockReplaceAll,
+        appendMention: mockAppendMention,
       });
       return () =>
         h('div', {
@@ -157,7 +164,7 @@ vi.mock('./model-selector', () => ({
       models: { type: Array, default: () => [] },
       modelValue: { type: String, default: '' },
     },
-    emits: ['update:modelValue', 'change'],
+    emits: ['update:modelValue', 'change', 'show'],
     setup(props, { emit }) {
       return () =>
         h(
@@ -291,24 +298,68 @@ vi.mock('../chat-content/file-content/file-content.vue', () => ({
   }),
 }));
 
-// Mock FileUploadBtn
-vi.mock('../ai-buttons/file-upload-btn/file-upload-btn.vue', () => ({
+// Mock AddMenuBtn（左下角 + 号）
+vi.mock('../ai-buttons/add-menu-btn/add-menu-btn.vue', () => ({
   default: defineComponent({
-    name: 'FileUploadBtn',
-    props: ['accept', 'tippyOptions'],
-    emits: ['upload'],
-    setup(_, { emit }) {
+    name: 'AddMenuBtn',
+    props: { active: { type: Boolean, default: false } },
+    emits: ['toggle'],
+    setup(props, { emit }) {
       return () =>
         h('button', {
-          class: 'mock-file-upload-btn',
-          onClick: () => {
-            const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
-            emit('upload', [mockFile]);
-          },
+          class: 'mock-add-menu-btn',
+          'data-active': String(props.active),
+          onClick: () => emit('toggle'),
         });
     },
   }),
 }));
+
+// Mock InputMenu（面板渲染细节由 input-menu / input-menu-panel spec 覆盖；分组逻辑仍走真实 composable）
+vi.mock('./input-menu', async () => {
+  const { useInputMenu } = await import('./input-menu/use-input-menu');
+  const { DEFAULT_GROUP_ITEM_LIMIT } = await import('./input-menu/constants');
+  return {
+    useInputMenu,
+    DEFAULT_GROUP_ITEM_LIMIT,
+    InputMenu: defineComponent({
+      name: 'InputMenu',
+      props: {
+        flatItems: { type: Array, default: () => [] },
+        groups: { type: Array, default: () => [] },
+        tippyOptions: { type: Object, default: undefined },
+        visible: { type: Boolean, default: false },
+      },
+      emits: ['select', 'toggleGroup', 'close'],
+      setup(props, { slots }) {
+        return () =>
+          h('div', { class: 'mock-input-menu' }, [
+            slots.default?.(),
+            props.visible
+              ? h('div', {
+                  class: 'mock-input-menu-panel',
+                  'data-groups': (props.groups as { key: string }[]).map(group => group.key).join(','),
+                  'data-add-types': (
+                    (props.groups as { items?: { type: string }[]; key: string }[]).find(group => group.key === 'add')
+                      ?.items ?? []
+                  )
+                    .map(item => item.type)
+                    .join(','),
+                })
+              : null,
+          ]);
+      },
+    }),
+  };
+});
+
+/** 从编辑器侧模拟一次菜单触发上报 */
+const emitMenuChange = (wrapper: VueWrapper, trigger: null | string, keyword = '') =>
+  wrapper.findComponent({ name: 'AiSlashInput' }).vm.$emit('menuChange', { trigger, keyword });
+
+/** 从编辑器侧模拟一次文件上传（粘贴 / 拖拽 / 文件选择器最终都走这里） */
+const emitUpload = (wrapper: VueWrapper, files: File[]) =>
+  wrapper.findComponent({ name: 'AiSlashInput' }).vm.$emit('upload', files);
 
 // style-note: chat-x PR4 — inputMaxHeight 默认 280 / 未激活灰边框
 describe('ChatInput', () => {
@@ -413,19 +464,6 @@ describe('ChatInput', () => {
   });
 
   describe('Props 测试', () => {
-    it('应该正确接收 placeholder', () => {
-      const placeholder = '输入 "/"唤出 Prompt\n输入"@"唤出 工具 和 MCP\n通过 Shift + Enter 进行换行输入';
-
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          placeholder,
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
-    });
-
     it('无 Skill/Prompt/Resources 时默认 placeholder 仅保留换行提示', () => {
       wrapper = mount(ChatInput, {
         props: {
@@ -438,45 +476,45 @@ describe('ChatInput', () => {
       );
     });
 
-    it('仅有 Skill 时默认 placeholder 含 Skill 行且不含 Prompt 和 @ 行', () => {
+    it('未传 placeholder 时按数据源类型拼接提示文案', () => {
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
-          skills: [
-            {
-              skill_name: 'Code Review',
-              skill_code: 'code-review',
-              description: '审查代码',
-              icon: '',
-            },
-          ],
+          menuSources: [{ id: 's1', type: 'skill', name: 'Code Review' }] as IInputMenuItem[],
+        },
+      });
+
+      const placeholder = wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder');
+      expect(placeholder).toContain('输入 "/" 唤出 Skill，工具，MCP');
+      expect(placeholder).not.toContain('输入 "@"');
+    });
+
+    it('仅有知识库时默认 placeholder 含 @ 行且不含 / 行', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          menuSources: [{ id: 'k1', type: 'knowledgebase', name: '知识库01' }] as IInputMenuItem[],
         },
       });
 
       const placeholder = wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder') ?? '';
-      expect(placeholder).toContain('输入 "/" 唤出 Skill');
+      expect(placeholder).toContain('输入 "@" 唤出会话产物，知识库');
+      expect(placeholder).not.toContain('输入 "/"');
       expect(placeholder).not.toContain('唤出 Prompt');
-      expect(placeholder).not.toContain('工具和 MCP');
-      expect(placeholder).toContain('通过 Shift + Enter 进行换行输入');
     });
 
-    it('显式 placeholder 不被 skills/prompts/resources 改写', () => {
+    it('显式 placeholder 不被 menuSources 改写', () => {
       const placeholder = '请输入你的问题';
 
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
           placeholder,
-          skills: [
-            {
-              skill_name: 'Code Review',
-              skill_code: 'code-review',
-              description: '审查代码',
-              icon: '',
-            },
-          ],
-          prompts: ['帮我总结'],
-          resources: [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[],
+          menuSources: [
+            { id: 'code-review', type: 'skill', name: 'Code Review' },
+            { id: 'p1', type: 'prompt', name: '帮我总结' },
+            { id: '1', type: 'tool', name: 'resource1' },
+          ] as IInputMenuItem[],
         },
       });
 
@@ -488,44 +526,11 @@ describe('ChatInput', () => {
         props: {
           modelValue: '',
           placeholder: '',
-          skills: [
-            {
-              skill_name: 'Code Review',
-              skill_code: 'code-review',
-              description: '审查代码',
-              icon: '',
-            },
-          ],
+          menuSources: [{ id: 'code-review', type: 'skill', name: 'Code Review' }] as IInputMenuItem[],
         },
       });
 
       expect(wrapper.find('.mock-ai-slash-input').attributes('aria-placeholder')).toBe('');
-    });
-
-    it('应该正确接收 prompts', () => {
-      const prompts = ['prompt1', 'prompt2'];
-
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          prompts,
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
-    });
-
-    it('应该正确接收 resources', () => {
-      const resources = [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[];
-
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          resources,
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
     });
 
     it('应该正确接收 models', () => {
@@ -586,41 +591,6 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-shortcut-btn').exists()).toBe(true);
       expect(wrapper.find('.mock-shortcut-btns').exists()).toBe(false);
     });
-
-    it('应该正确接收 supportUpload 属性', () => {
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          supportUpload: false,
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
-    });
-
-    it('应该正确接收 tippyOptions 属性', () => {
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          tippyOptions: { appendTo: 'parent' },
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
-    });
-
-    it('应该正确接收 skills 属性', () => {
-      const skills = [{ skill_code: 'test_skill', skill_name: 'Test Skill', description: 'A test skill', icon: '' }];
-
-      wrapper = mount(ChatInput, {
-        props: {
-          modelValue: '',
-          skills,
-        },
-      });
-
-      expect(wrapper.find('.ai-chat-input-container').exists()).toBe(true);
-    });
   });
 
   describe('update:modelValue 事件测试', () => {
@@ -632,25 +602,26 @@ describe('ChatInput', () => {
       });
 
       const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
-      await aiSlashInput.vm.$emit('update:modelValue', 'new value', []);
+      await aiSlashInput.vm.$emit('update:modelValue', []);
 
       expect(wrapper.emitted('update:modelValue')).toBeTruthy();
     });
 
-    it('update:modelValue 事件应该携带 selectedResourceList 参数', async () => {
-      const resources = [{ id: '1', name: 'resource1', type: 'tool' }] as IAiSlashMenuItem[];
+    it('update:modelValue 事件把文档里的标签还原成 menuSources 里的选项', async () => {
+      const menuSources = [{ id: '1', type: 'tool', name: 'resource1' }] as IInputMenuItem[];
 
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
-          resources,
+          menuSources,
         },
       });
 
+      const doc = [[{ type: 'tag', data: { label: 'resource1', value: '1', type: 'tool' } }]];
       const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
-      await aiSlashInput.vm.$emit('update:modelValue', 'new value', resources);
+      await aiSlashInput.vm.$emit('update:modelValue', doc);
 
-      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['new value', resources]);
+      expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([doc, menuSources]);
     });
   });
 
@@ -1068,18 +1039,364 @@ describe('ChatInput', () => {
     });
   });
 
+  describe('输入框菜单', () => {
+    const menuSources = [
+      { id: 's1', type: 'skill', name: 'Code Review' },
+      { id: 'k1', type: 'knowledgebase', name: '知识库01' },
+      { id: 'p1', type: 'prompt', name: '深圳旅游攻略？', content: '深圳旅游攻略？全文' },
+    ] as IInputMenuItem[];
+
+    it('未触发时不渲染菜单面板', () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+    });
+
+    it('/ 触发只展示 Skill 相关分组', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '/');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('skill');
+    });
+
+    it('@ 触发只展示有数据的知识库分组', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '@');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('knowledgebase');
+    });
+
+    it('plus 触发聚合有数据的分组，并把内置「文件」放在添加分组', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, 'plus');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-groups')).toBe('add,skill,knowledgebase,prompt');
+      expect(wrapper.find('.mock-input-menu-panel').attributes('data-add-types')).toBe('file');
+    });
+
+    it('过滤关键字命中不到条目时不展示面板', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '/', 'nothing-matched');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+    });
+
+    it('已插入编辑器的标签不再出现在菜单里', async () => {
+      const doc = [[{ type: 'tag', data: { label: 'Code Review', value: 's1', type: 'skill' } }]];
+      wrapper = mount(ChatInput, { props: { modelValue: doc as never, menuSources } });
+      await emitMenuChange(wrapper, '/');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+    });
+
+    it('点击 + 号唤起聚合菜单，再次点击收起', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await wrapper.find('.mock-add-menu-btn').trigger('click');
+      expect(mockOpenPlusMenu).toHaveBeenCalled();
+
+      await emitMenuChange(wrapper, 'plus');
+      expect(wrapper.find('.mock-add-menu-btn').attributes('data-active')).toBe('true');
+
+      await wrapper.find('.mock-add-menu-btn').trigger('click');
+      expect(mockCloseMenu).toHaveBeenCalled();
+    });
+
+    it('展开模型选择器时应关闭输入框菜单', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', menuSources, models: [{ id: 'gpt-4', name: 'GPT-4' }] },
+      });
+      await emitMenuChange(wrapper, '/');
+      await wrapper.findComponent({ name: 'ModelSelector' }).vm.$emit('show');
+      expect(mockCloseMenu).toHaveBeenCalled();
+    });
+
+    it('选中普通条目时插入标签', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '/');
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', menuSources[0]);
+      expect(mockInsertMenuItem).toHaveBeenCalledWith(menuSources[0]);
+    });
+
+    it('选中 Prompt 时整体替换输入框内容', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '\\');
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', menuSources[2]);
+      expect(mockReplaceAll).toHaveBeenCalledWith('深圳旅游攻略？全文');
+    });
+
+    it('Prompt 没有 content 时回退到名称', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, '\\');
+      await wrapper.findComponent({ name: 'InputMenu' }).vm.$emit('select', { id: 'p2', type: 'prompt', name: '标题' });
+      expect(mockReplaceAll).toHaveBeenCalledWith('标题');
+    });
+
+    it('选中内置「文件」时先吃掉过滤词再唤起文件选择器', async () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      await emitMenuChange(wrapper, 'plus');
+      const fileInput = wrapper.find('.chat-input-file-input');
+      const clickSpy = vi.spyOn(fileInput.element as HTMLInputElement, 'click').mockImplementation(() => {});
+      await wrapper
+        .findComponent({ name: 'InputMenu' })
+        .vm.$emit('select', { id: '__built_in_file__', type: 'file', name: '文件' });
+      await nextTick();
+      expect(mockConsumeTriggerText).toHaveBeenCalled();
+      expect(mockCloseMenu).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+      expect(fileInput.attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+    });
+
+    it('insertMention 把条目追加到编辑器末尾', () => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', menuSources } });
+      (wrapper.vm as unknown as { insertMention: (item: IInputMenuItem) => void }).insertMention(menuSources[1]);
+      expect(mockAppendMention).toHaveBeenCalledWith(menuSources[1]);
+    });
+
+    it('菜单展开时按 Enter 不触发发送', async () => {
+      const onSendMessage = vi.fn();
+      wrapper = mount(ChatInput, { props: { modelValue: 'hello', menuSources, onSendMessage } });
+      await emitMenuChange(wrapper, '/');
+      await wrapper.findComponent({ name: 'AiSlashInput' }).vm.$emit('keydown', { key: 'Enter' });
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('文件上传功能测试', () => {
-    it('supportUpload 默认为 true 时应该渲染 FileUploadBtn', () => {
+    it.each(['@', 'plus'] as const)('上传 path 应立即加入 %s 菜单并在发送内容中保留 outputId', async trigger => {
+      const onSendMessage = vi.fn();
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({ id: 'upload-id', path: 'files/report.pdf', status: 'success' }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['pdf'], 'report.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await emitMenuChange(wrapper, trigger);
+      const groups = wrapper.findComponent({ name: 'InputMenu' }).props('groups');
+      expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
+        id: 'files/report.pdf',
+        type: 'artifact',
+        name: 'report.pdf',
+      });
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([
+        { outputId: 'files/report.pdf', name: 'report.pdf', size: 3, type: 'pdf' },
+      ]);
+      await emitMenuChange(wrapper, null);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+      expect(onSendMessage.mock.calls[0][0][0]).toMatchObject({ id: 'upload-id', outputId: 'files/report.pdf' });
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([]);
+    });
+
+    it('附件展示名取本地文件名，选中即可见且上传完成后不跳变', async () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload: vi.fn().mockResolvedValue({
+            id: 'files/bk_apigw_7.yaml',
+            path: 'files/bk_apigw_7.yaml',
+            status: 'success',
+          }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['yaml'], 'bk_apigw_resources (7).yaml', { type: 'application/x-yaml' })]);
+      // 上传尚未返回，附件名已经可见
+      expect(wrapper.find('.mock-file-item').text()).toBe('bk_apigw_resources (7).yaml');
+
+      await flushPromises();
+      await emitMenuChange(wrapper, '@');
+
+      const groups = wrapper.findComponent({ name: 'InputMenu' }).props('groups');
+      expect(groups.flatMap((group: { items: IInputMenuItem[] }) => group.items)).toContainEqual({
+        id: 'files/bk_apigw_7.yaml',
+        type: 'artifact',
+        name: 'bk_apigw_resources (7).yaml',
+      });
+    });
+
+    it('发送时把待发送附件按文件名 / path 补成 artifact 标签行', async () => {
+      const onSendMessage = vi.fn();
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: [[{ type: 'text', text: '分析这个文件' }]] as never,
+          onSendMessage,
+          onUpload: vi.fn().mockResolvedValue({
+            id: 'upload-id',
+            path: 'files/bk_apigw_7.yaml',
+            status: 'success',
+          }),
+        },
+      });
+      await emitUpload(wrapper, [new File(['yaml'], 'bk_apigw_resources (7).yaml', { type: 'application/x-yaml' })]);
+      await waitUntilSendEnabled(wrapper);
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][1]).toEqual([
+        [{ type: 'text', text: '分析这个文件' }],
+        [
+          {
+            type: 'tag',
+            data: {
+              type: 'artifact',
+              label: 'bk_apigw_resources (7).yaml',
+              value: 'files/bk_apigw_7.yaml',
+              icon: '',
+              description: '',
+            },
+          },
+        ],
+      ]);
+    });
+
+    it('编辑回填的文档已含该附件标签时不重复追加', async () => {
+      const onSendMessage = vi.fn();
+      const artifactTag = {
+        type: 'tag',
+        data: {
+          type: 'artifact',
+          label: 'report.pdf',
+          value: 'files/report.pdf',
+          icon: '',
+          description: '',
+        },
+      };
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: [[{ type: 'text', text: '再看一下' }], [artifactTag]] as never,
+          defaultUploadFiles: [
+            {
+              type: 'binary',
+              id: 'files/report.pdf',
+              outputId: 'files/report.pdf',
+              filename: 'report.pdf',
+              mimeType: 'application/pdf',
+              size: 2048,
+            },
+          ] as unknown as UploadFile[],
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage.mock.calls[0][1]).toEqual([[{ type: 'text', text: '再看一下' }], [artifactTag]]);
+    });
+
+    it('取消上传附件后应从菜单和暴露的预览数据移除', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: '', onUpload: vi.fn().mockResolvedValue({ path: 'files/a.pdf' }) },
+      });
+      await emitUpload(wrapper, [new File(['a'], 'a.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await wrapper.find('.mock-file-item').trigger('click');
+      await emitMenuChange(wrapper, '@');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+      expect((wrapper.vm as unknown as { uploadedArtifacts: unknown[] }).uploadedArtifacts).toEqual([]);
+    });
+
+    it.each([
+      { id: 'legacy-id', download_url: 'https://example.com/a.pdf' },
+      { path: 'files/a.pdf', status: 'failed' },
+    ])('没有有效 outputId 的上传结果不能加入菜单：%j', async result => {
+      wrapper = mount(ChatInput, { props: { modelValue: '', onUpload: vi.fn().mockResolvedValue(result) } });
+      await emitUpload(wrapper, [new File(['a'], 'a.pdf', { type: 'application/pdf' })]);
+      await flushPromises();
+      await emitMenuChange(wrapper, '@');
+      expect(wrapper.find('.mock-input-menu-panel').exists()).toBe(false);
+    });
+
+    it.each(['选择', '拖拽', '粘贴'])('%s 文件时仅允许非空且严格小于 20 MB 的文件', async entry => {
+      const onUpload = vi.fn().mockResolvedValue({ id: 'files/valid.pdf', status: 'success' });
+      const files = [20 * 1024 * 1024 - 1, 20 * 1024 * 1024, 20 * 1024 * 1024 + 1, 0].map((size, index) => {
+        const file = new File(['pdf'], `${index}.pdf`, { type: 'application/pdf' });
+        Object.defineProperty(file, 'size', { value: size });
+        return file;
+      });
+      wrapper = mount(ChatInput, { props: { modelValue: '', onUpload } });
+
+      if (entry === '选择') {
+        const input = wrapper.find('.chat-input-file-input');
+        Object.defineProperty(input.element, 'files', { value: files });
+        await input.trigger('change');
+      } else if (entry === '拖拽') {
+        await wrapper.find('.chat-input').trigger('drop', {
+          dataTransfer: { types: ['Files'], files },
+        });
+      } else {
+        await emitUpload(wrapper, files);
+      }
+
+      expect(onUpload).toHaveBeenCalledExactlyOnceWith([files[0]]);
+      expect(wrapper.findAll('.mock-file-item')).toHaveLength(1);
+      expect(mockBkMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '有 3 个文件未上传，可能文件超过 20.0 MB或超出上传个数',
+        }),
+      );
+    });
+
+    it.each(['成功', '失败'])('删除接口%s时都应立即移除附件并抛出完整文件信息', async result => {
+      let resolveDelete!: () => void;
+      let rejectDelete!: (error: Error) => void;
+      const request = new Promise<void>((resolve, reject) => {
+        resolveDelete = resolve;
+        rejectDelete = reject;
+      });
+      const onDeleteFile = vi.fn(() => request);
+      const errorHandler = vi.fn();
+      const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          onUpload: vi.fn().mockResolvedValue({ id: 'files/report.pdf', status: 'success' }),
+          onDeleteFile,
+        },
+        global: { config: { errorHandler } },
+      });
+      await emitUpload(wrapper, [file]);
+      await flushPromises();
+      await wrapper.find('.mock-file-item').trigger('click');
+
+      expect(wrapper.find('.mock-file-content').exists()).toBe(false);
+      expect(wrapper.emitted('deleteFile')).toEqual([
+        [
+          expect.objectContaining({
+            id: 'files/report.pdf',
+            file,
+            status: 'success',
+          }),
+        ],
+      ]);
+      expect(onDeleteFile).toHaveBeenCalledTimes(1);
+
+      const error = new Error('删除失败');
+      if (result === '成功') resolveDelete();
+      else rejectDelete(error);
+      await flushPromises();
+      expect(wrapper.find('.mock-file-content').exists()).toBe(false);
+      expect(errorHandler).toHaveBeenCalledTimes(result === '成功' ? 0 : 1);
+    });
+
+    it('删除仅含 id 的回填附件时应移除对应文件并发出事件', async () => {
+      const files = [
+        { type: 'binary', id: 'files/a.pdf', mimeType: 'application/pdf' },
+        { type: 'binary', id: 'files/b.pdf', mimeType: 'application/pdf' },
+      ] as UploadFile[];
+      wrapper = mount(ChatInput, { props: { modelValue: '', defaultUploadFiles: files } });
+      await wrapper.find('.mock-file-item').trigger('click');
+
+      expect(wrapper.findComponent({ name: 'FileContent' }).props('files')).toEqual([files[1]]);
+      expect(wrapper.emitted('deleteFile')).toEqual([[files[0]]]);
+    });
+
+    it('supportUpload 默认为 true 时应该渲染 + 号按钮', () => {
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
         },
       });
 
-      expect(wrapper.find('.mock-file-upload-btn').exists()).toBe(true);
+      expect(wrapper.find('.mock-add-menu-btn').exists()).toBe(true);
     });
 
-    it('supportUpload 为 false 时不应该渲染 FileUploadBtn', () => {
+    it('既不支持上传也没有菜单数据时不渲染 + 号按钮', () => {
       wrapper = mount(ChatInput, {
         props: {
           modelValue: '',
@@ -1087,15 +1404,27 @@ describe('ChatInput', () => {
         },
       });
 
-      expect(wrapper.find('.mock-file-upload-btn').exists()).toBe(false);
+      expect(wrapper.find('.mock-add-menu-btn').exists()).toBe(false);
     });
 
-    it('默认应将允许列表传给 FileUploadBtn', () => {
+    it('不支持上传但有菜单数据时仍渲染 + 号按钮', () => {
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          supportUpload: false,
+          menuSources: [{ id: 's1', type: 'skill', name: 'Code Review' }] as IInputMenuItem[],
+        },
+      });
+
+      expect(wrapper.find('.mock-add-menu-btn').exists()).toBe(true);
+    });
+
+    it('默认应将允许列表传给隐藏文件选择器', () => {
       wrapper = mount(ChatInput, {
         props: { modelValue: '' },
       });
 
-      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
+      expect(wrapper.find('.chat-input-file-input').attributes('accept')).toBe(DEFAULT_UPLOAD_ACCEPT);
     });
 
     it('应支持自定义 accept 覆盖默认允许列表', () => {
@@ -1103,7 +1432,7 @@ describe('ChatInput', () => {
         props: { modelValue: '', accept: '.pdf' },
       });
 
-      expect(wrapper.findComponent({ name: 'FileUploadBtn' }).props('accept')).toBe('.pdf');
+      expect(wrapper.find('.chat-input-file-input').attributes('accept')).toBe('.pdf');
     });
 
     it('不支持的文件格式应拦截且提示，不调用 onUpload', async () => {
@@ -1113,8 +1442,7 @@ describe('ChatInput', () => {
         props: { modelValue: '', onUpload },
       });
 
-      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
-      await aiSlashInput.vm.$emit('upload', [new File(['x'], 'malware.exe', { type: 'application/x-msdownload' })]);
+      await emitUpload(wrapper, [new File(['x'], 'malware.exe', { type: 'application/x-msdownload' })]);
 
       expect(onUpload).not.toHaveBeenCalled();
       expect(mockBkMessage).toHaveBeenCalledWith(
@@ -1134,8 +1462,7 @@ describe('ChatInput', () => {
         props: { modelValue: '', onUpload },
       });
 
-      const aiSlashInput = wrapper.findComponent({ name: 'AiSlashInput' });
-      await aiSlashInput.vm.$emit('upload', [allowed, blocked]);
+      await emitUpload(wrapper, [allowed, blocked]);
 
       expect(onUpload).toHaveBeenCalledTimes(1);
       expect(onUpload).toHaveBeenCalledWith([allowed]);
@@ -1171,7 +1498,7 @@ describe('ChatInput', () => {
       expect(wrapper.find('.mock-file-content').exists()).toBe(true);
     });
 
-    it('点击 FileUploadBtn 应该触发上传', async () => {
+    it('编辑器上报文件时应该触发上传', async () => {
       const onUpload = vi.fn().mockResolvedValue({ download_url: 'http://example.com/file.txt' });
 
       wrapper = mount(ChatInput, {
@@ -1181,7 +1508,7 @@ describe('ChatInput', () => {
         },
       });
 
-      await wrapper.find('.mock-file-upload-btn').trigger('click');
+      await emitUpload(wrapper, [new File(['test'], 'test.txt', { type: 'text/plain' })]);
 
       expect(onUpload).toHaveBeenCalled();
     });
@@ -1196,7 +1523,7 @@ describe('ChatInput', () => {
         },
       });
 
-      await wrapper.find('.mock-file-upload-btn').trigger('click');
+      await emitUpload(wrapper, [new File(['test'], 'test.txt', { type: 'text/plain' })]);
       await vi.waitFor(() => {
         expect(onUpload).toHaveBeenCalled();
       });
@@ -1212,7 +1539,7 @@ describe('ChatInput', () => {
         },
       });
 
-      await wrapper.find('.mock-file-upload-btn').trigger('click');
+      await emitUpload(wrapper, [new File(['test'], 'test.txt', { type: 'text/plain' })]);
       await vi.waitFor(() => {
         expect(onUpload).toHaveBeenCalled();
       });

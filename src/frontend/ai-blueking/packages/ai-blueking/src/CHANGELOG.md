@@ -1,5 +1,16 @@
 # 小鲸组件 V2 重构变更日志
 
+## 版本 2.2.4-beta.7
+
+适配 `@blueking/chat-x` `>=0.0.52-beta.1` 统一输入菜单。
+
+- 对外仍保留 `prompts` / `resources` / `skills`（`AIBlueking` 无 `skills`），内部 `buildMenuSources` 映射为 `menuSources`
+- 发送与编辑写 `property.docSchema`（与 `extra` 同级），不再写 `extra.resources`
+- 上传文件的 `artifact` 标签（`label` 取文件名，`value` 取上传接口 `path`，`file` → `artifact`）由 chat-x 注入，`ai-blueking` 只透传
+- `chat-helper` 的用户消息 Binary 内容双向透传 `outputId` ↔ `output_id`，历史消息重载后仍保留文件的会话内身份
+- 无标签纯文本不发 `docSchema`
+- chat-helper `IMessageProperty` 顶层增加 `docSchema?: unknown`
+
 ## 版本 2.0.0 (2025-12-23)
 
 ### 🎉 重大更新

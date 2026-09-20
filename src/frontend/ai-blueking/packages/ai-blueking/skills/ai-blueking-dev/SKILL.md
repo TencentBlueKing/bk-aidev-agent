@@ -5,9 +5,9 @@ metadata:
   author: blueking
   version: '5.39'
   packages:
-    ai-blueking: 2.2.4
-    chat-x: 0.0.51
-    chat-helper: 0.0.12
+    ai-blueking: 2.2.5-beta.5
+    chat-x: 0.0.52-dev.5
+    chat-helper: 0.0.13-dev.5
 ---
 
 # AI 小鲸组件开发指南
@@ -454,7 +454,7 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 | 新建 | **所有建会话路径**（含初始化 `loadRecentSession`）统一经 `resolveModelForSession`：优先当前选中 / preferred，校验落在可用列表内；`enableModelSelect=false` 时不强制写 model |
 | 空列表 | 启用模型选择但无可用模型 → 抛 `ModelUnavailableError`，阻断建会话并上报 `sdk-error`（`apiName: session`） |
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
-| 附件按钮 | 跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先 |
+| 附件按钮 | 常驻开启；不再跟随 `support_vision` 或快捷指令 `supportUpload.vision` |
 
 编排入口：`ModelSelectionManager`（`models` / `selectedLlmCode` / `resolveModelForSession` / `persistSessionModel`）。
 AIBlueking 创建实例并注入内嵌 ChatBot（`modelSelectionManager` prop），外壳层与聊天层共享同一份选中状态。

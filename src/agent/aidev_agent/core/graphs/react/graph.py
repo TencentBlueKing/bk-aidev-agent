@@ -59,6 +59,7 @@ from aidev_agent.core.tools.a2a_tools import BkAiBackend as BkAiA2ABackend
 from aidev_agent.core.tools.a2a_tools import LocalBackend as LocalA2ABackend
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
+from aidev_agent.core.tools.read_image import make_read_image_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
@@ -167,6 +168,7 @@ class ReActAgentBuilder:
         self._knowledge_llm: BaseChatModel | None = None
         self._non_thinking_llm: BaseChatModel | None = None
         self._fast_llm: BaseChatModel | None = None
+        self._vision_llm: BaseChatModel | None = None
         self._support_vision: bool = False
         self._llm_token_limit: int = 28000
         # 对话设置
@@ -229,6 +231,10 @@ class ReActAgentBuilder:
 
     def set_non_thinking_llm(self, non_thinking_llm: BaseChatModel | None) -> "ReActAgentBuilder":
         self._non_thinking_llm = non_thinking_llm
+        return self
+
+    def set_vision_llm(self, vision_llm: BaseChatModel | None) -> "ReActAgentBuilder":
+        self._vision_llm = vision_llm
         return self
 
     def set_support_vision(self, support_vision: bool) -> "ReActAgentBuilder":
@@ -579,6 +585,8 @@ class ReActAgentBuilder:
             self._non_thinking_llm = options.non_thinking_llm
         if options.fast_llm is not None:
             self._fast_llm = options.fast_llm
+        if options.vision_llm is not None:
+            self._vision_llm = options.vision_llm
         if options.knowledge_llm is not None:
             self._knowledge_llm = options.knowledge_llm
         if options.extra_tools is not None:
@@ -856,6 +864,10 @@ class ReActAgentBuilder:
                     enable_security=self._enable_security_runtime,
                 )
             )
+            # 仅在配置了视觉模型时注册图片识别工具，避免模型调用必然失败的工具
+            if self._vision_llm is not None:
+                tools.append(make_read_image_tool(self._runtime_backend_resolver, self._vision_llm))
+                logger.info("[ReActAgentBuilder] 视觉模型已配置，图片识别工具已添加到工具列表")
 
         # 加载 Task 工具
         if self._enable_task:

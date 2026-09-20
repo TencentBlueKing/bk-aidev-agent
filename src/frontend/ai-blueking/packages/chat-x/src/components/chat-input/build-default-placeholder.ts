@@ -25,24 +25,30 @@
  */
 
 export interface BuildDefaultPlaceholderOptions {
-  hasPrompts: boolean;
-  hasResources: boolean;
-  hasSkills: boolean;
+  /** 是否有 `@` 可唤出的资源（知识库、会话产物） */
+  hasAtMenu: boolean;
+  /** 是否有 `\` 可唤出的 Prompt */
+  hasPromptMenu: boolean;
+  /** 是否有 `/` 可唤出的能力（Skill、工具、MCP） */
+  hasSlashMenu: boolean;
   isEn: boolean;
 }
 
+/**
+ * 设计稿标注：智能体没有对应的资源或配置时，不显示对应的提示文案。
+ */
 export function buildDefaultPlaceholder(options: BuildDefaultPlaceholderOptions): string {
-  const { isEn, hasSkills, hasPrompts, hasResources } = options;
+  const { isEn, hasSlashMenu, hasPromptMenu, hasAtMenu } = options;
   const lines: string[] = [];
 
-  if (hasSkills) {
-    lines.push(isEn ? 'Input "/" to trigger skill' : '输入 "/" 唤出 Skill');
+  if (hasSlashMenu) {
+    lines.push(isEn ? 'Input "/" to trigger Skill, tool and MCP' : '输入 "/" 唤出 Skill，工具，MCP');
   }
-  if (hasPrompts) {
+  if (hasAtMenu) {
+    lines.push(isEn ? 'Input "@" to trigger conversation files and knowledge base' : '输入 "@" 唤出会话产物，知识库');
+  }
+  if (hasPromptMenu) {
     lines.push(isEn ? 'Input "\\" to trigger prompt' : '输入 "\\" 唤出 Prompt');
-  }
-  if (hasResources) {
-    lines.push(isEn ? 'Input "@" to trigger tool and MCP' : '输入 "@" 唤出 工具和 MCP');
   }
   lines.push(isEn ? 'Use Shift + Enter to enter a new line' : '通过 Shift + Enter 进行换行输入');
 

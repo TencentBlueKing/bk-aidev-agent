@@ -104,7 +104,7 @@ AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 
 
 | 机制                      | 用途         | 何时选择                                                               |
 | ------------------------- | ------------ | ---------------------------------------------------------------------- |
-| **Props**                 | 只读配置数据 | 父组件传入，子组件不修改。如 `messages`、`prompts`、`shortcuts`        |
+| **Props**                 | 只读配置数据 | 父组件传入，子组件不修改。如 `messages`、`menuSources`、`shortcuts`    |
 | **v-model / defineModel** | 双向绑定     | 子组件确实需要回写时。如 `v-model:cite`、`v-model:selected-shortcut`   |
 | **Events (emit)**         | 通知         | 「发生了某事」，父组件决定后续。如 `@stopStreaming`、`@selectShortcut` |
 | **函数 prop (onXxx)**     | 可覆盖回调   | 需要「内置默认行为 + 业务可拦截」时。如 `onSendMessage`、`onDownload`  |

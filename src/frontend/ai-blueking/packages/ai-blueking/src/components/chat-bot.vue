@@ -19,6 +19,7 @@
       :message-status="messageStatus"
       :message-tools="effectiveMessageTools"
       :message-tools-status="messageToolsStatus"
+      :menu-sources="effectiveMenuSources"
       :messages="messages"
       :model-value="userInput"
       :models="displayModels"
@@ -35,13 +36,10 @@
       :on-user-shortcut-confirm="handleUserShortcutConfirm"
       :opening-remark="openingRemark"
       :placeholder="props.placeholder"
-      :prompts="effectivePrompts"
       :resize-props="effectiveResizeProps"
-      :resources="effectiveResources"
       :shortcut-id="selectedShortcut?.id"
       :shortcuts="filteredShortcuts"
       :size="props.size"
-      :skills="effectiveSkills"
       :timezone="props.timezone"
       :support-upload="effectiveSupportUpload"
       :update-tools="effectiveUpdateTools"
@@ -49,6 +47,7 @@
       :welcome-title="welcomeTitle"
       @collapse-change="handleExecutionPanelChange"
       @confirm-share="handleConfirmShare"
+      @delete-file="handleDeleteFile"
       @delete-shortcut="handleCloseShortcut"
       @model-change="handleModelChange"
       @select-shortcut="handleSelectShortcut"
@@ -103,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref, shallowRef, useSlots, watch } from 'vue';
+  import { computed, ref, useSlots, watch } from 'vue';
 
   import { ChatContainer, ChatInput, MessageRender } from '@blueking/chat-x';
   import { RenderMode } from '@blueking/chat-x';
@@ -125,7 +124,6 @@
   import type { ILlmItem, ISupportUpload } from '@blueking/chat-helper';
   import type {
     CustomBkFlowTab,
-    IAiSlashMenuItem,
     IModelOption,
     Message,
     MessageToolsStatus,
@@ -200,7 +198,6 @@
   }));
 
   // 共享 ref（由组装层创建，注入到多个 composable）
-  const selectedResources = shallowRef<IAiSlashMenuItem[]>([]);
   const selectedShortcut = ref<null | (Shortcut & { supportUpload?: ISupportUpload })>(null);
 
   // 渲染模式：由 props 驱动，传给 ChatContainer 的 v-model:renderMode
@@ -250,6 +247,7 @@
     doSendMessage,
     handleSendMessage,
     handleUpload,
+    handleDeleteFile,
     handleArtifactClick,
     handleStopSending,
     stopGeneration,
@@ -261,7 +259,6 @@
     reportError,
     resumeUserQuestionWithInput,
     selectedShortcut,
-    selectedResources,
   });
 
   // 3. 快捷指令
@@ -288,9 +285,7 @@
     currentSession,
     isWelcomeState,
     openingRemark,
-    effectiveResources,
-    effectivePrompts,
-    effectiveSkills,
+    effectiveMenuSources,
     effectiveSupportUpload,
     chatbotStyle,
     filteredShortcuts,
@@ -302,7 +297,6 @@
     shortcutManager,
     isStandaloneMode,
     isInitialized,
-    selectedShortcut,
   });
 
   // 5. 工具栏动作
