@@ -16,6 +16,8 @@ from aidev_agent.packages.craw.mcp_egress import (
     rewrite_openclaw_mcp_to_egress,
 )
 from aidev_agent.packages.craw.mcp_identity import (
+    EGRESS_KEY_ENV,
+    EGRESS_KEY_HEADER,
     CrawLeaseError,
     bind_user_access_token,
     get_bound_user_access_token,
@@ -23,6 +25,10 @@ from aidev_agent.packages.craw.mcp_identity import (
     normalize_access_token,
     resolve_user_access_token,
 )
+
+
+def _egress_headers(egress: McpEgress) -> dict[str, str]:
+    return {EGRESS_KEY_HEADER: egress.egress_key}
 
 
 def test_normalize_strips_bearer_and_quotes():
@@ -53,14 +59,18 @@ def test_rewrite_openclaw_mcp_strips_baked_token():
             }
         }
     }
-    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(config, egress_base="http://127.0.0.1:18787")
+    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
+        config,
+        egress_base="http://127.0.0.1:18787",
+        egress_key="test-egress-key",
+    )
     assert rewritten == ["log-query"]
     assert skipped == []
     assert routes["log-query"] == "https://example.invalid/mcp/"
     spec = config["mcp"]["servers"]["log-query"]
     assert spec["url"] == f"http://127.0.0.1:18787/egress/{SHARED_ID}/log-query/"
     assert "X-Bkapi-Authorization" not in spec["headers"]
-    assert spec["headers"]["X-Bkai-Egress-Key"]
+    assert spec["headers"][EGRESS_KEY_HEADER] == "test-egress-key"
 
 
 def test_rewrite_config_file_persists_routes(tmp_path, monkeypatch):
@@ -82,10 +92,16 @@ def test_rewrite_config_file_persists_routes(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    result = rewrite_openclaw_config_file(str(config_path), "http://127.0.0.1:18787")
+    result = rewrite_openclaw_config_file(
+        str(config_path),
+        "http://127.0.0.1:18787",
+        egress_key="test-egress-key",
+    )
     assert result["rewritten"] == ["log-query"]
     dumped = json.loads(config_path.read_text(encoding="utf-8"))
-    assert "X-Bkapi-Authorization" not in dumped["mcp"]["servers"]["log-query"]["headers"]
+    headers = dumped["mcp"]["servers"]["log-query"]["headers"]
+    assert "X-Bkapi-Authorization" not in headers
+    assert headers[EGRESS_KEY_HEADER] == "test-egress-key"
     assert json.loads(routes_path.read_text(encoding="utf-8"))["log-query"] == "https://example.invalid/mcp/"
     persist_egress_routes({"other": "https://example.invalid/other/"}, str(routes_path))
     assert json.loads(routes_path.read_text(encoding="utf-8"))["other"] == "https://example.invalid/other/"
@@ -132,7 +148,7 @@ def test_egress_injects_leased_user_token(upstream):
         lease_id = egress.acquire("user-token-aaa")
         assert lease_id
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
-        response = httpx.post(url, json={"method": "initialize"})
+        response = httpx.post(url, json={"method": "initialize"}, headers=_egress_headers(egress))
         assert response.status_code == 200
         assert response.headers.get_list("content-length") == [str(len(response.content))]
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-aaa"}
@@ -148,7 +164,7 @@ def test_egress_proxies_delete_for_session_cleanup(upstream):
         lease_id = egress.acquire("user-token-delete")
         assert lease_id
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
-        response = httpx.delete(url)
+        response = httpx.delete(url, headers=_egress_headers(egress))
         assert response.status_code == 204
         assert _Upstream.seen[-1]["method"] == "DELETE"
         assert json.loads(_Upstream.seen[-1]["auth"]) == {"access_token": "user-token-delete"}
@@ -162,23 +178,51 @@ def test_egress_without_lease_is_401(upstream):
     try:
         egress.register_routes({"log-query": upstream})
         url = f"{egress.base_url}/egress/{SHARED_ID}/log-query/"
-        response = httpx.post(url, json={"method": "initialize"})
+        response = httpx.post(url, json={"method": "initialize"}, headers=_egress_headers(egress))
         assert response.status_code == 401
         assert _Upstream.seen == []
     finally:
         egress.stop()
 
 
+def test_egress_rejects_missing_internal_key(upstream):
+    egress = McpEgress(port=0).start()
+    try:
+        egress.register_routes({"log-query": upstream})
+        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        assert response.status_code == 403
+        assert _Upstream.seen == []
+    finally:
+        egress.stop()
+
+
+def test_identity_lease_requires_internal_key(monkeypatch):
+    monkeypatch.setenv("BKAI_MCP_EGRESS_URL", "http://127.0.0.1:18787")
+    monkeypatch.delenv(EGRESS_KEY_ENV, raising=False)
+
+    with pytest.raises(CrawLeaseError, match="鉴权 key"), mcp_identity_lease("user-token"):
+        pass
+
+
 def test_identity_lease_roundtrip(monkeypatch, upstream):
     egress = McpEgress(port=0).start()
     monkeypatch.setenv("BKAI_MCP_EGRESS_URL", egress.base_url)
+    monkeypatch.setenv(EGRESS_KEY_ENV, egress.egress_key)
     egress.register_routes({"log-query": upstream})
     try:
         with mcp_identity_lease("user-token-bbb"):
-            response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+            response = httpx.post(
+                f"{egress.base_url}/egress/{SHARED_ID}/log-query/",
+                json={},
+                headers=_egress_headers(egress),
+            )
             assert response.status_code == 200
             assert json.loads(_Upstream.seen[-1]["auth"])["access_token"] == "user-token-bbb"
-        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        response = httpx.post(
+            f"{egress.base_url}/egress/{SHARED_ID}/log-query/",
+            json={},
+            headers=_egress_headers(egress),
+        )
         assert response.status_code == 401
     finally:
         egress.stop()
@@ -194,7 +238,11 @@ def test_stuck_lease_expires_into_quarantine(upstream):
         time.sleep(0.08)
         # 过期后凭据立即清空：旧运行的迟到请求是 401，而不会拿到下任身份
         assert egress.current_token() == ""
-        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        response = httpx.post(
+            f"{egress.base_url}/egress/{SHARED_ID}/log-query/",
+            json={},
+            headers=_egress_headers(egress),
+        )
         assert response.status_code == 401
         # 隔离态禁止新用户接管（超时快速失败）
         assert egress.acquire("new-token", timeout=0.2) == ""
@@ -206,7 +254,11 @@ def test_stuck_lease_expires_into_quarantine(upstream):
         time.sleep(0.08)
         new_lease = egress.acquire("new-token")
         assert new_lease
-        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        response = httpx.post(
+            f"{egress.base_url}/egress/{SHARED_ID}/log-query/",
+            json={},
+            headers=_egress_headers(egress),
+        )
         assert response.status_code == 200
         assert json.loads(_Upstream.seen[-1]["auth"])["access_token"] == "new-token"
         # 旧租约的再次迟到 release 不能清掉新持有者
@@ -242,6 +294,7 @@ def test_lease_fail_closed_when_slot_busy(monkeypatch, upstream):
     """租约获取失败必须终止运行（CrawLeaseError），不能沿用共享槽里的上一身份。"""
     egress = McpEgress(port=0, drain_seconds=0).start()
     monkeypatch.setenv("BKAI_MCP_EGRESS_URL", egress.base_url)
+    monkeypatch.setenv(EGRESS_KEY_ENV, egress.egress_key)
     monkeypatch.setenv("BKAI_MCP_EGRESS_LEASE_TIMEOUT", "0.2")
     egress.register_routes({"log-query": upstream})
     holder = egress.acquire("user-token-holder")
@@ -265,7 +318,11 @@ def test_release_enters_drain_window(upstream):
         assert egress.release(lease_id) is True
         # drain 窗口内：无凭据（残留请求 401），也不可接管
         assert egress.current_token() == ""
-        response = httpx.post(f"{egress.base_url}/egress/{SHARED_ID}/log-query/", json={})
+        response = httpx.post(
+            f"{egress.base_url}/egress/{SHARED_ID}/log-query/",
+            json={},
+            headers=_egress_headers(egress),
+        )
         assert response.status_code == 401
         assert egress.acquire("user-token-b", timeout=0.02) == ""
         time.sleep(0.12)
