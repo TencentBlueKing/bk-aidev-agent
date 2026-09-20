@@ -16,12 +16,14 @@
 本模块只做协议搬运，产出中立的 ``OpenClawEvent``，AG-UI 语义留给调用方翻译。
 """
 
+import ipaddress
 import json
-import threading
+import time
 import uuid
 from contextlib import suppress
 from logging import getLogger
 from typing import Generator, Optional
+from urllib.parse import urlparse
 
 logger = getLogger(__name__)
 
@@ -33,6 +35,17 @@ _CLIENT_MODE = "backend"
 _CAP_TOOL_EVENTS = "tool-events"
 
 _HANDSHAKE_TIMEOUT = 20.0
+_SUCCESS_STOP_REASONS = {"", "complete", "completed", "end_turn", "stop", "success"}
+
+
+def _is_loopback_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 class OpenClawEvent:
@@ -98,6 +111,8 @@ class OpenClawWSSession:
         granted = self._handshake(with_auth=True)
         if "operator.write" in granted:
             return
+        if not _is_loopback_url(self.url):
+            raise OpenClawWSError("仅 loopback OpenClaw 网关允许免鉴权后端重连")
         logger.warning("[OPENCLAW] 令牌未获授权（授予 scopes=%s），改以本地后端身份免鉴权重连", granted or [])
         self.close()
         self._closed = False
@@ -114,14 +129,23 @@ class OpenClawWSSession:
         # 必须抑制 Origin：websocket-client 默认按 URL 自动带上，网关据此判定为
         # 浏览器来源，本地后端免配对豁免随即失效——表现为带令牌时 scopes 被清空、
         # 不带令牌时直接 "device identity required"。
-        self._ws = websocket.create_connection(self.url, timeout=self.timeout, suppress_origin=True)
-        # 网关先推 connect.challenge，收到后才发 connect
-        deadline = threading.Event()
-        timer = threading.Timer(_HANDSHAKE_TIMEOUT, deadline.set)
-        timer.start()
+        handshake_timeout = min(float(self.timeout), _HANDSHAKE_TIMEOUT)
+        self._ws = websocket.create_connection(self.url, timeout=handshake_timeout, suppress_origin=True)
+        # 网关先推 connect.challenge，收到后才发 connect。每次 recv 都使用剩余
+        # 握手预算，避免 websocket 的对话超时把握手卡住数分钟。
+        deadline = time.monotonic() + handshake_timeout
         try:
-            while not deadline.is_set():
-                msg = self._recv_json()
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise OpenClawWSError("握手超时")
+                self._ws.settimeout(remaining)
+                try:
+                    msg = self._recv_json()
+                except Exception as exc:
+                    if time.monotonic() >= deadline:
+                        raise OpenClawWSError("握手超时") from exc
+                    raise OpenClawWSError(f"握手连接中断: {type(exc).__name__}") from exc
                 if msg is None:
                     continue
                 if msg.get("event") == "connect.challenge":
@@ -132,9 +156,9 @@ class OpenClawWSSession:
                         raise OpenClawWSError(f"握手被拒: {err}")
                     auth = (msg.get("payload") or {}).get("auth") or {}
                     return list(auth.get("scopes") or [])
-            raise OpenClawWSError("握手超时")
         finally:
-            timer.cancel()
+            if self._ws is not None:
+                self._ws.settimeout(self.timeout)
 
     def _send_connect(self, *, with_auth: bool) -> None:
         params = {
@@ -233,6 +257,11 @@ class OpenClawWSSession:
 
         if stream == "lifecycle":
             if phase == "end":
+                stop_reason = str(data.get("stopReason") or "").strip().lower()
+                error = data.get("error") or data.get("message")
+                if error or stop_reason not in _SUCCESS_STOP_REASONS:
+                    detail = str(error or stop_reason or "unknown")
+                    return OpenClawEvent("error", text=detail, phase=phase, raw=payload)
                 return OpenClawEvent("done", phase=phase, raw=payload)
             return None
 

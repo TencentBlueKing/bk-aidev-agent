@@ -14,6 +14,7 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -149,6 +150,11 @@ class Handler(BaseHTTPRequestHandler):
         origin = os.getenv("BKAI_AIDEV_APP_UPSTREAM_ORIGIN", "").rstrip("/")
         if not origin:
             self.send_error(503, "AIDEV upstream origin is unavailable")
+            return
+        allowed_prefix = os.getenv("BKAI_AIDEV_APP_UPSTREAM_PATH_PREFIX", "/openapi/aidev/gateway/llm/v1").rstrip("/")
+        request_path = urlsplit(self.path).path.rstrip("/")
+        if request_path != allowed_prefix and not request_path.startswith(f"{allowed_prefix}/"):
+            self.send_error(403, "AIDEV upstream path is not allowed")
             return
         target = f"{origin}{self.path}"
         content_length = int(self.headers.get("Content-Length", "0") or 0)

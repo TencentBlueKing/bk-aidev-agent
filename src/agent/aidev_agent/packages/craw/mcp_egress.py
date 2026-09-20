@@ -34,11 +34,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from aidev_agent.packages.craw.mcp_identity import SHARED_IDENTITY_ID, normalize_access_token
+from aidev_agent.packages.craw.mcp_identity import (
+    EGRESS_KEY_ENV,
+    EGRESS_KEY_HEADER,
+    SHARED_IDENTITY_ID,
+    normalize_access_token,
+)
 
 _logger = logging.getLogger(__name__)
-
-EGRESS_KEY_HEADER = "x-bkai-egress-key"
 SHARED_ID = SHARED_IDENTITY_ID
 
 
@@ -67,8 +70,8 @@ def rewrite_openclaw_mcp_to_egress(
     config: dict[str, Any],
     *,
     egress_base: str,
+    egress_key: str,
     identity_id: str = SHARED_ID,
-    egress_key: str = "",
 ) -> tuple[dict[str, str], list[str], list[str]]:
     """把 HTTP MCP 的真实 URL 抽到返回值，配置改写为 egress 地址。
 
@@ -77,7 +80,9 @@ def rewrite_openclaw_mcp_to_egress(
     routes: dict[str, str] = {}
     rewritten: list[str] = []
     skipped: list[str] = []
-    key = egress_key or f"bkai-egress-{secrets.token_hex(18)}"
+    key = egress_key.strip()
+    if not key:
+        raise ValueError("MCP egress 配置改写缺少内部鉴权 key")
     base = egress_base.rstrip("/")
     for slug, spec in _iter_mcp_servers(config):
         url = spec.get("url")
@@ -97,12 +102,21 @@ def rewrite_openclaw_mcp_to_egress(
     return routes, rewritten, skipped
 
 
-def rewrite_openclaw_config_file(path: str, egress_base: str, *, identity_id: str = SHARED_ID) -> dict[str, Any]:
+def rewrite_openclaw_config_file(
+    path: str,
+    egress_base: str,
+    *,
+    identity_id: str = SHARED_ID,
+    egress_key: str = "",
+) -> dict[str, Any]:
     """读盘改写 MCP，权限 0600。返回 {rewritten, skipped, routes}（routes 仅 slug，不含 token）。"""
     with open(path, encoding="utf-8") as handle:
         config = json.load(handle)
     routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
-        config, egress_base=egress_base, identity_id=identity_id
+        config,
+        egress_base=egress_base,
+        identity_id=identity_id,
+        egress_key=(egress_key or os.getenv(EGRESS_KEY_ENV, "")).strip(),
     )
     tmp = f"{path}.craw-egress-tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
@@ -140,6 +154,7 @@ class McpEgress:
         request_open: Optional[Callable[..., Any]] = None,
         lease_ttl: float = 3600.0,
         drain_seconds: float = 5.0,
+        upstream_timeout: Optional[float] = None,
     ):
         if host not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("MCP egress 只允许绑定 loopback")
@@ -148,6 +163,9 @@ class McpEgress:
         self._request_open = request_open or urlopen
         self.lease_ttl = lease_ttl
         self.drain_seconds = max(0.0, float(drain_seconds))
+        self.upstream_timeout = float(
+            upstream_timeout if upstream_timeout is not None else os.getenv("BKAI_MCP_EGRESS_UPSTREAM_TIMEOUT") or 300
+        )
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._lease_id = ""
@@ -156,7 +174,7 @@ class McpEgress:
         self._drain_until = 0.0
         # 非空表示槽位处于隔离态（TTL 过期且旧运行未交接），值为过期租约 ID
         self._quarantine_lease_id = ""
-        self._key = f"bkai-egress-{secrets.token_hex(18)}"
+        self._key = (os.getenv(EGRESS_KEY_ENV) or "").strip() or f"bkai-egress-{secrets.token_hex(18)}"
         self._routes: dict[str, str] = {}
         self._routes_file = os.getenv("BKAI_MCP_EGRESS_ROUTES") or ""
         self._server: Optional[ThreadingHTTPServer] = None
@@ -184,6 +202,10 @@ class McpEgress:
     @property
     def base_url(self) -> str:
         return f"http://{self.host}:{self.bound_port}"
+
+    @property
+    def egress_key(self) -> str:
+        return self._key
 
     def register_routes(self, routes: dict[str, str]) -> str:
         with self._lock:
@@ -259,16 +281,24 @@ class McpEgress:
         egress = self
 
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
             def log_message(self, fmt: str, *args: Any) -> None:
                 _logger.info("[egress] " + fmt, *args)
+
+            def _authorized(self) -> bool:
+                supplied = self.headers.get(EGRESS_KEY_HEADER, "")
+                return bool(supplied) and secrets.compare_digest(supplied, egress._key)
 
             def _json(self, code: int, payload: dict[str, Any]) -> None:
                 body = json.dumps(payload).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
+                self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(body)
+                self.close_connection = True
 
             def _read_json(self) -> dict[str, Any]:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -280,6 +310,9 @@ class McpEgress:
                 return data if isinstance(data, dict) else {}
 
             def do_POST(self) -> None:  # noqa: N802
+                if not self._authorized():
+                    self._json(403, {"ok": False, "error": "MCP egress 内部鉴权失败"})
+                    return
                 parsed = urlparse(self.path)
                 if parsed.path == "/internal/acquire":
                     token = normalize_access_token((self._read_json().get("token") or ""))
@@ -308,6 +341,9 @@ class McpEgress:
                 self._proxy(urlparse(self.path))
 
             def _proxy(self, parsed) -> None:
+                if not self._authorized():
+                    self._json(403, {"ok": False, "error": "MCP egress 内部鉴权失败"})
+                    return
                 parts = [item for item in parsed.path.split("/") if item]
                 if len(parts) < 3 or parts[0] != "egress":
                     self._json(404, {"ok": False, "error": "不是 /egress/<id>/<slug>/ 路径"})
@@ -329,7 +365,9 @@ class McpEgress:
                 except ValueError:
                     self._json(502, {"ok": False, "error": "upstream url 无效"})
                     return
-                headers = {name: value for name, value in self.headers.items() if name.lower() != EGRESS_KEY_HEADER}
+                headers = {
+                    name: value for name, value in self.headers.items() if name.lower() != EGRESS_KEY_HEADER.lower()
+                }
                 headers.pop("Host", None)
                 headers.pop("host", None)
                 headers["Host"] = upstream.netloc
@@ -353,20 +391,21 @@ class McpEgress:
                     method=self.command,
                 )
                 try:
-                    with egress._request_open(req, timeout=60) as resp:
-                        payload = resp.read()
-                        self.send_response(getattr(resp, "status", 200))
+                    with egress._request_open(req, timeout=egress.upstream_timeout) as resp:
+                        status = getattr(resp, "status", 200)
+                        self.send_response(status)
                         for name, value in resp.headers.items():
-                            if name.lower() in {"transfer-encoding", "connection", "content-length"}:
+                            if name.lower() in {"transfer-encoding", "connection"}:
                                 continue
                             self.send_header(name, value)
-                        self.send_header("Content-Length", str(len(payload)))
+                        self.send_header("Connection", "close")
                         self.end_headers()
                         if self.command != "HEAD":
-                            self.wfile.write(payload)
-                        _logger.info(
-                            "[egress] %s id=%s slug=%s %s", getattr(resp, "status", 200), SHARED_ID, slug, self.command
-                        )
+                            while chunk := resp.read(64 * 1024):
+                                self.wfile.write(chunk)
+                                self.wfile.flush()
+                        self.close_connection = True
+                        _logger.info("[egress] %s id=%s slug=%s %s", status, SHARED_ID, slug, self.command)
                 except HTTPError as exc:
                     payload = exc.read() if exc.fp else b""
                     self.send_response(exc.code)
@@ -409,7 +448,7 @@ def serve_forever(host: str = "127.0.0.1", port: int = 18787, config_path: str =
         drain_seconds=float(os.getenv("BKAI_MCP_EGRESS_DRAIN_SECONDS") or 5),
     ).start()
     if config_path and os.path.isfile(config_path):
-        result = rewrite_openclaw_config_file(config_path, egress.base_url)
+        result = rewrite_openclaw_config_file(config_path, egress.base_url, egress_key=egress.egress_key)
         egress.register_routes(result["routes"])
     try:
         threading.Event().wait()

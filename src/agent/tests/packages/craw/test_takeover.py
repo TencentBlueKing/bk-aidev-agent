@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""enable_chat_takeover：env 门控 / 可逆 / 失败降级 / 失败不留半接管态。"""
+"""enable_chat_takeover：未启用时零影响，显式启用后失败即终止。"""
 
 import pytest
 from aidev_agent.enums import AgentType
@@ -22,10 +22,11 @@ class TestEnableChatTakeover:
         assert enable_chat_takeover() is False
         assert agent_registry.must_get(AgentType.CHAT) is before
 
-    def test_unknown_backend_keeps_native(self, monkeypatch):
+    def test_unknown_backend_fails_closed(self, monkeypatch):
         monkeypatch.setenv("BKAI_CRAW_BACKEND", "no-such-kernel")
         before = agent_registry.must_get(AgentType.CHAT)
-        assert enable_chat_takeover() is False
+        with pytest.raises(RuntimeError, match="未注册"):
+            enable_chat_takeover()
         assert agent_registry.must_get(AgentType.CHAT) is before
 
     @pytest.mark.parametrize("backend_name", ["openclaw", "hermes"])
@@ -36,9 +37,9 @@ class TestEnableChatTakeover:
 
 
 class TestNoPartialTakeover:
-    """接管失败绝不留半接管态：报告 False 时 registry 必须保持原样。"""
+    """接管失败绝不留半接管态，且显式 Craw 配置必须 fail-closed。"""
 
-    def test_backend_missing_declared_attrs_keeps_native(self, monkeypatch):
+    def test_backend_missing_declared_attrs_fails_closed(self, monkeypatch):
         class _BrokenBackend:
             """满足旧协议最小面（name / default_model）但缺 api_url / model 的自定义后端。"""
 
@@ -49,7 +50,8 @@ class TestNoPartialTakeover:
         try:
             monkeypatch.setenv("BKAI_CRAW_BACKEND", "broken-kernel")
             before_item = agent_registry.values[AgentType.CHAT]
-            assert enable_chat_takeover() is False
+            with pytest.raises(RuntimeError, match="拒绝降级"):
+                enable_chat_takeover()
             # 值与优先级都必须原样保留——失败时不允许 CHAT 实际被 craw 接管
             after_item = agent_registry.values[AgentType.CHAT]
             assert after_item.value is before_item.value
