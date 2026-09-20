@@ -62,6 +62,9 @@ CRAW_AGENT_CODE="${BKAI_AGENT:-${BKPAAS_APP_ID:-${BK_APP_CODE:-}}}"
 export BKAI_MCP_EGRESS_PORT="${BKAI_MCP_EGRESS_PORT:-18787}"
 export BKAI_MCP_EGRESS_URL="${BKAI_MCP_EGRESS_URL:-http://127.0.0.1:${BKAI_MCP_EGRESS_PORT}}"
 export BKAI_MCP_EGRESS_ROUTES="${BKAI_MCP_EGRESS_ROUTES:-/tmp/craw-mcp-routes.json}"
+if [ -z "${BKAI_MCP_EGRESS_KEY:-}" ]; then
+  export BKAI_MCP_EGRESS_KEY="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+fi
 
 if [ -z "${CRAW_AGENT_CODE}" ] || [ ! -x /app/.venv/bin/python ]; then
   echo "[craw] FATAL: current application identity is unavailable" >&2
