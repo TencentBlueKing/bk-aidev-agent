@@ -270,7 +270,7 @@ class TestHandleRunError:
         call_args = mock_client.api.create_chat_session_content.call_args
         payload = call_args.kwargs["json"]
 
-        assert payload["status"] == "fail"
+        assert payload["status"] == "error"
         assert payload["role"] == PromptRole.ASSISTANT.value
         assert payload["content"] == "执行过程中发生错误"
         assert payload["property"]["builtin_property"]["error"] is True

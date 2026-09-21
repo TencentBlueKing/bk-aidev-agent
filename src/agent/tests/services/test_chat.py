@@ -2265,7 +2265,7 @@ class TestCancelScenarios:
         error_contents = [
             c
             for c in writer.created_contents
-            if c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "fail"
+            if c.get("role") == PromptRole.ASSISTANT.value and c.get("status") == "error"
         ]
         assert len(error_contents) >= 1
         prop = error_contents[0].get("property", {})
@@ -2414,7 +2414,7 @@ class TestSessionWriterCancelUnit:
         writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message="模型调用异常"))
 
         assert writer.is_cancelled is False
-        error = next(c for c in writer.created_contents if c.get("status") == "fail")
+        error = next(c for c in writer.created_contents if c.get("status") == "error")
         assert error.get("content") == "模型调用异常"
         assert error.get("property", {}).get("builtin_property", {}).get("error") is True
 
