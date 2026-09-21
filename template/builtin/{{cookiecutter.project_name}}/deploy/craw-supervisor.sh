@@ -58,6 +58,8 @@ export BKAI_CRAW_API_URL="${BKAI_CRAW_API_URL:-http://127.0.0.1:${OC_PORT}}"
 export OPENCLAW_GATEWAY_PORT="${OC_PORT}"
 export BKAI_CRAW_BACKEND="${BKAI_CRAW_BACKEND:-openclaw}"
 export OPENCLAW_SUPERVISOR_MODE="${OPENCLAW_SUPERVISOR_MODE:-external}"
+export OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-${HOME}/.openclaw}"
+export OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${OPENCLAW_STATE_DIR}/openclaw.json}"
 CRAW_AGENT_CODE="${BKAI_AGENT:-${BKPAAS_APP_ID:-${BK_APP_CODE:-}}}"
 export BKAI_MCP_EGRESS_PORT="${BKAI_MCP_EGRESS_PORT:-18787}"
 export BKAI_MCP_EGRESS_URL="${BKAI_MCP_EGRESS_URL:-http://127.0.0.1:${BKAI_MCP_EGRESS_PORT}}"
@@ -87,19 +89,31 @@ APP_IDENTITY_PID=$!
 if [ "${BKAI_MCP_EGRESS_ENABLED:-1}" = "1" ]; then
   echo "[craw] starting MCP egress on 127.0.0.1:${BKAI_MCP_EGRESS_PORT}"
   if [ -x /app/.venv/bin/python ]; then
-    /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress --port "${BKAI_MCP_EGRESS_PORT}" &
+    # 配置只由下方 rewrite-only 同步改写；后台进程不重复碰配置文件。
+    /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress \
+      --port "${BKAI_MCP_EGRESS_PORT}" --config "" &
     EGRESS_PID=$!
   fi
 fi
 
 # 在内核启动前完成 MCP URL → 用户态 egress 改写，避免首轮加载到直连上游。
 if [ -n "${EGRESS_PID}" ]; then
-  CONFIG_CANDIDATE="${OPENCLAW_CONFIG_PATH:-${HOME}/.openclaw/openclaw.json}"
-  if [ -f "${CONFIG_CANDIDATE}" ]; then
-    echo "[craw] rewriting MCP servers to egress via ${CONFIG_CANDIDATE}"
-    /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress \
-      --rewrite-only --config "${CONFIG_CANDIDATE}" --port "${BKAI_MCP_EGRESS_PORT}" || \
-      echo "[craw] WARN: MCP egress rewrite failed" >&2
+  if ! kill -0 "${EGRESS_PID}" 2>/dev/null; then
+    echo "[craw] FATAL: MCP egress exited before config rewrite" >&2
+    cleanup
+    exit 1
+  fi
+  if [ ! -f "${OPENCLAW_CONFIG_PATH}" ]; then
+    echo "[craw] FATAL: OpenClaw config missing after apply: ${OPENCLAW_CONFIG_PATH}" >&2
+    cleanup
+    exit 1
+  fi
+  echo "[craw] rewriting MCP servers to egress via ${OPENCLAW_CONFIG_PATH}"
+  if ! /app/.venv/bin/python -m aidev_agent.packages.craw.mcp_egress \
+    --rewrite-only --config "${OPENCLAW_CONFIG_PATH}" --port "${BKAI_MCP_EGRESS_PORT}"; then
+    echo "[craw] FATAL: MCP egress rewrite failed" >&2
+    cleanup
+    exit 1
   fi
 fi
 

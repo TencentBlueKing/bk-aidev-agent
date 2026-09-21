@@ -31,6 +31,18 @@ class CrawLeaseError(RuntimeError):
     """MCP 身份租约获取失败。启用用户身份出口时必须终止本次运行（fail-closed）。"""
 
 
+class McpIdentityLease:
+    """租约退出策略；无法确认内核运行终止时转入隔离而不是正常释放。"""
+
+    def __init__(self, lease_id: str = ""):
+        self.lease_id = lease_id
+        self.quarantined = False
+
+    def quarantine(self) -> None:
+        if self.lease_id:
+            self.quarantined = True
+
+
 def normalize_access_token(raw: Optional[str]) -> str:
     """剥空白 / 外层引号 / Bearer 前缀，避免粘贴污染分裂身份。"""
     token = (raw or "").strip()
@@ -38,9 +50,11 @@ def normalize_access_token(raw: Optional[str]) -> str:
         return ""
     if (token[0] == token[-1]) and token[0] in {"'", '"'}:
         token = token[1:-1].strip()
+    if token.lower() == "bearer":
+        return ""
     if token.lower().startswith("bearer "):
         token = token[7:].strip()
-        if (token[0] == token[-1]) and token and token[0] in {"'", '"'}:
+        if token and token[0] == token[-1] and token[0] in {"'", '"'}:
             token = token[1:-1].strip()
     return token.replace("\n", "").replace("\r", "")
 
@@ -69,7 +83,7 @@ def resolve_user_access_token(username: str = "", resource_manager=None) -> str:
 
 
 @contextmanager
-def mcp_identity_lease(token: str) -> Iterator[None]:
+def mcp_identity_lease(token: str) -> Iterator[McpIdentityLease]:
     """对话期间占用 egress 共享槽。未配置 egress 或无 token 时为空操作。
 
     fail-closed：配置了用户身份出口（env + token 齐备）但租约获取失败时抛
@@ -80,7 +94,7 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
     base = (os.getenv(EGRESS_URL_ENV) or "").rstrip("/")
     token = normalize_access_token(token)
     if not base or not token:
-        yield
+        yield McpIdentityLease()
         return
     egress_key = (os.getenv(EGRESS_KEY_ENV) or "").strip()
     if not egress_key:
@@ -103,15 +117,19 @@ def mcp_identity_lease(token: str) -> Iterator[None]:
             raise CrawLeaseError(f"MCP 身份租约获取失败，已拒绝本次执行: {exc}") from exc
         if not lease_id:
             raise CrawLeaseError("MCP 身份租约响应缺少 leaseId，已拒绝本次执行")
+        lease = McpIdentityLease(lease_id)
         try:
-            yield
+            yield lease
         finally:
+            endpoint = "quarantine" if lease.quarantined else "release"
             try:
                 response = client.post(
-                    f"{base}/internal/release",
+                    f"{base}/internal/{endpoint}",
                     json={"leaseId": lease_id},
                     headers={EGRESS_KEY_HEADER: egress_key},
                 )
                 response.raise_for_status()
+                if lease.quarantined:
+                    _logger.warning("[CRAW] 内核运行终态未确认，MCP 身份租约已隔离 lease=%s", lease_id)
             except Exception as exc:
-                _logger.warning("[CRAW] MCP 身份租约释放失败: %s", exc)
+                _logger.warning("[CRAW] MCP 身份租约%s失败: %s", "隔离" if lease.quarantined else "释放", exc)

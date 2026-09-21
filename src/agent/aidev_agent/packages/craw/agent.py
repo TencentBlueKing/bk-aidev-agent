@@ -46,7 +46,12 @@ from aidev_agent.packages.craw.base import (
     CrawUpstreamError,
     CrawUpstreamRunError,
 )
-from aidev_agent.packages.craw.mcp_identity import CrawLeaseError, mcp_identity_lease, resolve_user_access_token
+from aidev_agent.packages.craw.mcp_identity import (
+    CrawLeaseError,
+    McpIdentityLease,
+    mcp_identity_lease,
+    resolve_user_access_token,
+)
 from aidev_agent.packages.craw.openclaw_ws import OpenClawWSError, OpenClawWSSession
 from aidev_agent.packages.craw.registry import CrawBackendProtocol, get_backend
 from aidev_agent.services.agent.registry import AgentBuildContext
@@ -156,8 +161,8 @@ class CrawCompletionAgent(BaseModel):
 
     def _run_stream_with_mcp_lease(self, token: str) -> Generator[str, None, None]:
         try:
-            with mcp_identity_lease(token):
-                yield from self._run_stream()
+            with mcp_identity_lease(token) as lease:
+                yield from self._run_stream(lease)
         except CrawLeaseError as exc:
             # fail-closed：租约失败时终止本次运行，绝不沿用共享槽中的上一身份；
             # 客户端只拿脱敏提示，详情留服务端日志
@@ -173,8 +178,8 @@ class CrawCompletionAgent(BaseModel):
     def stop(self) -> None:
         key = self.session_code or self.thread_id
         GeneratorStreamingHelper.cancel(key)
-        # 主动关闭本进程内该会话的上游流：阻塞等待数据中的 HTTP 读立即被
-        # 打断，不必等到上游产出下一个 chunk 才观察到取消
+        # HTTP 流直接关闭；WebSocket 先发 chat.abort 并等待 lifecycle 终态。
+        # 若无法确认终止，运行线程会隔离租约而不是交给下一用户。
         self._close_streams(key)
 
     # ---------------- 活跃流句柄管理（stop 主动中断用） ----------------
@@ -199,9 +204,12 @@ class CrawCompletionAgent(BaseModel):
             streams = list(cls._active_streams.get(key, ()))
         for stream in streams:
             try:
+                cancel = getattr(stream, "cancel", None)
+                if callable(cancel) and cancel(key):
+                    continue
                 stream.close()
             except Exception as exc:  # 关闭失败不影响取消信号本身
-                logger.warning("[CRAW] close active stream failed (key=%s): %s", key, exc)
+                logger.warning("[CRAW] cancel active stream failed (key=%s): %s", key, exc)
 
     # ---------------- 事件分发 ----------------
 
@@ -228,10 +236,10 @@ class CrawCompletionAgent(BaseModel):
 
     # ---------------- 流式：转发 craw + 翻译成 AG-UI 事件 ----------------
 
-    def _run_stream(self) -> Generator[str, None, None]:
+    def _run_stream(self, lease: Optional[McpIdentityLease] = None) -> Generator[str, None, None]:
         backend: CrawBackendProtocol = self.backend
         if backend is not None and backend.name == "openclaw" and backend.transport == "ws":
-            yield from self._run_stream_ws()
+            yield from self._run_stream_ws(lease)
             return
         yield from self._run_stream_http()
 
@@ -252,7 +260,7 @@ class CrawCompletionAgent(BaseModel):
             return "模型请求已达到限流，请稍后重试"
         return "OpenClaw 工具事件运行失败，请重试（详情见服务端日志）"
 
-    def _run_stream_ws(self) -> Generator[str, None, None]:
+    def _run_stream_ws(self, lease: Optional[McpIdentityLease] = None) -> Generator[str, None, None]:
         encoder = EventEncoder()
         run_id = str(uuid.uuid4())
         message_id = str(uuid.uuid4())
@@ -273,23 +281,24 @@ class CrawCompletionAgent(BaseModel):
         open_tools: set[str] = set()
         started_at: dict[str, float] = {}
         session = OpenClawWSSession(ws_url, backend.api_key, timeout=backend.timeout)
+        run_started = False
 
         try:
             session.connect()
             self._track_stream(thread, session)
             try:
                 session.send_chat(thread, self._last_user_message())
+                run_started = True
                 for event in session.events():
                     if GeneratorStreamingHelper.is_cancelled(thread):
-                        session.abort(thread)
-                        if text_open:
-                            yield from self._emit_text_end(encoder, message_id)
-                        yield emit_run_finished_event(
-                            thread_id=self.thread_id,
-                            run_id=RunId.CANCELLED,
-                            event_handler=self._dispatch,
-                        )
-                        return
+                        if not session.cancel_requested:
+                            session.cancel(thread)
+                        # 丢弃取消后的业务事件，直到 lifecycle end 确认内核运行终止。
+                        if event.kind in ("done", "cancelled") and session.terminated:
+                            break
+                        if event.kind == "error":
+                            break
+                        continue
 
                     if event.kind == "text":
                         if not text_open:
@@ -333,7 +342,7 @@ class CrawCompletionAgent(BaseModel):
                             self._client_ws_error(event.text),
                         )
                         return
-                    elif event.kind == "done":
+                    elif event.kind in ("done", "cancelled"):
                         break
             finally:
                 self._untrack_stream(thread, session)
@@ -370,6 +379,8 @@ class CrawCompletionAgent(BaseModel):
                 f"转发 craw({backend.name}) 失败: {type(exc).__name__}",
             )
         finally:
+            if lease is not None and run_started and not getattr(session, "terminated", False):
+                lease.quarantine()
             self._untrack_stream(thread, session)
             session.close()
 
