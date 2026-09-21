@@ -4,6 +4,7 @@
 import json
 
 import pytest
+
 from aidev_agent.enums import AgentType
 from aidev_agent.packages.craw import (
     CrawCompletionAgent,
@@ -14,6 +15,7 @@ from aidev_agent.packages.craw import (
     OpenClawBackend,
 )
 from aidev_agent.packages.craw.agent import build_openai_messages
+from aidev_agent.packages.craw.mcp_identity import McpIdentityLease
 from aidev_agent.services.agent.registry import AgentBuildContext
 from aidev_agent.utils.event import RunId
 
@@ -322,6 +324,64 @@ class TestStopInterruptsStream:
             CrawCompletionAgent._untrack_stream("sess-stop-1", stream)
         assert cancelled == ["sess-stop-1"]
         assert stream.closed is True
+
+    def test_stop_prefers_abort_without_closing_websocket(self, monkeypatch):
+        from aidev_agent.packages.craw import agent as agent_module
+
+        class _CancelableStream:
+            def __init__(self):
+                self.cancelled = []
+                self.closed = False
+
+            def cancel(self, key):
+                self.cancelled.append(key)
+                return True
+
+            def close(self):
+                self.closed = True
+
+        monkeypatch.setattr(agent_module.GeneratorStreamingHelper, "cancel", classmethod(lambda cls, key: None))
+        stream = _CancelableStream()
+        CrawCompletionAgent._track_stream("sess-stop-ws", stream)
+        try:
+            _build_agent(_StubBackend(), session_code="sess-stop-ws").stop()
+        finally:
+            CrawCompletionAgent._untrack_stream("sess-stop-ws", stream)
+        assert stream.cancelled == ["sess-stop-ws"]
+        assert stream.closed is False
+
+    @pytest.mark.parametrize(("terminated", "expected_quarantine"), [(False, True), (True, False)])
+    def test_ws_cancel_quarantines_lease_until_lifecycle_end(self, monkeypatch, terminated, expected_quarantine):
+        from aidev_agent.packages.craw import agent as agent_module
+        from aidev_agent.packages.craw.openclaw_ws import OpenClawEvent
+
+        class _CancelWSSession:
+            def __init__(self, *_args, **_kwargs):
+                self.cancel_requested = True
+                self.terminated = terminated
+
+            def connect(self):
+                return None
+
+            def send_chat(self, *_args, **_kwargs):
+                return "run-1"
+
+            def events(self):
+                yield OpenClawEvent("cancelled" if terminated else "error", text="closed")
+
+            def close(self):
+                return None
+
+        monkeypatch.setattr(agent_module, "OpenClawWSSession", _CancelWSSession)
+        monkeypatch.setattr(agent_module.GeneratorStreamingHelper, "is_cancelled", classmethod(lambda cls, key: True))
+        lease = McpIdentityLease("lease-1")
+        backend = _StubBackend()
+        backend.transport = "ws"
+        agent = _build_agent(backend, session_code="sess-cancel-lease")
+
+        list(agent._run_stream_ws(lease))
+
+        assert lease.quarantined is expected_quarantine
 
     def test_stream_untracked_after_run(self):
         chunks = [{"choices": [{"delta": {"content": "x"}}]}]

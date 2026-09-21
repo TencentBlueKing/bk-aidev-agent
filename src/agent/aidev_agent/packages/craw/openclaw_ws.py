@@ -35,7 +35,9 @@ _CLIENT_MODE = "backend"
 _CAP_TOOL_EVENTS = "tool-events"
 
 _HANDSHAKE_TIMEOUT = 20.0
+_ABORT_TIMEOUT = 10.0
 _SUCCESS_STOP_REASONS = {"", "complete", "completed", "end_turn", "stop", "success"}
+_CANCEL_STOP_REASONS = {"abort", "aborted", "cancel", "cancelled", "canceled"}
 
 
 def _is_loopback_url(url: str) -> bool:
@@ -97,6 +99,8 @@ class OpenClawWSSession:
         self._ws = None
         self._run_id = ""
         self._closed = False
+        self._cancel_requested = False
+        self._terminated = False
 
     # ---------------- 连接与握手 ----------------
 
@@ -195,6 +199,8 @@ class OpenClawWSSession:
     def send_chat(self, session_key: str, message: str, *, agent_id: str = "") -> str:
         """发起一次对话，返回本次 run 的 id（用于过滤事件）。"""
         self._run_id = str(uuid.uuid4())
+        self._cancel_requested = False
+        self._terminated = False
         params = {
             "sessionKey": session_key,
             "message": message,
@@ -206,6 +212,14 @@ class OpenClawWSSession:
         return self._run_id
 
     # ---------------- 事件消费 ----------------
+
+    @property
+    def cancel_requested(self) -> bool:
+        return self._cancel_requested
+
+    @property
+    def terminated(self) -> bool:
+        return self._terminated
 
     def events(self) -> Generator[OpenClawEvent, None, None]:
         """产出本次 run 的事件，直到运行结束或出错。"""
@@ -231,11 +245,14 @@ class OpenClawWSSession:
             if msg.get("event") != "agent":
                 continue
             payload = msg.get("payload") or {}
+            data = payload.get("data") or {}
+            if payload.get("stream") == "lifecycle" and data.get("phase") == "end":
+                self._terminated = True
             event = self._translate(payload)
             if event is None:
                 continue
             yield event
-            if event.kind in ("done", "error"):
+            if event.kind in ("done", "cancelled", "error"):
                 return
 
     def _translate(self, payload: dict) -> Optional[OpenClawEvent]:
@@ -259,6 +276,8 @@ class OpenClawWSSession:
             if phase == "end":
                 stop_reason = str(data.get("stopReason") or "").strip().lower()
                 error = data.get("error") or data.get("message")
+                if stop_reason in _CANCEL_STOP_REASONS and not error:
+                    return OpenClawEvent("cancelled", phase=phase, raw=payload)
                 if error or stop_reason not in _SUCCESS_STOP_REASONS:
                     detail = str(error or stop_reason or "unknown")
                     return OpenClawEvent("error", text=detail, phase=phase, raw=payload)
@@ -288,9 +307,9 @@ class OpenClawWSSession:
 
     # ---------------- 收尾 ----------------
 
-    def abort(self, session_key: str) -> None:
+    def abort(self, session_key: str) -> bool:
         if self._closed or not self._run_id:
-            return
+            return False
         try:
             self._send(
                 {
@@ -300,8 +319,20 @@ class OpenClawWSSession:
                     "params": {"sessionKey": session_key, "runId": self._run_id},
                 }
             )
+            self._cancel_requested = True
+            if self._ws is not None:
+                self._ws.settimeout(min(float(self.timeout), _ABORT_TIMEOUT))
+            return True
         except Exception as exc:
             logger.warning("[OPENCLAW] abort 发送失败: %s", exc)
+            return False
+
+    def cancel(self, session_key: str) -> bool:
+        """请求内核终止运行；发送失败时关闭传输，由调用方隔离身份租约。"""
+        sent = self.abort(session_key)
+        if not sent:
+            self.close()
+        return sent
 
     def close(self) -> None:
         self._closed = True

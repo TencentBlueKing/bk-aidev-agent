@@ -6,14 +6,10 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-SCRIPT = (
-    Path(__file__).parents[4]
-    / "template"
-    / "builtin"
-    / "{{cookiecutter.project_name}}"
-    / "deploy"
-    / "apply-agent-config.py"
-)
+TEMPLATE_DEPLOY = Path(__file__).parents[4] / "template" / "builtin" / "{{cookiecutter.project_name}}" / "deploy"
+SCRIPT = TEMPLATE_DEPLOY / "apply-agent-config.py"
+SUPERVISOR = TEMPLATE_DEPLOY / "craw-supervisor.sh"
+
 
 @pytest.fixture
 def module(monkeypatch):
@@ -27,6 +23,17 @@ def module(monkeypatch):
     loaded = module_from_spec(spec)
     spec.loader.exec_module(loaded)
     return loaded
+
+
+def test_supervisor_uses_one_config_path_and_fails_closed_on_rewrite():
+    script = SUPERVISOR.read_text(encoding="utf-8")
+
+    assert 'OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-${HOME}/.openclaw}"' in script
+    assert 'OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${OPENCLAW_STATE_DIR}/openclaw.json}"' in script
+    assert '--port "${BKAI_MCP_EGRESS_PORT}" --config "" &' in script
+    assert 'if [ ! -f "${OPENCLAW_CONFIG_PATH}" ]; then' in script
+    assert "FATAL: MCP egress rewrite failed" in script
+    assert "WARN: MCP egress rewrite failed" not in script
 
 
 def test_main_rejects_missing_injected_runtime_settings(module, monkeypatch):
