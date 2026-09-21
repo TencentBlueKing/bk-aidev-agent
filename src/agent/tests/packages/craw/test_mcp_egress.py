@@ -4,10 +4,11 @@
 import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import Thread
+from threading import Event, Thread
 
 import httpx
 import pytest
+
 from aidev_agent.packages.craw.mcp_egress import (
     SHARED_ID,
     McpEgress,
@@ -34,6 +35,7 @@ def _egress_headers(egress: McpEgress) -> dict[str, str]:
 def test_normalize_strips_bearer_and_quotes():
     assert normalize_access_token('Bearer "abc"') == "abc"
     assert normalize_access_token("  xyz  ") == "xyz"
+    assert normalize_access_token("Bearer ") == ""
 
 
 def test_bind_and_resolve_prefers_contextvar():
@@ -103,8 +105,42 @@ def test_rewrite_config_file_persists_routes(tmp_path, monkeypatch):
     assert "X-Bkapi-Authorization" not in headers
     assert headers[EGRESS_KEY_HEADER] == "test-egress-key"
     assert json.loads(routes_path.read_text(encoding="utf-8"))["log-query"] == "https://example.invalid/mcp/"
+    # 重入改写不得用空映射覆盖第一次保存的真实上游。
+    second = rewrite_openclaw_config_file(
+        str(config_path),
+        "http://127.0.0.1:18787",
+        egress_key="test-egress-key",
+    )
+    assert second["rewritten"] == []
+    assert second["skipped"] == ["log-query"]
+    assert second["routes"] == {"log-query": "https://example.invalid/mcp/"}
+    assert json.loads(routes_path.read_text(encoding="utf-8")) == second["routes"]
+
     persist_egress_routes({"other": "https://example.invalid/other/"}, str(routes_path))
     assert json.loads(routes_path.read_text(encoding="utf-8"))["other"] == "https://example.invalid/other/"
+
+
+def test_rewrite_rejects_already_rewritten_config_without_original_route(tmp_path, monkeypatch):
+    config_path = tmp_path / "openclaw.json"
+    routes_path = tmp_path / "missing-routes.json"
+    monkeypatch.setenv("BKAI_MCP_EGRESS_ROUTES", str(routes_path))
+    config_path.write_text(
+        json.dumps(
+            {
+                "mcp": {
+                    "servers": {
+                        "demo": {
+                            "url": f"http://127.0.0.1:18787/egress/{SHARED_ID}/demo/",
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="缺少原始路由"):
+        rewrite_openclaw_config_file(str(config_path), "http://127.0.0.1:18787", egress_key="test-key")
 
 
 class _Upstream(BaseHTTPRequestHandler):
@@ -139,6 +175,68 @@ def upstream():
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}/mcp/"
     server.shutdown()
+
+
+class _StreamingUpstream(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    first_sent = Event()
+    finish = Event()
+
+    def log_message(self, fmt, *args):
+        return
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        frame = b"data: first\n\n"
+        self.wfile.write(f"{len(frame):X}\r\n".encode() + frame + b"\r\n")
+        self.wfile.flush()
+        self.first_sent.set()
+        self.finish.wait(timeout=3)
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
+
+
+def test_egress_streams_first_sse_frame_before_upstream_eof():
+    _StreamingUpstream.first_sent = Event()
+    _StreamingUpstream.finish = Event()
+    upstream_server = HTTPServer(("127.0.0.1", 0), _StreamingUpstream)
+    upstream_thread = Thread(target=upstream_server.serve_forever, daemon=True)
+    upstream_thread.start()
+    egress = McpEgress(port=0, drain_seconds=0).start()
+    lease_id = ""
+    received = []
+    received_first = Event()
+
+    def read_downstream():
+        with httpx.stream(
+            "GET",
+            f"{egress.base_url}/egress/{SHARED_ID}/stream/",
+            headers=_egress_headers(egress),
+            timeout=3,
+        ) as response:
+            response.raise_for_status()
+            received.append(next(response.iter_raw()))
+            received_first.set()
+
+    try:
+        target = f"http://127.0.0.1:{upstream_server.server_address[1]}/mcp/"
+        egress.register_routes({"stream": target})
+        lease_id = egress.acquire("stream-user")
+        client_thread = Thread(target=read_downstream, daemon=True)
+        client_thread.start()
+        assert _StreamingUpstream.first_sent.wait(timeout=1)
+        assert received_first.wait(timeout=1), "首帧不应等待上游 EOF"
+        assert b"data: first" in received[0]
+        assert _StreamingUpstream.finish.is_set() is False
+    finally:
+        _StreamingUpstream.finish.set()
+        if lease_id:
+            egress.release(lease_id)
+        egress.stop()
+        upstream_server.shutdown()
 
 
 def test_egress_injects_leased_user_token(upstream):
@@ -202,6 +300,23 @@ def test_identity_lease_requires_internal_key(monkeypatch):
 
     with pytest.raises(CrawLeaseError, match="鉴权 key"), mcp_identity_lease("user-token"):
         pass
+
+
+def test_identity_lease_quarantine_blocks_handoff(monkeypatch, upstream):
+    egress = McpEgress(port=0, drain_seconds=0).start()
+    monkeypatch.setenv("BKAI_MCP_EGRESS_URL", egress.base_url)
+    monkeypatch.setenv(EGRESS_KEY_ENV, egress.egress_key)
+    try:
+        with mcp_identity_lease("user-token-quarantine") as lease:
+            assert lease.lease_id
+            lease.quarantine()
+        assert egress.current_token() == ""
+        assert egress.acquire("next-user", timeout=0.05) == ""
+        # 只有原持有者或运维按租约 ID 做受控恢复，才解除隔离。
+        assert egress.release(lease.lease_id) is True
+        assert egress.acquire("next-user", timeout=0.2)
+    finally:
+        egress.stop()
 
 
 def test_identity_lease_roundtrip(monkeypatch, upstream):

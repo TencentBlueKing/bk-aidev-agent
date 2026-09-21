@@ -90,6 +90,9 @@ def rewrite_openclaw_mcp_to_egress(
             continue
         url = str(url)
         if "/egress/" in url:
+            expected = f"{base}/egress/{identity_id}/{slug}/"
+            if url.rstrip("/") != expected.rstrip("/"):
+                raise ValueError(f"MCP {slug} 已改写到非预期 egress 地址")
             skipped.append(slug)
             continue
         routes[slug] = url
@@ -102,6 +105,24 @@ def rewrite_openclaw_mcp_to_egress(
     return routes, rewritten, skipped
 
 
+def _routes_path(path: str = "") -> str:
+    return path or os.getenv("BKAI_MCP_EGRESS_ROUTES") or "/tmp/craw-mcp-routes.json"
+
+
+def _load_egress_routes(path: str = "") -> dict[str, str]:
+    source = _routes_path(path)
+    if not os.path.isfile(source):
+        return {}
+    try:
+        with open(source, encoding="utf-8") as handle:
+            routes = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(routes, dict):
+        return {}
+    return {str(slug): str(url) for slug, url in routes.items()}
+
+
 def rewrite_openclaw_config_file(
     path: str,
     egress_base: str,
@@ -109,30 +130,48 @@ def rewrite_openclaw_config_file(
     identity_id: str = SHARED_ID,
     egress_key: str = "",
 ) -> dict[str, Any]:
-    """读盘改写 MCP，权限 0600。返回 {rewritten, skipped, routes}（routes 仅 slug，不含 token）。"""
-    with open(path, encoding="utf-8") as handle:
-        config = json.load(handle)
-    routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
-        config,
-        egress_base=egress_base,
-        identity_id=identity_id,
-        egress_key=(egress_key or os.getenv(EGRESS_KEY_ENV, "")).strip(),
-    )
-    tmp = f"{path}.craw-egress-tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(config, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
-    os.replace(tmp, path)
-    with suppress(OSError):
-        os.chmod(path, 0o600)
-    persist_egress_routes(routes)
+    """串行改写 MCP；重入时保留已改写条目的真实上游路由。"""
+    try:
+        import fcntl
+    except ImportError as exc:  # PaaS 运行时为 Linux；其它平台无安全锁时拒绝改写
+        raise RuntimeError("当前平台不支持 MCP 配置文件锁") from exc
+
+    lock_path = f"{path}.craw-egress.lock"
+    with open(lock_path, "a+", encoding="utf-8") as lock:
+        with suppress(OSError):
+            os.chmod(lock_path, 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        with open(path, encoding="utf-8") as handle:
+            config = json.load(handle)
+        routes, rewritten, skipped = rewrite_openclaw_mcp_to_egress(
+            config,
+            egress_base=egress_base,
+            identity_id=identity_id,
+            egress_key=(egress_key or os.getenv(EGRESS_KEY_ENV, "")).strip(),
+        )
+        previous_routes = _load_egress_routes()
+        missing = [slug for slug in skipped if slug not in previous_routes]
+        if missing:
+            raise ValueError(f"已改写 MCP 缺少原始路由: {', '.join(sorted(missing))}")
+        preserved_routes = {slug: previous_routes[slug] for slug in skipped}
+        preserved_routes.update(routes)
+
+        # 先落真实路由、再切换配置；另一进程看到改写后的 URL 时一定能读到上游。
+        persist_egress_routes(preserved_routes)
+        tmp = f"{path}.craw-egress-tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(config, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(tmp, path)
+        with suppress(OSError):
+            os.chmod(path, 0o600)
     _logger.warning("[CRAW] MCP 已改写到 egress identity=%s rewritten=%s skipped=%s", identity_id, rewritten, skipped)
-    return {"rewritten": rewritten, "skipped": skipped, "routes": routes}
+    return {"rewritten": rewritten, "skipped": skipped, "routes": preserved_routes}
 
 
 def persist_egress_routes(routes: dict[str, str], path: str = "") -> str:
     """把 slug→真实 URL 写到 ``BKAI_MCP_EGRESS_ROUTES``，权限 0600。不含 token。"""
-    dest = path or os.getenv("BKAI_MCP_EGRESS_ROUTES") or "/tmp/craw-mcp-routes.json"
+    dest = _routes_path(path)
     tmp = f"{dest}.tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(routes, handle, ensure_ascii=False)
@@ -272,6 +311,18 @@ class McpEgress:
                 return True
             return False
 
+    def quarantine(self, lease_id: str = "") -> bool:
+        """终态无法确认时立即清凭据并隔离；只能由同一租约后续受控解除。"""
+        with self._cond:
+            if lease_id and lease_id == self._lease_id:
+                self._quarantine_lease_id = lease_id
+                self._lease_id = ""
+                self._token = ""
+                self._leased_at = 0.0
+                self._cond.notify_all()
+                return True
+            return bool(lease_id and lease_id == self._quarantine_lease_id)
+
     def current_token(self) -> str:
         with self._cond:
             self._expire_if_needed_locked()
@@ -325,6 +376,13 @@ class McpEgress:
                 if parsed.path == "/internal/release":
                     lease_id = str(self._read_json().get("leaseId") or "")
                     if egress.release(lease_id):
+                        self._json(200, {"ok": True})
+                    else:
+                        self._json(409, {"ok": False, "error": "租约不存在或不属于本次获取"})
+                    return
+                if parsed.path == "/internal/quarantine":
+                    lease_id = str(self._read_json().get("leaseId") or "")
+                    if egress.quarantine(lease_id):
                         self._json(200, {"ok": True})
                     else:
                         self._json(409, {"ok": False, "error": "租约不存在或不属于本次获取"})
@@ -401,7 +459,8 @@ class McpEgress:
                         self.send_header("Connection", "close")
                         self.end_headers()
                         if self.command != "HEAD":
-                            while chunk := resp.read(64 * 1024):
+                            read_available = getattr(resp, "read1", resp.read)
+                            while chunk := read_available(64 * 1024):
                                 self.wfile.write(chunk)
                                 self.wfile.flush()
                         self.close_connection = True
