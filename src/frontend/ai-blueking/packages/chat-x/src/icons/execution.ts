@@ -71,6 +71,27 @@ export const BkFlowFailedIcon = h(
   ],
 );
 
+/** 已终止（REVOKED）任务图标，来自设计稿节点 2013:4495，保留 14×14 原始 path */
+export const BkFlowTerminatedIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    viewBox: '0 0 14 14',
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-bk-flow-terminated-icon': true,
+    },
+  },
+  [
+    h('path', {
+      fillRule: 'evenodd',
+      clipRule: 'evenodd',
+      d: 'M7 0C10.8656 0 14 3.13438 14 7C14 10.8656 10.8656 14 7 14C3.13438 14 0 10.8656 0 7C0 3.13438 3.13438 0 7 0ZM4.87868 4.17157C4.68342 3.97631 4.36683 3.97631 4.17157 4.17157C3.97631 4.36683 3.97631 4.68342 4.17157 4.87868L9.12132 9.82843C9.31658 10.0237 9.63317 10.0237 9.82843 9.82843C10.0237 9.63317 10.0237 9.31658 9.82843 9.12132L4.87868 4.17157Z',
+      fill: '#F55B0E',
+    }),
+  ],
+);
+
 export const BkFlowSuspendedIcon = h(
   'svg',
   {

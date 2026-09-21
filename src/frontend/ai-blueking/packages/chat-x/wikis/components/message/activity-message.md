@@ -269,12 +269,12 @@ const collapsed = ref(false); // false = 展开，true = 折叠
 
 ### 核心交互
 
-- **标题栏**：显示「执行情况」+ 所有任务聚合后的各状态计数（执行中 / 成功 / 失败 / 挂起），颜色区分
+- **标题栏**：显示「执行情况」+ 所有任务聚合后的各状态计数（执行中 / 成功 / 失败 / 挂起 / 已终止 / 待执行 / 跳过），颜色区分。任一任务 `task_state === REVOKED` 时前置橙红色「已终止」并用括号包裹统计
 - **任务组**：逐个展示任务行，带状态图标、总耗时；点击箭头图标可折叠/展开节点列表
 - **有效证据**：`task.has_confidence === true` 时，任务行右侧展示「有效证据」按钮，点击后在侧栏打开置信度/证据详情 Tab（`props.has_confidence: true`）
 - **默认激活**：当 `MessageContainer` 已注入滚动上下文（`useContainerScrollProvider`，供 `FlowAgentContent` 内 `useContainerScrollConsumer` 读取）时，组件挂载后若存在 `task.is_active === true` 且 `task.has_confidence === true` 的任务，会自动在侧栏打开该任务的「有效证据」Tab；无滚动 Provider（例如独立演示）时不做自动打开。用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
 - **选中态**：当前侧栏 Tab 与任务行 / 节点行联动高亮（`is-selected`）；任务 Tab 与「有效证据」Tab 均视为该任务的选中态
-- **节点列表**：每个节点显示状态圆点、名称和耗时；hover 时出现行尾操作按钮组
+- **节点列表**：每个节点显示状态圆点、名称和耗时；`REVOKED` 叶子节点使用已终止圆点（`#F55B0E` 描边 / `#FEE8DD` 浅底）；hover 时出现行尾操作按钮组
 - **失败节点操作**：失败且 `retryable` / `skippable` 为 `true` 的节点，hover 时额外展示「重试」「跳过」按钮，点击后通过 `onInterruptResume` 回传 Agent（不传 `interrupt`）。仅在对话流内出现：侧栏「执行情况」面板（`ExecutionSummary`）内渲染的同一消息只保留「详情」
 - **节点详情**：点击「详情」会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
@@ -287,11 +287,11 @@ FlowAgentContent（activityType = 'flow_agent'）
 ├── ActivityLayout（公共折叠布局容器）
 │   └── #title
 │       ├── Loading / ArrowIcon（随 status 切换）
-│       └── 执行情况：执行中 N / 成功 N / 失败 N / 挂起 N
+│       └── 执行情况：[已终止（] 执行中 N / 成功 N / 失败 N / 挂起 N / 已终止 N [）]
 └── #default
     └── TaskGroup × N
         ├── TaskHeader（is-selected / has-confidence；箭头点击折叠）
-        │   ├── 状态图标（running=Loading / success / failed / suspended）
+        │   ├── 状态图标（running=Loading / success / failed / terminated / suspended）
         │   ├── task_name（HighlightKeyword 支持搜索高亮）
         │   └── trailing：总耗时 + 「有效证据」（has_confidence 时）
         └── NodeList
@@ -427,15 +427,17 @@ const messages = [
 
 ### 节点状态映射
 
-组件内部将 BkFlow 原始状态归并为四种显示状态：
+组件内部将 BkFlow 原始状态归并为收敛显示状态：
 
-| 归并状态    | 原始状态                                                                            | 颜色    |
-| ----------- | ----------------------------------------------------------------------------------- | ------- |
-| `running`   | CREATED / LOOP_READY / READY / RUNNING / BLOCKED / ROLLING_BACK / ROLL_BACK_SUCCESS | #3A84FF |
-| `success`   | FINISHED                                                                            | #18B456 |
-| `failed`    | FAILED / REVOKED / ROLL_BACK_FAILED                                                 | #EA3636 |
-| `suspended` | SUSPENDED                                                                           | #F59500 |
-| `pending`   | PENDING                                                                             | #DCDEE5 |
+| 归并状态     | 原始状态                                                                            | 颜色      | 统计 | 整体 header |
+| ------------ | ----------------------------------------------------------------------------------- | --------- | ---- | ----------- |
+| `running`    | CREATED / LOOP_READY / READY / RUNNING / BLOCKED / ROLLING_BACK / ROLL_BACK_SUCCESS | #3A84FF   | 是   | 否          |
+| `success`    | FINISHED                                                                            | #65C389   | 是   | 否          |
+| `failed`     | FAILED / ROLL_BACK_FAILED                                                           | #EA3636   | 是   | 否          |
+| `suspended`  | SUSPENDED                                                                           | #F59500   | 是   | 否          |
+| `terminated` | REVOKED                                                                             | #F55B0E   | 是   | 是          |
+| `pending`    | PENDING                                                                             | #4D4F56   | 是   | 否          |
+| `skipped`    | SKIPPED                                                                             | #5B7290   | 是   | 否          |
 
 ### 侧栏 Tab 命名规则
 

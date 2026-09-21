@@ -28,14 +28,25 @@
 import { type ComputedRef, type Ref, type VNode, computed, shallowRef } from 'vue';
 
 import { formatElapsedTime } from '../../../utils/utils';
-import { type ConvergedState, getConvergedState, getStateDotColor, getStateIcon, STATE_DEFS } from './flow-agent-state';
+import {
+  getConvergedState,
+  getFlowHeaderDef,
+  getStateDotColor,
+  getStateDotFill,
+  getStateIcon,
+  isShownInStats,
+  STATE_DEFS,
+} from './flow-agent-state';
 
 import type { BkFlowMessageContent, BkFlowNode, BkFlowTask } from '../../../ag-ui/types/contents';
+import type { ConvergedState, FlowStateDef } from './flow-agent-state';
 
 /** 节点视图模型：模板直接消费，避免重复 Object.values / 状态归一 / 时间格式化 */
 export interface FlowNodeVM {
   convergedState: ConvergedState;
   dotColor: string;
+  /** 实心底圆点填充色；空心环时缺省 */
+  dotFill?: string;
   elapsedTimeText: string;
   id: string;
   name: string;
@@ -53,6 +64,8 @@ export interface FlowStatVM {
   display: string;
   /** 状态圆点（环）边框色，pending 等需与文字色区分时回退到独立 dotColor */
   dotColor: string;
+  /** 实心底圆点填充色；空心环时缺省 */
+  dotFill?: string;
   key: ConvergedState;
   label: string;
 }
@@ -98,6 +111,7 @@ export const useFlowAgent = (contentRef: Ref<BkFlowMessageContent | undefined>) 
         return {
           convergedState,
           dotColor: getStateDotColor(convergedState),
+          dotFill: getStateDotFill(convergedState),
           elapsedTimeText: formatElapsedTime(node.elapsed_time),
           id: node.id,
           name: node.name,
@@ -133,16 +147,23 @@ export const useFlowAgent = (contentRef: Ref<BkFlowMessageContent | undefined>) 
         aggregated[getConvergedState(state)] += count;
       }
     }
-    return STATE_DEFS.filter(def => aggregated[def.key] > 0).map(def => ({
+    return STATE_DEFS.filter(def => isShownInStats(def) && aggregated[def.key] > 0).map(def => ({
       color: def.color,
       display: aggregated[def.key] > 99 ? '99+' : String(aggregated[def.key]),
       dotColor: getStateDotColor(def.key),
+      dotFill: getStateDotFill(def.key),
       key: def.key,
       label: def.label,
     }));
   });
 
+  /** 任一任务命中 flowHeader 状态时，标题栏展示对应覆盖文案（当前为 REVOKED → 已终止） */
+  const flowHeaderDef: ComputedRef<FlowStateDef | undefined> = computed(() =>
+    getFlowHeaderDef(taskList.value.map(task => task.task_state ?? '')),
+  );
+
   return {
+    flowHeaderDef,
     isTaskExpanded,
     taskList,
     toggleTaskExpanded,

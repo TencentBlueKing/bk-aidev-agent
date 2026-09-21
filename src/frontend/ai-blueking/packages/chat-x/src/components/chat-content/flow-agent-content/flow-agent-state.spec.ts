@@ -27,7 +27,14 @@ import { type VNode, isVNode } from 'vue';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { getConvergedState, getStateIcon } from './flow-agent-state';
+import {
+  getConvergedState,
+  getFlowHeaderDef,
+  getStateDotFill,
+  getStateIcon,
+  isShownInStats,
+  STATE_DEFS,
+} from './flow-agent-state';
 
 vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
@@ -47,11 +54,48 @@ describe('flow-agent-state', () => {
       expect(getConvergedState('FINISHED')).toBe('success');
       expect(getConvergedState('FAILED')).toBe('failed');
     });
+
+    it('REVOKED 应归一为 terminated，且不再归入 failed', () => {
+      expect(getConvergedState('REVOKED')).toBe('terminated');
+      expect(getConvergedState('ROLL_BACK_FAILED')).toBe('failed');
+    });
+  });
+
+  describe('getFlowHeaderDef', () => {
+    it('任一任务为 REVOKED 时应返回已终止覆盖定义', () => {
+      const def = getFlowHeaderDef(['RUNNING', 'REVOKED']);
+      expect(def?.key).toBe('terminated');
+      expect(def?.flowHeader).toBe(true);
+      expect(def?.label).toBe('已终止');
+      expect(def?.color).toBe('#F55B0E');
+    });
+
+    it('仅失败 / 成功任务时不应产生整体 header 覆盖', () => {
+      expect(getFlowHeaderDef(['FAILED', 'FINISHED'])).toBeUndefined();
+    });
+  });
+
+  describe('isShownInStats', () => {
+    it('未声明 showInStats 时默认进入统计概览', () => {
+      expect(isShownInStats(STATE_DEFS.find(def => def.key === 'terminated')!)).toBe(true);
+      expect(isShownInStats(STATE_DEFS.find(def => def.key === 'failed')!)).toBe(true);
+    });
+  });
+
+  describe('getStateDotFill', () => {
+    it('terminated 应使用浅橙底，其它状态保持空心', () => {
+      expect(getStateDotFill('terminated')).toBe('#FEE8DD');
+      expect(getStateDotFill('failed')).toBeUndefined();
+    });
   });
 
   describe('getStateIcon', () => {
     it('running 无静态图标时应返回 null', () => {
       expect(getStateIcon('running')).toBeNull();
+    });
+
+    it('terminated 应返回可用的状态图标', () => {
+      expect(getStateIcon('terminated')).toBeTruthy();
     });
 
     it('多次调用同一状态应返回互不共享 children / el 的独立 VNode 树', () => {
@@ -61,7 +105,7 @@ describe('flow-agent-state', () => {
       expect(first).toBeTruthy();
       expect(second).toBeTruthy();
       expect(first).not.toBe(second);
-      expect(first!.children).not.toBe(second!.children);
+      expect(first?.children).not.toBe(second?.children);
 
       const firstChild = getFirstChildVNode(first!);
       const secondChild = getFirstChildVNode(second!);
@@ -72,8 +116,8 @@ describe('flow-agent-state', () => {
       // 模拟 Vue patch 把 el 写回其中一棵树：另一份不得被污染
       first!.el = {} as Element;
       firstChild!.el = {} as Element;
-      expect(second!.el).not.toBe(first!.el);
-      expect(secondChild!.el).not.toBe(firstChild!.el);
+      expect(second?.el).not.toBe(first?.el);
+      expect(secondChild?.el).not.toBe(firstChild?.el);
     });
   });
 });

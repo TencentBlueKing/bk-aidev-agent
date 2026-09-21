@@ -84,6 +84,7 @@ export const lang = {
   执行中: 'Running',
   成功: 'Success',
   失败: 'Failed',
+  已终止: 'Terminated',
   挂起: 'Pending',
   待执行: 'To Be Executed',
   详情: 'Details',

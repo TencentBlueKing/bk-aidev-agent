@@ -32,28 +32,46 @@
         <span class="ai-activity-message-title-text">
           <span class="flow-agent-title-label">{{ t('执行情况') }}：</span>
           <span
-            v-for="stat in visibleStats"
-            :key="stat.key"
-            class="flow-agent-stat-item"
+            v-if="flowHeaderDef"
+            class="flow-agent-flow-header"
+            :style="{ color: flowHeaderDef.color }"
+            >{{ flowHeaderDef.label }}</span
           >
-            <Loading
-              v-if="stat.key === 'running'"
-              class="flow-agent-stat-loading"
-              mode="spin"
-              size="mini"
-              theme="primary"
-            />
+          <span
+            v-if="flowHeaderDef"
+            class="flow-agent-flow-header-paren is-open"
+            >（</span
+          >
+          <span class="flow-agent-stat-list">
             <span
-              v-else
-              class="flow-agent-stat-dot"
-              :style="{ borderColor: stat.dotColor }"
-            />
-            <span
-              class="flow-agent-stat-count"
-              :style="{ color: stat.color }"
-              >{{ stat.display }}</span
+              v-for="stat in visibleStats"
+              :key="stat.key"
+              class="flow-agent-stat-item"
             >
+              <Loading
+                v-if="stat.key === 'running'"
+                class="flow-agent-stat-loading"
+                mode="spin"
+                size="mini"
+                theme="primary"
+              />
+              <span
+                v-else
+                class="flow-agent-stat-dot"
+                :style="getStatusDotStyle(stat)"
+              />
+              <span
+                class="flow-agent-stat-count"
+                :style="{ color: stat.color }"
+                >{{ stat.display }}</span
+              >
+            </span>
           </span>
+          <span
+            v-if="flowHeaderDef"
+            class="flow-agent-flow-header-paren is-close"
+            >）</span
+          >
         </span>
         <template #content>
           <div class="flow-agent-stat-tooltip">
@@ -72,7 +90,7 @@
                 <span
                   v-else
                   class="flow-agent-stat-dot"
-                  :style="{ borderColor: stat.dotColor }"
+                  :style="getStatusDotStyle(stat)"
                 />
               </span>
               <span class="flow-agent-stat-tooltip-label">{{ stat.label }}：</span>
@@ -160,7 +178,7 @@
             <span
               v-else
               class="flow-agent-status-dot"
-              :style="{ borderColor: node.dotColor }"
+              :style="getStatusDotStyle(node)"
             />
           </span>
           <span
@@ -256,7 +274,7 @@
   const isLoading = computed(() => props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming);
 
   // 视图模型层：任务 / 节点视图模型、统计概览、展开态
-  const { isTaskExpanded, taskList, toggleTaskExpanded, viewTasks, visibleStats } = useFlowAgent(
+  const { flowHeaderDef, isTaskExpanded, taskList, toggleTaskExpanded, viewTasks, visibleStats } = useFlowAgent(
     toRef(props, 'content'),
   );
 
@@ -281,9 +299,15 @@
     }
     action.run();
   };
+
+  /** 节点 / 统计圆点：描边用 dotColor，实心底（如已终止）用 dotFill */
+  const getStatusDotStyle = (dot: { dotColor: string; dotFill?: string }) => ({
+    backgroundColor: dot.dotFill,
+    borderColor: dot.dotColor,
+  });
 </script>
 <style lang="scss">
-  // 状态圆环：空心环，颜色由视图模型按状态注入（模板内联 borderColor）。
+  // 状态圆点：默认空心环，颜色由视图模型注入 borderColor；已终止等实心底通过 backgroundColor 注入。
   // 置于文件顶层 placeholder，供组件内（node 状态点）与根级（tooltip 统计点）共用，
   // 因统计 tooltip 内容会被 tippy 挂载到 body（脱离组件容器）。
   %flow-dot {
@@ -447,11 +471,37 @@
       color: #313238;
     }
 
+    // 整体覆盖态文案（已终止），颜色由 STATE_DEFS.color 注入
+    .flow-agent-flow-header {
+      flex-shrink: 0;
+      font-weight: bold;
+
+      &-paren {
+        flex-shrink: 0;
+        font-weight: 400;
+        color: $color-text;
+
+        &.is-close {
+          margin-left: 4px;
+        }
+
+        &.is-open {
+          margin: 0 4px;
+        }
+      }
+    }
+
     /* ---------- 统计项（标题栏内联展示） ---------- */
     .flow-agent-stat {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+
+      &-list {
+        display: inline-flex;
+        align-items: center;
+        min-width: 0;
+      }
 
       &-item {
         display: inline-flex;
@@ -460,6 +510,10 @@
         align-items: center;
         margin-right: 16px;
         white-space: nowrap;
+
+        &:last-child {
+          margin-right: 0;
+        }
       }
 
       &-loading {

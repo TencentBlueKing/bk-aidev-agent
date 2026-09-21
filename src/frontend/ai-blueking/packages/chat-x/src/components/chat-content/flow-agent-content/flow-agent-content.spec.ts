@@ -103,6 +103,7 @@ vi.mock('../../../icons', () => ({
   BkFlowSkippedIcon: h('span', { class: 'mock-bkflow-skipped' }),
   BkFlowSuccessIcon: h('span', { class: 'mock-bkflow-success' }),
   BkFlowSuspendedIcon: h('span', { class: 'mock-bkflow-suspended' }),
+  BkFlowTerminatedIcon: h('span', { class: 'mock-bkflow-terminated' }),
   NodeOutputIcon: h('span', { class: 'mock-node-output' }),
   RebuildIcon: h('span', { class: 'mock-rebuild' }),
   SkipIcon: h('span', { class: 'mock-skip' }),
@@ -252,6 +253,75 @@ describe('FlowAgentContent', () => {
 
       expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-failed').exists()).toBe(false);
       expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-success').exists()).toBe(true);
+    });
+  });
+
+  describe('已终止状态', () => {
+    it('任一任务 REVOKED 时标题栏应展示已终止并括号包裹统计', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: [
+            createTask({ task_state: 'FINISHED' }),
+            createTask({
+              task_id: 101,
+              task_state: 'REVOKED',
+              statistics: {
+                state_counts: { FINISHED: 1, REVOKED: 2 },
+                total: 3,
+              },
+            }),
+          ],
+        },
+      });
+
+      const barText = wrapper.find('.ai-activity-message-title-text').text();
+      expect(barText).toContain('已终止');
+      expect(barText).toContain('（');
+      expect(barText).toContain('）');
+      expect(wrapper.find('.flow-agent-flow-header').attributes('style')).toContain('#F55B0E');
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-terminated').exists()).toBe(true);
+
+      // REVOKED 计入统计项 / tooltip，与叶子节点已终止圆点同色
+      const tooltipText = wrapper.find('.flow-agent-stat-tooltip').text();
+      expect(tooltipText).toContain('已终止');
+      expect(tooltipText).toContain('成功');
+    });
+
+    it('REVOKED 叶子节点应使用已终止圆点配色', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({
+            nodes: {
+              n1: createNode({ id: 'n1', name: '被终止节点', state: 'REVOKED' }),
+            },
+            statistics: {
+              state_counts: { REVOKED: 1 },
+              total: 1,
+            },
+            task_state: 'REVOKED',
+          }),
+        },
+      });
+
+      const nodeDotStyle = wrapper.find('.flow-agent-status-dot').attributes('style');
+      expect(nodeDotStyle).toContain('#F55B0E');
+      expect(nodeDotStyle).toContain('#FEE8DD');
+
+      const statDotStyle = wrapper.find('.flow-agent-stat-list .flow-agent-stat-dot').attributes('style');
+      expect(statDotStyle).toContain('#F55B0E');
+      expect(statDotStyle).toContain('#FEE8DD');
+      expect(wrapper.find('.flow-agent-stat-count').attributes('style')).toContain('#F55B0E');
+    });
+
+    it('失败任务不应展示已终止覆盖文案', () => {
+      wrapper = mount(FlowAgentContent, {
+        props: {
+          content: createContent({ task_state: 'FAILED' }),
+        },
+      });
+
+      expect(wrapper.find('.flow-agent-flow-header').exists()).toBe(false);
+      expect(wrapper.find('.flow-agent-task-state-icon .mock-bkflow-failed').exists()).toBe(true);
     });
   });
 
