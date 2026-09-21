@@ -17,7 +17,7 @@ wheels = [
 [[package]]
 name = "aidev-agent"
 version = "2.4.0"
-source = { registry = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/simple/" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "asgiref" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0.tar.gz", hash = "sha256:89c51a8343f0f2623ca99b77effae1295ae21d92e88d3332262886fd5db6f8ca" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/07/0e0b2198cce10bd237afb16c011e50b4c8ac60ae9aac5c71720a12006b82/aidev_agent-2.4.0.tar.gz", hash = "sha256:89c51a8343f0f2623ca99b77effae1295ae21d92e88d3332262886fd5db6f8ca", size = 1069927, upload-time = "2026-09-21T03:28:59.895Z" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0-py3-none-any.whl", hash = "sha256:153ee4d64a6e63300ead66c6d094769bce090b8a40f3a3a5ffbacd05fcbe4120" },
+    { url = "https://files.pythonhosted.org/packages/0a/8f/0b7c9bfb3ea4958ee608d9fc2b8728e496784cc0f271709d3d00785b227f/aidev_agent-2.4.0-py3-none-any.whl", hash = "sha256:153ee4d64a6e63300ead66c6d094769bce090b8a40f3a3a5ffbacd05fcbe4120", size = 698513, upload-time = "2026-09-21T03:28:56.07Z" },
 ]
 
 [package.optional-dependencies]
@@ -71,7 +71,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.4.0"
+version = "2.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
