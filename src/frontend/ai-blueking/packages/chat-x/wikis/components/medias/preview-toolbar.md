@@ -9,9 +9,14 @@ aiSummary: >
   源码位置：src/components/image-preview/preview-toolbar.vue。
 relatedComponents: []
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 # PreviewToolbar 图片预览工具栏
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ImagePreview](/components/medias/image-preview) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { PreviewToolbar } from '@blueking/chat-x'`。
 
 > **能力域**：媒体文件
 

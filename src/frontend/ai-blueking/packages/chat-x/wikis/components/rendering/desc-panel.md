@@ -15,6 +15,7 @@ relatedComponents:
   - slug: highlight-keyword
     relation: 键值与文本匹配关键词高亮
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -22,6 +23,10 @@ sinceVersion: 1.0.0
 </script>
 
 # DescPanel 描述面板
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ToolCallRender](/components/agent/toolcall-render) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { DescPanel } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/tool-call/desc-panel/desc-panel.vue`
@@ -109,7 +114,7 @@ const data = computed(() => {
 </template>
 
 <script setup lang="ts">
-  import { DescPanel } from '@blueking/chat-x';
+  // DescPanel 未从包入口导出；文档站 demo 使用页面顶部相对路径
 </script>
 ```
 

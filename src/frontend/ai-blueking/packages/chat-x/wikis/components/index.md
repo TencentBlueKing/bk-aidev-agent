@@ -24,7 +24,7 @@ aiSummary: >
 | 渲染消息正文内容 | [ContentRender](./rendering/content-render.md) |
 | 渲染 Markdown / 代码 / 公式 / 图表 | [MarkdownContent](./rendering/markdown-content.md) |
 | 构建快捷指令与命令输入 | [ChatInput](./input/chat-input.md)、[AiSlashInput](./input/ai-slash-input.md)、[InputMenuPanel](./input/input-menu-panel.md)、[ShortcutRender](./input/shortcut-render.md) |
-| 处理 ToolCall / HITL 中断 | [ToolcallRender](./agent/toolcall-render.md)、[InterruptMessage](./agent/interrupt-message.md) |
+| 处理 ToolCall / HITL 中断 | [ToolCallRender](./agent/toolcall-render.md)、[InterruptMessageRender](./agent/interrupt-message.md) |
 | 展示 FlowAgent / 知识召回活动 | [FlowAgentContent](./agent/flow-agent-content.md)、[KnowledgeRagContent](./agent/knowledge-rag-content.md) |
 | 图片预览与文件展示 | [AiImage](./medias/ai-image.md)、[ImagePreviewGroup](./medias/image-preview-group.md)、[FileContent](./medias/file-content.md) |
 
@@ -68,7 +68,7 @@ aiSummary: >
 | [ReferenceContent](./rendering/reference-content.md) | 引用来源列表渲染。 |
 | [KeyValueContent](./rendering/key-value-content.md) | 键值结构展示。 |
 | [DescPanel](./rendering/desc-panel.md) | 文本或 JSON 描述面板。 |
-| [CommonErrorContent](./rendering/common-error-content.md) | 通用错误内容。 |
+| [commonErrorContent](./rendering/common-error-content.md) | 通用错误内容。 |
 
 ### 媒体文件
 
@@ -103,9 +103,9 @@ aiSummary: >
 
 | 组件 | 说明 |
 | ---- | ---- |
-| [ToolcallRender](./agent/toolcall-render.md) | 工具调用渲染器。 |
-| [ToolApprovalCard](./agent/tool-approval-card.md) | 工具审批卡片。 |
-| [InterruptMessage](./agent/interrupt-message.md) | 中断消息渲染器。 |
+| [ToolCallRender](./agent/toolcall-render.md) | 工具调用渲染器。 |
+| [ToolApprovalCard](./agent/tool-approval-card.md) | 工具审批卡片（内部）。 |
+| [InterruptMessageRender](./agent/interrupt-message.md) | 中断消息渲染器。 |
 | [UserQuestionCard](./agent/user-question-card.md) | 用户问题中断交互面板（一次一题分页）。 |
 | [UserQuestionChoice](./agent/user-question-choice.md) | 用户问题默认选择题渲染。 |
 | [UserQuestionAnsweredCard](./agent/user-question-answered-card.md) | 用户问题回答回显。 |
@@ -126,7 +126,7 @@ aiSummary: >
 | [MessageTime](./feedback/message-time.md) | 消息时间，四档格式展示。 |
 | [ToolBtn](./feedback/tool-btn.md) | 工具栏图标按钮。 |
 | [DeleteTool](./feedback/delete-tool.md) | 删除确认按钮。 |
-| [UserFeedback](./feedback/user-feedback.md) | 用户反馈弹层。 |
+| [MessageUserFeedback](./feedback/user-feedback.md) | 用户反馈弹层。 |
 | [ScrollBtn](./feedback/scroll-btn.md) | 停止生成 / 返回底部按钮。 |
 
 ### 辅助能力
@@ -140,5 +140,5 @@ aiSummary: >
 | [FileIcon](./helper/file-icon.md) | 按扩展名渲染文件类型图标。 |
 | [ResourceIcon](./helper/resource-icon.md) | 按 URL / 组件 / 类型兜底渲染资源图标。 |
 | [VNodeRenderer](./helper/vnode-renderer.md) | Markdown token 到 VNode 的内部渲染桥。 |
-| [QuestionsContainer](./helper/questions-container.md) | 空源码占位，无可用功能。 |
-| [SelectionQuestion](./helper/selection-question.md) | 空源码占位，无可用功能。 |
+
+空源码占位（`QuestionsContainer` / `SelectionQuestion`）不进入能力表，见 [组件源码审计清单](./inventory.md)。

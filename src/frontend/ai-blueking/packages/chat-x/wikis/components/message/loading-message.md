@@ -15,6 +15,7 @@ relatedComponents:
   - slug: ai-loading
     relation: 内部使用 AiLoading 基础组件
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

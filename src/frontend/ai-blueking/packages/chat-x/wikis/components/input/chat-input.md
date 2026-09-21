@@ -719,6 +719,7 @@ const defaultFiles: UploadFile[] = [
 | focus              | `() => void`                      | 聚焦编辑器并把光标置于末尾                       |
 | insertMention      | `(item: IInputMenuItem) => void`  | 把条目以标签形式追加到文档末尾（不依赖当前光标） |
 | triggerSendMessage | `() => void`                      | 手动触发发送逻辑                                 |
+| uploadedArtifacts  | `AIFileInfo[]`                    | 已上传且带 `outputId` 的附件列表（只读）         |
 
 ## 键盘快捷键
 

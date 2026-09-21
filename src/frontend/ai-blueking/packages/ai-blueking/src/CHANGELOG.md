@@ -1,8 +1,8 @@
 # 小鲸组件 V2 重构变更日志
 
-## 版本 2.2.4-beta.7
+## 版本 2.4.0
 
-适配 `@blueking/chat-x` `>=0.0.52-beta.1` 统一输入菜单。
+适配 `@blueking/chat-x` `2.4.0` 统一输入菜单。
 
 - 对外仍保留 `prompts` / `resources` / `skills`（`AIBlueking` 无 `skills`），内部 `buildMenuSources` 映射为 `menuSources`
 - 发送与编辑写 `property.docSchema`（与 `extra` 同级），不再写 `extra.resources`

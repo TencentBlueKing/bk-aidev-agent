@@ -270,6 +270,17 @@ async function main() {
 
     const slugDefault = fileName;
     const slug = typeof data.slug === 'string' && data.slug.trim() ? data.slug.trim() : slugDefault;
+
+    const exportStatusRaw = typeof data.exportStatus === 'string' ? data.exportStatus.trim() : '';
+    const exportStatus =
+      exportStatusRaw === 'internal' || exportStatusRaw === 'placeholder' || exportStatusRaw === 'public'
+        ? exportStatusRaw
+        : undefined;
+
+    if (exportStatus === 'placeholder') {
+      continue;
+    }
+
     if (seenSlugs.has(slug)) {
       console.warn(`Duplicate slug "${slug}", skipping duplicate file: ${file}`);
       continue;
@@ -317,6 +328,7 @@ async function main() {
       relatedComponents,
       docFile,
       ...(domain !== undefined ? { domain } : {}),
+      ...(exportStatus !== undefined ? { exportStatus } : {}),
     };
 
     index[group].push(entry);

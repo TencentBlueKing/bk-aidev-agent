@@ -15,6 +15,7 @@ relatedComponents:
   - slug: desc-panel
     relation: 内部使用 DescPanel 展示「返回内容」
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

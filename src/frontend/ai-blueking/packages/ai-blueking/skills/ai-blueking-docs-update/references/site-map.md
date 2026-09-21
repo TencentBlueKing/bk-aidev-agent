@@ -35,7 +35,7 @@
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
-| `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill、`@` 资源；`property.docSchema` 协议（≥ chat-x 0.0.52） |
+| `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill·MCP·工具、`@` 资源；统一 `menuSources` 与 `property.docSchema`（≥ v2.4.0） |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；上传入口常驻，不跟 `support_vision` |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
@@ -92,7 +92,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 - `themeConfig.sidebar["/guide/"]` 等 — 侧栏（**新指南页必改**）
 - 顶栏版本下拉读 `changelog.md` 首条 `## vX.Y.Z`（`utils/resolve-changelog-version.js`）
 
-演示依赖（npm 已发布后再改）：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 应对齐该正式版及其配套子包（当前 2.2.4 / 0.0.51 / 0.0.12）。
+演示依赖（npm 已发布后再改）：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 应对齐该正式版及其配套子包（当前 2.4.0 / 2.4.0 / 2.4.0）。
 
 ## 源码对照（写文档前建议阅读）
 

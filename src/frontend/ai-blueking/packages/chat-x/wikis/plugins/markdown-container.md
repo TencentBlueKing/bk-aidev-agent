@@ -10,9 +10,13 @@ relatedComponents:
   - slug: markdown-content
     relation: 渲染管线中注册插件
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 # markdownItContainer 自定义容器插件
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 由 [MarkdownContent](/components/rendering/markdown-content) 内部注册。请用相对路径引入源码，不要写 `import { markdownItContainer } from '@blueking/chat-x'`。
 
 > **分类**：plugin
 

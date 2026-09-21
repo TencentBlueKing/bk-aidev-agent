@@ -54,7 +54,7 @@ pnpm dev:wiki
 
 ## 5. SSR 兼容说明
 
-`packages/chat-x/wikis/.vitepress/config.mts` 中通过自定义 Vite 插件，将 `bkui-vue` / `mermaid` / `vue-tippy` / `tippy.js` 在 SSR 阶段重定向到 `ssr-stub.ts`，并把每个 markdown 页面整体包在 `<ClientOnly>` 中。
+`packages/chat-x/wikis/.vitepress/config.mts` 中通过自定义 Vite 插件，将 `bkui-vue` / `mermaid` / `vue-tippy` / `tippy.js` 在 SSR 阶段重定向到 `ssr-stub.ts`。仅当 Markdown 去掉围栏代码块后仍含 `<script setup>`、`<template>` 或 `class="demo"` 时，才把该页包进 `<ClientOnly>`；纯文档页走 SSR。
 
 原因：这些库在模块顶层就会访问 `document` / `window`，Node SSR 环境下会立即抛 `ReferenceError`，阻塞 `vitepress build`。浏览器水合阶段会重新加载真实模块，最终用户体验不受影响。
 

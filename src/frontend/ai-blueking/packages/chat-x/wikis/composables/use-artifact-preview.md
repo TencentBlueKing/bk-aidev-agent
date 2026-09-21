@@ -77,8 +77,8 @@ import {
   useCustomTabProvider,
   useMessageGroup,
   FILE_ARTIFACT_TAB_NAME,
+  t,
 } from '@blueking/chat-x';
-import { t } from '@blueking/chat-x/lang';
 
 const { addCustomTab, ensureCustomTab, removeCustomTab } = useCustomTabProvider({ /* ... */ });
 
@@ -166,6 +166,16 @@ const onArtifactClick = async (file: AIFileInfo) => {
 | ------------------------- | ------------------ | ----------------------------------------- |
 | `FILE_ARTIFACT_TAB_NAME`  | `'file-artifact'`  | 「文件产物」侧栏 Tab 的固定标识，不可关闭 |
 | `ARTIFACT_PREVIEW_TOKEN`  | `Symbol`           | provide/inject 注入 Token                 |
+
+## triggerArtifactDownload
+
+从包入口导出，用临时 `<a download>` 触发浏览器下载（面板下载按钮内部使用）：
+
+```typescript
+import { triggerArtifactDownload } from '@blueking/chat-x';
+
+triggerArtifactDownload(downloadUrl, file.name);
+```
 
 ## 返回值说明
 

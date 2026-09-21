@@ -1,8 +1,10 @@
 ---
-name: CommonErrorContent 错误内容
+name: commonErrorContent 错误内容
 slug: common-error-content
 kind: component
 domain: rendering
+exportSymbol: commonErrorContent
+exportStatus: public
 description: 展示统一错误提示内容。
 aiSummary: >
   展示统一错误提示内容。
@@ -19,7 +21,13 @@ sinceVersion: 1.0.0
   import CommonErrorContent from '../../../src/components/chat-content/common-error-content/common-error-content.vue'
 </script>
 
-# CommonErrorContent 通用错误内容
+# commonErrorContent 通用错误内容
+
+| 名称 | 种类 |
+| --- | --- |
+| `CommonErrorContent` | 源码 SFC / 模板别名 |
+| `commonErrorContent` | 包入口导出名 |
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/common-error-content/common-error-content.vue`
@@ -51,7 +59,7 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import { CommonErrorContent } from '@blueking/chat-x';
+  import { commonErrorContent as CommonErrorContent } from '@blueking/chat-x';
 </script>
 ```
 

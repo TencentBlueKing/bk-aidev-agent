@@ -13,7 +13,7 @@ relatedComponents:
   - slug: chat-container
     relation: 侧栏内容区 component :is 与 onCustomTabChange
   - slug: flow-agent-content
-    relation: addCustomTab 默认挂载 BkFlowNodeDetail
+    relation: addCustomTab 默认挂载 FlowAgentNodeDetail
 sinceVersion: '2.1.0'
 ---
 
@@ -100,7 +100,7 @@ addCustomTab?.({
   label: node.name,
   name: `${task.task_id}|${node.id}|${node.name}`,
   data: {
-    component: BkFlowNodeDetail, // 库内默认节点详情
+    component: FlowAgentNodeDetail, // 库内默认节点详情
     messageUid: props.messageUid,
     props: {
       loading: true,
@@ -145,7 +145,7 @@ const handleCustomTabChange = async () => {
 
 内容组件应：
 
-- 根据 **`loading`** 展示骨架屏（如 `BkFlowNodeDetail`、`CustomTabContent`）
+- 根据 **`loading`** 展示骨架屏（如 `FlowAgentNodeDetail`、`CustomTabContent`）
 - 根据 **`data`** 渲染业务详情（节点基础信息、inputs/outputs 等）
 
 ## getSideRenderComponent：覆盖内容根组件
@@ -206,7 +206,7 @@ const getSideRenderComponent = (createElement: typeof h, props?: Record<string, 
 };
 ```
 
-将 `PLAYGROUND_GET_SIDE_VNODE_DEMO` 设为 `false` 并 `return undefined` 可回退为库内 **`BkFlowNodeDetail`**。
+将 `PLAYGROUND_GET_SIDE_VNODE_DEMO` 设为 `false` 并 `return undefined` 可回退为库内 **`FlowAgentNodeDetail`**。
 
 ## locateButton 与主对话定位
 

@@ -17,6 +17,7 @@ relatedComponents:
   - slug: reference-content
     relation: 渲染召回引用来源列表
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -41,6 +42,9 @@ sinceVersion: 1.0.0
 </script>
 
 # KnowledgeRagContent 知识召回内容
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [MessageRender](/components/message/message-render) 渲染 `role: 'activity'`。
 
 > **能力域**：Agent 能力
 
@@ -74,7 +78,7 @@ sinceVersion: 1.0.0
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import KnowledgeRagContent from '@blueking/chat-x/src/components/chat-content/knowledge-rag-content/knowledge-rag-content.vue';
+  // KnowledgeRagContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { KnowledgeRagMessageContent } from '@blueking/chat-x';
 
   const collapsed = ref(false);

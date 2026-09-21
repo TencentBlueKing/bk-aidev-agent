@@ -13,10 +13,11 @@ relatedComponents:
   - slug: tool-message
     relation: 工具结果通过 toolCall.toolMessage 内联或独立 tool 消息关联展示
   - slug: toolcall-render
-    relation: 多条工具调用由 ToolcallRender 统一渲染
+    relation: 多条工具调用由 ToolCallRender 统一渲染
   - slug: file-artifact-panel
     relation: property.artifacts 文件产物点击后在侧栏预览
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

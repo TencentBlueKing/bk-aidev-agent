@@ -445,6 +445,8 @@ AI 划词选择组件，监听用户在页面中的文本选区，在选区附�
 
 ## 与 ChatBot 联动
 
+`ChatBot` 属于 `@blueking/ai-blueking`，不是 chat-x 的导出。
+
 选中文本后触发快捷指令，自动将选中内容作为上下文发送到聊天窗口：
 
 ```vue
@@ -464,7 +466,8 @@ AI 划词选择组件，监听用户在页面中的文本选区，在选区附�
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { AiSelection, ChatBot, type Shortcut } from '@blueking/chat-x';
+  import { AiSelection, type Shortcut } from '@blueking/chat-x';
+  import { ChatBot } from '@blueking/ai-blueking';
 
   const selectionVisible = ref(false);
   const chatBotRef = ref();

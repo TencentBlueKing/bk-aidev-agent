@@ -13,6 +13,7 @@ relatedComponents:
   - slug: message-container
     relation: 嵌入消息列表时由 MessageContainer 统一布局与滚动
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

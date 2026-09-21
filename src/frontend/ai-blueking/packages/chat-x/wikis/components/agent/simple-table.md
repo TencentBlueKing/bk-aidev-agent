@@ -13,6 +13,7 @@ relatedComponents:
   - slug: detail-section
     relation: 通常放在详情分段容器内使用
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -33,6 +34,8 @@ sinceVersion: 1.0.0
 </script>
 
 # SimpleTable 简易表格
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
 
 > **能力域**：Agent 能力
 
@@ -63,7 +66,7 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import SimpleTable from '@blueking/chat-x/src/components/chat-content/flow-agent-content/simple-table.vue';
+  // SimpleTable 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const columns = [
     { key: 'key', label: '参数名' },

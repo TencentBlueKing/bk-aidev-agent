@@ -13,6 +13,7 @@ relatedComponents:
   - slug: simple-table
     relation: 常作为分段内容展示结构化参数表格
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -32,6 +33,8 @@ sinceVersion: 1.0.0
 </script>
 
 # DetailSection 详情分段
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
 
 > **能力域**：Agent 能力
 
@@ -60,7 +63,7 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import DetailSection from '@blueking/chat-x/src/components/chat-content/flow-agent-content/detail-section.vue';
+  // DetailSection 未从包入口导出；文档站 demo 使用页面顶部相对路径
 </script>
 ```
 

@@ -6,7 +6,7 @@
 `AIBlueking` **没有** `skills` prop，Skill 只来自 `agent.info.relatedSkills`。
 :::
 
-AI 小鲸支持四类输入辅助，chat-x ≥ 0.0.52 后统一映射为 `menuSources`，宿主仍可继续传旧 props：
+AI 小鲸支持四类输入辅助，v2.4.0 起统一映射为 `menuSources`，宿主仍可继续传旧 props：
 
 | 触发符 | 分组 | 数据来源 |
 | --- | --- | --- |

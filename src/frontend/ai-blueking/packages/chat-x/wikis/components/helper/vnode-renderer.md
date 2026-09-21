@@ -3,9 +3,9 @@ name: VNodeRenderer VNode 渲染器
 slug: vnode-renderer
 kind: component
 domain: helper
-description: 将 Markdown token 转成 VNode 的内部渲染桥。
+description: 将 Markdown token 转成 VNode；包入口已导出，通常经 MarkdownContent 使用。
 aiSummary: >
-  将 Markdown token 转成 VNode 的内部渲染桥。
+  将 Markdown token 转成 VNode；包入口已导出，通常经 MarkdownContent 使用。
   源码位置：src/components/chat-content/vnode-renderer.ts。
 relatedComponents:
   - slug: markdown-content
@@ -57,8 +57,8 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import MarkdownIt from '@blueking/chat-x/src/markdown-it/index';
-  import VNodeRenderer from '@blueking/chat-x/src/components/chat-content/vnode-renderer';
+  import { VNodeRenderer } from '@blueking/chat-x';
+  // MarkdownIt 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const md = new MarkdownIt();
   const tokens = md.parse('这是一段 **加粗文本**。', {});

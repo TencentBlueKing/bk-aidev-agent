@@ -41,7 +41,7 @@ ChatContainer                          ← 一站式对话布局
 │       │   │   ├── UserMessage        ← 用户消息（编辑/删除/快捷指令回显）
 │       │   │   ├── AssistantMessage   ← AI 回复（正文 + 工具调用列表）
 │       │   │   │   ├── ContentRender  ← 正文渲染入口
-│       │   │   │   └── ToolcallRender × N  ← 逐个工具调用卡片
+│       │   │   │   └── ToolCallRender × N  ← 逐个工具调用卡片
 │       │   │   ├── ReasoningMessage   ← 推理过程（折叠/展开）
 │       │   │   ├── ActivityMessage    ← 活动消息（按 activityType 分发）
 │       │   │   │   ├── FlowAgentContent      ← BkFlow 流程
@@ -183,7 +183,7 @@ ToolMessage (id: 'tool_1', toolCallId: 'tc_1')
 | role        | 渲染组件         | 特殊行为                                                                                |
 | ----------- | ---------------- | --------------------------------------------------------------------------------------- |
 | `user`      | UserMessage      | 支持编辑、删除、快捷指令回显                                                            |
-| `assistant` | AssistantMessage | **唯一支持默认 slot 覆盖**（自定义渲染入口）；内部遍历 toolCalls 渲染 ToolcallRender    |
+| `assistant` | AssistantMessage | **唯一支持默认 slot 覆盖**（自定义渲染入口）；内部遍历 toolCalls 渲染 ToolCallRender    |
 | `reasoning` | ReasoningMessage | 折叠/展开                                                                               |
 | `activity`  | ActivityMessage  | 按 activityType 二次分发到 FlowAgentContent / KnowledgeRagContent / ReferenceDocContent |
 | `info`      | InfoMessage      | 系统提示                                                                                |

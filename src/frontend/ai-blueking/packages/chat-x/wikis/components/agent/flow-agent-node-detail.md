@@ -17,6 +17,7 @@ relatedComponents:
   - slug: chat-container
     relation: 应用层通过 onCustomTabChange 拉取节点详情并回填
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -108,6 +109,9 @@ sinceVersion: 1.0.0
 
 # FlowAgentNodeDetail FlowAgent 节点详情
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 由 [FlowAgentContent](/components/agent/flow-agent-content) 挂到自定义 Tab。
+
 > **能力域**：Agent 能力
 
 `FlowAgentNodeDetail` 用于展示 FlowAgent 单个节点的配置与输出详情。它通常被 `FlowAgentContent` 通过自定义 Tab 挂载到侧栏，应用层再根据 `messageUid`、`task_id`、`node_id` 拉取真实节点详情并回填到 `data`。
@@ -147,7 +151,7 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import FlowAgentNodeDetail from '@blueking/chat-x/src/components/chat-content/flow-agent-content/flow-agent-node-detail.vue';
+  // FlowAgentNodeDetail 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { NodeDetailData } from '@blueking/chat-x';
 
   const nodeDetailData: Partial<NodeDetailData> = {
@@ -263,7 +267,7 @@ addCustomTab?.({
   label: node.name,
   name: `${task.task_id}|${node.id}|${node.name}`,
   data: {
-    component: BkFlowNodeDetail,
+    component: FlowAgentNodeDetail,
     messageUid: props.messageUid,
     props: {
       loading: true,

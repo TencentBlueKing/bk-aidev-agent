@@ -161,7 +161,7 @@ AI 消息内容渲染的核心基础组件，集成代码高亮、LaTeX 公式�
 ## 组件结构与渲染流程
 
 ```
-props.content → completeMarkdownSyntax → md.parse → groupTokens → groupedTokens
+props.content → completeMarkdownSyntax().content → md.parse → groupTokens → groupedTokens
                                                                           │
                           div.ai-markdown-content（contain: layout style）
                                         │
@@ -333,7 +333,7 @@ props.content → completeMarkdownSyntax → md.parse → groupTokens → groupe
 | 机制              | 实现                                                                                         | 作用                                                       |
 | ----------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | 极速节流          | `parseMarkdownContent` throttle **5ms**，leading + trailing                                  | 每 5ms 最多解析一次，兼顾实时性与性能                      |
-| Markdown 语法补全 | `completeMarkdownSyntax(content)`                                                            | 自动闭合代码块、行内代码、粗斜体、删除线、链接等未完成语法 |
+| Markdown 语法补全 | `completeMarkdownSyntax(content).content`                                                    | 自动闭合代码块、行内代码、粗斜体、删除线、链接等未完成语法 |
 | LaTeX 防闪烁      | `isIncomplete=true` 且已有渲染结果 → **跳过本次更新**                                        | 正在输入 LaTeX 命令时保持上一帧，避免闪白                  |
 | 子组件 throttle   | `handleTokenMounted` throttle 100ms                                                          | 限制子组件挂载后触发的滚动到底部频率                       |
 | CSS contain       | `.ai-markdown-content { contain: layout style }`<br>`.ai-markdown-body { contain: content }` | 限制重排/重绘范围，减少流式渲染的布局开销                  |

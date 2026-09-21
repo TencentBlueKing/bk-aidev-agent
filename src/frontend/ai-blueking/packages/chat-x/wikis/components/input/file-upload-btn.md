@@ -15,6 +15,7 @@ relatedComponents:
   - slug: file-content
     relation: 选中文件常以列表形式展示待发送内容
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -138,6 +139,8 @@ sinceVersion: 1.0.0
 
 > `accept` 仅影响文件选择框的过滤 UI，不做服务端验证，请在 `upload` 回调中自行校验 MIME 类型。
 
+传入 `accept` 后，按钮 tooltip 会在「最多 N 个 / 单个最大 MB」下一行补格式说明：等于 `DEFAULT_UPLOAD_ACCEPT` 时用 `formatDefaultUploadAcceptTip`（分类文案），否则为 `支持格式：{accept}`。缺省 `accept` 时只有数量与大小，不写格式行。这两个工具函数与常量从 `@blueking/chat-x` 的 utils 导出。
+
 ## 自定义图标
 
 通过默认插槽替换上传图标：
@@ -162,7 +165,7 @@ sinceVersion: 1.0.0
 
 | 属性名       | 类型           | 默认值 | 说明                                                                       |
 | ------------ | -------------- | ------ | -------------------------------------------------------------------------- |
-| accept       | `string`       | —      | 文件选择框过滤类型，遵循 `<input accept>` 规范；缺省时不下发，不限制类型 |
+| accept       | `string`       | —      | 文件选择框过滤类型，遵循 `<input accept>` 规范；缺省时不下发、不限制类型，tooltip 也不展示格式行；有值时 tooltip 追加格式说明 |
 | multiple     | `boolean`      | `true` | 声明属性（当前版本未实际绑定到 input，始终多选）                           |
 | tippyOptions | `AITippyProps` | —      | 扩展 tooltip 配置，会与内置配置合并                                        |
 

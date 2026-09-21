@@ -19,6 +19,7 @@ relatedComponents:
   - slug: file-icon
     relation: artifact 类型委托给 FileIcon 按后缀推导
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

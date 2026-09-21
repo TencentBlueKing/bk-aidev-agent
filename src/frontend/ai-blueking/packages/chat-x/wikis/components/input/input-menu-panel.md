@@ -18,6 +18,7 @@ relatedComponents:
   - slug: resource-icon
     relation: 条目左侧图标由 ResourceIcon 渲染
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

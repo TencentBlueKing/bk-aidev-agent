@@ -13,6 +13,7 @@ relatedComponents:
   - slug: delete-tool
     relation: 删除确认场景内嵌为触发控件
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -34,6 +35,10 @@ sinceVersion: 1.0.0
 </script>
 
 # ToolBtn 工具按钮
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [MessageTools](/components/feedback/message-tools) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { ToolBtn } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/ai-buttons/tool-btn/tool-btn.vue`
@@ -142,7 +147,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 </template>
 
 <script setup lang="ts">
-  import { ToolBtn } from '@blueking/chat-x';
+  // ToolBtn 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { IToolBtn } from '@blueking/chat-x';
 
   const handleClick = (data: IToolBtn & { active?: boolean; disabled?: boolean }, event: MouseEvent) => {
@@ -191,7 +196,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { ToolBtn } from '@blueking/chat-x';
+  // ToolBtn 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { IToolBtn } from '@blueking/chat-x';
 
   const activeId = ref<string | null>(null);
@@ -290,7 +295,8 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 </template>
 
 <script setup lang="ts">
-  import { ToolBtn, DownloadIcon } from '@blueking/chat-x';
+  import { DownloadIcon } from '@blueking/chat-x';
+  // ToolBtn 未从包入口导出
 </script>
 ```
 
@@ -312,7 +318,8 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 </template>
 
 <script setup lang="ts">
-  import { ToolBtn, FullScreenIcon } from '@blueking/chat-x';
+  import { FullScreenIcon } from '@blueking/chat-x';
+  // ToolBtn 未从包入口导出
 
   const handleFullScreen = () => {
     // 进入全屏逻辑

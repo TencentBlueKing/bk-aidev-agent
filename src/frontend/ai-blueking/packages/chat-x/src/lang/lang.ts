@@ -172,7 +172,7 @@ export const lang = {
   确定: 'Confirm',
   '上传文件，最多支持 {count} 个，单个最大 {size}MB': 'Upload file, up to {count} files, max {size}MB each',
   '支持格式：{formats}': 'Supported formats: {formats}',
-  '有 {count} 个文件因格式不支持未添加': '{count} files were not added because the format is not supported',
+  '有 {count} 个文件因格式不支持未添加': '{count} file(s) were not added because the format is not supported',
   '你好，我是小鲸': 'Hello, I am BlueKing AI Bot',
   清空搜索: 'Clear Search',
   搜索结果为空: 'Search Result is Empty',
@@ -204,8 +204,6 @@ export const lang = {
   '文件上传中，请稍候': 'Uploading files, please wait',
   '存在上传失败的文件，请删除后重试': 'Remove failed uploads before sending',
   上传失败: 'Upload failed',
-  '有 {count} 个文件因格式不支持未添加':
-    '{count} file(s) were not added because the format is not supported',
 } as const;
 
 export const t = (key: keyof typeof lang) => {

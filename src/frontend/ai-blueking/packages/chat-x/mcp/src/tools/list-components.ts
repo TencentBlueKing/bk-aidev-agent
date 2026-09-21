@@ -134,6 +134,7 @@ function mapEntry(entry: DocEntry) {
     description: entry.description,
     aiSummary: entry.aiSummary,
     ...(entry.domain !== undefined ? { domain: entry.domain } : {}),
+    ...(entry.exportStatus !== undefined ? { exportStatus: entry.exportStatus } : {}),
   };
 }
 

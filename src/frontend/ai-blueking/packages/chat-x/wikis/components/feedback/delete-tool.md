@@ -13,6 +13,7 @@ relatedComponents:
   - slug: message-tools
     relation: delete 工具 id 时自动采用本组件
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -28,6 +29,11 @@ sinceVersion: 1.0.0
 </script>
 
 # DeleteTool 删除确认按钮
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [MessageTools](/components/feedback/message-tools)（`id === 'delete'`）使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { DeleteTool } from '@blueking/chat-x'`。
+
 ## 源码事实
 
 - **源码位置**：`src/components/message-tools/delete-tool/delete-tool.vue`
@@ -73,7 +79,7 @@ disabled=true 时：Tippy onShow 返回 false，弹窗不打开
 </template>
 
 <script setup lang="ts">
-  import { DeleteTool } from '@blueking/chat-x';
+  // DeleteTool 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const handleConfirm = () => {
     console.log('用户确认删除，执行删除操作');

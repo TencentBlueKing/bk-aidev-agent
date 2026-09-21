@@ -19,6 +19,7 @@ relatedComponents:
   - slug: file-artifact-panel
     relation: artifact 标签点击后打开的侧栏预览
 sinceVersion: 0.0.51
+exportStatus: internal
 ---
 
 <script lang="ts" setup>
@@ -34,6 +35,8 @@ sinceVersion: 0.0.51
 </script>
 
 # MentionTag 资源标签
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
 
 > **能力域**：内容渲染
 

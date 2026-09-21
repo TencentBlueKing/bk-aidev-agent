@@ -1142,7 +1142,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### Props
 
-ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection` 和 `messageGroups`），另外新增：
+ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection`、`messageGroups`、`messageToolsTippyOptions`），另外新增：
 
 | 属性名                    | 类型                                                                                     | 默认值    | 说明                                                                                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |

@@ -259,7 +259,8 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import { AnimationText } from '@blueking/chat-x';
+  // AnimationText 未从包入口导出，见内部组件文档
+  // import { useAnimationText } from '@blueking/chat-x' 才是公开 API
 </script>
 ```
 

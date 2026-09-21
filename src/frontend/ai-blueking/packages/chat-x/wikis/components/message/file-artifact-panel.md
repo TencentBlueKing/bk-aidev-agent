@@ -23,6 +23,7 @@ relatedComponents:
   - slug: mention-tag
     relation: 引用后文件以资源标签形态进入输入框
 sinceVersion: 0.0.20
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

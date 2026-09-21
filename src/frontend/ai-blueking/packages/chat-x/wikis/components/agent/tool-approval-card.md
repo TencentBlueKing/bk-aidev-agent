@@ -11,6 +11,7 @@ relatedComponents:
   - slug: interrupt-message
     relation: InterruptMessageRender 按 reason 派发渲染
 sinceVersion: 1.0.0
+exportStatus: internal
 ---
 
 <script lang="ts" setup>

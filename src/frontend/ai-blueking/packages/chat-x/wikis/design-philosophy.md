@@ -45,7 +45,7 @@ AI Agent 收到需求：「添加一个带工具调用的 AI 对话界面」
     │
     ├─ 1. list_components(domain='message') → 找到 MessageContainer、AssistantMessage
     ├─ 2. get_component_doc(slug='assistant-message')
-    │      → aiSummary 告知：需要 toolCalls 字段、搭配 ToolcallRender
+    │      → aiSummary 告知：需要 toolCalls 字段、搭配 ToolCallRender
     │      → relatedComponents 告知：与 message-container 配合使用
     ├─ 3. get_component_doc(slug='chat-container')
     │      → aiSummary 告知：一站式方案，传 messages 即可
@@ -91,8 +91,8 @@ AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 
 | **消息系统** | 「我要展示不同角色消息」 | MessageRender、AssistantMessage、UserMessage、ReasoningMessage、ActivityMessage |
 | **内容渲染** | 「我要渲染富文本」 | ContentRender、MarkdownContent、CodeContent、LatexContent、MermaidContent、AnimationText |
 | **输入交互** | 「我要让用户输入和选择」 | ChatInput、AiSlashInput、ShortcutRender、AiSelection、SelectionFooter |
-| **Agent 能力** | 「我要处理工具调用和中断」 | ToolcallRender、InterruptMessage、ToolApprovalCard、UserQuestionCard、FlowAgentContent |
-| **工具与反馈** | 「我要加消息操作」 | MessageTools、MessageTime、ToolBtn、DeleteTool、UserFeedback、ScrollBtn |
+| **Agent 能力** | 「我要处理工具调用和中断」 | ToolCallRender、InterruptMessageRender、ToolApprovalCard、UserQuestionCard、FlowAgentContent |
+| **工具与反馈** | 「我要加消息操作」 | MessageTools、MessageTime、ToolBtn、DeleteTool、MessageUserFeedback、ScrollBtn |
 | **媒体文件** | 「我要处理图片/文件」 | AiImage、ImagePreview、ImagePreviewGroup、FileContent、ImageContent |
 | **辅助能力** | 「我要理解内部辅助组件」 | ActivityLayout、AiLoading、MessageLoading、HighlightKeyword、VNodeRenderer |
 
