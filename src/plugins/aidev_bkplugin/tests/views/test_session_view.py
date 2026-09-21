@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.services.sandbox_pv_files import IMAGE_DOWNLOAD_URL_EXPIRES_IN
 from django.conf import settings
 
 if not settings.configured:
@@ -30,6 +31,7 @@ agent_config_mod.AgentConfigFetcher = MagicMock()
 sys.modules["aidev_bkplugin.services.agent_config"] = agent_config_mod
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION  # noqa: E402
+from aidev_bkplugin.services import agent_session as agent_session_mod  # noqa: E402
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
 
 
@@ -53,6 +55,9 @@ def _view(view_cls, api):
     """
     view = view_cls()
     view.client = SimpleNamespace(api=api)
+    resource_manager = MagicMock()
+    resource_manager.get_client.return_value = view.client
+    view.get_resource_manager = lambda: resource_manager
     return view
 
 
@@ -172,17 +177,18 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
         call_order.append(("wait", code, run_id)) or True
     )
     api = MagicMock()
-    api.stop_chat_session_content.return_value = {"data": {"stopped": True}}
+    api.stop_chat_session_content.side_effect = lambda **kwargs: (
+        call_order.append(("platform_stop",)) or {"data": {"stopped": True}}
+    )
 
     monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
     monkeypatch.setattr(
-        session_mod.GeneratorStreamingHelper,
+        agent_session_mod.GeneratorStreamingHelper,
         "cancel",
         lambda code, message_handler=None, run_id=None: (
             call_order.append(("cancel", code, message_handler, run_id)) or True
         ),
     )
-    monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
 
     request_data = {"session_code": session_code, **({"run_id": run_id} if run_id else {})}
     response = _view(session_mod.ChatSessionContentViewSet, api).stop(_request(data=request_data))
@@ -190,6 +196,7 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
     assert response.data == {"stopped": True}
     assert call_order == [
         ("clear", session_code, run_id),
+        ("platform_stop",),
         ("cancel", session_code, handler, run_id),
         ("wait", session_code, run_id),
     ]
@@ -243,7 +250,7 @@ def test_create_attaches_image_url_to_user_binary(monkeypatch):
     file_service.get_download_url.assert_called_once_with(
         session_code="s1",
         path="files/角色.png",
-        expires_in=session_mod.IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+        expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
     )
     assert response.data["content"][0]["url"] == "https://cdn/role.png"
 
@@ -345,8 +352,7 @@ def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
     api.stop_chat_session_content.return_value = {"data": {"stopped": True}}
 
     monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
-    monkeypatch.setattr(session_mod.GeneratorStreamingHelper, "cancel", lambda *args, **kwargs: True)
-    monkeypatch.setattr(session_mod.AgentConfigFetcher, "get_info", lambda **kwargs: {"agent_type": "chat"})
+    monkeypatch.setattr(agent_session_mod.GeneratorStreamingHelper, "cancel", lambda *args, **kwargs: True)
 
     view = _view(session_mod.ChatSessionContentViewSet, api)
     response = view.stop(_request(data={"session_code": "session-stop"}))
