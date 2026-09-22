@@ -93,9 +93,21 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
     # 3. 审批完成，构建 agent 并续流
     # 恢复回调落库的父上下文；不要继承轮询线程中可能残留的其他会话 Trace。
     # 上下文覆盖生成器构造和排空，保证延迟发布的恢复事件也关联到审批回调。
+    approval_span_attributes = {
+        "approval.result": approve_result,
+        "agent.session.executor": username,
+    }
+    approved_by = str(approve_info.get("approved_by") or "").strip()
+    if approved_by:
+        approval_span_attributes["approval.approved_by"] = approved_by
     with (
         propagated_trace_context(approve_info.get("approval_trace_context")),
-        recording_span("bkplugin.approval.resume", record_exception=False, use_global_tracer=True),
+        recording_span(
+            "bkplugin.approval.resume",
+            record_exception=False,
+            use_global_tracer=True,
+            attributes=approval_span_attributes,
+        ),
     ):
         _resume_approval(session_code, username, graph_thread_id, interrupts, approve_info)
 

@@ -10,6 +10,8 @@ from typing import Any, Awaitable, Callable
 
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 
+from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
+
 logger = logging.getLogger(__name__)
 
 AUTH_HEADER_KEY = "X-Bkapi-Authorization"
@@ -85,6 +87,8 @@ def apply_http_approver_identity(tools: list[Any] | None, executor_info: dict | 
         tool_name = getattr(tool, "name", "")
         if approval.get("executor_identity") != ExecutorIdentity.APPROVER:
             continue
+        approval["effective_executor_identity"] = ExecutorIdentity.APPROVER
+        approval["approved_by"] = username
         wrapper = find_api_wrapper(tool)
         extra = getattr(wrapper, "_extra", None) if wrapper is not None else None
         if extra is None:
@@ -126,11 +130,31 @@ def make_mcp_approver_interceptor(
     async def interceptor(request: MCPToolCallRequest, handler):
         approved_by = str(ctx.get("approved_by") or "").strip()
         approver_tools = ctx.get("approver_tools") or set()
-        will_switch = bool(approved_by and request.name in approver_tools)
+        tool_name = str(request.name or "")
+        will_switch = bool(approved_by and tool_name in approver_tools)
+        effective_identity = ExecutorIdentity.APPROVER if will_switch else ExecutorIdentity.USER
+        effective_username = (
+            approved_by
+            if will_switch
+            else str((executor_info or {}).get("executor") or "").strip()
+        )
+        span_attributes = {
+            "rpc.system": "mcp",
+            "mcp.operation.name": "tools/call",
+            "mcp.server.name": str(getattr(request, "server_name", "") or ""),
+            "mcp.tool.name": tool_name,
+            "tool.type": "mcp",
+            "executor.identity": effective_identity.value,
+        }
+        if effective_username:
+            span_attributes["executor.username"] = effective_username
+        if will_switch:
+            span_attributes["approval.approved_by"] = approved_by
+            span_attributes["approval.result"] = "approved"
         if approved_by:
             logger.info(
                 "[ToolApproval] MCP interceptor: tool=%s, approved_by=%s, switch=%s, approver_tools=%s",
-                request.name,
+                tool_name,
                 approved_by,
                 will_switch,
                 approver_tools,
@@ -139,6 +163,12 @@ def make_mcp_approver_interceptor(
             headers = dict(request.headers or {})
             headers[AUTH_HEADER_KEY] = build_approver_auth_header(executor_info, approved_by)
             request = request.override(headers=headers)
-        return await handler(request)
+        with recording_span(
+            "mcp.tools.call",
+            kind=CLIENT_SPAN_KIND,
+            use_global_tracer=True,
+            attributes=span_attributes,
+        ):
+            return await handler(request)
 
     return interceptor

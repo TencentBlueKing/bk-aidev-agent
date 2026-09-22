@@ -2,7 +2,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 
@@ -76,6 +76,36 @@ def test_mcp_interceptor_overrides_headers_only_for_approver_tools():
     assert skipped.headers is None
 
 
+def test_mcp_interceptor_records_effective_executor_identity():
+    ctx = make_mcp_identity_ctx()
+    ctx["approver_tools"] = {"echo"}
+    ctx["approved_by"] = "bob"
+    interceptor = make_mcp_approver_interceptor(
+        ctx,
+        {"app_code": "app", "app_secret": "secret", "executor": "alice"},
+    )
+
+    async def handler(request):
+        return request
+
+    with patch("aidev_agent.services.agent.executor_identity.recording_span") as recording_span:
+        recording_span.return_value.__enter__.return_value = MagicMock()
+        asyncio.run(
+            interceptor(MCPToolCallRequest(name="echo", args={}, server_name="srv", headers=None), handler)
+        )
+
+    assert recording_span.call_args.args == ("mcp.tools.call",)
+    attributes = recording_span.call_args.kwargs["attributes"]
+    assert attributes["mcp.server.name"] == "srv"
+    assert attributes["mcp.tool.name"] == "echo"
+    assert attributes["tool.type"] == "mcp"
+    assert attributes["executor.identity"] == "approver"
+    assert attributes["executor.username"] == "bob"
+    assert attributes["approval.approved_by"] == "bob"
+    assert attributes["approval.result"] == "approved"
+    assert "secret" not in str(attributes)
+
+
 def test_collect_approver_tool_names():
     approver = MagicMock(name="weather")
     approver.name = "weather"
@@ -135,3 +165,5 @@ def test_switch_tools_to_approver_identity_updates_shared_ctx():
     agent._switch_tools_to_approver_identity("bob")
     assert ctx["approved_by"] == "bob"
     assert json.loads(extra.header[AUTH_HEADER_KEY])["bk_username"] == "bob"
+    assert tool.metadata["approval"]["effective_executor_identity"] == "approver"
+    assert tool.metadata["approval"]["approved_by"] == "bob"
