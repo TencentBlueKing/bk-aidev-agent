@@ -1263,6 +1263,18 @@ describe('ChatContainer', () => {
 
       expect(getInjectedConfig().timezone?.value).toBeUndefined();
     });
+
+    it('应把 onUpload 与 deleteFile 注入给编辑态输入框复用', () => {
+      const onUpload = vi.fn();
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, onUpload },
+      });
+
+      const config = getInjectedConfig();
+      expect(config.onUpload).toBe(onUpload);
+      config.onDeleteFile?.({ id: 'files/a.pdf' });
+      expect(wrapper.emitted('deleteFile')).toEqual([[{ id: 'files/a.pdf' }]]);
+    });
   });
 
   describe('resizeProps 测试', () => {

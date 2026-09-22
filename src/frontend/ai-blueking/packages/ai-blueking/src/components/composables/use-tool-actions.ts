@@ -282,7 +282,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       await chatBusinessManager.value?.resendMessageWithProperty(
         String(messageId),
         sessionCode,
-        typeof content === 'string' ? content : '',
+        content ?? '',
         mergedProperty,
       );
     } catch (error) {

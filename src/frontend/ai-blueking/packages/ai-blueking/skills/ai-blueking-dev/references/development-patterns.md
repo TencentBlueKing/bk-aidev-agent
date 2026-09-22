@@ -188,6 +188,8 @@ const handleUserShortcutConfirm = async (
 
 ChatInput 支持文件上传功能，传入 `onUpload` 回调后自动显示上传按钮。一次选择多个文件时 `onUpload` 只回调一次并传入 `File[]`。`session.uploadFiles` 会按 `agent.info.agentSdkVersion` 分流：能解析且 `< 2.2.2rc25` 走旧 `upload/{fileName}/`（逐个），否则（含空字符串 / 缺省）走 `pv_files/upload/`（一次请求）。
 
+用户消息编辑态内嵌的 ChatInput 复用 ChatContainer 经 GlobalConfig 下发的 `onUpload` / `deleteFile`，无需再向 UserMessage 透传。原消息回填附件从草稿中移除时不立刻 DELETE；取消编辑时仅清理本次新上传的文件。重发时 `content` 原样交给 `resendMessageWithProperty`（纯文本或 Binary + Text 数组）。编辑态自定义 `#send-icon` 时需消费插槽的 `sendDisabledTip`，否则上传阻塞无禁用/提示。
+
 成功条件：有 `id`（新接口永久身份）或 `download_url`（旧接口 / 新接口图片预览链）。发送 Binary 时应带上 `id`。
 
 上传进行中（附件 `status === pending`）或存在失败附件（`status === error`）时，ChatInput **禁止发送**（点击、Enter、`triggerSendMessage` 均拦截），失败项需用户删除后才能再发。不要把附件 Pending 映射到 `MessageStatus.Pending`，否则发送钮会变成停止生成。

@@ -74,21 +74,32 @@
         :default-upload-files="binaryFiles"
         :menu-sources="globalConfig?.menuSources?.value ?? []"
         :on-send-message="handleSendMessage"
+        :on-upload="globalConfig?.onUpload"
         :support-upload="globalConfig?.supportUpload.value ?? false"
+        @delete-file="handleDraftDeleteFile"
       >
-        <template #send-icon>
+        <template #send-icon="{ sendDisabledTip }">
           <div class="user-edit-footer">
             <Button
               size="small"
               @click="handleCancel"
               >{{ t('取消') }}</Button
             >
-            <Button
-              size="small"
-              theme="primary"
-              @click="handleSave"
-              >{{ t('发送') }}</Button
+            <span
+              v-tippy="{
+                content: sendDisabledTip,
+                onShow: () => Boolean(sendDisabledTip),
+                theme: 'ai-chat-box',
+              }"
             >
+              <Button
+                size="small"
+                theme="primary"
+                :disabled="Boolean(sendDisabledTip)"
+                @click="handleSave"
+                >{{ t('发送') }}</Button
+              >
+            </span>
           </div>
         </template>
       </ChatInput>
@@ -99,6 +110,7 @@
   import { computed, nextTick, shallowRef, useTemplateRef } from 'vue';
 
   import { Button } from 'bkui-vue';
+  import { directive as vTippy } from 'vue-tippy';
 
   import { type InputContent, type TextInputContent, MessageContentType } from '../../../ag-ui/types';
   import { CONST_USER_MESSAGE_MAX_HEIGHT, CONST_USER_MESSAGE_TOOLS } from '../../../common/constants';
@@ -126,6 +138,8 @@
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
 
   import type { UserMessage } from '../../../ag-ui/types/messages';
+
+  import 'tippy.js/dist/tippy.css';
 
   export type UserMessageActionsProps = {
     messageToolsStatus?: MessageToolsStatus;
@@ -248,20 +262,43 @@
     await props.onAction?.(tool);
   };
 
+  /** 本次新选的附件带本地 File；原消息回填只有 id/url，取消编辑后仍属于原消息 */
+  const isNewlySelectedFile = (file: Partial<UploadFile>) => Boolean(file.file);
+
+  const handleDraftDeleteFile = (file: Partial<UploadFile>) => {
+    if (!isNewlySelectedFile(file)) {
+      return;
+    }
+    globalConfig?.onDeleteFile?.(file);
+  };
+
+  const discardDraftUploads = () => {
+    const files = chatInputRef.value?.getUploadFiles?.() ?? [];
+    files.forEach(file => {
+      if (isNewlySelectedFile(file)) {
+        globalConfig?.onDeleteFile?.(file);
+      }
+    });
+  };
+
   /**
    * 处理保存编辑
    * 调用 onAction 传递 edit-confirm 事件和编辑后的内容
    */
   const handleSave = async () => {
-    await chatInputRef.value?.triggerSendMessage?.();
-    isEdit.value = false;
+    const sent = await chatInputRef.value?.triggerSendMessage?.();
+    if (sent) {
+      isEdit.value = false;
+    }
   };
 
   const handleCancel = () => {
+    discardDraftUploads();
     isEdit.value = false;
   };
 
   const handleClose = () => {
+    discardDraftUploads();
     isEdit.value = false;
   };
   /**

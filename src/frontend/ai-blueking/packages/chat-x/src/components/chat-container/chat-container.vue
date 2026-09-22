@@ -461,8 +461,10 @@
     insertMention: item => chatInputRef.value?.insertMention?.(item),
   });
   useGlobalConfig({
-    // 消息编辑态会就地渲染 ChatInput，菜单数据源经此下发，避免逐层透传
+    // 消息编辑态会就地渲染 ChatInput，菜单与上传经此下发，避免逐层透传
     menuSources: resolvedMenuSources,
+    onDeleteFile: file => emits('deleteFile', file),
+    onUpload: props.onUpload,
     size: computed(() => props.size ?? 'small'),
     supportUpload: computed(() => props.supportUpload ?? false),
     timezone: computed(() => props.timezone),

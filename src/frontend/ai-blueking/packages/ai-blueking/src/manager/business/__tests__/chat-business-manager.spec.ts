@@ -321,6 +321,36 @@ describe('ChatBusinessManager', () => {
       );
       expect(manager.isGenerating.value).toBe(true);
     });
+
+    it('should send multimodal content array to agent.chat', async () => {
+      const messages = [
+        { id: '1', role: MessageRole.User, content: 'old content' },
+        { id: '2', role: MessageRole.Assistant, content: 'reply' },
+      ];
+      mocks.mockMessageModule.list = shallowRef(messages);
+      manager = new ChatBusinessManager(
+        mocks.mockAgentModule as any,
+        mocks.mockMessageModule as any,
+        mocks.mockSessionModule as any,
+        mocks.mockEventEmitter,
+      );
+
+      const newContent = [
+        { type: 'binary', id: 'files/a.pdf', filename: 'a.pdf' },
+        { type: 'text', text: 'new content' },
+      ];
+      const newProperty = { quote: 'new quote' };
+      await manager.resendMessageWithProperty('1', 'session-1', newContent as any, newProperty as any);
+
+      expect(mocks.mockAgentModule.chat).toHaveBeenCalledWith(
+        newContent,
+        'session-1',
+        undefined,
+        undefined,
+        newProperty,
+        undefined,
+      );
+    });
   });
 
   describe('stopGeneration', () => {

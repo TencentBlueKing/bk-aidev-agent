@@ -2,10 +2,10 @@
 name: useGlobalConfig
 slug: use-global-config
 category: composable
-description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区、输入框菜单数据源）。
+description: 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区、输入框菜单数据源、编辑态上传/删除回调）。
 aiSummary: >
-  useGlobalConfig 接收 GlobalConfig（含 size?: ComputedRef<AiSizeMode>、supportUpload: ComputedRef<boolean>、timezone?: ComputedRef<string | undefined>、menuSources?: ComputedRef<IInputMenuItem[]>），以 GLOBAL_CONFIG_TOKEN provide 给后代；
-  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size、supportUpload、timezone 与 menuSources；
+  useGlobalConfig 接收 GlobalConfig（含 size、supportUpload、timezone、menuSources、onUpload、onDeleteFile），以 GLOBAL_CONFIG_TOKEN provide 给后代；
+  injectGlobalConfig 在子组件中取出配置，无 Provider 时返回 undefined。ChatContainer 在 setup 中调用 useGlobalConfig 注入 size、supportUpload、timezone、menuSources 以及主输入框同源的 onUpload / onDeleteFile；
   后代组件可通过 injectGlobalConfig 读取配置；字号主题主要通过根节点 data-ai-size 与 CSS 变量生效。
 relatedComponents:
   - slug: chat-container
@@ -138,6 +138,10 @@ export type GlobalConfig = {
   timezone?: ComputedRef<string | undefined>;
   /** 输入框菜单数据源；消息编辑态的内嵌输入框据此渲染 @ / \ 与 + 号菜单 */
   menuSources?: ComputedRef<IInputMenuItem[]>;
+  /** 编辑态内嵌输入框复用主输入框的上传实现 */
+  onUpload?: (files: File[]) => Promise<ChatInputUploadResult | ChatInputUploadResult[]>;
+  /** 取消编辑态草稿里本次新选的附件；与主输入框 `@delete-file` 同源 */
+  onDeleteFile?: (file: Partial<UploadFile>) => void;
 };
 
 export function useGlobalConfig(options: GlobalConfig): {
@@ -145,6 +149,8 @@ export function useGlobalConfig(options: GlobalConfig): {
   supportUpload: ComputedRef<boolean>;
   timezone?: ComputedRef<string | undefined>;
   menuSources?: ComputedRef<IInputMenuItem[]>;
+  onUpload?: GlobalConfig['onUpload'];
+  onDeleteFile?: GlobalConfig['onDeleteFile'];
 };
 
 export function injectGlobalConfig(): GlobalConfig | undefined;
@@ -162,9 +168,10 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 | --------------- | ------------------------------------------------------------------------ |
 | `size`          | 可选。字号主题档位 `normal`（14px）/ `small`（12px），与 `ChatContainer.size` 对齐 |
 | `supportUpload` | 是否支持上传，与根容器 `ChatContainer` 的 `supportUpload` 等展示策略对齐 |
-| `menuSources`   | 可选。输入框菜单数据源，供消息编辑态的内嵌 `ChatInput` 使用 |
-| `timezone`      | 可选。消息时间展示所用的 IANA 时区名，与 `ChatContainer.timezone` 对齐；未配置时 `MessageTime` 按浏览器时区展示 |
 | `menuSources`   | 可选。输入框菜单数据源，与 `ChatInput.menuSources` 同源（`ChatContainer` 传入的是补齐会话产物后的结果）；[UserMessage](../components/message/user-message) 编辑态据此渲染菜单，未配置时编辑态无菜单 |
+| `timezone`      | 可选。消息时间展示所用的 IANA 时区名，与 `ChatContainer.timezone` 对齐；未配置时 `MessageTime` 按浏览器时区展示 |
+| `onUpload`      | 可选。编辑态内嵌 `ChatInput` 复用主输入框的上传回调，类型与 `ChatInput.onUpload` 一致 |
+| `onDeleteFile`  | 可选。编辑态取消/删除本次新选附件时调用，与主输入框 `@delete-file` 同源 |
 
 ### `useGlobalConfig(options)`
 
@@ -173,6 +180,8 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 | `options.size`          | 可选。字号主题档位，建议使用 `computed(() => props.size ?? 'small')` 与根 props 同步 |
 | `options.supportUpload` | 是否支持上传，建议使用 `computed(() => props.supportUpload ?? false)` 与根 props 同步 |
 | `options.timezone`      | 可选。消息时间时区，建议使用 `computed(() => props.timezone)` 与根 props 同步；不设默认值，交由 `MessageTime` 回退浏览器时区 |
+| `options.onUpload`      | 可选。建议传入根容器已有的 `onUpload` prop，供编辑态复用 |
+| `options.onDeleteFile`  | 可选。建议转发根容器 `deleteFile` 事件，供编辑态清理本次新文件 |
 
 - 调用后立即 `provide(GLOBAL_CONFIG_TOKEN, options)`。
 - 必须在具有组件实例上下文的 `setup` 中调用（与 Vue `provide` 要求一致）。
@@ -192,7 +201,7 @@ export function injectGlobalConfig(): GlobalConfig | undefined;
 
 ## 关联组件
 
-- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size`、`supportUpload`、`timezone` 与 `menuSources`
-- [UserMessage](../components/message/user-message) — 编辑态读取 `supportUpload` 与 `menuSources`
+- [ChatContainer](../components/setup/chat-container) — 调用 `useGlobalConfig` 注入 `size`、`supportUpload`、`timezone`、`menuSources` 以及 `onUpload` / `onDeleteFile`
+- [UserMessage](../components/message/user-message) — 编辑态读取 `supportUpload`、`menuSources`、`onUpload` 与 `onDeleteFile`
 - [MessageTime](../components/feedback/message-time) — 读取 `timezone` 展示消息时间
 - [主题配置](../theme/theme) — `data-ai-size` 与 CSS 变量说明

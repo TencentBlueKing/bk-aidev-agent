@@ -233,6 +233,27 @@ describe('useToolActions', () => {
       );
     });
 
+    it('should pass binary content array through to resendMessageWithProperty', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+
+      const { handleUserInputConfirm } = useToolActions(params);
+
+      const message = createMockUserMessage({ id: 'msg-1' });
+      const content = [
+        { type: 'binary', id: 'files/a.pdf', filename: 'a.pdf' },
+        { type: 'text', text: '分析这个文件' },
+      ];
+      await handleUserInputConfirm(message as any, content as any, [] as any);
+
+      expect(params.chatBusinessManager.value!.resendMessageWithProperty).toHaveBeenCalledWith(
+        'msg-1',
+        'session-1',
+        content,
+        undefined,
+      );
+    });
+
     it('should write new docSchema at property top-level and keep extra.cite/command', async () => {
       const params = createParams();
       (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
