@@ -47,6 +47,8 @@ def test_polling_restores_callback_parent_through_lazy_drain(resume_case, monkey
     resumed = next(s for s in exporter.get_finished_spans() if s.name == "bkplugin.approval.resume")
     assert resumed.context.trace_id != worker.get_span_context().trace_id
     assert (resumed.parent.span_id if resumed.parent else None) == (int("2" * 16, 16) if valid else None)
+    assert resumed.attributes["approval.result"] == result
+    assert resumed.attributes["agent.session.executor"] == "author"
     assert seen == [{"traceparent": f"00-{resumed.context.trace_id:032x}-{resumed.context.span_id:016x}-01"}] * 2
 
 
@@ -72,12 +74,21 @@ def test_approval_resume_span_uses_application_service_name(resume_case, monkeyp
     monkeypatch.setattr(
         ApprovalStateHandler,
         "_get_latest_interrupt_record",
-        lambda *_: {"property": {"builtin_property": {"approve_result": "approved"}}},
+        lambda *_: {
+            "property": {
+                "builtin_property": {
+                    "approve_result": "approved",
+                    "approved_by": "bob",
+                }
+            }
+        },
     )
     try:
         approval_resume._approval_resume_worker("session", "author", "thread", [{"id": "approval"}])
         resumed = next(span for span in module_exporter.get_finished_spans() if span.name == "bkplugin.approval.resume")
         assert resumed.resource.attributes["service.name"] == "ai-skill-stag-default"
+        assert resumed.attributes["approval.result"] == "approved"
+        assert resumed.attributes["approval.approved_by"] == "bob"
         assert not any(span.name == "bkplugin.approval.resume" for span in exporter.get_finished_spans())
     finally:
         module_provider.shutdown()
