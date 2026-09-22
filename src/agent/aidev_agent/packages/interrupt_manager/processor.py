@@ -327,6 +327,14 @@ class InterruptProcessor:
                 (r.get("action") for r in unit_results if r.get("action") in ApproveResult.ALL),
                 None,
             )
+            approved_by = next(
+                (
+                    str(r.get("approved_by") or "").strip()
+                    for r in unit_results
+                    if r.get("action") == ApproveResult.APPROVED and r.get("approved_by")
+                ),
+                "",
+            )
             approval_interrupts = [
                 e
                 for r in unit_results
@@ -338,6 +346,7 @@ class InterruptProcessor:
                 ready=True,
                 command=command,
                 approve_result=approve_result,
+                approved_by=approved_by,
                 approval_interrupts=approval_interrupts,
                 ask_user_question_interrupts=ask_user_question_interrupts,
             )

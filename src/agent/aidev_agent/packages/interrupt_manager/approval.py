@@ -475,7 +475,8 @@ class ApprovalStateHandler:
         ``builtin_property`` 平铺到记录顶层。读取按"嵌套优先 + 顶层兜底"处理。
 
         Returns:
-            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None}``。
+            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None,
+            "approved_by": str}``。
             未找到 interrupt 记录或记录尚未写入审批结果时返回 None。
         """
         latest = self._get_latest_interrupt_record(session_code)
@@ -495,15 +496,18 @@ class ApprovalStateHandler:
             )
             return None
         interrupts = self._extract_interrupts_from_content(latest.get("content"))
+        approved_by = str(builtin_property.get("approved_by") or latest.get("approved_by") or "").strip()
         logger.info(
-            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s",
+            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s, approved_by=%s",
             session_code,
             approve_result,
+            approved_by,
         )
         return {
             "approve_result": approve_result,
             "interrupts": interrupts,
             "id": latest.get("id"),
+            "approved_by": approved_by,
         }
 
     def query_approval_info(self, session_code: str) -> Optional[dict]:
@@ -516,7 +520,8 @@ class ApprovalStateHandler:
         2. DB 未写入时回退查询 :meth:`check_resume`，True 则再次 :meth:`fetch_approve_result`。
 
         Returns:
-            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None}``
+            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None,
+            "approved_by": str}``
             或 None（尚未回调）。
         """
         info = self.fetch_approve_result(session_code)
@@ -541,7 +546,8 @@ class ApprovalStateHandler:
                 （含 ``toolCallId``）。
 
         Returns:
-            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None}``
+            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None,
+            "approved_by": str}``
             或 None（该 interrupt 无记录 / 记录未回调终态 → not_ready）。
         """
         if not isinstance(pending_interrupt, dict):
@@ -571,13 +577,21 @@ class ApprovalStateHandler:
                 )
                 return None
             interrupts = self._extract_interrupts_from_content(record.get("content"))
+            approved_by = str(builtin.get("approved_by") or record.get("approved_by") or "").strip()
             logger.info(
-                "[Approval] query_approval_info_for_interrupt: session_code=%s, tool_call_id=%s, approve_result=%s",
+                "[Approval] query_approval_info_for_interrupt: session_code=%s, tool_call_id=%s, "
+                "approve_result=%s, approved_by=%s",
                 session_code,
                 pending_call_id,
                 approve_result,
+                approved_by,
             )
-            return {"approve_result": approve_result, "interrupts": interrupts, "id": record.get("id")}
+            return {
+                "approve_result": approve_result,
+                "interrupts": interrupts,
+                "id": record.get("id"),
+                "approved_by": approved_by,
+            }
         logger.info(
             "[Approval] query_approval_info_for_interrupt: 无该 pending 的记录, session_code=%s, tool_call_id=%s",
             session_code,
@@ -1104,6 +1118,7 @@ class ApprovalHandler:
             {
                 "action": "approved" | "rejected" | "cancelled" | "not_ready",
                 "resume_value": Any | None,   # 经 DB 权威校验后的 resume 值；not_ready 时 None
+                "approved_by": str,            # 审批通过人的用户名
             }
 
         ``action`` 取值对应 D-04 终态（approved/rejected/cancelled 均为「上一单
@@ -1159,7 +1174,11 @@ class ApprovalHandler:
             session_code,
             approve_result,
         )
-        return {"action": action, "resume_value": interrupts}
+        return {
+            "action": action,
+            "resume_value": interrupts,
+            "approved_by": str(info.get("approved_by") or "").strip(),
+        }
 
     def _build_first_run_interrupt(self, target: ApprovalTarget, interrupt_id: str | None = None) -> dict:
         """由 :class:`ApprovalTarget` 构造首跑单格式 payload。

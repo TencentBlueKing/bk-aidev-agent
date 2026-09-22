@@ -141,6 +141,7 @@ class ResumeInputResult:
     interrupt，装配层据此决策（chat 层 D-09 直接构造 SSE 下发卡片）。
 
     - ``approve_result``：首个已终态 approval 单元的 DB 权威 action。
+    - ``approved_by``：审批通过人的用户名，供续流切换下游调用身份。
     - ``approval_interrupts``：DB 权威元素列表（逐元素 hydrate 后）。
     - ``ask_user_question_interrupts``：经 ``filter_ask_user_question_interrupts``
       graph-tasks 源过滤（D-06）。
@@ -153,6 +154,7 @@ class ResumeInputResult:
     #: 未就绪时首个未完成 interrupt
     next_interrupt: Any | None = None
     approve_result: str | None = None
+    approved_by: str | None = None
     approval_interrupts: list[dict] | None = None
     ask_user_question_interrupts: list[dict] | None = None
     #: 场景④ 扩展位（D-15）：协议级 propagated_from 标注位，仅签名不实现
