@@ -211,8 +211,10 @@ class ApiWrapper:
         builtin_fields: dict | None = None,
         extra: dict | None = None,
         timeout: int | None = None,
+        ssl_verify: bool = True,
     ):
         self.session = requests.Session()
+        self.session.verify = ssl_verify
         self._method = http_method
         self._url = url
         self._query = query if query else {}
@@ -428,6 +430,7 @@ def make_structured_tool(
     debug: bool = False,
     builtin_fields: dict | None = None,
     inject_context: bool = True,
+    ssl_verify: bool = True,
 ) -> StructuredTool:
     """根据Tool的ORM定义构建对应的langchain Tool
     注意的是会将嵌套的字段通过`__`打平,例如:
@@ -443,6 +446,7 @@ def make_structured_tool(
         debug: 是否开启调试模式
         builtin_fields: 内置字段，用于渲染模板变量
         inject_context: 是否注入上下文（包括 RunnableConfig 和 State），允许在工具中访问运行时配置和图状态
+        ssl_verify: 是否校验 HTTPS 证书
     """
     default_values: dict[str, dict[str, Any]] = {
         "header": {},
@@ -494,6 +498,7 @@ def make_structured_tool(
         complex_fields=complex_fields,
         builtin_fields=builtin_fields,
         extra=tool.extra,
+        ssl_verify=ssl_verify,
     )
 
     # 如果需要注入上下文（config 和 state），创建一个带注解的wrapper函数
@@ -552,7 +557,11 @@ class McpToolsResult(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-def make_mcp_tools(server_config: dict, username: str | None = None) -> McpToolsResult:
+def make_mcp_tools(
+    server_config: dict,
+    username: str | None = None,
+    ssl_verify: bool = True,
+) -> McpToolsResult:
     """按 MCP 配置装配 LangChain ``StructuredTool`` 列表。
 
     .. deprecated::
@@ -565,6 +574,7 @@ def make_mcp_tools(server_config: dict, username: str | None = None) -> McpTools
     return resource_manager().construct_mcp(
         mcp_config=server_config,
         username=username,
+        ssl_verify=ssl_verify,
     )
 
 

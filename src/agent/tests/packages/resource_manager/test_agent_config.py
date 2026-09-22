@@ -160,6 +160,16 @@ def test_version_passthrough(version):
     assert rm.last_version == version
 
 
+@pytest.mark.parametrize("value, expected", [(None, True), (True, True), (False, False)])
+def test_tool_ssl_verify_from_agent_config(value, expected):
+    """平台缺省时保持校验，显式配置会传入运行时 AgentConfig。"""
+    raw = _build_raw()
+    if value is not None:
+        raw["tool_ssl_verify"] = value
+    cfg = _StubResourceManager(raw_factory=lambda *_: raw).get_agent_config("agent")
+    assert cfg.tool_ssl_verify is expected
+
+
 def test_default_rejection_message_when_kb_unmatched():
     """``rejection_message`` 未传入时由 Pydantic 默认值兜底。"""
     rm = _StubResourceManager()
