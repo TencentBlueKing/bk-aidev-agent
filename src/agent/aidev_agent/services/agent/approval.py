@@ -86,7 +86,8 @@ class ApprovalStateHandler(_ResourceManagedApprovalStateHandler):
         落库的父 trace 载体（企微跨进程续流恢复链路用），缺失时为 None。
 
         Returns:
-            富返回 dict；未找到 interrupt 记录或记录尚未写入审批结果时返回 None。
+            ``{"approve_result": ApproveResultLiteral, "interrupts": list, "id": int|None, "approved_by": str}``。
+            未找到 interrupt 记录或记录尚未写入审批结果时返回 None。
         """
         latest = self._get_latest_interrupt_record(session_code)
         if latest is None:
@@ -105,10 +106,12 @@ class ApprovalStateHandler(_ResourceManagedApprovalStateHandler):
             )
             return None
         interrupts = self._extract_interrupts_from_content(latest.get("content"))
+        approved_by = str(builtin_property.get("approved_by") or latest.get("approved_by") or "").strip()
         logger.info(
-            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s",
+            "[Approval] fetch_approve_result: session_code=%s, approve_result=%s, approved_by=%s",
             session_code,
             approve_result,
+            approved_by,
         )
         return {
             "approve_result": approve_result,
@@ -118,6 +121,7 @@ class ApprovalStateHandler(_ResourceManagedApprovalStateHandler):
             # 回调落库的父 trace 载体（嵌套/平铺经 _extract_builtin_property 统一读取），
             # 插件后台续流经 propagated_trace_context 恢复，保证 trace 回连审批回调
             "approval_trace_context": builtin_property.get("approval_trace_context"),
+            "approved_by": approved_by,
         }
 
     def get_pending_interrupt_context(self, session_code: str) -> dict[str, Any]:
