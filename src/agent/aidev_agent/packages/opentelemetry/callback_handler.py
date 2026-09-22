@@ -1138,6 +1138,27 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             "tool.input": truncate_span_attribute(input_str, self.max_input_attribute_length),
         }
         metadata = metadata or {}
+        approval = metadata.get("approval") or {}
+        if not isinstance(approval, dict):
+            approval = {}
+        effective_identity = str(
+            approval.get("effective_executor_identity")
+            or approval.get("executor_identity")
+            or "user"
+        ).strip()
+        if effective_identity not in {"user", "approver"}:
+            effective_identity = "user"
+        approved_by = str(approval.get("approved_by") or "").strip()
+        session_executor = str(
+            getattr(self._start_execute_kwargs, "executor", None) or ""
+        ).strip()
+        effective_executor = approved_by if effective_identity == "approver" else session_executor
+        attributes["executor.identity"] = effective_identity
+        if effective_executor:
+            attributes["executor.username"] = effective_executor
+        if approved_by and effective_identity == "approver":
+            attributes["approval.approved_by"] = approved_by
+            attributes["approval.result"] = "approved"
         if mcp_name := metadata.get("mcp_name"):
             attributes.update(
                 {
