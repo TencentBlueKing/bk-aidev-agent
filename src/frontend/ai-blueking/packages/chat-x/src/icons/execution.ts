@@ -146,23 +146,6 @@ export const BkFlowSkippedIcon = h(
   ],
 );
 
-export const ExecutionIcon = h(
-  'svg',
-  {
-    ...commonSVGProps,
-    class: {
-      [commonSVGProps.class]: true,
-      'ai-execution-icon': true,
-    },
-  },
-  [
-    h('path', {
-      'fill-rule': 'evenodd',
-      d: 'M512 64A448 448 0 1 1 64 512 448 448 0 0 1 512 64Zm0 64A384 384 0 0 0 128 512 384 384 0 0 0 784 784 384 384 0 0 0 784 240 384 384 0 0 0 512 128ZM448 576V256h64V512H768v64Z',
-    }),
-  ],
-);
-
 export const NodeOutputIcon = h(
   'svg',
   {

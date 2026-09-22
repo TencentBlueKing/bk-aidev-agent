@@ -257,8 +257,6 @@ export interface AIBluekingProps {
   enablePopup?: boolean;
   /** 接口错误时是否自动弹出 Message 提示，默认 true；设为 false 可自行通过 sdk-error 事件处理（统一错误出口控制） */
   errorToast?: boolean;
-  /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
-  executionTabVisible?: boolean;
   /** 自定义 CSS 类名 */
   extCls?: string;
   /** 自定义侧栏内容区渲染 */
@@ -346,7 +344,7 @@ export interface AIBluekingProps {
   beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
   /** 快捷操作过滤函数 */
   shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
-  /** ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
+  /** ResizeLayout 配置（侧栏面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
   resizeProps?: {
     disabled?: boolean;
     initialDivide?: number | string;

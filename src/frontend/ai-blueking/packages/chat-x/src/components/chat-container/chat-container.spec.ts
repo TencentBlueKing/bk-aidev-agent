@@ -73,12 +73,7 @@ const mockMessageGroupsRef = vi.hoisted(() => {
   const { ref: vueRef } = require('vue');
   return vueRef([]) as Ref<MockMessageGroup[]>;
 });
-const mockExecutionGroupsRef = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { ref: vueRef } = require('vue');
-  return vueRef([]) as Ref<unknown[]>;
-});
-/** 供 useMessageGroup mock 注入会话级文件产物，验证 ensureCustomTab 常驻挂载 */
+/** 供 useMessageGroup mock 注入会话级文件产物，验证文件产物 Tab 常驻挂载 */
 const mockSessionArtifactsRef = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref: vueRef } = require('vue');
@@ -172,7 +167,6 @@ vi.mock('../../composables', () => ({
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { computed, shallowRef } = require('vue');
       const messageGroups = mockMessageGroupsRef;
-      const executionGroups = computed(() => mockExecutionGroupsRef.value);
       const pendingApprovalCount = computed(() =>
         _options.messages.value.reduce((count, message) => {
           if (message.role !== MessageRole.Interrupt || message.content?.outcome?.type !== 'interrupt') {
@@ -208,7 +202,6 @@ vi.mock('../../composables', () => ({
       const isAllSelected = computed(() => false);
       return {
         messageGroups,
-        executionGroups,
         sessionArtifacts: computed(() => mockSessionArtifactsRef.value),
         activeUserQuestionInterrupt,
         pendingApprovalCount,
@@ -226,12 +219,29 @@ vi.mock('../../composables', () => ({
 }));
 
 vi.mock('../../composables/use-common', () => ({
+  useCommonTippyInject: () => ({ value: {} }),
   useCommonTippyProvider: vi.fn(),
-  useKeywordProvider: () => ({
-    keyword: { value: '' },
-  }),
   useRenderModeProvider: mockUseRenderModeProvider,
 }));
+
+// 文件产物面板已是侧栏常驻默认 Tab，会在每个用例中渲染，统一以轻量桩替代
+vi.mock('../chat-message/assistant-message/message-artifacts/file-artifact-panel.vue', async () => {
+  const { defineComponent, h, inject } = await import('vue');
+  const { ARTIFACT_PREVIEW_TOKEN } = await import('../../composables/use-artifact-preview');
+  return {
+    default: defineComponent({
+      name: 'FileArtifactPanel',
+      setup() {
+        const preview = inject<{ artifacts?: { value?: Array<{ outputId: string }> } }>(ARTIFACT_PREVIEW_TOKEN);
+        return () =>
+          h('div', {
+            class: 'mock-file-artifact-panel',
+            'data-ids': (preview?.artifacts?.value ?? []).map(file => file.outputId).join(','),
+          });
+      },
+    }),
+  };
+});
 
 vi.mock('../../composables/use-global-config', () => ({
   useGlobalConfig: vi.fn(() => ({
@@ -247,30 +257,25 @@ vi.mock('../../composables/use-custom-tab', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { shallowRef, ref: deepRef, computed, provide } = require('vue');
   const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
-  const EXECUTION_TAB_NAME = 'execution';
   const DEFAULT_TAB_ORDER = 100;
   return {
     CUSTOM_TAB_TOKEN,
     DEFAULT_TAB_ORDER,
-    EXECUTION_TAB_NAME,
     useCustomTabProvider: vi.fn(
       (_options: {
+        defaultTab: { label: string; name: string; order?: number };
         collapsed?: { value: boolean };
-        executionTabVisible?: () => boolean | undefined;
         onTabChange?: (tab: unknown) => void;
       }) => {
-        const EXECUTION_TAB = { closable: false, label: '执行情况', name: EXECUTION_TAB_NAME, order: 0 };
-        const tabs = shallowRef([EXECUTION_TAB]);
-        const selectedTab = deepRef(EXECUTION_TAB);
+        const { defaultTab } = _options;
+        const tabs = shallowRef([defaultTab]);
+        const selectedTab = deepRef(defaultTab);
         // 折叠态由容器以受控 ref 注入，缺省退化为内部状态
         const isCollapse = _options.collapsed ?? shallowRef(true);
 
-        const isExecutionVisible = () => _options.executionTabVisible?.() ?? true;
         const displayTabs = computed(() =>
           tabs.value
-            .filter((tab: { name: string; visible?: boolean }) =>
-              tab.name === EXECUTION_TAB_NAME ? isExecutionVisible() : tab.visible !== false,
-            )
+            .filter((tab: { visible?: boolean }) => tab.visible !== false)
             .slice()
             .sort(
               (a: { order?: number }, b: { order?: number }) =>
@@ -291,12 +296,12 @@ vi.mock('../../composables/use-custom-tab', () => {
           tabs.value = tabs.value.filter((t: { name: string }) => t.name !== name);
         });
         const selectCustomTab = vi.fn((tab: unknown) => {
-          selectedTab.value = tab ?? EXECUTION_TAB;
+          selectedTab.value = tab ?? defaultTab;
           _options.onTabChange?.(tab);
         });
         const resetCustomTab = vi.fn(() => {
-          tabs.value = [EXECUTION_TAB];
-          selectedTab.value = EXECUTION_TAB;
+          tabs.value = [defaultTab];
+          selectedTab.value = defaultTab;
           isCollapse.value = true;
         });
 
@@ -333,12 +338,6 @@ vi.mock('../../icons', () => ({
     name: 'CloseIcon',
     setup() {
       return () => h('span', { class: 'mock-close-icon' });
-    },
-  }),
-  ExecutionIcon: defineComponent({
-    name: 'ExecutionIcon',
-    setup() {
-      return () => h('span', { class: 'mock-execution-icon' });
     },
   }),
   FullScreenIcon: defineComponent({
@@ -520,17 +519,6 @@ vi.mock('../message-loading/message-loading.vue', () => ({
   }),
 }));
 
-vi.mock('../execution-summary/execution-summary.vue', () => ({
-  default: defineComponent({
-    name: 'ExecutionSummary',
-    props: { messageGroups: Array },
-    emits: ['locateMessageGroup', 'updateKeyword'],
-    setup() {
-      return () => h('div', { class: 'mock-execution-summary' });
-    },
-  }),
-}));
-
 vi.mock('../selection-footer/selection-footer.vue', () => ({
   default: defineComponent({
     name: 'SelectionFooter',
@@ -648,7 +636,6 @@ describe('ChatContainer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockMessageGroupsRef.value = [];
-    mockExecutionGroupsRef.value = [];
     mockSessionArtifactsRef.value = [];
     mockUploadedArtifactsRef.value = [];
   });
@@ -666,9 +653,9 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-chat-container').exists()).toBe(true);
     });
 
-    it('执行摘要 Tab 图标尺寸应为 16px', () => {
+    it('侧栏 Tab 图标尺寸应为 16px', () => {
       const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chat-container.vue'), 'utf-8');
-      expect(source).toMatch(/\.ai-execution-summary-icon[\s\S]*?width:\s*16px/);
+      expect(source).toMatch(/\.ai-side-tab-icon[\s\S]*?width:\s*16px/);
     });
 
     it('chatLoading 为 true 时应该显示 loading', () => {
@@ -1040,7 +1027,6 @@ describe('ChatContainer', () => {
   describe('折叠测试', () => {
     it('不应再渲染内置折叠按钮（展开/收起交由外部）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages },
@@ -1148,7 +1134,6 @@ describe('ChatContainer', () => {
   describe('全屏测试', () => {
     it('侧栏展开时应渲染全屏按钮区域', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages },
@@ -1348,7 +1333,6 @@ describe('ChatContainer', () => {
 
     it('展开侧栏时 collapseChange 应携带数字型 initialDivide 作为宽度', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: {
@@ -1434,14 +1418,13 @@ describe('ChatContainer', () => {
 
     it('renderMode 为 Share 时应开放侧栏 Tab（只读查看）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages, renderMode: RenderMode.Share },
       });
       await nextTick();
 
-      // 展开侧栏后，Tab（节点详情/证据/执行情况面板）在分享态可见
+      // 展开侧栏后，Tab（节点详情/证据/文件产物面板）在分享态可见
       getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
       await nextTick();
       expect(wrapper.find('.ai-chat-container-tab').exists()).toBe(true);
@@ -1449,7 +1432,6 @@ describe('ChatContainer', () => {
 
     it('renderMode 为 Share 时不再强制 ai-is-collapse（展开后侧栏展开）', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages, renderMode: RenderMode.Share },
@@ -1502,8 +1484,7 @@ describe('ChatContainer', () => {
       expect(getMountProps(wrapper).getSideTabRenderComponent).toBe(getSideTabRenderComponent);
     });
 
-    it('无 executionGroups、无产物时 asideCollapsed 为 false 仍应展开并渲染 Tab', async () => {
-      mockExecutionGroupsRef.value = [];
+    it('无产物时 asideCollapsed 为 false 仍应展开并渲染 Tab', async () => {
       mockSessionArtifactsRef.value = [];
     mockUploadedArtifactsRef.value = [];
 
@@ -1516,8 +1497,7 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.ai-chat-container-resize-layout').classes()).not.toContain('ai-is-collapse');
     });
 
-    it('executionGroups 变空时不应调用 resetCustomTab', async () => {
-      mockExecutionGroupsRef.value = [{ id: 'group-1' }];
+    it('会话内容变化时不应调用 resetCustomTab', async () => {
 
       wrapper = mount(ChatContainer, {
         props: {
@@ -1536,7 +1516,7 @@ describe('ChatContainer', () => {
       };
       providerApi.resetCustomTab.mockClear();
 
-      mockExecutionGroupsRef.value = [];
+      mockMessageGroupsRef.value = [];
       await nextTick();
 
       expect(providerApi.resetCustomTab).not.toHaveBeenCalled();
@@ -1585,48 +1565,49 @@ describe('ChatContainer', () => {
       const file = { name: 'report.pdf', outputId: 'files/report.pdf', size: 3, type: 'pdf' };
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, asideCollapsed: false },
-        global: { stubs: { FileArtifactPanel: defineComponent({
-          name: 'FileArtifactPanel', props: ['artifacts', 'activeId'], render: () => h('div'),
-        }) } },
       });
-      getChatContainerExposed(wrapper).selectCustomTab({ name: 'file-artifact', label: '文件产物' });
+      // 默认选中态已是「文件产物」Tab（含 data.component），不要再用残缺对象覆盖
       mockUploadedArtifactsRef.value = [file];
       await nextTick();
-      const panel = wrapper.findComponent({ name: 'FileArtifactPanel' });
-      expect(panel.props('artifacts')).toEqual([file]);
+      const panel = wrapper.find('.mock-file-artifact-panel');
+      expect(panel.attributes('data-ids')).toBe(file.outputId);
 
       mockSessionArtifactsRef.value = [file];
       await nextTick();
-      expect(panel.props('artifacts')).toEqual([file]);
+      expect(wrapper.find('.mock-file-artifact-panel').attributes('data-ids')).toBe(file.outputId);
       mockUploadedArtifactsRef.value = [];
       await nextTick();
-      expect(panel.props('artifacts')).toEqual([file]);
+      expect(wrapper.find('.mock-file-artifact-panel').attributes('data-ids')).toBe(file.outputId);
       mockSessionArtifactsRef.value = [];
       await nextTick();
-      expect(panel.props('artifacts')).toEqual([]);
+      expect(wrapper.find('.mock-file-artifact-panel').attributes('data-ids')).toBe('');
     });
 
-    it('无文件产物时也应常驻挂上文件产物 Tab', async () => {
+    it('无文件产物时文件产物 Tab 仍作为常驻默认 Tab 挂上', async () => {
       wrapper = mount(ChatContainer, {
         props: defaultProps,
       });
       await nextTick();
 
+      expect(vi.mocked(useCustomTabProvider)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultTab: expect.objectContaining({
+            name: 'file-artifact',
+            closable: false,
+            order: -1,
+            loadOnSelect: false,
+          }),
+        }),
+      );
+
       const providerApi = vi.mocked(useCustomTabProvider).mock.results.at(-1)?.value as {
-        ensureCustomTab: ReturnType<typeof vi.fn>;
         tabs: { value: { name: string }[] };
       };
-
-      expect(providerApi.ensureCustomTab).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'file-artifact', closable: false, order: -1 }),
-      );
       expect(providerApi.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
     });
 
-    it('有 sessionArtifacts 时应 ensureCustomTab 挂上文件产物且不展开', async () => {
+    it('有 sessionArtifacts 时文件产物 Tab 已在默认 Tab 中且不主动展开', async () => {
       mockSessionArtifactsRef.value = [{ name: '报告.pdf', outputId: 'out-1', size: 1024, type: 'pdf' }];
-      // 文件产物 Tab 常驻挂上；展开/选中由 useCustomTab 自身规则负责（本用例 mock 只验挂载与不展开）
-      mockExecutionGroupsRef.value = [{ messages: [{ id: 't1' }], type: MessageRole.Tool, uid: 'exec-1' }];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, messages: [createUserMessage('1', 'Hello')] },
@@ -1635,14 +1616,10 @@ describe('ChatContainer', () => {
 
       const providerApi = vi.mocked(useCustomTabProvider).mock.results.at(-1)?.value as {
         addCustomTab: ReturnType<typeof vi.fn>;
-        ensureCustomTab: ReturnType<typeof vi.fn>;
         isCollapse: { value: boolean };
         tabs: { value: { name: string }[] };
       };
 
-      expect(providerApi.ensureCustomTab).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'file-artifact', closable: false, order: -1 }),
-      );
       expect(providerApi.addCustomTab).not.toHaveBeenCalled();
       expect(providerApi.tabs.value.some(tab => tab.name === 'file-artifact')).toBe(true);
       expect(providerApi.isCollapse.value).toBe(true);

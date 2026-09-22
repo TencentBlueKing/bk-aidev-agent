@@ -372,7 +372,6 @@ function sidebarComponents() {
         { text: 'UserQuestionChoice 选择题', link: 'agent/user-question-choice' },
         { text: 'UserQuestionAnsweredCard 回答回显', link: 'agent/user-question-answered-card' },
         { text: 'UserQuestionOption 问题选项', link: 'agent/user-question-option' },
-        { text: 'ExecutionSummary 执行摘要', link: 'agent/execution-summary' },
         { text: 'FlowAgentContent 执行内容（内部）', link: 'agent/flow-agent-content' },
         { text: 'FlowAgentNodeDetail 节点详情（内部）', link: 'agent/flow-agent-node-detail' },
         { text: 'KnowledgeRagContent 知识召回（内部）', link: 'agent/knowledge-rag-content' },

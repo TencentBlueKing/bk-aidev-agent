@@ -90,8 +90,13 @@ const createArtifact = (overrides: Partial<SessionArtifact> = {}): SessionArtifa
   ...overrides,
 });
 
-const createPreviewContext = (overrides: Record<string, unknown> = {}) => ({
-  activeArtifactId: ref(''),
+const createPreviewContext = (
+  artifacts: SessionArtifact[] = [],
+  activeId = '',
+  overrides: Record<string, unknown> = {},
+) => ({
+  activeArtifactId: ref(activeId),
+  artifacts: computed(() => artifacts),
   canResolveArtifactUrl: computed(() => true),
   openPreview: vi.fn(),
   resolveArtifactUrls: vi.fn().mockResolvedValue({
@@ -102,11 +107,24 @@ const createPreviewContext = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const mountPanel = (props: { activeId: string; artifacts: SessionArtifact[] }, previewCtx?: unknown) =>
-  mount(FileArtifactPanel, {
-    global: previewCtx ? { provide: { [ARTIFACT_PREVIEW_TOKEN]: previewCtx } } : {},
-    props,
-  });
+const mountPanel = (
+  options: { activeId: string; artifacts: SessionArtifact[] },
+  previewOverrides?: Record<string, unknown>,
+  extraProvide: Record<symbol, unknown> = {},
+) => {
+  const previewCtx = createPreviewContext(options.artifacts, options.activeId, previewOverrides);
+  return {
+    previewCtx,
+    wrapper: mount(FileArtifactPanel, {
+      global: {
+        provide: {
+          [ARTIFACT_PREVIEW_TOKEN]: previewCtx,
+          ...extraProvide,
+        },
+      },
+    }),
+  };
+};
 
 describe('FileArtifactPanel', () => {
   let wrapper: VueWrapper;
@@ -124,7 +142,7 @@ describe('FileArtifactPanel', () => {
       createArtifact({ outputId: 'a', name: '文档.pdf' }),
       createArtifact({ outputId: 'b', name: '统计.xlsx' }),
     ];
-    wrapper = mountPanel({ activeId: '', artifacts });
+    wrapper = mountPanel({ activeId: '', artifacts }).wrapper;
 
     expect(wrapper.findAll('.ai-artifact-file-card.is-list').length).toBe(2);
     expect(wrapper.find('.ai-file-artifact-panel-list-title').text()).toContain('2');
@@ -132,20 +150,21 @@ describe('FileArtifactPanel', () => {
 
   it('命中文件的列表项应带 is-active 态', () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mountPanel({ activeId: artifacts[1].outputId, artifacts });
+    wrapper = mountPanel({ activeId: artifacts[1].outputId, artifacts }).wrapper;
 
     const items = wrapper.findAll('.ai-artifact-file-card.is-list');
     expect(items[0].classes()).not.toContain('is-active');
     expect(items[1].classes()).toContain('is-active');
   });
 
-  it('点击其它文件项应 emit select', async () => {
+  it('点击其它文件项应写入命中态', async () => {
     const artifacts = [createArtifact({ outputId: 'a' }), createArtifact({ outputId: 'b' })];
-    wrapper = mountPanel({ activeId: artifacts[0].outputId, artifacts });
+    const mounted = mountPanel({ activeId: artifacts[0].outputId, artifacts });
+    wrapper = mounted.wrapper;
 
     await wrapper.findAll('.ai-artifact-file-card.is-list')[1].trigger('click');
 
-    expect(wrapper.emitted('select')?.[0]).toEqual([artifacts[1].outputId]);
+    expect(mounted.previewCtx.setActiveArtifactId).toHaveBeenCalledWith(artifacts[1].outputId);
   });
 
   it('搜索应过滤文件列表', async () => {
@@ -153,7 +172,7 @@ describe('FileArtifactPanel', () => {
       createArtifact({ outputId: 'a', name: '运维文档.pdf' }),
       createArtifact({ outputId: 'b', name: '统计.xlsx' }),
     ];
-    wrapper = mountPanel({ activeId: '', artifacts });
+    wrapper = mountPanel({ activeId: '', artifacts }).wrapper;
 
     await wrapper.find('.mock-input').setValue('统计');
 
@@ -164,7 +183,10 @@ describe('FileArtifactPanel', () => {
 
   it('未传 onArtifactClick 时预览区应展示无数据', async () => {
     const artifact = createArtifact();
-    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] });
+    wrapper = mountPanel(
+      { activeId: artifact.outputId, artifacts: [artifact] },
+      { canResolveArtifactUrl: computed(() => false) },
+    ).wrapper;
     await flushPromises();
 
     expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
@@ -179,10 +201,7 @@ describe('FileArtifactPanel', () => {
       preview_url: 'https://example.com/x.pdf',
     });
     const artifact = createArtifact({ type: 'pdf' });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
     await flushPromises();
 
     const iframe = wrapper.find('.ai-artifact-url-iframe-preview');
@@ -204,10 +223,7 @@ describe('FileArtifactPanel', () => {
       name: 'page.html',
       type: 'html',
     });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
     await flushPromises();
 
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/page.html', expect.any(Object));
@@ -223,10 +239,7 @@ describe('FileArtifactPanel', () => {
       download_url: 'https://example.com/page.html',
     });
     const artifact = createArtifact({ name: 'page.html', type: 'html' });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
     await flushPromises();
 
     expect(wrapper.find('.ai-artifact-preview-host-error').exists()).toBe(true);
@@ -242,10 +255,7 @@ describe('FileArtifactPanel', () => {
         }),
     );
     const artifact = createArtifact();
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
 
     expect(wrapper.find('.mock-message-loading').exists()).toBe(true);
 
@@ -257,14 +267,14 @@ describe('FileArtifactPanel', () => {
   });
 
   it('无命中文件时应展示空态', () => {
-    wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] });
+    wrapper = mountPanel({ activeId: 'not-exist', artifacts: [createArtifact()] }).wrapper;
 
     expect(wrapper.find('.ai-artifact-preview-host-empty').exists()).toBe(true);
   });
 
   it('pdf 等非文本文件不应展示复制按钮', async () => {
     const artifact = createArtifact({ type: 'pdf' });
-    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, createPreviewContext());
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }).wrapper;
     await flushPromises();
 
     expect(wrapper.find('.ai-file-artifact-panel-preview-header-action .ai-copy-icon').exists()).toBe(false);
@@ -280,10 +290,7 @@ describe('FileArtifactPanel', () => {
       download_url: 'https://example.com/app.js',
     });
     const artifact = createArtifact({ name: 'app.js', type: 'js' });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
     await flushPromises();
 
     const copyBtn = wrapper.find('.ai-file-artifact-panel-preview-header-action');
@@ -309,10 +316,7 @@ describe('FileArtifactPanel', () => {
       download_url: 'https://example.com/app.js',
     });
     const artifact = createArtifact({ name: 'app.js', type: 'js' });
-    wrapper = mountPanel(
-      { activeId: artifact.outputId, artifacts: [artifact] },
-      createPreviewContext({ resolveArtifactUrls }),
-    );
+    wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, { resolveArtifactUrls }).wrapper;
     await flushPromises();
 
     const copyBtn = wrapper.find('.ai-file-artifact-panel-preview-header-action');
@@ -326,7 +330,7 @@ describe('FileArtifactPanel', () => {
   });
 
   it('无产物时应展示整块空态，不渲染文件列表与预览区', () => {
-    wrapper = mountPanel({ activeId: '', artifacts: [] });
+    wrapper = mountPanel({ activeId: '', artifacts: [] }).wrapper;
 
     expect(wrapper.find('.ai-file-artifact-panel.is-empty').exists()).toBe(true);
     expect(wrapper.find('.mock-exception').exists()).toBe(true);
@@ -337,7 +341,7 @@ describe('FileArtifactPanel', () => {
   describe('引用到输入框', () => {
     it('无输入框上下文时预览头不展示引用', async () => {
       const artifact = createArtifact({ type: 'pdf' });
-      wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }, createPreviewContext());
+      wrapper = mountPanel({ activeId: artifact.outputId, artifacts: [artifact] }).wrapper;
       await flushPromises();
 
       expect(wrapper.findAll('.ai-file-artifact-panel-preview-header-action')).toHaveLength(1);
@@ -346,15 +350,11 @@ describe('FileArtifactPanel', () => {
     it('有输入框上下文时预览头展示引用，点击后按 outputId 插入', async () => {
       const insertMention = vi.fn();
       const artifact = createArtifact({ type: 'pdf', outputId: 'o1', name: '项目立项书.pdf' });
-      wrapper = mount(FileArtifactPanel, {
-        global: {
-          provide: {
-            [ARTIFACT_PREVIEW_TOKEN]: createPreviewContext(),
-            [INPUT_MENTION_TOKEN]: { insertMention },
-          },
-        },
-        props: { activeId: artifact.outputId, artifacts: [artifact] },
-      });
+      wrapper = mountPanel(
+        { activeId: artifact.outputId, artifacts: [artifact] },
+        undefined,
+        { [INPUT_MENTION_TOKEN]: { insertMention } },
+      ).wrapper;
       await flushPromises();
 
       const actions = wrapper.findAll('.ai-file-artifact-panel-preview-header-action');

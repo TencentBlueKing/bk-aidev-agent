@@ -43,18 +43,9 @@
         </dl>
       </details>
 
-      <label class="flow-side-render-demo__toggle">
-        <input
-          v-model="executionTabVisible"
-          type="checkbox"
-        />
-        <span>展示「执行情况」Tab（<code>executionTabVisible</code>）</span>
-      </label>
-
       <div class="flow-side-render-demo__chat">
         <ChatBot
           :key="chatBotKey"
-          :execution-tab-visible="executionTabVisible"
           :get-side-render-component="getSideRenderComponent"
           :get-side-tab-render-component="getSideTabRenderComponent"
           height="100%"
@@ -96,9 +87,6 @@
   );
 
   const flowAgentUrl = import.meta.env.VITE_FLOW_AGENT_URL || '';
-
-  // 「执行情况」Tab 显隐开关：缺省 true；置 false 后从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭）
-  const executionTabVisible = ref(true);
 
   const builtinHandlers = useSideRenderHandlers({ detailSource: 'builtin' });
   const customHandlers = useSideRenderHandlers({ detailSource: 'custom' });

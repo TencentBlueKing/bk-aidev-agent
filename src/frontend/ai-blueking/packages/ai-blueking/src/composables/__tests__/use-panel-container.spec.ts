@@ -149,11 +149,11 @@ describe('usePanelContainer aside orchestration', () => {
     };
   }
 
-  it('handleExecutionPanelChange should only refresh extraWidth and not expand/collapse', async () => {
+  it('handleAsidePanelChange should only refresh extraWidth and not expand/collapse', async () => {
     const componentManager = createMockComponentManager();
-    const { handleExecutionPanelChange, handleToggleAside } = usePanelContainer(createParams(componentManager));
+    const { handleAsidePanelChange, handleToggleAside } = usePanelContainer(createParams(componentManager));
 
-    handleExecutionPanelChange(false, 600);
+    handleAsidePanelChange(false, 600);
 
     expect(componentManager.expandForSidePanel).not.toHaveBeenCalled();
     expect(componentManager.collapseSidePanel).not.toHaveBeenCalled();

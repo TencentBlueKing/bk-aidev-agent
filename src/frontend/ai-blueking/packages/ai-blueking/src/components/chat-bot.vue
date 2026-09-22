@@ -13,7 +13,6 @@
       v-model:selected-shortcut="selectedShortcut"
       :chat-loading="effectiveChatLoading"
       :common-tippy-options="effectiveTippyOptions"
-      :execution-tab-visible="props.executionTabVisible"
       :get-side-render-component="props.getSideRenderComponent"
       :get-side-tab-render-component="props.getSideTabRenderComponent"
       :message-status="messageStatus"
@@ -45,7 +44,7 @@
       :update-tools="effectiveUpdateTools"
       :user-message-tools="effectiveUserMessageTools"
       :welcome-title="welcomeTitle"
-      @collapse-change="handleExecutionPanelChange"
+      @collapse-change="handleAsidePanelChange"
       @confirm-share="handleConfirmShare"
       @delete-file="handleDeleteFile"
       @delete-shortcut="handleCloseShortcut"
@@ -136,7 +135,6 @@
     url: '',
     enableSelection: false,
     enableModelSelect: true,
-    executionTabVisible: true,
     errorToast: true,
     shareLoading: false,
     autoLoad: true,
@@ -370,9 +368,9 @@
     isStandaloneMode,
   });
 
-  // ==================== 执行情况面板联动 ====================
-  const handleExecutionPanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
-    emit('execution-panel-change', isCollapse, resizeAsideWidth);
+  // ==================== 侧栏面板联动 ====================
+  const handleAsidePanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
+    emit('aside-panel-change', isCollapse, resizeAsideWidth);
   };
 
   // ==================== 自定义 Tab 数据加载 ====================

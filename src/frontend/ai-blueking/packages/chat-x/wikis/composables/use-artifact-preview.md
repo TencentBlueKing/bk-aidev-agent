@@ -137,13 +137,9 @@ const handleCardClick = () => {
 ### 侧栏列表内切换命中文件
 
 ```typescript
-// FileArtifactPanel 列表点击 → emit select(outputId) → 容器调用 setActiveArtifactId
-// 右侧预览由面板内 ArtifactPreviewHost 消费 activeArtifact，自行取链并按类型渲染
-<FileArtifactPanel
-  :active-id="activeArtifactId"
-  :artifacts="sessionArtifacts"
-  @select="setActiveArtifactId"
-/>
+// FileArtifactPanel 从 ARTIFACT_PREVIEW_TOKEN 注入 artifacts / activeArtifactId
+// 列表点击直接 setActiveArtifactId；右侧预览由 ArtifactPreviewHost 自行取链
+<FileArtifactPanel />
 ```
 
 ### 业务侧取链（ChatContainer `onArtifactClick`）

@@ -166,8 +166,8 @@ export const getStateDotFill = (state: ConvergedState): string | undefined => ST
 /**
  * 深拷贝图标 VNode（含 children），并断开 el / anchor。
  * Vue 的 cloneVNode 是浅拷贝：子 VNode 仍与模块级 h() 源节点共享。
- * 主聊天窗与侧边栏「执行情况」会同时挂载两份 FlowAgentContent，
- * 共享的 path.el 会在 patch 时写到其中一份 DOM，导致另一份状态图标停在旧态。
+ * 同一棵树上标题统计与节点行会同时复用模块级图标 VNode，
+ * 共享的 path.el 会在 patch 时写到其中一份 DOM，导致另一处图标停在旧态。
  */
 const cloneIconVNode = (vnode: VNode): VNode => {
   const cloned = cloneVNode(vnode);

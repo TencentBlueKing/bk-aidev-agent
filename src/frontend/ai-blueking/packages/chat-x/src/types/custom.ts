@@ -37,12 +37,14 @@ export type CustomBkFlowTabData = CustomTabData<{
 }>;
 
 export type CustomTab<T extends CustomTabData<Record<string, unknown>>> = {
-  closable?: boolean; // 是否可关闭，缺省 true；执行情况 Tab 强制不可关闭
+  closable?: boolean; // 是否可关闭，缺省 true
   data?: T & { messageUid?: string };
-  icon?: string;
+  icon?: Component; // Tab 标签图标；缺省由容器回退到 NodeTabIcon
   label: string; // 显示标签
+  /** 选中时是否走 onCustomTabChange 拉取数据，缺省 true；自持数据的 Tab（如文件产物）置 false */
+  loadOnSelect?: boolean;
   name: string; // 唯一标识
-  order?: number; // 排序权重，升序，越小越靠前；缺省 100，执行情况默认 0
+  order?: number; // 排序权重，升序，越小越靠前；缺省 100
   visible?: boolean; // 是否在 Tab 栏展示，缺省 true；false 时仍可被程序化选中，但内容不渲染、会自动切到首个可见 Tab
 };
 

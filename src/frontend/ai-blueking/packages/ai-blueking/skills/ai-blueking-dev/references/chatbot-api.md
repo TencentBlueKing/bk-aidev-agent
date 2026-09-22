@@ -33,10 +33,9 @@
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
 | asideCollapsed | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后**严格受控**（内部展开只发 `update:asideCollapsed`）；不传时由 ChatBot 内部自持。侧栏固定从右侧展开，已移除 `placement`。**嵌入模式须业务 Header 提供开关**，见下节 |
-| resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（执行情况侧面板拖拽）        |
+| resizeProps     | `ResizeProps`        | -       | ResizeLayout 配置（侧栏拖拽）        |
 | size            | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | timezone        | `string`             | —       | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatContainer；未配置时按浏览器时区展示 |
-| executionTabVisible | `boolean` | `true` | 「执行情况」Tab 是否展示（与 ChatContainer 一致）；置 `false` 时从 Tab 栏隐藏 |
 | getSideRenderComponent | `GetSideRenderComponent` | - | 自定义侧栏内容区渲染（详见 [side render / custom tabs](integration-patterns.md#侧栏自定义渲染与自定义-tab-side-render--custom-tabs)） |
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染 |
 | onCustomTabChange | `OnCustomTabChange` | -       | 覆盖默认 Flow 节点详情拉取；未传则回退到 `chatHelper.message.getFlowAgentTaskNodeInfo` |
@@ -61,7 +60,7 @@
 | cancel-share      | -                                          | 取消分享                       |
 | request-share     | -                                          | 请求进入分享模式               |
 | agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
-| execution-panel-change | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
+| aside-panel-change | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
 | update:asideCollapsed | `(collapsed: boolean)` | `v-model:asideCollapsed`；受控时内部展开只发此事件 |
 | rename            | `(newName: string, sessionCode: string)`   | 首条消息后 AI 自动重命名成功；第二参为被改名会话编码（切会话后仍会抛，便于业务维护列表） |
 
@@ -194,7 +193,7 @@ interface ResizeProps {
 }
 ```
 
-> `resizeProps` 透传至 `ChatContainer` 内的 `ResizeLayout`，控制执行情况侧面板的拖拽行为。
+> `resizeProps` 透传至 `ChatContainer` 内的 `ResizeLayout`，控制侧栏拖拽行为。
 
 ## 两种模式的区别
 
@@ -292,11 +291,10 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | dropdownMenuConfig | `DropdownMenuConfig` | `{ showRename, showAutoGenerate, showShare }` 均 `true` | Header 更多菜单开关 `{ showAutoGenerate?, showRename?, showShare? }` |
 | errorToast | `boolean` | `true` | 接口错误时是否自动弹 Message 提示；设为 `false` 可自行通过 `@sdk-error` 处理（统一错误出口） |
 | ignoreErrors | `Array<RegExp \| string>` | - | 忽略的接口错误 URL 模式（包含匹配或正则），匹配的错误不弹 toast |
-| executionTabVisible | `boolean` | `true` | 「执行情况」Tab 是否展示（透传 ChatBot，与 ChatContainer 一致）；置 `false` 时从 Tab 栏隐藏 |
 | getSideRenderComponent | `GetSideRenderComponent` | - | 自定义侧栏内容区渲染（透传 ChatBot） |
 | getSideTabRenderComponent | `GetSideTabRenderComponent` | - | 自定义侧栏 Tab 标签渲染（透传 ChatBot） |
 | onCustomTabChange | `OnCustomTabChange` | - | 覆盖默认 Flow 节点详情拉取（透传 ChatBot） |
-| resizeProps | `ResizeProps` | - | 执行情况侧面板拖拽配置 |
+| resizeProps | `ResizeProps` | - | 侧栏拖拽配置 |
 | size | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | timezone | `string` | - | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |

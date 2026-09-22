@@ -97,7 +97,7 @@ exportStatus: internal
 - **重试 / 跳过进行中态**：点击后节点行进入 `is-pending`，按钮组常驻显示（无需 hover）；进行中按钮切换为 loading +「重试中 / 跳过中」，重试与跳过互斥禁用；被阻塞按钮 hover 显示提示（如「任务正在重试中，不可跳过」）；详情不受影响。pending 以 `task_id:node_id:retry` 为键，后端 `retry` 计数变化后自动失效
 - **详情入口联动**：「详情」按钮点击后通过自定义 Tab 挂载 `FlowAgentNodeDetail`
 - **分享态只读查看**：`RenderMode.Share` 下保留耗时、「详情」「有效证据」等只读查看入口，仅隐藏「重试 / 跳过」等交互式 resume 操作
-- **侧栏执行情况面板只读**：侧栏「执行情况」Tab 内经 `ExecutionSummary` 渲染的同一组件同样只保留「详情」，不展示「重试 / 跳过」；面板身份由 `ExecutionSummary` 通过 `EXECUTION_PANEL_TOKEN` 提供，组件以 `useExecutionPanelInject` 读取。因此重试 / 跳过只出现在对话流内的执行情况
+- **分享态只读**：`renderMode === Share` 时不展示「重试 / 跳过」，只保留「详情」。侧栏已不再复用本组件做执行摘要。
 
 ## 状态映射
 
@@ -179,7 +179,7 @@ exportStatus: internal
 
 ## 失败节点重试 / 跳过
 
-失败节点（`convergedState === 'failed'`）且具备对应能力位时，在**对话流内**的执行情况 hover 行尾展示「重试」或「跳过」按钮（侧栏「执行情况」面板与 Share 分享态不展示，见下方显隐条件）。点击后：
+失败节点（`convergedState === 'failed'`）且具备对应能力位时，在对话流 hover 行尾展示「重试」或「跳过」按钮（Share 分享态不展示，见下方显隐条件）。点击后：
 
 1. 节点行添加 `is-pending` class，按钮组常驻显示（设计稿：鼠标移出后仍可见进行中反馈）
 2. 被点击按钮进入 loading +「重试中 / 跳过中」，重试与跳过均禁用（`is-disabled`，置灰色 `#c4c6cc`）
@@ -210,8 +210,8 @@ onInterruptResume?.({
 
 | 按钮 | 显隐条件                              | 进行中表现                         | `operation`          |
 | ---- | ------------------------------------- | ---------------------------------- | ---------------------- |
-| 重试 | 失败态且 `node.retryable === true`；且不在 Share 分享态、不在侧栏「执行情况」面板内 | loading +「重试中」，二者均禁用    | `flow_node_retry`      |
-| 跳过 | 失败态且 `node.skippable === true`；且不在 Share 分享态、不在侧栏「执行情况」面板内 | loading +「跳过中」，二者均禁用    | `flow_node_skip`       |
+| 重试 | 失败态且 `node.retryable === true`；且不在 Share 分享态 | loading +「重试中」，二者均禁用    | `flow_node_retry`      |
+| 跳过 | 失败态且 `node.skippable === true`；且不在 Share 分享态 | loading +「跳过中」，二者均禁用    | `flow_node_skip`       |
 | 详情 | 始终展示（含 Share 分享态与侧栏面板） | 不受 pending 影响                  | —（打开侧栏 Tab，不走 resume） |
 
 行尾操作由内部 composable [`useFlowNodeActions`](/composables/use-flow-node-actions) 聚合为声明式列表，组件层仅遍历渲染；两类只读场景合并为它的 `hideResumeActions` 入参。
@@ -344,7 +344,7 @@ interface BkFlowNode {
 5. **未知状态兜底为 `running`**：`getConvergedState` 对未识别的原始状态统一归为运行中。
 6. **已终止整体覆盖**：判定只看任务 `task_state`（不扫节点）；叶子节点 `state === REVOKED` 使用已终止圆点；`REVOKED` 计入标题栏 / tooltip 统计，与叶子节点同色 `#F55B0E`。
 7. **Share 模式只读查看**：`RenderMode.Share` 下保留节点/任务耗时与「详情」「有效证据」查看入口，仅过滤「重试 / 跳过」等交互式 resume 操作（由 `useFlowNodeActions` 的 `hideResumeActions` 收敛）。
-8. **侧栏「执行情况」面板同为只读**：面板内经 `ExecutionSummary` → `MessageRender` 渲染的本组件不展示「重试 / 跳过」，只保留「详情」；判定来自 `useExecutionPanelInject()`（内部上下文，未从包入口导出；缺省 `false`），与 Share 态一起并入 `hideResumeActions`。因此脱离 `ExecutionSummary` 独立使用组件时，行为与对话流内一致。
+8. **分享态只读**：`hideResumeActions` 仅在 `renderMode === Share` 时为 true，过滤重试 / 跳过，只保留「详情」。
 9. **`onInterruptResume` 透传链路**：`MessageRender` → `ActivityMessage` → `FlowAgentContent`；未传入时重试 / 跳过按钮仍展示但点击无回调。
 10. **pending 自动收敛**：`useFlowNodeActions` 以 `task_id:node_id:retry` 为 pending 键；节点重试再次失败（`retry` +1）后键变化，进行中态自动解除，无需手动清理。
 

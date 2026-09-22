@@ -112,20 +112,18 @@ const createApprovalInterruptMessage = (id: string, status: APPROVAL_STATUS): Me
     },
   }) as Message;
 
-const setupMessageGroup = (messages: Message[], keyword = '', renderMode?: RenderMode) => {
+const setupMessageGroup = (messages: Message[], renderMode?: RenderMode) => {
   const messagesRef = computed(() => messages);
   const selectedUserMessages = deepRef<Message[] | undefined>([]);
-  const keywordRef = shallowRef(keyword);
   const renderModeRef = shallowRef(renderMode);
 
   const result = useMessageGroup({
-    keyword: keywordRef,
     messages: messagesRef,
     renderMode: renderModeRef,
     selectedUserMessages,
   });
 
-  return { ...result, selectedUserMessages, keywordRef, messagesRef, renderModeRef };
+  return { ...result, selectedUserMessages, messagesRef, renderModeRef };
 };
 
 describe('useMessageGroup', () => {
@@ -222,7 +220,7 @@ describe('useMessageGroup', () => {
     });
 
     it('renderMode 为 Share 时末尾为用户消息不应追加 Loading 组', async () => {
-      const { messageGroups } = setupMessageGroup([createUserMessage('1')], '', RenderMode.Share);
+      const { messageGroups } = setupMessageGroup([createUserMessage('1')], RenderMode.Share);
       await nextTick();
 
       expect(messageGroups.value.length).toBe(1);
@@ -301,60 +299,6 @@ describe('useMessageGroup', () => {
       await nextTick();
 
       expect(messageGroups.value[0]?.pause).toBe(true);
-    });
-  });
-
-  describe('executionGroups', () => {
-    it('应该过滤出包含执行消息的组', async () => {
-      const messages: Message[] = [
-        createAssistantMessage('1', 'thinking', {
-          toolCalls: [{ id: 'tc1', type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } }],
-        }),
-        createToolMessage('2', 'tc1'),
-        createUserMessage('3'),
-        createAssistantMessage('4', 'plain response'),
-      ];
-      const { executionGroups } = setupMessageGroup(messages);
-      await nextTick();
-
-      expect(executionGroups.value.length).toBeGreaterThan(0);
-    });
-
-    it('无执行消息时应该返回空', async () => {
-      const messages: Message[] = [createUserMessage('1'), createAssistantMessage('2', 'plain response')];
-      const { executionGroups } = setupMessageGroup(messages);
-      await nextTick();
-
-      expect(executionGroups.value.length).toBe(0);
-    });
-
-    it('应从前一组用户消息中提取 userMessageTitle', async () => {
-      const messages: Message[] = [
-        createUserMessage('1', '帮我分析 Trace 数据'),
-        createAssistantMessage('2', 'thinking', {
-          toolCalls: [{ id: 'tc1', type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } }],
-        }),
-        createToolMessage('3', 'tc1'),
-      ];
-      const { executionGroups } = setupMessageGroup(messages);
-      await nextTick();
-
-      expect(executionGroups.value.length).toBeGreaterThan(0);
-      expect(executionGroups.value[0]?.userMessageTitle).toBe('帮我分析 Trace 数据');
-    });
-
-    it('无前置用户消息时 userMessageTitle 应为数字时间戳', async () => {
-      const messages: Message[] = [
-        createAssistantMessage('1', 'thinking', {
-          toolCalls: [{ id: 'tc1', type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } }],
-        }),
-        createToolMessage('2', 'tc1'),
-      ];
-      const { executionGroups } = setupMessageGroup(messages);
-      await nextTick();
-
-      expect(executionGroups.value.length).toBeGreaterThan(0);
-      expect(typeof executionGroups.value[0]?.userMessageTitle).toBe('number');
     });
   });
 
