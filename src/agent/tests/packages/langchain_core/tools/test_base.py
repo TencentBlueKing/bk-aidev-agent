@@ -203,6 +203,14 @@ def test_make_structured_tool_basic(sample_weather_tool_data):
     assert "query__place" in fields
 
 
+@pytest.mark.parametrize("ssl_verify", [True, False])
+@patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
+def test_make_structured_tool_sets_ssl_verify(mock_session_class, sample_weather_tool_data, ssl_verify):
+    """普通工具请求使用传入的 HTTPS 证书校验策略。"""
+    make_structured_tool(Tool.model_validate(sample_weather_tool_data), ssl_verify=ssl_verify)
+    assert mock_session_class.return_value.verify is ssl_verify
+
+
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
 def test_make_structured_tool_get_request_success(mock_session_class, sample_weather_tool_data):
     """测试 GET 请求成功的场景"""
@@ -576,6 +584,26 @@ def test_make_mcp_tools_propagates_trace_context_to_all_remote_servers(mock_mcp_
     assert client_config["external"]["headers"]["X-Custom"] == "kept"
     assert "headers" not in client_config["local"]
     assert callable(mock_mcp_client_class.call_args_list[0].kwargs["tool_interceptors"][0])
+
+
+@patch("aidev_agent.packages.resource_manager.base.httpx.AsyncClient")
+@patch("aidev_agent.packages.resource_manager.base.MultiServerMCPClient")
+def test_make_mcp_tools_sets_ssl_verify_for_http_transports(mock_mcp_client_class, mock_async_client):
+    """SSE 和 Streamable HTTP MCP 共用传入的 HTTPS 证书校验策略。"""
+    config = {
+        "sse": {"url": "https://example.com/sse", "transport": "sse"},
+        "http": {"url": "https://example.com/mcp", "transport": "streamable_http"},
+        "stdio": {"command": "python", "transport": "stdio"},
+    }
+    mock_mcp_client_class.return_value.get_tools = AsyncMock(return_value=[])
+
+    make_mcp_tools(config, ssl_verify=False)
+
+    client_config = mock_mcp_client_class.call_args.args[0]
+    client_config["sse"]["httpx_client_factory"]()
+    client_config["http"]["httpx_client_factory"]()
+    assert mock_async_client.call_args.kwargs["verify"] is False
+    assert "httpx_client_factory" not in client_config["stdio"]
 
 
 @pytest.mark.asyncio
