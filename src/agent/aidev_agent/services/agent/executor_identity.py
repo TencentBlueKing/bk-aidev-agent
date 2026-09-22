@@ -87,16 +87,27 @@ def apply_http_approver_identity(tools: list[Any] | None, executor_info: dict | 
         tool_name = getattr(tool, "name", "")
         if approval.get("executor_identity") != ExecutorIdentity.APPROVER:
             continue
-        approval["effective_executor_identity"] = ExecutorIdentity.APPROVER
-        approval["approved_by"] = username
         wrapper = find_api_wrapper(tool)
         extra = getattr(wrapper, "_extra", None) if wrapper is not None else None
         if extra is None:
+            # MCP 工具没有 ApiWrapper，实际凭证由 interceptor 在 tools/call 时切换。
+            if (getattr(tool, "metadata", None) or {}).get("mcp_name"):
+                approval["effective_executor_identity"] = ExecutorIdentity.APPROVER
+                approval["approved_by"] = username
+                continue
             logger.warning("[ToolApproval] HTTP 工具 %s 是 approver 身份但找不到 ApiWrapper", tool_name)
             continue
         header = dict(getattr(extra, "header", None) or {})
         header[AUTH_HEADER_KEY] = header_value
         extra.header = header
+        setter = getattr(wrapper, "set_execution_identity", None)
+        if callable(setter):
+            setter(ExecutorIdentity.APPROVER, username)
+        else:
+            wrapper._executor_identity = ExecutorIdentity.APPROVER
+            wrapper._executor_username = username
+        approval["effective_executor_identity"] = ExecutorIdentity.APPROVER
+        approval["approved_by"] = username
         switched += 1
         logger.info(
             "[ToolApproval] HTTP 已切换审批人身份: tool=%s, bk_username=%s, has_app_code=%s, has_app_secret=%s",

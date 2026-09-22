@@ -517,10 +517,10 @@ class BaseResourceManager(abc.ABC):
         operation = getattr(client.api, operation_name)
         result = operation(path_params={"tool_code": tool_code}, **kwargs)
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
+        resolved_username = username or self.username or (executor_info or {}).get("executor") or ""
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
             # 归一化用户名来源：显式 username > self.username；
-            resolved_username = username or self.username or None
             app_code = (executor_info or {}).get("app_code") or self.app_code
             app_secret = (executor_info or {}).get("app_secret") or self.app_secret
             access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(resolved_username)
@@ -545,8 +545,8 @@ class BaseResourceManager(abc.ABC):
                 f"has_access_token={bool(access_token)}, "
                 f"username={resolved_username or ''}"
             )
-            return make_structured_tool(tool)
-        return make_structured_tool(Tool.model_validate(result["data"]))
+            return make_structured_tool(tool, executor_username=resolved_username)
+        return make_structured_tool(Tool.model_validate(result["data"]), executor_username=resolved_username)
 
     def construct_mcp(
         self,

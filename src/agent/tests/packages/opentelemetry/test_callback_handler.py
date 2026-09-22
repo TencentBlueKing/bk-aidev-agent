@@ -692,6 +692,36 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["executor.identity"] == "user"
         assert span.attributes["executor.username"] == "alice"
 
+    def test_missing_approved_by_does_not_claim_approver_execution(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        recorder = MagicMock()
+        handler = BkAidevAgentCallbackHandler(
+            tracer=tracer,
+            start_execute_kwargs=MagicMock(executor="alice"),
+            metric_recorder=recorder,
+        )
+        run_id = uuid4()
+
+        asyncio.run(
+            handler.on_tool_start(
+                serialized={"name": "get_ticket"},
+                input_str="{}",
+                run_id=run_id,
+                metadata={
+                    "tool_code": "get_ticket",
+                    "approval": {"executor_identity": "approver"},
+                },
+            )
+        )
+        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
+
+        span = exporter.get_finished_spans()[0]
+        assert span.attributes["executor.identity"] == "user"
+        assert span.attributes["executor.configured_identity"] == "approver"
+        assert span.attributes["executor.username"] == "alice"
+        assert "approval.approved_by" not in span.attributes
+        assert recorder.record_active_tool.call_args_list[0].args[1]["executor.identity"] == "user"
+
     def test_rag_retrieval_span_attributes(self, tracer_and_exporter):
         """测试 rag.retrieval span 包含 rag.knowledge_bases 和 rag.knowledge_items 属性"""
         tracer, exporter = tracer_and_exporter
