@@ -80,6 +80,7 @@
             :chat-helper="chatHelper"
             :enable-model-select="props.enableModelSelect"
             :error-toast="false"
+            :execution-tab-visible="props.executionTabVisible"
             :get-side-render-component="props.getSideRenderComponent"
             :get-side-tab-render-component="props.getSideTabRenderComponent"
             :hello-text="props.helloText"
@@ -106,7 +107,7 @@
             @cancel-share="handleCancelShare"
             @confirm-share="(messages: Message[], source) => handleConfirmShare(messages, source)"
             @error="(err: Error) => handleError(err)"
-            @aside-panel-change="handleAsidePanelChange"
+            @execution-panel-change="handleExecutionPanelChange"
             @receive-end="handleReceiveEnd"
             @receive-start="handleReceiveStart"
             @receive-text="handleReceiveText"
@@ -260,7 +261,7 @@
     handleResizeStop,
     handleToggleCompression,
     handleCompressionChange,
-    handleAsidePanelChange,
+    handleExecutionPanelChange,
     handleToggleAside,
     handleAsideCollapsedUpdate,
     asideCollapsed,

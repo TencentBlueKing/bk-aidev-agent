@@ -280,7 +280,7 @@ await chatBotRef.value.sendShortcut(command, selectedText);
 
 ---
 
-## 侧栏面板问题
+## 执行情况侧面板问题
 
 ### Q: 如何关闭或自定义模型选择？
 
@@ -301,7 +301,7 @@ await agent.getLlms();
 await agent.chat(input, sessionCode, undefined, undefined, property, 'hy3-preview');
 ```
 
-### Q: 如何控制侧栏拖拽行为？
+### Q: 如何控制执行情况侧面板的拖拽行为？
 
 **A**: 通过 `resizeProps` 配置，该属性从 `AIBlueking` → `ChatBot` → `ChatContainer` 全链路透传至 `ResizeLayout`：
 

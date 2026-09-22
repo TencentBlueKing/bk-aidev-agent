@@ -100,8 +100,8 @@ export function usePanelContainer(params: UsePanelContainerParams) {
     componentManager.setCompressed(compressed);
   };
 
-  // ==================== 侧栏面板联动 ====================
-  const handleAsidePanelChange = (_isCollapse: boolean, resizeAsideWidth?: number) => {
+  // ==================== 执行面板联动 ====================
+  const handleExecutionPanelChange = (_isCollapse: boolean, resizeAsideWidth?: number) => {
     extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth ?? extraWidth);
   };
 
@@ -245,7 +245,7 @@ export function usePanelContainer(params: UsePanelContainerParams) {
     handleResizeStop,
     handleToggleCompression,
     handleCompressionChange,
-    handleAsidePanelChange,
+    handleExecutionPanelChange,
     handleToggleAside,
     handleAsideCollapsedUpdate,
     asideCollapsed,

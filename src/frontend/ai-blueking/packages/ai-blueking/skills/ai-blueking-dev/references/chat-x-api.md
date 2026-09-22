@@ -8,7 +8,7 @@
 
 - `export *`：`ag-ui/types`、`common`、`components`、`composables`、`directives`、`edix`、`icons`、`lang/lang`、`plugins`、`types`、`utils`
 - **对外组件**：见 `src/components/index.ts`（下文「组件导入」完整列表）
-- **未从 `composables/index.ts` 再导出的内部能力**：如 `composables/use-common.ts`（`useRenderModeProvider` 等）需深路径引用，一般不写入应用侧文档
+- **未从 `composables/index.ts` 再导出的内部能力**：如 `composables/use-common.ts`（`useKeywordProvider` 等）需深路径引用，一般不写入应用侧文档
 
 ---
 
@@ -30,7 +30,8 @@ import {
   AiSelection,
   ModelSelector,
 
-  // 消息工具 / 预览等
+  // 消息工具 / 执行摘要 / 预览等
+  ExecutionSummary,
   HighlightKeyword,
   MessageLoading,
   MessageTools,
@@ -120,7 +121,7 @@ import {
 
 | 来源 | 主要字段 | 说明 |
 |------|-----------|------|
-| ChatContainerProps | `chatLoading?`、`commonTippyOptions?`（原样透传；仅全屏态强制把 `appendTo` 改为全屏容器，未传时不注入 `appendTo`，各浮层沿用自身默认挂载点）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
+| ChatContainerProps | `chatLoading?`、`commonTippyOptions?`（原样透传；仅全屏态强制把 `appendTo` 改为全屏容器，未传时不注入 `appendTo`，各浮层沿用自身默认挂载点）、`executionTabVisible?`（默认 `true`）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、侧栏渲染 |
 | ChatInputProps | 同 [ChatInput](#chatinput-聊天输入框) | 内部透传 `ChatInput` |
 | MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`userMessageTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools`/`userMessageTools` 与内置工具按 id 合并 |
 
@@ -329,6 +330,7 @@ useMessageGroup(options: {
 ```typescript
 const {
   messageGroups,               // 分组后的 MessageGroup[]
+  executionGroups,             // 执行情况（工具调用 / flow-agent）分组
   activeUserQuestionInterrupt, // 最近一条待响应的 UserQuestion 中断（供 chat-input 上方浮层渲染）
   pendingApprovalCount,        // 待审批（AIDev 第三方）中断数量
   pendingApprovalTipText,      // 待审批提示文案
@@ -452,6 +454,7 @@ const {
 
 | 组件 | 用途 |
 |------|------|
+| ExecutionSummary | 执行情况摘要 Tab 内容 |
 | HighlightKeyword | 关键词高亮 |
 | MessageLoading | 加载动画 |
 | MessageTools | 消息工具条（内置 `CONST_MESSAGE_TOOLS` + `CONST_UPDATE_TOOLS`；`#prepend` / `#append` 可嵌入 `MessageTime`） |
@@ -804,7 +807,7 @@ Provider 返回 / provide 的滚动能力：
 >
 > 自动选择行为是为了避免首屏渲染、切换会话等场景下容器从 `scrollTop = 0` 开始做长距离平滑滚动，产生「从头滚到尾」的动画。`MessageContainer` 另在 `onMounted` 时调用 `jumpToBottom()` 直接定位，消除历史消息渲染期间的顶部闪烁。
 
-> **未从 `composables/index.ts` 再导出**（需深路径引用，一般不写入应用侧）：`composables/use-common.ts` 里的 `useRenderModeProvider` / `useRenderModeInject` / `useCommonTippyProvider` 等 RenderMode / tippy provide-inject 能力。
+> **未从 `composables/index.ts` 再导出**（需深路径引用，一般不写入应用侧）：`composables/use-common.ts` 里的 `useRenderModeProvider` / `useRenderModeInject` / `useKeywordProvider` / `useCommonTippyProvider` 等 RenderMode / 关键词 / tippy provide-inject 能力。
 
 ---
 

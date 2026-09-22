@@ -30,6 +30,7 @@ export const defaultProps = {
   draggable: true,
   enableChatSession: true,
   enableModelSelect: true,
+  executionTabVisible: true,
 
   // 渲染模式
   renderMode: RenderMode.Chat as RenderMode,
