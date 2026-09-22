@@ -233,6 +233,41 @@ def test_make_structured_tool_get_request_success(mock_session_class, sample_wea
     assert call_args[1]["params"]["place"] == "深圳"
 
 
+@patch("aidev_agent.packages.langchain_core.tools.base.recording_span")
+@patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
+def test_make_structured_tool_records_http_transport_identity(
+    mock_session_class,
+    recording_span,
+    sample_weather_tool_data,
+):
+    mock_response = Mock()
+    mock_response.json.return_value = {"status": "success"}
+    mock_response.headers.get.return_value = "application/json"
+    mock_response.raise_for_status = Mock()
+
+    mock_session = Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_class.return_value = mock_session
+    recording_span.return_value.__enter__.return_value = MagicMock()
+
+    tool = Tool.model_validate(sample_weather_tool_data)
+    structured_tool = make_structured_tool(
+        tool,
+        executor_identity="approver",
+        executor_username="bob",
+    )
+
+    assert structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"}) == {"status": "success"}
+    assert recording_span.call_args.args == ("http.tool.call",)
+    attributes = recording_span.call_args.kwargs["attributes"]
+    assert attributes["tool.type"] == "http_api"
+    assert attributes["tool.transport"] == "http"
+    assert attributes["tool.code"] == "weather-query"
+    assert attributes["executor.identity"] == "approver"
+    assert attributes["executor.username"] == "bob"
+    assert "X-Bkapi-Authorization" not in str(attributes)
+
+
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
 def test_make_structured_tool_post_request_success(mock_session_class, sample_post_tool_data):
     """测试 POST 请求成功的场景"""
