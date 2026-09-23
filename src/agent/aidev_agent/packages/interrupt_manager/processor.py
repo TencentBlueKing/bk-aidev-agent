@@ -298,29 +298,62 @@ class InterruptProcessor:
         """
         chat_history = chat_history or []
         terminal_ids = terminal_interrupt_ids_from_messages(chat_history)  # D-12 终态判定底层
+        pending_interrupts = self._collect_interrupts(tasks)
         next_interrupt: Any | None = None
         all_complete = True
-        for task in tasks or []:
-            for intr in getattr(task, "interrupts", None) or []:
-                intr_id = interrupt_id_of(intr)
-                if intr_id is None:
-                    # 无法定位 id 的 pending：保守视为未完成（无法判定已终态）
-                    if next_interrupt is None:
-                        next_interrupt = intr
-                        all_complete = False
-                    continue
-                if str(intr_id) not in terminal_ids:
-                    if next_interrupt is None:
-                        next_interrupt = intr
-                        all_complete = False
-                    break
-            if next_interrupt is not None:
-                break
+        for intr in pending_interrupts:
+            intr_id = interrupt_id_of(intr)
+            if intr_id is None:
+                # 无法定位 id 的 pending：保守视为未完成（无法判定已终态）
+                if next_interrupt is None:
+                    next_interrupt = intr
+                    all_complete = False
+                continue
+            if str(intr_id) not in terminal_ids:
+                if next_interrupt is None:
+                    next_interrupt = intr
+                    all_complete = False
 
         if next_interrupt is None and all_complete:
             # 全完成：DB 权威 hydrate → Command + 回放三字段（D-06）
             unit_results = self._aggregate_resume_status(tasks, session_code, thread_id)
+            unready_index = next(
+                (
+                    index
+                    for index, result in enumerate(unit_results)
+                    if not self._is_resume_status_ready(result)
+                ),
+                None,
+            )
+            if unready_index is not None or len(unit_results) != len(pending_interrupts):
+                # chat_history 的终态只说明卡片已结束，不能替代 DB 权威 resume
+                # value。缺少精确匹配的终态值时禁止构造空 Command，保持中断等待
+                # 下一次审批回调续流。
+                logger.warning(
+                    "[InterruptProcessor] resume 未拿到全部 pending 的 DB 权威值，"
+                    "保持中断: session_code=%s, pending=%d, results=%d",
+                    session_code,
+                    len(pending_interrupts),
+                    len(unit_results),
+                )
+                return ResumeInputResult(
+                    ready=False,
+                    next_interrupt=(
+                        pending_interrupts[unready_index]
+                        if unready_index is not None and unready_index < len(pending_interrupts)
+                        else (pending_interrupts[0] if pending_interrupts else None)
+                    ),
+                )
             resume_values = self._unified_resume_values(unit_results, None)
+            if not resume_values:
+                logger.warning(
+                    "[InterruptProcessor] resume 没有可消费的权威值，保持中断: session_code=%s",
+                    session_code,
+                )
+                return ResumeInputResult(
+                    ready=False,
+                    next_interrupt=pending_interrupts[0] if pending_interrupts else None,
+                )
             command = self.build_command_resume(tasks, resume_values)
             # 回放 approve_result：取首个已终态 approval 单元的 DB 权威 action
             approve_result = next(
@@ -363,6 +396,14 @@ class InterruptProcessor:
             # （terminal-first 顺序下已答卡不得抢占首个活跃 pending 的建单名额）。
             self.dispatch_interrupts(tasks, ctx, terminal_ids=terminal_ids)
         return ResumeInputResult(ready=False, next_interrupt=next_interrupt)
+
+    @staticmethod
+    def _is_resume_status_ready(result: Any) -> bool:
+        """判断单个 pending 是否拿到可消费的 DB 权威 resume 值。"""
+        if not isinstance(result, dict):
+            return False
+        action = result.get("action")
+        return (action in ApproveResult.ALL or action == "resolved") and bool(result.get("resume_value"))
 
     @staticmethod
     def _extract_trailing_interrupt_messages(chat_history: list[Any]) -> dict[str, list]:
@@ -680,9 +721,10 @@ class InterruptProcessor:
             handler = self._handlers.get(self._reason_of(pending))
             if handler is None:
                 logger.warning(
-                    "[InterruptProcessor] 无 reason=%s 的 handler，跳过聚合门禁（保守不计入就绪）",
+                    "[InterruptProcessor] 无 reason=%s 的 handler，当前 pending 保持未就绪",
                     self._reason_of(pending),
                 )
+                unit_results.append({"action": "not_ready", "resume_value": None})
                 continue
             unit_results.append(
                 handler.query_resume_status(
