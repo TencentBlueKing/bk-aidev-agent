@@ -1,6 +1,6 @@
 [project]
 name = "aidev-bkplugin"
-version = "3.0.0rc56"
+version = "2.4.0"
 description = "AiDev Agent Bkplugin builtin functions"
 readme = "readme.md"
 requires-python = "<3.12,>=3.11"
