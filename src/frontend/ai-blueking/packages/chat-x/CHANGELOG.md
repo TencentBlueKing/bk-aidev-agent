@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.2 (2026-09-22)
+## 2026-09-23 15:32:02
 
 下线侧栏内建「执行情况」Tab。对话流标题栏的执行统计保留。侧栏常驻默认 Tab 改由容器注入，`ChatContainer` 使用「文件产物」。
 
@@ -16,7 +16,13 @@
 - 侧栏 Tab 的图标与内容改由 Tab 自身的 `icon`、`data.component` 提供，容器不再按 `name === 'file-artifact'` 特判。`FileArtifactPanel` 从 `ARTIFACT_PREVIEW_TOKEN` 读取产物列表与命中态。
 - 对话流 FlowAgent 标题栏「执行情况：成功 N / …」保留；失败节点的重试 / 跳过仍只出现在对话流，分享态只读。
 
-## 2.4.1 (2026-09-22)
+## 2026-09-23 10:41:54
+
+### Breaking Changes
+
+- `FunctionCall.type` 重命名为 `function_type`，避免与 `ToolCall.type` 冲突。取值仍为 `'function' | 'mcp' | 'skill'`；不填时仍按 `mcpName` 兼容判定为 MCP。
+
+## 2026-09-22 23:59:59
 
 ### Breaking Changes
 
@@ -48,7 +54,7 @@
 - 输入框菜单不再被外层容器 `overflow` 裁切或盖住。
 - 展开模型选择器时同步收起输入框菜单。
 
-## 0.0.52-beta.1 (2026-09-03)
+## 0.0.52-beta.1 (2026-09-03 11:56:52)
 
 输入区资源引用能力重构：`/` `@` `\` 与左下角 `+` 共用统一菜单；选中资源以 Mention 标签插入，发送后可还原、编辑可回填；会话产物支持从消息卡片 / 侧栏引用进输入框。
 

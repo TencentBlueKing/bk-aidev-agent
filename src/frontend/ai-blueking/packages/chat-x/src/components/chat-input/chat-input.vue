@@ -116,7 +116,10 @@
               </slot>
             </template>
             <template #send-icon>
-              <slot name="send-icon" />
+              <slot
+                name="send-icon"
+                :send-disabled-tip="effectiveSendDisabledTip"
+              />
             </template>
           </InputAttachment>
         </div>
@@ -390,10 +393,10 @@
     const doc: TagSchema = Array.isArray(props.modelValue) ? props.modelValue : [];
     return appendArtifactTags(doc, uploadedArtifacts.value);
   };
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (): Promise<boolean> => {
     try {
       if (effectiveSendDisabledTip.value) {
-        return;
+        return false;
       }
       aiSlashInputRef.value?.cleanup?.();
       let content: undefined | UserMessage['content'] = undefined;
@@ -423,8 +426,10 @@
       }
       props.onSendMessage?.(content, buildSendDocSchema());
       uploadFiles.value = [];
+      return true;
     } catch (error) {
       console.error(error);
+      return false;
     }
   };
   const handleKeyDown = (event: KeyboardEvent & KeyboardPayload) => {
@@ -639,8 +644,10 @@
   const insertMention = (item: IInputMenuItem) => {
     aiSlashInputRef.value?.appendMention?.(item);
   };
+  const getUploadFiles = (): Partial<UploadFile>[] => uploadFiles.value.slice();
   defineExpose({
     focus,
+    getUploadFiles,
     insertMention,
     triggerSendMessage: handleSendMessage,
     uploadedArtifacts,

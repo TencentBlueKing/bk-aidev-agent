@@ -4,7 +4,7 @@ AI 小鲸 v2.0 提供了完整的消息分享能力，支持用户选择对话�
 
 ## ChatBot 独立模式
 
-在 `ChatBot` 独立使用时，内置了完整的分享流程，开箱即用。
+在 `ChatBot` 独立使用时，内置了完整的分享流程，开箱即用。从某条 AI 回复点「分享」会进入选择模式并默认勾选当前轮次；Header / `enterShareMode()` 进入时不预选。
 
 ### 分享流程
 
@@ -82,8 +82,8 @@ const onCancelShare = () => {
 
 ### 分享入口
 
-1. **Header 下拉菜单**：通过 Header 的「更多」菜单中的「分享」选项触发
-2. **消息工具栏**：每条消息右侧的工具栏中的「分享」按钮
+1. **Header 下拉菜单**：通过 Header 的「更多」菜单中的「分享」选项触发，进入空选择
+2. **消息工具栏**：每条 AI 回复工具栏中的「分享」按钮；进入选择模式后默认勾选当前轮次（用户问题 + 对应回复）
 
 ### 使用方法
 
@@ -221,7 +221,7 @@ const cancelShare = () => {
 
 | 事件 | 参数 | 说明 |
 |------|------|------|
-| `request-share` | — | 用户从消息工具栏点击分享按钮，请求进入选择模式 |
+| `request-share` | — | 用户从消息工具栏点击分享按钮，请求进入选择模式（默认勾选当前轮次） |
 | `confirm-share` | `messages: Message[], source?: IToolBtn` | 用户确认分享/多选；`source` 为触发按钮（内置分享为 `share` 或空，自定义 `triggerSelection` 为对应工具）。仅内置分享会走 ShareBusinessManager |
 | `cancel-share` | — | 用户取消分享，退出选择模式 |
 | `share-messages` | `messageIds: string[]` | （AIBlueking）分享完成，携带分享的消息 ID 列表 |

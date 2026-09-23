@@ -1248,6 +1248,18 @@ describe('ChatContainer', () => {
 
       expect(getInjectedConfig().timezone?.value).toBeUndefined();
     });
+
+    it('应把 onUpload 与 deleteFile 注入给编辑态输入框复用', () => {
+      const onUpload = vi.fn();
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, onUpload },
+      });
+
+      const config = getInjectedConfig();
+      expect(config.onUpload).toBe(onUpload);
+      config.onDeleteFile?.({ id: 'files/a.pdf' });
+      expect(wrapper.emitted('deleteFile')).toEqual([[{ id: 'files/a.pdf' }]]);
+    });
   });
 
   describe('resizeProps 测试', () => {
@@ -1655,6 +1667,26 @@ describe('ChatContainer', () => {
       await nextTick();
 
       expect(wrapper.find('.mock-selection-footer').exists()).toBe(true);
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('selectedUserMessages')).toEqual([]);
+    });
+
+    it('点击某条回复的 share 应默认勾选该轮用户消息', async () => {
+      const userMessage = createUserMessage('1', 'Hello');
+      const assistantMessage = createAssistantMessage('2', 'Hi');
+      mockMessageGroupsRef.value = [
+        { messages: [userMessage], type: MessageRole.User, uid: 'group-user-1' },
+        { messages: [assistantMessage], type: MessageRole.Assistant, uid: 'group-assistant-2' },
+      ];
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+
+      await getAgentAction()({ id: 'share' }, [assistantMessage]);
+      await nextTick();
+
+      expect(wrapper.find('.mock-selection-footer').exists()).toBe(true);
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('selectedUserMessages')).toEqual([
+        userMessage,
+      ]);
     });
 
     it('普通工具（无 triggerSelection）不应进入多选态且应调用 onAgentAction', async () => {

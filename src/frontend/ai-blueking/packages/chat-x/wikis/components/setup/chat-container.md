@@ -917,7 +917,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 分享模式
 
-点击消息工具栏的「分享」按钮后进入分享模式，底部出现 `SelectionFooter` 操作栏：
+点击消息工具栏的「分享」按钮后进入分享模式，并默认勾选当前轮次；底部出现 `SelectionFooter` 操作栏：
 
 ```vue
 <template>
@@ -1002,7 +1002,7 @@ ai-chat-container（:data-ai-size="size"）
 **分享流程**：
 
 1. 用户点击消息工具栏中的「分享」按钮（或任意 `triggerSelection: true` 的自定义按钮）
-2. 进入多选模式，用户勾选要分享的消息
+2. 进入多选模式，并默认勾选当前轮次（用户问题 + 对应回复）；`enterShareMode()` 进入时不预选
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
 4. 确认后触发 `confirmShare` 事件，携带选中的消息列表与触发按钮对象（`source`）
 
@@ -1014,7 +1014,7 @@ ai-chat-container（:data-ai-size="size"）
 
 **2. 资源引用入口**：容器通过 [useInputMention](/composables/use-input-mention) 提供 `insertMention`，消息区的文件卡片与侧栏产物面板因此能直接把文件「@ 进输入框」，无需逐层透传输入框实例。没有输入框的场景（`Share` 只读态）自动不显示引用按钮。
 
-**3. 编辑态菜单下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」项。
+**3. 编辑态菜单与上传下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」项。主输入框的 `onUpload` 与 `deleteFile` 一并注入，编辑态新选文件会走同一套 upload / DELETE，无需再向 `UserMessage` 透传。
 
 ```vue
 <template>
@@ -1206,7 +1206,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加自定义 Tab |
 | removeCustomTab | `(tabName: string) => void` | 移除自定义 Tab |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab |
-| enterShareMode  | `() => void`                | 手动进入分享多选模式 |
+| enterShareMode  | `() => void`                | 手动进入分享多选模式（不预选消息） |
 | exitShareMode   | `() => void`                | 退出分享多选模式，并清空已选消息 |
 
 ## 渲染模式

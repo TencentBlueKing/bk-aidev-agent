@@ -777,13 +777,15 @@ ChatBot 在独立模式下内置了完整的分享功能，**无需额外代码*
 <ChatBot url="/api/" @error="handleError" />
 ```
 
-内部流程（由 `useShareSelection` composable + `useToolActions` composable 协作）：
+内部流程（由 `ChatContainer` 进入多选态，独立模式确认时走 `useShareSelection`）：
 
-1. 用户点击消息工具栏的「分享」→ `useToolActions` 设置 `internalEnableSelection = true`
-2. MessageContainer 显示 Checkbox，用户勾选消息
+1. 用户点击某条回复工具栏的「分享」（或 `triggerSelection` 自定义按钮）→ `ChatContainer` 进入多选态，并默认勾选该轮用户消息（助手组勾选框同步亮起）
+2. MessageContainer 显示 Checkbox；当前轮次已勾选，用户可再勾选其他消息
 3. 用户点击「确定」→ `useShareSelection` 创建 `ShareBusinessManager` 实例，调用 `shareMessages()`
 4. 拼接分享链接、复制到剪贴板、Toast 提示
 5. 自动退出选择模式
+
+Header「分享会话」或 `enterShareMode()` 进入多选态时不预选，需用户自行勾选。
 
 如果需要监听分享事件（如埋点），仍可监听 `request-share`、`confirm-share`、`cancel-share`。
 

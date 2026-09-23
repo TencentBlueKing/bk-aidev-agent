@@ -178,6 +178,38 @@ describe('use-global-config', () => {
       expect(injected?.timezone?.value).toBe('Asia/Shanghai');
       wrapper.unmount();
     });
+
+    it('应透传 onUpload / onDeleteFile 给后代', async () => {
+      const onUpload = vi.fn();
+      const onDeleteFile = vi.fn();
+      const supportUpload = computed(() => true);
+      let injected: ReturnType<typeof injectGlobalConfig> | undefined;
+
+      const Child = defineComponent({
+        setup() {
+          injected = injectGlobalConfig();
+          return {};
+        },
+        render() {
+          return h('div');
+        },
+      });
+      const Parent = defineComponent({
+        setup() {
+          useGlobalConfig({ supportUpload, onUpload, onDeleteFile });
+          return {};
+        },
+        render() {
+          return h(Child);
+        },
+      });
+
+      const wrapper = mount(Parent);
+      await nextTick();
+      expect(injected?.onUpload).toBe(onUpload);
+      expect(injected?.onDeleteFile).toBe(onDeleteFile);
+      wrapper.unmount();
+    });
   });
 
   describe('injectGlobalConfig', () => {

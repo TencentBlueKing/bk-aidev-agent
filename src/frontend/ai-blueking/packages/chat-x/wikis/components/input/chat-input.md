@@ -115,7 +115,7 @@ ai-chat-input-container（padding: 0 16px 16px）
                 └── slot#send-icon（默认：发送 / 停止图标）
 ```
 
-> `slot#attachment` 只替换快捷指令区，`AddMenuBtn` 在其外部，使用该插槽不会移除 + 号。`slot#send-icon` 只替换图标，点击逻辑与按钮样式仍由组件控制。
+> `slot#attachment` 只替换快捷指令区，`AddMenuBtn` 在其外部，使用该插槽不会移除 + 号。`slot#send-icon` 替换发送区；未传入时仍用默认发送 / 停止图标。自定义该插槽时需自行处理禁用，作用域参数 `sendDisabledTip` 为上传中 / 失败等拦截文案。
 
 ## 基础用法
 
@@ -708,7 +708,7 @@ const defaultFiles: UploadFile[] = [
 | files          | `{ files: Partial<UploadFile>[] }`                               | 文件预览区                                               |
 | attachment     | -                                                                | 底部快捷指令区，`AddMenuBtn` 在其左侧，不受此插槽影响    |
 | model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined }` | 发送按钮左侧模型选择区，默认渲染 `ModelSelector`         |
-| send-icon      | -                                                                | 发送按钮内图标，点击逻辑与样式仍由组件控制               |
+| send-icon      | `{ sendDisabledTip?: string }`                                   | 替换发送区；自定义时需自行处理禁用，拦截文案见 `sendDisabledTip` |
 
 ### Expose
 
@@ -718,7 +718,8 @@ const defaultFiles: UploadFile[] = [
 | ------------------ | --------------------------------- | ------------------------------------------------ |
 | focus              | `() => void`                      | 聚焦编辑器并把光标置于末尾                       |
 | insertMention      | `(item: IInputMenuItem) => void`  | 把条目以标签形式追加到文档末尾（不依赖当前光标） |
-| triggerSendMessage | `() => void`                      | 手动触发发送逻辑                                 |
+| getUploadFiles     | `() => Partial<UploadFile>[]`     | 当前待发送附件快照（编辑态取消时据此清理本次新文件） |
+| triggerSendMessage | `() => Promise<boolean>`          | 手动触发发送；真正发出返回 `true`，上传中/失败拦截返回 `false` |
 | uploadedArtifacts  | `AIFileInfo[]`                    | 已上传且带 `outputId` 的附件列表（只读）         |
 
 ## 键盘快捷键

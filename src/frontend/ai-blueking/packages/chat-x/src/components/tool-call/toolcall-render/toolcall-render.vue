@@ -83,10 +83,10 @@
   /** 既非成功也非失败时统一视为进行中，与旧 default 分支行为保持一致 */
   const isPending = computed(() => !isSuccess.value && !isError.value);
 
-  /** 优先取 function.type；旧数据无 type 时按 mcpName 兼容判定为 MCP */
+  /** 优先取 function.function_type；旧数据无 function_type 时按 mcpName 兼容判定为 MCP */
   const callType = computed(() => {
     const fn = props.toolCall?.function;
-    return fn?.type ?? (fn?.mcpName ? 'mcp' : 'function');
+    return fn?.function_type ?? (fn?.mcpName ? 'mcp' : 'function');
   });
 
   /** 结束态前缀：Skill 用「读取」，工具 / MCP 仍用「调用」 */

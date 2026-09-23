@@ -111,7 +111,7 @@ export type FunctionCall = {
   mcpName?: string;
   name: string;
   /** 调用类型；function或者不填代表函数调用，mcp 代表 MCP 调用，skill 代表 Skill 加载调用*/
-  type?: FunctionCallType;
+  function_type?: FunctionCallType;
 };
 
 export type FunctionCallType = 'function' | 'mcp' | 'skill';

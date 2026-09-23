@@ -41,6 +41,7 @@ vi.mock('bkui-vue', () => ({
     props: {
       size: { type: String, default: 'medium' },
       theme: { type: String, default: 'default' },
+      disabled: { type: Boolean, default: false },
     },
     emits: ['click'],
     setup(props, { slots, emit }) {
@@ -49,7 +50,10 @@ vi.mock('bkui-vue', () => ({
           'button',
           {
             class: ['mock-button', `mock-button-${props.theme}`],
-            onClick: () => emit('click'),
+            disabled: props.disabled,
+            onClick: () => {
+              if (!props.disabled) emit('click');
+            },
           },
           slots.default?.(),
         );
@@ -138,6 +142,9 @@ vi.mock('../../chat-content/file-content/file-content.vue', () => ({
 }));
 
 const mockChatInputFocus = vi.fn();
+const mockTriggerSendMessage = vi.fn().mockResolvedValue(true);
+const mockGetUploadFiles = vi.fn().mockReturnValue([]);
+let mockSendDisabledTip: string | undefined;
 vi.mock('../../chat-input/chat-input.vue', () => ({
   default: defineComponent({
     name: 'ChatInput',
@@ -145,11 +152,16 @@ vi.mock('../../chat-input/chat-input.vue', () => ({
       modelValue: { type: [String, Object], default: '' },
       defaultUploadFiles: { type: Array, default: () => [] },
       menuSources: { type: Array, default: () => [] },
+      onUpload: { type: Function, default: undefined },
       supportUpload: { type: Boolean, default: false },
     },
-    emits: ['update:modelValue'],
+    emits: ['update:modelValue', 'deleteFile'],
     setup(props, { slots, expose }) {
-      expose({ focus: mockChatInputFocus, triggerSendMessage: vi.fn() });
+      expose({
+        focus: mockChatInputFocus,
+        getUploadFiles: mockGetUploadFiles,
+        triggerSendMessage: mockTriggerSendMessage,
+      });
       return () =>
         h(
           'div',
@@ -159,7 +171,7 @@ vi.mock('../../chat-input/chat-input.vue', () => ({
             'data-menu-sources': JSON.stringify(props.menuSources),
             'data-support-upload': String(props.supportUpload),
           },
-          [slots['send-icon']?.()],
+          [slots['send-icon']?.({ sendDisabledTip: mockSendDisabledTip })],
         );
     },
   }),
@@ -206,6 +218,9 @@ describe('UserMessage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTriggerSendMessage.mockResolvedValue(true);
+    mockGetUploadFiles.mockReturnValue([]);
+    mockSendDisabledTip = undefined;
     vi.mocked(injectGlobalConfig).mockReturnValue(undefined);
   });
 
@@ -615,6 +630,120 @@ describe('UserMessage', () => {
 
       expect(wrapper.find('.mock-chat-input').exists()).toBe(false);
       expect(mockChatInputFocus).not.toHaveBeenCalled();
+    });
+
+    it('编辑态输入框接收 globalConfig 下发的 onUpload', async () => {
+      const onUpload = vi.fn();
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        onUpload,
+        supportUpload: computed(() => true),
+      });
+
+      await triggerEdit({ content: '原始消息' });
+
+      expect(wrapper.findComponent({ name: 'ChatInput' }).props('onUpload')).toBe(onUpload);
+    });
+
+    it('删除原消息回填附件不触发 onDeleteFile', async () => {
+      const onDeleteFile = vi.fn();
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        onDeleteFile,
+        supportUpload: computed(() => true),
+      });
+
+      await triggerEdit({
+        content: [{ type: 'binary', id: 'files/old.pdf', outputId: 'files/old.pdf', filename: 'old.pdf' }],
+      });
+
+      await wrapper.findComponent({ name: 'ChatInput' }).vm.$emit('deleteFile', {
+        id: 'files/old.pdf',
+        outputId: 'files/old.pdf',
+      });
+
+      expect(onDeleteFile).not.toHaveBeenCalled();
+    });
+
+    it('删除本次新选文件会触发 onDeleteFile', async () => {
+      const onDeleteFile = vi.fn();
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        onDeleteFile,
+        supportUpload: computed(() => true),
+      });
+      const newFile = { file: new File(['x'], 'new.pdf'), id: 'files/new.pdf' };
+
+      await triggerEdit({ content: '原始消息' });
+      await wrapper.findComponent({ name: 'ChatInput' }).vm.$emit('deleteFile', newFile);
+
+      expect(onDeleteFile).toHaveBeenCalledExactlyOnceWith(newFile);
+    });
+
+    it('取消编辑时只清理本次新上传的文件', async () => {
+      const onDeleteFile = vi.fn();
+      const newFile = { file: new File(['x'], 'new.pdf'), id: 'files/new.pdf' };
+      mockGetUploadFiles.mockReturnValue([{ id: 'files/old.pdf', outputId: 'files/old.pdf' }, newFile]);
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        onDeleteFile,
+        supportUpload: computed(() => true),
+      });
+
+      await triggerEdit({
+        content: [
+          { type: 'binary', id: 'files/old.pdf', outputId: 'files/old.pdf', filename: 'old.pdf' },
+          { type: 'text', text: '原始消息' },
+        ],
+      });
+
+      const cancelButton = wrapper.findAll('button').find(button => button.text() === '取消');
+      await cancelButton!.trigger('click');
+
+      expect(onDeleteFile).toHaveBeenCalledExactlyOnceWith(newFile);
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(false);
+    });
+
+    it('上传未完成时点发送不退出编辑态', async () => {
+      mockTriggerSendMessage.mockResolvedValue(false);
+      await triggerEdit({ content: '原始消息' });
+
+      const sendButton = wrapper.findAll('button').find(button => button.text() === '发送');
+      await sendButton!.trigger('click');
+      await nextTick();
+
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(true);
+    });
+
+    it('发送成功时退出编辑态且不删除本次新文件', async () => {
+      const onDeleteFile = vi.fn();
+      const newFile = { file: new File(['x'], 'new.pdf'), id: 'files/new.pdf' };
+      mockGetUploadFiles.mockReturnValue([{ id: 'files/old.pdf', outputId: 'files/old.pdf' }, newFile]);
+      vi.mocked(injectGlobalConfig).mockReturnValue({
+        onDeleteFile,
+        supportUpload: computed(() => true),
+      });
+
+      await triggerEdit({
+        content: [
+          { type: 'binary', id: 'files/old.pdf', outputId: 'files/old.pdf', filename: 'old.pdf' },
+          { type: 'text', text: '原始消息' },
+        ],
+      });
+
+      const sendButton = wrapper.findAll('button').find(button => button.text() === '发送');
+      await sendButton!.trigger('click');
+      await nextTick();
+
+      expect(onDeleteFile).not.toHaveBeenCalled();
+      expect(wrapper.find('.mock-chat-input').exists()).toBe(false);
+    });
+
+    it('上传拦截时应禁用编辑态发送按钮', async () => {
+      mockSendDisabledTip = '文件上传中，请稍候';
+      await triggerEdit({ content: '原始消息' });
+
+      const sendButton = wrapper.findAll('button').find(button => button.text() === '发送');
+      expect(sendButton!.attributes('disabled')).toBeDefined();
+
+      await sendButton!.trigger('click');
+      expect(mockTriggerSendMessage).not.toHaveBeenCalled();
     });
   });
 

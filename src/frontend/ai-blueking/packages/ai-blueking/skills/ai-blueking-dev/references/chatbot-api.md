@@ -171,7 +171,7 @@
 | sendShortcut   | `(shortcut, text?) => Promise<void>`     | 直接发送快捷指令（跳过表单） |
 | getChatHelper  | `() => IChatHelper \| null`              | 获取内部 chatHelper 实例 |
 | updateAgentInfo | `() => Promise<IAgentInfo \| null>`     | 主动刷新 agentInfo 并更新内部状态（含 shortcuts）；失败返回 `null` |
-| enterShareMode | `() => void`                             | 进入分享选择模式（委托给 ChatContainer） |
+| enterShareMode | `() => void`                             | 进入分享选择模式（委托给 ChatContainer，不预选消息） |
 | exitShareMode  | `() => void`                             | 退出分享选择模式（委托给 ChatContainer） |
 | messages       | `ComputedRef<Message[]>`                 | 当前消息列表             |
 | currentSession | `ComputedRef<ISession \| null>`          | 当前会话                 |

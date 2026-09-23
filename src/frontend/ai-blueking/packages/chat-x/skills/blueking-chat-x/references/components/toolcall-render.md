@@ -101,20 +101,20 @@ isPending = !isSuccess && !isError; // 其余（含 pending / streaming / stop /
 
 ## 调用类型前缀
 
-非进行中态的前缀由 `function.type` 决定；进行中态工具 / MCP 显示「正在调用」，Skill 显示「正在读取」：
+非进行中态的前缀由 `function.function_type` 决定；进行中态工具 / MCP 显示「正在调用」，Skill 显示「正在读取」：
 
-| `function.type`          | 前缀        | 说明                                     |
+| `function.function_type` | 前缀        | 说明                                     |
 | ------------------------ | ----------- | ---------------------------------------- |
 | `'function'` / 不传      | 调用工具    | 普通函数调用                             |
 | `'mcp'`                  | 调用 MCP    | MCP 调用，通常同时带 `mcpName`           |
 | `'skill'`                | 读取 Skill  | Skill 读取                               |
 
 ```typescript
-const callType = fn?.type ?? (fn?.mcpName ? 'mcp' : 'function');
+const callType = fn?.function_type ?? (fn?.mcpName ? 'mcp' : 'function');
 ```
 
-- **旧数据兼容**：未下发 `type` 时，有 `mcpName` 仍按 MCP 判定，历史消息展示不变
-- **`type` 优先**：显式 `type: 'function'` 不会被 `mcpName` 覆盖回 MCP，但标题仍是 `{mcpName} / {name}`
+- **旧数据兼容**：未下发 `function_type` 时，有 `mcpName` 仍按 MCP 判定，历史消息展示不变
+- **`function_type` 优先**：显式 `function_type: 'function'` 不会被 `mcpName` 覆盖回 MCP，但标题仍是 `{mcpName} / {name}`
 
 **三种前缀对比**
 
@@ -191,14 +191,14 @@ const toolCallWithDuration: ToolCall = {
 
 ## MCP 调用
 
-`function.type` 为 `'mcp'`（或旧数据仅有 `mcpName`）时，前缀为「调用 MCP」，标题格式变为 `{mcpName} / {functionName}`：
+`function.function_type` 为 `'mcp'`（或旧数据仅有 `mcpName`）时，前缀为「调用 MCP」，标题格式变为 `{mcpName} / {functionName}`：
 
 ```typescript
 const mcpToolCall: ToolCall = {
   id: 'call_mcp_1',
   type: 'function',
   function: {
-    type: 'mcp', // ← 前缀显示「调用 MCP」；缺省时有 mcpName 也会兼容判定为 MCP
+    function_type: 'mcp', // ← 前缀显示「调用 MCP」；缺省时有 mcpName 也会兼容判定为 MCP
     name: 'query_table',
     arguments: JSON.stringify({ table: 'events', limit: 50 }),
     description: '通过 MCP 协议查询蓝鲸数据平台中的事件数据',
@@ -326,8 +326,8 @@ type FunctionCall = {
   name: string; // 函数名；为空时标题 fallback 为 toolCall.id
   arguments: string; // 调用参数（通常为 JSON 字符串）
   description?: string; // 工具描述；为空时"描述"区块保留但内容为空白
-  mcpName?: string; // MCP 服务名；有值时标题格式变为 "{mcpName} / {name}"，缺省 type 时兼容判定为 MCP
-  type?: FunctionCallType; // 调用类型，决定头部前缀；不传按 mcpName 兼容判定
+  mcpName?: string; // MCP 服务名；有值时标题格式变为 "{mcpName} / {name}"，缺省 function_type 时兼容判定为 MCP
+  function_type?: FunctionCallType; // 调用类型，决定头部前缀；不传按 mcpName 兼容判定
 };
 
 // ToolMessage —— 工具返回消息

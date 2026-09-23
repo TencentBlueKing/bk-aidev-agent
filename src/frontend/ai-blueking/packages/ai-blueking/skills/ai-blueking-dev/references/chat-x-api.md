@@ -165,7 +165,7 @@ import {
 |------|------|
 | selectedTab | 当前 Tab 状态 |
 | addCustomTab / removeCustomTab / selectCustomTab | 自定义 Tab（如 flow 节点详情） |
-| enterShareMode / exitShareMode | 进入 / 退出分享多选模式 |
+| enterShareMode / exitShareMode | 进入 / 退出分享多选模式。`enterShareMode()` 不预选消息；从某条回复点「分享」或 `triggerSelection` 时默认勾选该轮 |
 
 ---
 
@@ -240,14 +240,15 @@ onSendMessage?: (
 | input-header | 头部，默认展示引用 |
 | files | 作用域 `{ files }`，自定义已选文件列表区域 |
 | attachment | 底部附件条（默认含上传、快捷按钮等） |
-| send-icon | 发送按钮图标 |
+| send-icon | `{ sendDisabledTip?: string }` | 替换发送区；自定义时需自行按 `sendDisabledTip` 禁用并提示 |
 
 ### Expose
 
 | 方法 | 说明 |
 |------|------|
 | focus | 聚焦输入 |
-| triggerSendMessage | 与内部发送逻辑一致，用于程序化触发发送 |
+| getUploadFiles | 当前待发送附件快照（编辑态取消时据此清理本次新文件） |
+| triggerSendMessage | 与内部发送逻辑一致；真正发出时返回 `true`，上传中/失败拦截时返回 `false` |
 
 ---
 
@@ -484,7 +485,7 @@ import { useRenderModeInject } from '@blueking/chat-x'; // 深路径：composabl
 const renderMode = useRenderModeInject(); // ComputedRef<RenderMode>
 ```
 
-`ChatContainer` 另暴露 `enterShareMode()` / `exitShareMode()` 用于程序化进入/退出分享多选。
+`ChatContainer` 另暴露 `enterShareMode()` / `exitShareMode()` 用于程序化进入/退出分享多选。`enterShareMode()` 不预选消息；从某条回复点「分享」或 `triggerSelection` 时默认勾选该轮。
 
 ---
 

@@ -26,6 +26,8 @@
 
 import { type ComputedRef, inject, provide } from 'vue';
 
+import type { ChatInputUploadResult } from '../components/chat-input/chat-input.vue';
+import type { UploadFile } from '../types';
 import type { IInputMenuItem } from '../types/input-menu';
 
 export const GLOBAL_CONFIG_TOKEN = Symbol('GLOBAL_CONFIG_TOKEN');
@@ -35,6 +37,10 @@ export type AiSizeMode = 'normal' | 'small';
 export type GlobalConfig = {
   /** 输入框菜单数据源；消息编辑态的内嵌输入框据此渲染 @ / \ 与 + 号菜单 */
   menuSources?: ComputedRef<IInputMenuItem[]>;
+  /** 取消编辑态草稿里本次新选的附件；与主输入框 `@delete-file` 同源 */
+  onDeleteFile?: (file: Partial<UploadFile>) => void;
+  /** 编辑态内嵌输入框复用主输入框的上传实现 */
+  onUpload?: (files: File[]) => Promise<ChatInputUploadResult | ChatInputUploadResult[]>;
   size?: ComputedRef<AiSizeMode>;
   supportUpload: ComputedRef<boolean>;
   /** IANA 时区名，用于消息时间展示；未配置时按浏览器时区展示 */
@@ -45,6 +51,8 @@ export const useGlobalConfig = (options: GlobalConfig) => {
   provide(GLOBAL_CONFIG_TOKEN, options);
   return {
     menuSources: options.menuSources,
+    onDeleteFile: options.onDeleteFile,
+    onUpload: options.onUpload,
     size: options.size,
     supportUpload: options.supportUpload,
     timezone: options.timezone,

@@ -404,13 +404,13 @@ export class ChatBusinessManager {
    *
    * @param messageId 用户消息 ID（id 字段，字符串形式）
    * @param sessionCode 当前会话编码
-   * @param newContent 新的消息内容
+   * @param newContent 新的消息内容（纯文本或多模态 Binary + Text）
    * @param newProperty 新的消息属性（可选）
    */
   async resendMessageWithProperty(
     messageId: string,
     sessionCode: string,
-    newContent: string,
+    newContent: IUserMessage['content'],
     newProperty?: IUserMessage['property'],
   ): Promise<void> {
     try {

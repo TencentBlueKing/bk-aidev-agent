@@ -925,6 +925,18 @@ describe('ChatInput', () => {
       expect(wrapper.find('.custom-send-icon').exists()).toBe(true);
     });
 
+    it('send-icon slot 应收到 sendDisabledTip', async () => {
+      wrapper = mount(ChatInput, {
+        props: { modelValue: 'hello', sendDisabledTip: '文件上传中，请稍候' },
+        slots: {
+          'send-icon': (slotProps: { sendDisabledTip?: string }) =>
+            h('div', { class: 'custom-send-icon', 'data-tip': slotProps.sendDisabledTip ?? '' }, 'Send Icon'),
+        },
+      });
+
+      expect(wrapper.find('.custom-send-icon').attributes('data-tip')).toBe('文件上传中，请稍候');
+    });
+
     it('应该支持 model-selector slot 覆盖默认模型选择器', () => {
       const models = [{ id: 'gpt-4', name: 'GPT-4' }];
 
@@ -1886,8 +1898,9 @@ describe('ChatInput', () => {
 
       await wrapper.find('.send-btn').trigger('click');
       await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
-      (wrapper.vm as { triggerSendMessage: () => void }).triggerSendMessage();
+      const sent = await (wrapper.vm as { triggerSendMessage: () => Promise<boolean> }).triggerSendMessage();
 
+      expect(sent).toBe(false);
       expect(onSendMessage).not.toHaveBeenCalled();
 
       resolveUpload({ download_url: 'http://example.com/report.pdf' });

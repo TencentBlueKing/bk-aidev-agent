@@ -172,8 +172,9 @@ exportStatus: internal
       defaultUploadFiles: binaryFiles
       menuSources: injectGlobalConfig().menuSources
       #send-icon slot → .user-edit-footer
-            Button "取消" → isEdit=false
-            Button primary "发送" → chatInputRef.triggerSendMessage() + isEdit=false
+            Button "取消" → 清理本次新上传文件 + isEdit=false
+            Button primary "发送" → 有 sendDisabledTip 时禁用并提示；否则 triggerSendMessage()，仅真正发出时 isEdit=false
+            onUpload / @delete-file 来自 injectGlobalConfig()（与主输入框同源）
 ```
 
 ## 资源标签回显与正文折叠
@@ -484,7 +485,9 @@ binaryFiles 有值   → 进入编辑模式（editContent 可为空）
 
 ## 全局配置透传
 
-编辑态 `ChatInput` 的上传能力与菜单数据源都来自 `injectGlobalConfig()`——`supportUpload` 与 `menuSources`（通常由 `ChatContainer` 注册）。自定义 `#message` 插槽时须把同一配置链路保留，否则编辑态会与主输入区不一致（菜单为空、无法上传）。
+编辑态 `ChatInput` 的上传能力与菜单数据源都来自 `injectGlobalConfig()`——`supportUpload`、`menuSources`、`onUpload` 与 `onDeleteFile`（通常由 `ChatContainer` 注册）。自定义 `#message` 插槽时须把同一配置链路保留，否则编辑态会与主输入区不一致（菜单为空、无法调用 upload 接口）。
+
+删除原消息回填附件（无本地 `File`）只影响即将重发的草稿，不立刻 DELETE 远端；删除本次新选文件或点「取消」时，才对带 `File` 的附件调用 `onDeleteFile`。上传未完成或存在失败项时 `triggerSendMessage` 返回 `false`，保持编辑态；`#send-icon` 的 `sendDisabledTip` 会禁用「发送」并展示拦截文案。成功发送不调用 `onDeleteFile`。
 
 ```vue
 <template>
@@ -530,7 +533,7 @@ binaryFiles 有值   → 进入编辑模式（editContent 可为空）
 
 ### 全局配置依赖
 
-编辑态 `ChatInput` 通过 `injectGlobalConfig()` 读取 `supportUpload` 与 `menuSources`（缺省为空数组，即编辑态无菜单）。祖先需已 `useGlobalConfig()`（通常由 `ChatContainer` 注册）。
+编辑态 `ChatInput` 通过 `injectGlobalConfig()` 读取 `supportUpload`、`menuSources`、`onUpload` 与 `onDeleteFile`（`menuSources` 缺省为空数组，即编辑态无菜单）。祖先需已 `useGlobalConfig()`（通常由 `ChatContainer` 注册）。
 
 ## 类型定义
 
