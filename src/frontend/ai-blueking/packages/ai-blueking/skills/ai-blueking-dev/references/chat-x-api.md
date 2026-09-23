@@ -165,7 +165,7 @@ import {
 |------|------|
 | selectedTab | 当前 Tab 状态 |
 | addCustomTab / removeCustomTab / selectCustomTab | 自定义 Tab（如 flow 节点详情） |
-| enterShareMode / exitShareMode | 进入 / 退出分享多选模式 |
+| enterShareMode / exitShareMode | 进入 / 退出分享多选模式。`enterShareMode()` 不预选消息；从某条回复点「分享」或 `triggerSelection` 时默认勾选该轮 |
 
 ---
 
@@ -485,7 +485,7 @@ import { useRenderModeInject } from '@blueking/chat-x'; // 深路径：composabl
 const renderMode = useRenderModeInject(); // ComputedRef<RenderMode>
 ```
 
-`ChatContainer` 另暴露 `enterShareMode()` / `exitShareMode()` 用于程序化进入/退出分享多选。
+`ChatContainer` 另暴露 `enterShareMode()` / `exitShareMode()` 用于程序化进入/退出分享多选。`enterShareMode()` 不预选消息；从某条回复点「分享」或 `triggerSelection` 时默认勾选该轮。
 
 ---
 

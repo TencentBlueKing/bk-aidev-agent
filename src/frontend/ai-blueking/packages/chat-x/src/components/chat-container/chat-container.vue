@@ -303,7 +303,7 @@
 
   import { Button, ResizeLayout, Tab } from 'bkui-vue';
 
-  import { type Message, type UserMessage, MessageStatus } from '../../ag-ui/types';
+  import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../ag-ui/types';
   import { LOADING_MESSAGE_ID, RenderMode } from '../../common';
   import { type MessageGroup, useMessageGroup } from '../../composables';
   import { FILE_ARTIFACT_TAB_NAME, useArtifactPreviewProvider } from '../../composables/use-artifact-preview';
@@ -745,6 +745,28 @@
   };
 
   /**
+   * 从当前助手组定位这一轮的用户消息，供分享/多选默认勾选。
+   * 找不到对应用户组时返回空数组，仍进入多选态但不预选。
+   */
+  const resolveCurrentTurnUserMessages = (assistantMessages: Message[]): Message[] => {
+    const messageIdSet = new Set(assistantMessages.map(message => message.id).filter(Boolean));
+    if (!messageIdSet.size) {
+      return [];
+    }
+    const groupIndex = messageGroups.value.findIndex(group =>
+      group.messages.some(message => messageIdSet.has(message.id)),
+    );
+    if (groupIndex <= 0) {
+      return [];
+    }
+    const prevGroup = messageGroups.value[groupIndex - 1];
+    if (prevGroup?.type !== MessageRole.User) {
+      return [];
+    }
+    return [...prevGroup.messages];
+  };
+
+  /**
    * 点击Agent 消息工具操作
    * @param tool - 工具
    * @param messages - 消息
@@ -753,6 +775,7 @@
     // 点击分享，或业务标记了 triggerSelection 的自定义按钮（如保存），进入多选态；确认复用 confirmShare
     if (tool.id === 'share' || tool.triggerSelection) {
       selectionSource.value = tool;
+      selectedUserMessages.value = resolveCurrentTurnUserMessages(messages);
       isShareMode.value = true;
       return;
     }

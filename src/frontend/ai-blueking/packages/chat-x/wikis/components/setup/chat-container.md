@@ -917,7 +917,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 分享模式
 
-点击消息工具栏的「分享」按钮后进入分享模式，底部出现 `SelectionFooter` 操作栏：
+点击消息工具栏的「分享」按钮后进入分享模式，并默认勾选当前轮次；底部出现 `SelectionFooter` 操作栏：
 
 ```vue
 <template>
@@ -1002,7 +1002,7 @@ ai-chat-container（:data-ai-size="size"）
 **分享流程**：
 
 1. 用户点击消息工具栏中的「分享」按钮（或任意 `triggerSelection: true` 的自定义按钮）
-2. 进入多选模式，用户勾选要分享的消息
+2. 进入多选模式，并默认勾选当前轮次（用户问题 + 对应回复）；`enterShareMode()` 进入时不预选
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
 4. 确认后触发 `confirmShare` 事件，携带选中的消息列表与触发按钮对象（`source`）
 
@@ -1207,7 +1207,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加自定义 Tab |
 | removeCustomTab | `(tabName: string) => void` | 移除自定义 Tab |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab |
-| enterShareMode  | `() => void`                | 手动进入分享多选模式 |
+| enterShareMode  | `() => void`                | 手动进入分享多选模式（不预选消息） |
 | exitShareMode   | `() => void`                | 退出分享多选模式，并清空已选消息 |
 
 ## 渲染模式
