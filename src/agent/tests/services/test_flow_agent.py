@@ -374,6 +374,27 @@ class TestFlowAgentStop:
         result_events = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)
         assert result_events[-1]["value"][0] == revoked_data
 
+    def test_revoke_query_logs_only_final_exception_stack(self):
+        """连续查询失败时只保留最后一次 exception 栈，避免日志噪音。"""
+        client = MockResourceManager(
+            task_info_sequence=[{"task_state": "RUNNING"}],
+            error_on_call={attempt: RuntimeError("bkflow unavailable") for attempt in range(10)},
+        )
+        agent = FlowAgentCompletionAgent(poll_interval=0.01, session_code="revoke-log-session")
+
+        with (
+            patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False),
+            patch("aidev_agent.services.agent.flow.time.sleep"),
+            patch("aidev_agent.services.agent.flow.logger.warning") as warning,
+            patch("aidev_agent.services.agent.flow.logger.exception") as exception,
+        ):
+            task_info, is_end_state = agent._get_task_info_after_revoke(client, 3004, None)
+
+        assert task_info == {}
+        assert is_end_state is False
+        assert warning.call_count == 9
+        assert exception.call_count == 1
+
     def test_cancel_emits_revoke_result_with_nodes(self):
         """任务已启动后取消 → 基于 last_task_info 手动构造 revoke 事件
 

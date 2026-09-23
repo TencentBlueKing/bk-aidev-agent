@@ -50,9 +50,9 @@ def _record_producer_before_stop(message_handler, session_code: str, run_id: str
     return producer_active
 
 
-def _build_platform_stop_payload(request_data: dict, producer_active: bool | None) -> dict:
+def _build_platform_stop_payload(request_data: dict | None, producer_active: bool | None) -> dict:
     """组装平台 stop_content 请求体（run_id 仅用于本进程流控制）。"""
-    payload = dict(request_data)
+    payload = request_data.dict() if hasattr(request_data, "dict") else dict(request_data or {})
     payload.pop("run_id", None)
     if producer_active is not None:
         payload["producer_active"] = producer_active
@@ -190,9 +190,10 @@ class SessionManager:
             headers=self._user_headers(),
         )
 
-    def stop_chat_content(self, request_data: dict, *, run_id: str | None, message_handler) -> dict:
+    def stop_chat_content(self, request_data: dict | None, *, run_id: str | None, message_handler) -> dict:
         """停止会话生成：先调平台 stop_content，再在本进程 cancel 并等待 SSE 终态。"""
-        session_code = request_data.get("session_code", "") if isinstance(request_data, dict) else ""
+        request_data = request_data or {}
+        session_code = request_data.get("session_code", "") if hasattr(request_data, "get") else ""
         producer_active = _record_producer_before_stop(message_handler, session_code, run_id)
         platform_payload = _build_platform_stop_payload(request_data, producer_active)
         try:

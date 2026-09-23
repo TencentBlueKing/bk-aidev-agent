@@ -46,7 +46,8 @@ FLOW_TASK_FINISHED_STATES = frozenset({FLOW_TASK_FINISHED_STATE})
 FLOW_TASK_FAILED_STATES = frozenset({FLOW_TASK_FAILED_STATE, FLOW_TASK_REVOKED_STATE})
 FLOW_TASK_END_STATES = FLOW_TASK_FINISHED_STATES | FLOW_TASK_FAILED_STATES
 # revoke 接口异步生效时，最多等待一小段时间读取 BKFlow 终态
-REVOKE_STATUS_POLL_INTERVAL = 0.2
+# 最多轮询 REVOKE_STATUS_MAX_ATTEMPTS 次，每次 sleep = clamp(poll_interval, [0.01s, 0.2s])
+REVOKE_STATUS_POLL_INTERVAL_MAX = 0.2
 REVOKE_STATUS_MAX_ATTEMPTS = 10
 
 
@@ -482,9 +483,9 @@ class FlowAgentCompletionAgent(BaseModel):
             task_id: 任务 ID
             last_task_info: 最后一次成功轮询的 task_info，作为查询失败兜底
         """
-        latest_task_info = self._get_task_info_after_revoke(client, task_id, last_task_info)
+        latest_task_info, is_end_state = self._get_task_info_after_revoke(client, task_id, last_task_info)
         latest_state = self._get_task_state(latest_task_info)
-        if latest_state in FLOW_TASK_END_STATES:
+        if is_end_state:
             revoke_info = latest_task_info
             logger.info(
                 "[FLOW_AGENT] Revoke status confirmed: task_id=%s, task_state=%s",
@@ -517,28 +518,37 @@ class FlowAgentCompletionAgent(BaseModel):
         client: ResourceManagerProtocol,
         task_id: int,
         fallback: dict | None,
-    ) -> dict:
+    ) -> tuple[dict, bool]:
         """在 revoke 后有界查询任务终态，避免读取到异步操作前的旧状态。"""
         latest_task_info = fallback
-        sleep_interval = min(max(self.poll_interval, 0.01), REVOKE_STATUS_POLL_INTERVAL)
+        sleep_interval = min(max(self.poll_interval, 0.01), REVOKE_STATUS_POLL_INTERVAL_MAX)
         for attempt in range(REVOKE_STATUS_MAX_ATTEMPTS):
             try:
                 task_info = client.get_flow_agent_task_info(task_id)
                 if isinstance(task_info, dict):
                     latest_task_info = task_info
                     if self._get_task_state(task_info) in FLOW_TASK_END_STATES:
-                        return task_info
-            except Exception:
-                logger.exception(
-                    "[FLOW_AGENT] Failed to query task after revoke: task_id=%s, attempt=%d",
-                    task_id,
-                    attempt + 1,
-                )
+                        return task_info, True
+            except Exception as exc:
+                if attempt + 1 == REVOKE_STATUS_MAX_ATTEMPTS:
+                    logger.exception(
+                        "[FLOW_AGENT] Final query after revoke failed: task_id=%s, attempt=%d",
+                        task_id,
+                        attempt + 1,
+                    )
+                else:
+                    logger.warning(
+                        "[FLOW_AGENT] Query task after revoke failed: task_id=%s, attempt=%d/%d, error=%s",
+                        task_id,
+                        attempt + 1,
+                        REVOKE_STATUS_MAX_ATTEMPTS,
+                        exc,
+                    )
 
             if attempt + 1 < REVOKE_STATUS_MAX_ATTEMPTS:
-                time.sleep(sleep_interval)
+                self._interruptible_sleep(sleep_interval, self.session_code or self.thread_id)
 
-        return latest_task_info or {}
+        return latest_task_info or {}, False
 
     @staticmethod
     def _get_task_state(task_info: dict | None) -> str:
@@ -550,7 +560,7 @@ class FlowAgentCompletionAgent(BaseModel):
     @staticmethod
     def _build_revoke_info(task_id: int, last_task_info: dict | None) -> dict:
         """基于最近快照构造取消兜底结果。"""
-        if last_task_info is None:
+        if not last_task_info:
             revoke_info = {
                 "task_id": task_id,
                 "task_state": FLOW_TASK_REVOKED_STATE,

@@ -207,6 +207,25 @@ def test_stop_clears_stale_notification_before_sending_cancel(monkeypatch, run_i
     handler.mark_stopped.assert_not_called()
 
 
+def test_stop_cancels_local_stream_when_platform_stop_fails(monkeypatch):
+    """平台 stop 失败时仍必须取消本地流，并继续抛出原异常。"""
+    handler = MagicMock()
+    handler.has_active_producer.return_value = True
+    handler.wait_for_consumer_cancelled.return_value = True
+    api = MagicMock()
+    api.stop_chat_session_content.side_effect = RuntimeError("platform unavailable")
+    cancel = MagicMock()
+
+    monkeypatch.setattr(session_mod.message_handler_factory, "get", lambda: handler)
+    monkeypatch.setattr(agent_session_mod.GeneratorStreamingHelper, "cancel", cancel)
+
+    with pytest.raises(RuntimeError, match="platform unavailable"):
+        _view(session_mod.ChatSessionContentViewSet, api).stop(_request(data={"session_code": "session-stop"}))
+
+    cancel.assert_called_once_with("session-stop", message_handler=handler, run_id=None)
+    handler.wait_for_consumer_cancelled.assert_called_once()
+
+
 def test_create_attaches_image_url_to_user_binary(monkeypatch):
     api = MagicMock()
     api.create_chat_session_content.return_value = {
