@@ -247,8 +247,6 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       focusInput();
       return;
     }
-
-    console.log('handleUserAction', tool, message);
   };
 
   /**
@@ -275,14 +273,12 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     try {
       const existingProperty = (message as unknown as { property?: Record<string, unknown> }).property;
       const docSchemaPayload = buildDocSchemaPayload(docSchema);
-      const nextProperty = docSchemaPayload
-        ? { ...existingProperty, docSchema: docSchemaPayload }
-        : existingProperty;
+      const nextProperty = docSchemaPayload ? { ...existingProperty, docSchema: docSchemaPayload } : existingProperty;
       const mergedProperty = applyRequestOptionsContext(nextProperty, getRequestOptions);
       await chatBusinessManager.value?.resendMessageWithProperty(
         String(messageId),
         sessionCode,
-        content ?? '',
+        (content ?? '') as IUserMessage['content'],
         mergedProperty,
       );
     } catch (error) {
