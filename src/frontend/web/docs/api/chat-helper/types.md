@@ -62,7 +62,7 @@ interface IAgentInfo {
   conversationSettings?: {
     /** 快捷指令（info `commands`） */
     commands?: IAgentCommand[];
-    /** 是否启用多会话（info `enable_chat_session`） */
+    /** 是否展示历史/新建会话入口（info `enable_chat_session`）。仅 UI，不阻断建会话（≥ v2.4.1） */
     enableChatSession?: boolean;
     /** 是否启用划词弹窗（info `enable_word_selection_popup`） */
     enableWordSelectionPopup?: boolean;

@@ -61,7 +61,7 @@ interface AIBluekingProps {
   enablePopup?: boolean;
   /** 是否可拖拽 */
   draggable?: boolean;
-  /** 是否启用会话管理；与 info enableChatSession 联动 */
+  /** 是否展示历史/新建会话入口；与 info enableChatSession 联动。仅 UI，不阻断建会话和初始化 */
   enableChatSession?: boolean;
   /**
    * 是否启用模型选择（默认 true，≥ v2.2.2）
@@ -655,6 +655,7 @@ interface IAgentInfoData {
   };
   /** 会话设置 */
   conversationSettings?: {
+    /** 是否展示历史/新建会话入口。仅 UI，不阻断建会话 */
     enableChatSession?: boolean;
     enableWordSelectionPopup?: boolean;
     openingRemark?: string;

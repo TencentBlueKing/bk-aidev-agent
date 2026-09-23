@@ -91,7 +91,7 @@ export interface SessionBusinessConfig {
   autoSwitchToInitialSession?: boolean;
   /** 是否始终创建新会话（初始化时不判断最近会话是否有内容，直接新建） */
   alwaysCreateNewSession?: boolean;
-  /** 是否启用会话管理 */
+  /** 是否展示历史/新建会话入口。仅 UI，不阻断 createSession / loadRecentSession */
   enableChatSession?: boolean;
   /** 初始会话编码 */
   initialSessionCode?: string;

@@ -53,7 +53,7 @@ const sessionManager = new SessionBusinessManager(
   chatHelper.message,  // messageModule
   chatHelper.agent,    // agentModule
   {
-    enableChatSession: true  // 启用多会话管理
+    enableChatSession: true  // 仅控制历史/新建入口显隐，不阻断建会话
   }
 );
 ```

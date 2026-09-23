@@ -7,6 +7,12 @@ AIBlueking 内置完整会话管理 UI。仅在需要**自定义会话列表**�
 
 AI 小鲸 v2.0 提供了完整的多会话管理能力，每个会话拥有独立的对话上下文。会话管理由 [`SessionBusinessManager`](/guide/internals/manager-pattern) 负责业务编排，底层通过 `@blueking/chat-helper` 的 `SessionModule` 与后端 API 交互。
 
+## 历史会话开关
+
+`enableChatSession`（以及 info 的 `conversationSettings.enableChatSession` / `enable_chat_session`）只控制 Header 上历史、新建会话入口是否展示。宿主或智能体任一为 `false` 即隐藏入口。
+
+自 **v2.4.1** 起，这个开关不阻断建会话和初始化。`loadRecentSession`、`createSession`，以及调试页的 `alwaysCreateNewSession`，在开关关闭时仍会建立当前会话。划词弹窗由 `enablePopup` / `enableWordSelectionPopup` 单独控制，与历史会话无关。
+
 ## 会话概念
 
 每个会话代表一个独立的对话上下文，包含独立的消息历史。会话由 [`ISession`](/api/ai-blueking/types) 接口定义：

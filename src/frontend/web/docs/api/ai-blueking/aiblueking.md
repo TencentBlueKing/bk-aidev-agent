@@ -55,7 +55,7 @@ function openAI() {
 | --- | --- | --- | --- |
 | `enablePopup` | `boolean` | `true` | 是否启用文本选中弹窗（AiSelection）。与 info `conversationSettings.enableWordSelectionPopup` 联动：宿主或智能体任一为 `false` 则关闭。shortcut 为空时弹窗回退「问问小鲸」 |
 | `draggable` | `boolean` | `true` | 是否可拖拽 |
-| `enableChatSession` | `boolean` | `true` | 是否启用多会话。与 info `conversationSettings.enableChatSession` 联动：任一为 `false` 则隐藏 Header 历史/新建会话 icon |
+| `enableChatSession` | `boolean` | `true` | 是否展示历史/新建会话入口。与 info `conversationSettings.enableChatSession` 联动：任一为 `false` 则隐藏 Header 历史/新建会话 icon。不阻断建会话和初始化 |
 | `enableModelSelect` | `boolean` | `true` | 是否启用模型选择（**≥ v2.2.2**）；为 `true` 时 bootstrap 拉取 `GET llms/`，列表非空才展示 ModelSelector |
 | `models` | `ILlmItem[] \| IModelOption[]` | — | 外部模型列表（**≥ v2.2.2**）；有值时跳过内部拉取，优先使用 |
 | `hideHeader` | `boolean` | `false` | 是否隐藏头部栏 |
@@ -304,7 +304,7 @@ function openAI() {
 
 ## 会话管理
 
-`enableChatSession` 默认 `true`，控制 Header 的历史 / 新建会话入口（会话列表在历史下拉中，不是左侧侧边栏）。与 info `conversationSettings.enableChatSession` 联动：宿主或智能体任一为 `false` 则隐藏这些 icon。
+`enableChatSession` 默认 `true`，只控制 Header 的历史 / 新建会话入口（会话列表在历史下拉中，不是左侧侧边栏）。与 info `conversationSettings.enableChatSession` 联动：宿主或智能体任一为 `false` 则隐藏这些 icon。关掉后 `createSession`、`loadRecentSession` 和 `alwaysCreateNewSession` 仍会建立当前会话。
 
 支持：
 

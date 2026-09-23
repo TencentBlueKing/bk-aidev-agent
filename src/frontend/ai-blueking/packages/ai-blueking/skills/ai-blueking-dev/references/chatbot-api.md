@@ -301,7 +301,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | timezone | `string` | - | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
-| enableChatSession | `boolean` | `true` | 是否启用会话管理；与 info `conversationSettings.enableChatSession` 联动，任一为 `false` 则隐藏 Header 历史/新建会话 icon |
+| enableChatSession | `boolean` | `true` | 是否展示历史/新建会话入口；与 info `conversationSettings.enableChatSession` 联动，任一为 `false` 则隐藏 Header 历史/新建会话 icon。不阻断 `createSession` / `loadRecentSession`，初始化仍会建立当前会话 |
 | initialSessionCode | `string` | `''` | 初始会话编码 |
 | autoSwitchToInitialSession | `boolean` | `false` | 是否自动切换到初始会话 |
 | alwaysCreateNewSession | `boolean` | `false` | 是否始终创建新会话（初始化时不判断最近会话是否有内容） |

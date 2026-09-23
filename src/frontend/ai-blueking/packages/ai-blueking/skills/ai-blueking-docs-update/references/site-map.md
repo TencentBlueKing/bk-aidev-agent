@@ -78,7 +78,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 
 文件上传（≥ v2.2.4）落点：指南 `chat-interaction.md`「文件上传」；API `api/chat-x/components.md` `ChatInput`（`onUpload` / `accept`）、`api/chat-helper/sdk.md` `uploadFile` / `uploadFiles`。默认 `pv_files/upload`，旧 SDK 走逐个 `upload/{fileName}/`。
 
-`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）：指南 `aiblueking-floating.md`、`content-referencing.md`；FAQ「如何关闭多会话或划词弹窗」；API `aiblueking.md` / `types.md`。任一为 `false` 即关闭。
+`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）：指南 `aiblueking-floating.md`、`session-management.md`（历史会话开关，≥ v2.4.1 不阻断建会话）、`content-referencing.md`；FAQ「如何关闭多会话或划词弹窗」；API `aiblueking.md` / `types.md`。任一为 `false` 即关闭对应 UI。`enableChatSession` 不阻断 `createSession` / `loadRecentSession`。
 
 ## 示例 `/demos/`
 
