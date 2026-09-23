@@ -931,7 +931,7 @@ class BaseSessionWriter(ABC):
         self._written_message_ids.add(tool_call_id)
 
     def handle_run_error(self, event: RunErrorEvent) -> None:
-        """处理运行时错误事件，回写 assistant 失败消息
+        """处理运行时错误事件，回写 assistant 错误消息
 
         对于取消/暂停场景（message 为 RunId.CANCELLED_MESSAGE），
         会先回写已有的非 assistant 内容（thinking/tool/知识库/MCP 等），
@@ -986,13 +986,13 @@ class BaseSessionWriter(ABC):
             )
             self._written_message_ids.add(message_id)
 
-        # 补写错误消息
+        # 补写错误消息；AG-UI 前端的终态枚举为 error，需与实时 RUN_ERROR 对齐
         error_message_id = f"error_{uuid.uuid4().hex[:12]}"
         self._create_session_content(
             message_id=error_message_id,
             role=PromptRole.ASSISTANT.value,
             content=error_message,
-            status="fail",
+            status="error",
             builtin_property={
                 "message_id": error_message_id,
                 "error": True,
