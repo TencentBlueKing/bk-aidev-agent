@@ -77,7 +77,7 @@ AI Chat 界面的复杂度在于**组合爆炸**：消息类型 × 内容格式 
 
 ### 顶层组合
 
-`ChatContainer` 作为唯一的完整对话容器，将 `MessageContainer`、`ChatInput`、`ShortcutRender`、`ExecutionSummary`、`SelectionFooter` 与 `useMessageGroup` 等编排为标准对话页面，对外暴露 `ChatContainerProps`（合并了 `ChatInputProps` + `MessageContainerProps` 的大部分字段）。
+`ChatContainer` 作为唯一的完整对话容器，将 `MessageContainer`、`ChatInput`、`ShortcutRender`、侧栏 Tab、`SelectionFooter` 与 `useMessageGroup` 等编排为标准对话页面，对外暴露 `ChatContainerProps`（合并了 `ChatInputProps` + `MessageContainerProps` 的大部分字段）。
 
 **设计决策**：不提供多种组合组件，而是提供一个「完整版」 + 自由组合的「零件」，避免 API 表面积膨胀。
 

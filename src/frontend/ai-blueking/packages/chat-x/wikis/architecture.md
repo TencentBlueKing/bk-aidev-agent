@@ -33,7 +33,7 @@ ChatContainer                          ← 一站式对话布局
 ├── ResizeLayout                       ← 可拖拽分栏（bkui-vue）
 │   ├── #aside
 │   │   ├── Tab + TabPanel             ← 侧栏标签页
-│   │   ├── ExecutionSummary           ← 执行摘要（工具调用/流程消息汇总）
+│   │   ├── FileArtifactPanel          ← 文件产物侧栏（默认 Tab）
 │   │   └── 自定义 Tab 组件            ← 业务注入的面板（如节点详情）
 │   └── #main
 │       ├── MessageContainer           ← 消息列表容器

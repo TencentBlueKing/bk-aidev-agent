@@ -109,7 +109,7 @@ const assistantMessage: Message = {
 
 ### 方式一：ChatContainer 一站式方案（推荐）
 
-`ChatContainer` 封装了 `MessageContainer`、`ChatInput`、`ShortcutBtns`、`ShortcutRender`、`ExecutionSummary` 等子组件，内部自动完成消息分组、快捷指令渲染、执行摘要等逻辑，适合大多数场景。
+`ChatContainer` 封装了 `MessageContainer`、`ChatInput`、`ShortcutBtns`、`ShortcutRender` 等子组件，内部自动完成消息分组、快捷指令渲染与侧栏 Tab 编排，适合大多数场景。
 
 ````vue
 <template>

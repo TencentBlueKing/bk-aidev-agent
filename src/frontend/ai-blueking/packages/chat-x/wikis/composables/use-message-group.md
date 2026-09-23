@@ -4,18 +4,16 @@ slug: use-message-group
 category: composable
 description: >-
   核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading
-  自动注入、执行摘要过滤和消息多选/分享等逻辑。
+  自动注入、会话产物收集和消息多选/分享等逻辑。
 aiSummary: >
-  useMessageGroup 接收 keyword、messages、selectedUserMessages，通过 watchEffect 产出 messageGroups（User/Assistant/Tool 合并、末尾 Loading 注入且占位 id 为 LOADING_MESSAGE_ID、pause 与分享勾选等）。
-  executionGroups 供侧边执行摘要过滤，并暴露 isShareMode、全选与 onConfirmShare。
-  ChatContainer 组装后传给 MessageContainer；ExecutionSummary 消费 executionGroups。
+  useMessageGroup 接收 messages、selectedUserMessages，通过 watchEffect 产出 messageGroups（User/Assistant/Tool 合并、末尾 Loading 注入且占位 id 为 LOADING_MESSAGE_ID、pause 与分享勾选等）。
+  并暴露 sessionArtifacts、isShareMode、全选与 onConfirmShare。
+  ChatContainer 组装后传给 MessageContainer。
 relatedComponents:
   - slug: chat-container
     relation: 调用并传入 MessageContainer
   - slug: message-container
     relation: 必填 messageGroups 数据源
-  - slug: execution-summary
-    relation: 使用 executionGroups 与定位
 sinceVersion: 1.0.0
 ---
 
@@ -23,19 +21,17 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading 自动注入、执行摘要过滤和消息多选/分享等逻辑。
+核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading 自动注入、会话产物收集和消息多选/分享等逻辑。
 
 ## 函数签名
 
 ```typescript
 function useMessageGroup(options: {
-  keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
   renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
 }): {
   messageGroups: Ref<MessageGroup[]>;
-  executionGroups: ComputedRef<MessageGroup[]>;
   sessionArtifacts: ComputedRef<SessionArtifact[]>;
   pendingApprovalCount: ComputedRef<number>;
   pendingApprovalTipText: ComputedRef<string>;
@@ -106,28 +102,6 @@ pause = assistantMessages.some(m => m.property?.extra?.pause) ?? false;
 
 `pause` 为 `true` 时，`MessageContainer` 不渲染该组的 `MessageTools` 工具栏。
 
-## executionGroups
-
-`executionGroups` 从 `messageGroups` 中过滤出执行类消息，供 `ExecutionSummary` 使用。每个执行组会自动从前一组用户消息中提取 `userMessageTitle`，作为执行摘要的标题显示；若无前置用户消息则回退为当前时间戳：
-
-```typescript
-const isExecutionMessage = (m: Message): boolean => {
-  return (
-    // 带 toolCalls 的 assistant 消息
-    (m.role === 'assistant' && !!m.toolCalls?.length) ||
-    // FlowAgent 类型的 activity 消息
-    (m.role === 'activity' && m.activityType === 'flow_agent')
-  );
-};
-```
-
-支持关键词过滤，通过 `SEARCH_TEXT_EXTRACTORS` 注册表扩展可搜索文本：
-
-| 消息类型   | 搜索范围                                                     |
-| ---------- | ------------------------------------------------------------ |
-| toolCall   | `function.name`、`mcpName`、`description`、`arguments`、`id` |
-| flow_agent | 各任务 `task_name`、各节点 `name`                             |
-
 ## sessionArtifacts 会话级文件产物
 
 `sessionArtifacts` 收集当前会话具有 `outputId` 的助手产物与用户上传附件，供 `ChatContainer` 侧栏「文件产物」Tab 聚合预览。以 **`outputId`** 为会话内唯一键去重（同 `outputId` 视为同一文件），保留最后一次出现的文件信息，列表顺序与「最后一次出现」的相对顺序一致：
@@ -195,13 +169,11 @@ const {
 import { computed, ref as deepRef, shallowRef } from 'vue';
 import { useMessageGroup, type Message } from '@blueking/chat-x';
 
-const keyword = shallowRef('');
 const messages = computed(() => props.messages);
 const selectedUserMessages = deepRef<Message[]>([]);
 
 const {
   messageGroups,
-  executionGroups,
   pendingApprovalCount,
   pendingApprovalTipText,
   isShareMode,
@@ -210,7 +182,6 @@ const {
   onCancelShare,
   onConfirmShare,
 } = useMessageGroup({
-  keyword,
   messages,
   selectedUserMessages,
 });
@@ -221,7 +192,6 @@ const {
 | 属性/方法名      | 类型                          | 说明                                                                        |
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
-| executionGroups  | `ComputedRef<MessageGroup[]>` | 仅包含执行类消息的分组（工具调用 + FlowAgent），自动提取 `userMessageTitle` |
 | sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 收集助手产物与具有 `outputId` 的上传附件，按 `outputId` 去重（保留最后一次） |
 | pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
 | pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
@@ -252,4 +222,3 @@ interface MessageGroup {
 
 - [ChatContainer](../components/setup/chat-container) — 调用 useMessageGroup 并下传分组
 - [MessageContainer](../components/setup/message-container) — 渲染 messageGroups
-- [ExecutionSummary](../components/agent/execution-summary) — 消费 executionGroups

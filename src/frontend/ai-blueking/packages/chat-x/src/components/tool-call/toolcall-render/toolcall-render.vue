@@ -2,7 +2,7 @@
   <div class="ai-toolcall-render">
     <div
       class="ai-toolcall-render-header"
-      :class="{ 'is-expanded': !effectiveCollapsed }"
+      :class="{ 'is-expanded': !collapsed }"
       @click="handleToggle"
     >
       <ToolCallIcon />
@@ -14,7 +14,7 @@
         <span
           class="toolcall-header-title"
           :class="{ 'is-loading': isPending }"
-          >{{ isPending ? pendingLabel : callTypeLabel }} <HighlightKeyword :text="toolTitle" /></span
+          >{{ isPending ? pendingLabel : callTypeLabel }} {{ toolTitle }}</span
         ><span
           v-if="statusText"
           class="toolcall-header-status"
@@ -28,11 +28,11 @@
       </span>
       <ChevronRightIcon
         v-if="!isPending"
-        :class="{ 'is-expanded': !effectiveCollapsed }"
+        :class="{ 'is-expanded': !collapsed }"
       />
     </div>
     <div
-      v-show="!effectiveCollapsed"
+      v-show="!collapsed"
       class="ai-toolcall-render-content"
     >
       <DescPanel
@@ -54,13 +54,12 @@
   import { computed, shallowRef } from 'vue';
 
   import { MessageStatus } from '../../../ag-ui/types/constants';
-  import { useCommonTippyInject, useKeywordMatch } from '../../../composables/use-common';
+  import { useCommonTippyInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives';
   import { ChevronRightIcon, ToolCallIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import { formatDuration } from '../../../utils/utils';
   import ToolMessage from '../../chat-message/tool-message/tool-message.vue';
-  import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import DescPanel from '../desc-panel/desc-panel.vue';
 
   import type { ToolCall } from '../../../ag-ui/types/messages';
@@ -69,30 +68,11 @@
     status?: MessageStatus;
     toolCall?: ToolCall;
   }>();
-  const collapsed = shallowRef<boolean | null>(true);
-  const superCollapsed = shallowRef<boolean | null>(null);
+  const collapsed = shallowRef(true);
   const commonTippyOptions = useCommonTippyInject();
-  const { keywordMatched, keyword } = useKeywordMatch(() => [
-    props.toolCall?.function.name,
-    props.toolCall?.function.mcpName,
-    props.toolCall?.function.description,
-    props.toolCall?.function.arguments,
-    props.toolCall?.id,
-  ]);
-
-  const effectiveCollapsed = computed(() => {
-    if (superCollapsed.value !== null) {
-      return superCollapsed.value;
-    }
-    if (keyword?.value?.trim()) {
-      return !keywordMatched.value;
-    }
-    return collapsed.value;
-  });
 
   function handleToggle() {
-    collapsed.value = !effectiveCollapsed.value;
-    superCollapsed.value = collapsed.value;
+    collapsed.value = !collapsed.value;
   }
 
   /** 成功态：Success / Complete / Completed 归一 */

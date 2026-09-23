@@ -141,7 +141,7 @@
           v-overflow-tips="{ ...commonTippyOptions }"
           class="flow-agent-task-name"
         >
-          <HighlightKeyword :text="task.taskName" />
+          {{ task.taskName }}
         </span>
         <span class="flow-agent-task-trailing">
           <span class="flow-agent-task-time">{{ task.totalTimeText }}</span>
@@ -186,7 +186,7 @@
             class="flow-agent-node-name"
             :title="node.name"
           >
-            <HighlightKeyword :text="node.name" />
+            {{ node.name }}
           </span>
           <span class="flow-agent-node-trailing">
             <span class="flow-agent-node-time">{{ node.elapsedTimeText }}</span>
@@ -232,12 +232,11 @@
 
   import { MessageContentType, MessageStatus } from '../../../ag-ui/types/constants';
   import { RenderMode } from '../../../common/constants';
-  import { useCommonTippyInject, useExecutionPanelInject, useRenderModeInject } from '../../../composables/use-common';
+  import { useCommonTippyInject, useRenderModeInject } from '../../../composables/use-common';
   import { OverflowTips as vOverflowTips } from '../../../directives/overflow-tips';
   import { ArrowRightIcon, NodeOutputIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import AiLoading from '../../ai-loading/ai-loading.vue';
-  import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
   import ActivityLayout from '../activity-layout/activity-layout.vue';
   import { useFlowAgent } from './use-flow-agent';
   import { type FlowNodeActionVM, useFlowNodeActions } from './use-flow-node-actions';
@@ -264,12 +263,7 @@
 
   const renderMode = useRenderModeInject();
   /** 分享态只读：保留「详情 / 有效证据 / 耗时」查看入口，仅隐藏「重试 / 跳过」等交互操作 */
-  const isShareMode = computed(() => renderMode.value === RenderMode.Share);
-
-  // 侧栏「执行情况」面板与对话流渲染同一组件，面板内按只读呈现：
-  // 与分享态一样仅保留「详情」，不出「重试 / 跳过」
-  const isInExecutionPanel = useExecutionPanelInject();
-  const hideResumeActions = computed(() => isShareMode.value || isInExecutionPanel);
+  const hideResumeActions = computed(() => renderMode.value === RenderMode.Share);
 
   const isLoading = computed(() => props.status === MessageStatus.Pending || props.status === MessageStatus.Streaming);
 
@@ -284,8 +278,7 @@
     taskList,
   });
 
-  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表；
-  // 分享态与侧栏执行情况面板隐藏交互式 resume 操作
+  // 节点行尾操作层：聚合「详情 / 重试 / 跳过」为声明式操作列表；分享态隐藏交互式 resume 操作
   const { getNodeActions, isNodePending } = useFlowNodeActions({
     hideResumeActions,
     onInterruptResume: toRef(props, 'onInterruptResume'),

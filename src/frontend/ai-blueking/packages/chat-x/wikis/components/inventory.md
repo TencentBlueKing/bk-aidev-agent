@@ -15,7 +15,6 @@ aiSummary: >
 | 文档 | 能力域 | 源码位置 | 导出状态 | 覆盖 |
 | ---- | ------ | -------- | -------- | ---- |
 | [DetailSection 详情分段](/components/agent/detail-section) | Agent 能力 | `src/components/chat-content/flow-agent-content/detail-section.vue` | 内部 | 已覆盖 |
-| [ExecutionSummary 执行摘要](/components/agent/execution-summary) | Agent 能力 | `src/components/execution-summary/execution-summary.vue` | 公开 | 已覆盖 |
 | [FlowAgentContent FlowAgent 执行内容](/components/agent/flow-agent-content) | Agent 能力 | `src/components/chat-content/flow-agent-content/flow-agent-content.vue` | 内部 | 已覆盖 |
 | [FlowAgentNodeDetail FlowAgent 节点详情](/components/agent/flow-agent-node-detail) | Agent 能力 | `src/components/chat-content/flow-agent-content/flow-agent-node-detail.vue` | 内部 | 已覆盖 |
 | [InterruptMessageRender 中断消息](/components/agent/interrupt-message) | Agent 能力 | `src/components/chat-message/interrupt-message/interrupt-message.vue` | 公开（`InterruptMessageRender`；类型仍为 `InterruptMessage`） | 已覆盖 |

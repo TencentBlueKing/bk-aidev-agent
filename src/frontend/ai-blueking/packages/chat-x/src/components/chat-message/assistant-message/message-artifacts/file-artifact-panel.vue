@@ -138,18 +138,10 @@
   /** 可复制文本内容的文件分类 */
   const COPYABLE_KINDS = new Set<AIFileKind>(['code', 'html', 'markdown', 'text']);
 
-  const props = defineProps<{
-    // 命中的文件 outputId
-    activeId: string;
-    // 当前会话全部文件产物（已按 outputId 去重）
-    artifacts: SessionArtifact[];
-  }>();
-
-  const emits = defineEmits<{
-    (e: 'select', id: string): void;
-  }>();
-
   const artifactPreview = useArtifactPreviewConsumer();
+  // 产物列表与命中态由容器通过 ARTIFACT_PREVIEW_TOKEN 提供，面板不再接收 props
+  const artifacts = computed(() => artifactPreview?.artifacts.value ?? []);
+  const activeId = computed(() => artifactPreview?.activeArtifactId.value ?? '');
   const canResolveArtifactUrl = computed(() => !!artifactPreview?.canResolveArtifactUrl.value);
   // 无输入框上下文（只读 / 分享态）时不展示引用入口
   const inputMention = useInputMentionConsumer();
@@ -193,12 +185,12 @@
   const filteredArtifacts = computed(() => {
     const kw = keyword.value.trim().toLowerCase();
     if (!kw) {
-      return props.artifacts;
+      return artifacts.value;
     }
-    return props.artifacts.filter(item => item.name.toLowerCase().includes(kw));
+    return artifacts.value.filter(item => item.name.toLowerCase().includes(kw));
   });
 
-  const activeArtifact = computed(() => props.artifacts.find(item => item.outputId === props.activeId));
+  const activeArtifact = computed(() => artifacts.value.find(item => item.outputId === activeId.value));
 
   // code / html / markdown / txt 展示复制入口
   const showCopy = computed(() => {
@@ -216,10 +208,10 @@
   });
 
   const handleSelect = (item: SessionArtifact) => {
-    if (item.outputId === props.activeId) {
+    if (item.outputId === activeId.value) {
       return;
     }
-    emits('select', item.outputId);
+    artifactPreview?.setActiveArtifactId(item.outputId);
   };
 
   const handleCopy = () => {

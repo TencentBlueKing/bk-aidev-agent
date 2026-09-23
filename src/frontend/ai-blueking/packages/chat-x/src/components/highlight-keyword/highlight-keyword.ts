@@ -27,29 +27,30 @@
 import { computed, defineComponent, h } from 'vue';
 
 import { HIGHLIGHT_KEYWORD_CLASS_NAME } from '../../common/constants';
-import { useKeywordInject } from '../../composables/use-common';
 
 import './highlight-keyword.scss';
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export default defineComponent({
   name: 'HighlightKeyword',
   props: {
+    keyword: {
+      type: String,
+      default: '',
+    },
     text: {
       type: String,
       required: true,
     },
   },
   setup(props) {
-    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const keyword = useKeywordInject();
     const searchNode = computed(() => {
-      if (!props.text || !keyword?.value) return props.text;
+      const keyword = props.keyword.trim();
+      if (!props.text || !keyword) return props.text;
 
-      const trimmed = keyword.value.trim();
-      if (!trimmed) return props.text;
-
-      const pattern = new RegExp(`(${escapeRegExp(trimmed)})`, 'ig');
-      const parts = props.text?.toString().split(pattern);
+      const pattern = new RegExp(`(${escapeRegExp(keyword)})`, 'ig');
+      const parts = props.text.split(pattern);
       if (parts.length <= 1) return props.text;
       return parts.map(part => (pattern.test(part) ? h('span', { class: HIGHLIGHT_KEYWORD_CLASS_NAME }, part) : part));
     });
