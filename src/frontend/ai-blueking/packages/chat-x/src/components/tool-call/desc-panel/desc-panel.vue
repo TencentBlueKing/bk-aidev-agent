@@ -12,27 +12,22 @@
       </span>
     </div>
     <div class="desc-panel">
-      <!-- null 的 typeof 为 object，需排除，避免 v-for 异常；键/值统一转字符串以满足 HighlightKeyword -->
+      <!-- null 的 typeof 为 object，需排除，避免 v-for 异常；键/值统一转字符串后展示 -->
       <template v-if="data !== null && typeof data === 'object'">
         <div
           v-for="(value, key) in data"
           :key="key"
           class="desc-panel-item"
         >
-          <span class="desc-label"><HighlightKeyword :text="String(key)" />:</span>
+          <span class="desc-label">{{ String(key) }}:</span>
           <span class="desc-value">
-            <HighlightKeyword
-              style="word-break: break-all"
-              :text="formatHighlightSegment(value)"
-            />
+            <span style="word-break: break-all">{{ formatSegment(value) }}</span>
           </span>
         </div>
       </template>
       <template v-else
-        ><HighlightKeyword
-          :style="{ wordBreak: 'break-all' }"
-          :text="formatHighlightSegment(data)"
-      /></template>
+        ><span :style="{ wordBreak: 'break-all' }">{{ formatSegment(data) }}</span></template
+      >
     </div>
   </div>
 </template>
@@ -42,7 +37,6 @@
   import { useClipboard } from '../../../composables/use-clipboard';
   import { CopyIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
-  import HighlightKeyword from '../../highlight-keyword/highlight-keyword';
 
   const props = defineProps<{
     desc?: string;
@@ -51,8 +45,8 @@
 
   const { copy } = useClipboard();
 
-  /** JSON 解析后的标量 / 嵌套对象均转为可展示的字符串，供 HighlightKeyword（String prop）使用 */
-  const formatHighlightSegment = (value: unknown): string => {
+  /** JSON 解析后的标量 / 嵌套对象均转为可展示的字符串 */
+  const formatSegment = (value: unknown): string => {
     if (value === undefined || value === null) return '';
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);

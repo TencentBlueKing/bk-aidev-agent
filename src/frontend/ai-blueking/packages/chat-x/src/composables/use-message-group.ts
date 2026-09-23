@@ -23,16 +23,14 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import type { ComputedRef, MaybeRef, Ref, ShallowRef } from 'vue';
+import type { ComputedRef, MaybeRef, Ref } from 'vue';
 import { computed, ref as deepRef, shallowRef, toValue, watch, watchEffect } from 'vue';
 
 import {
-  type ActivityMessage,
   type AssistantMessage,
   type Message,
   APPROVAL_STATUS,
   InterruptReason,
-  MessageContentType,
   MessageRole,
   MessageStatus,
 } from '../ag-ui/types';
@@ -40,7 +38,6 @@ import { LOADING_MESSAGE_ID, RenderMode } from '../common/constants';
 import { t } from '../lang/lang';
 import { generateUUID, getMessageArtifacts } from '../utils';
 
-import type { BkFlowMessageContent } from '../ag-ui/types/contents';
 import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
 import type { SessionArtifact } from './use-artifact-preview';
 
@@ -52,54 +49,6 @@ export type MessageGroup = {
   startTime?: number; // 执行时间
   type: MessageRole;
   uid: string;
-  userMessageTitle?: number | string;
-};
-
-type SearchTextExtractor = (message: Message) => string[];
-
-const SEARCH_TEXT_EXTRACTORS: Record<string, SearchTextExtractor> = {
-  toolCall(message) {
-    const { toolCalls } = message as AssistantMessage;
-    if (!toolCalls?.length) return [];
-    return toolCalls.flatMap(
-      tc =>
-        [tc.function.name, tc.function.mcpName, tc.function.description, tc.function.arguments, tc.id].filter(
-          Boolean,
-        ) as string[],
-    );
-  },
-  [MessageContentType.FlowAgent](message) {
-    const content = (message as ActivityMessage).content as BkFlowMessageContent;
-    if (!content) return [];
-    return content
-      .flatMap(task => [task.task_name, ...Object.values(task.nodes ?? {}).map(n => n.name)])
-      .filter(Boolean);
-  },
-};
-
-const getMessageSearchKey = (message: Message): string | undefined => {
-  if (message.role === MessageRole.Assistant && (message as AssistantMessage).toolCalls?.length) {
-    return 'toolCall';
-  }
-  if (message.role === MessageRole.Activity) {
-    return (message as ActivityMessage).activityType;
-  }
-  return undefined;
-};
-
-const isExecutionMessage = (m: Message): boolean => {
-  return (
-    (m.role === MessageRole.Assistant && !!(m as AssistantMessage).toolCalls?.length) ||
-    (m.role === MessageRole.Activity && (m as ActivityMessage).activityType === MessageContentType.FlowAgent)
-  );
-};
-
-const messageMatchesKeyword = (message: Message, keyword: string): boolean => {
-  const key = getMessageSearchKey(message);
-  if (!key) return true;
-  const extractor = SEARCH_TEXT_EXTRACTORS[key];
-  if (!extractor) return true;
-  return extractor(message).some(text => text.toLowerCase().includes(keyword));
 };
 
 const pendingApprovalStatusSet = new Set([APPROVAL_STATUS.PENDING, APPROVAL_STATUS.DRAFT]);
@@ -138,7 +87,6 @@ const countPendingApprovalInterrupts = (messages: Message[]): number =>
   }, 0);
 
 export const useMessageGroup = (options: {
-  keyword?: ShallowRef<string>;
   messages: ComputedRef<Message[]>;
   renderMode?: MaybeRef<RenderMode>;
   selectedUserMessages: Ref<Message[] | undefined>;
@@ -228,42 +176,6 @@ export const useMessageGroup = (options: {
     messageGroups.value = list;
   });
 
-  const executionGroups = computed<MessageGroup[]>(() => {
-    const kw = options.keyword?.value?.trim().toLowerCase();
-    const isMatch = (m: Message) => isExecutionMessage(m) && (!kw || messageMatchesKeyword(m, kw));
-
-    return messageGroups.value
-      .filter((group, index) => {
-        if (group.messages.some(isMatch)) {
-          const userGroup = messageGroups.value.at(index - 1);
-          if (userGroup) {
-            const userMessages = userGroup.messages.filter(m => m.role === MessageRole.User);
-            if (userMessages?.length) {
-              for (const item of userMessages) {
-                const content = item.content;
-                if (typeof content === 'string') {
-                  group.userMessageTitle = content;
-                  break;
-                } else if (Array.isArray(content) && content.some(item => item.type === MessageContentType.Text)) {
-                  group.userMessageTitle = content.filter(item => item.type === MessageContentType.Text)?.join('\n');
-                  break;
-                }
-              }
-            }
-          }
-          if (!group.userMessageTitle) {
-            group.userMessageTitle = Date.now();
-          }
-          return true;
-        }
-        return false;
-      })
-      .map(group => ({
-        ...group,
-        isHover: false,
-        messages: group.messages.filter(isMatch),
-      }));
-  });
   /**
    * 会话级文件产物：收集助手产物与具有 outputId 的上传附件，
    * 以 outputId 为唯一键去重，保留最后一次出现（列表顺序同最后一次出现的相对顺序）。
@@ -356,7 +268,6 @@ export const useMessageGroup = (options: {
 
   return {
     messageGroups,
-    executionGroups,
     sessionArtifacts,
     activeUserQuestionInterrupt,
     pendingApprovalCount,

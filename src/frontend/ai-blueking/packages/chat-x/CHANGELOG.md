@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-23 15:32:02
+
+下线侧栏内建「执行情况」Tab。对话流标题栏的执行统计保留。侧栏常驻默认 Tab 改由容器注入，`ChatContainer` 使用「文件产物」。
+
+### Breaking Changes
+
+- 下线侧栏内建「执行情况」Tab，不再导出 `ExecutionSummary`。`useCustomTabProvider` 必须传入 `defaultTab` 作为常驻默认 Tab，不再内建名为 `execution` 的 Tab；移除 `EXECUTION_TAB_NAME` 与 `executionTabVisible`。`ChatContainer` 以「文件产物」作为该默认 Tab（不可关闭，无产物时展示空态）。
+- `CustomTab.icon` 由字符串改为 Vue 组件；新增 `loadOnSelect`，缺省 `true`。自持数据的 Tab（如文件产物）置 `false` 后，选中时不触发 `onTabChange`。
+- `useMessageGroup` 移除入参 `keyword` 与返回值 `executionGroups`；`MessageGroup` 移除 `userMessageTitle`。
+- `HighlightKeyword` 不再注入全局关键词，调用方需传入 `keyword`；未传时不高亮。
+
+### Changed
+
+- 侧栏 Tab 的图标与内容改由 Tab 自身的 `icon`、`data.component` 提供，容器不再按 `name === 'file-artifact'` 特判。`FileArtifactPanel` 从 `ARTIFACT_PREVIEW_TOKEN` 读取产物列表与命中态。
+- 对话流 FlowAgent 标题栏「执行情况：成功 N / …」保留；失败节点的重试 / 跳过仍只出现在对话流，分享态只读。
+
 ## 2026-09-23 10:41:54
 
 ### Breaking Changes

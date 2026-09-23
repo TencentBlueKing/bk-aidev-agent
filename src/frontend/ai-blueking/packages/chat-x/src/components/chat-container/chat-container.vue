@@ -48,7 +48,7 @@
                     h(
                       'div',
                       {
-                        class: 'ai-execution-summary-label',
+                        class: 'ai-side-tab-label',
                         onVnodeMounted: (node: VNode) => {
                           if (selectedTab.name === tab.name) {
                             scrollActiveTabLabelIntoView(node.el);
@@ -56,22 +56,22 @@
                         },
                       },
                       getSideTabRenderComponent?.(h, tab, { removeCustomTab }) ?? [
-                        h(getSideTabIcon(tab.name), {
-                          class: 'ai-execution-summary-icon',
+                        h(tab.icon ?? NodeTabIcon, {
+                          class: 'ai-side-tab-icon',
                         }),
                         withDirectives(
                           h(
                             'span',
                             {
-                              class: 'ai-execution-summary-label-text',
+                              class: 'ai-side-tab-label-text',
                             },
                             tab.label ?? '',
                           ),
                           [[vOverflowTips, { ...commonTippyOptions, text: tab.label ?? '' }]],
                         ),
-                        tab.closable !== false && tab.name !== EXECUTION_TAB_NAME
+                        tab.closable !== false
                           ? h(CloseIcon, {
-                              class: 'ai-execution-close-icon',
+                              class: 'ai-side-tab-close-icon',
                               onClick: () => {
                                 removeCustomTab(tab.name);
                               },
@@ -103,47 +103,29 @@
                 </div>
               </template>
             </Tab>
-            <template v-if="selectedTab?.name === EXECUTION_TAB_NAME && executionTabVisible !== false">
-              <ExecutionSummary
-                v-if="!isCollapse"
-                :message-groups="executionGroups"
-                style="height: calc(100% - 40px)"
-                @locate-message-group="handleLocateMessageGroup"
-                @update-keyword="handleUpdateKeyword"
-              />
-            </template>
-            <template v-else-if="selectedTab?.name === FILE_ARTIFACT_TAB_NAME">
-              <FileArtifactPanel
-                :active-id="activeArtifactId"
-                :artifacts="sessionArtifacts"
-                style="height: calc(100% - 40px)"
-                @select="setActiveArtifactId"
-              />
-            </template>
-            <template v-if="selectedTab && selectedTab.name !== FILE_ARTIFACT_TAB_NAME">
-              <div
+            <div
+              v-if="selectedTab && sideRenderComponent"
+              :key="selectedTab.name"
+              class="ai-chat-container-message-slot"
+            >
+              <component
+                :is="sideRenderComponent"
                 :key="selectedTab.name"
-                class="ai-chat-container-message-slot"
+                v-bind="selectedTab?.data?.props"
               >
-                <component
-                  :is="sideRenderComponent"
-                  :key="selectedTab.name"
-                  v-bind="selectedTab?.data?.props"
-                >
-                  <template #locateButton>
-                    <Button
-                      class="ai-locate-button"
-                      size="small"
-                      text
-                      theme="primary"
-                      @click="handleLocateMessageGroup(selectedTab?.data?.messageUid)"
-                    >
-                      {{ t('在对话中定位') }}
-                    </Button>
-                  </template>
-                </component>
-              </div>
-            </template>
+                <template #locateButton>
+                  <Button
+                    class="ai-locate-button"
+                    size="small"
+                    text
+                    theme="primary"
+                    @click="handleLocateMessageGroup(selectedTab?.data?.messageUid)"
+                  >
+                    {{ t('在对话中定位') }}
+                  </Button>
+                </template>
+              </component>
+            </div>
           </div>
         </Transition>
       </template>
@@ -308,13 +290,13 @@
   import { type MessageGroup, useMessageGroup } from '../../composables';
   import { FILE_ARTIFACT_TAB_NAME, useArtifactPreviewProvider } from '../../composables/use-artifact-preview';
   import { useCommonTippyProvider, useRenderModeProvider } from '../../composables/use-common';
-  import { EXECUTION_TAB_NAME, useCustomTabProvider } from '../../composables/use-custom-tab';
+  import { useCustomTabProvider } from '../../composables/use-custom-tab';
   import { useFullScreen } from '../../composables/use-full-screen';
   import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { useInputMentionProvider } from '../../composables/use-input-mention';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
-  import { CloseIcon, ExecutionIcon, NodeTabIcon } from '../../icons';
+  import { CloseIcon, NodeTabIcon } from '../../icons';
   import { AIBluekingBannerIcon, ArtifactTabIcon } from '../../icons';
   import { t } from '../../lang/lang';
   import { collectMessageArtifacts } from '../../utils';
@@ -329,7 +311,6 @@
     type MessageContainerEmits,
     type MessageContainerProps,
   } from '../chat-message/message-container/message-container.vue';
-  import ExecutionSummary from '../execution-summary/execution-summary.vue';
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
 
@@ -353,8 +334,6 @@
     asideCollapsed?: boolean;
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
-    // 执行情况 Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏，选中态自动切到首个可见 Tab
-    executionTabVisible?: boolean;
     // 用于获取侧边栏组件的渲染
     getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
     // 用于获取侧边栏 tab 的渲染
@@ -419,7 +398,6 @@
     {
       // 显式给 undefined，避免 Boolean 类型 prop 在未传时被 Vue 转成 false，从而无法区分「外部受控」与「内部自持」
       asideCollapsed: undefined,
-      executionTabVisible: true,
       size: 'small',
     },
   );
@@ -442,7 +420,12 @@
   }));
 
   const sideRenderComponent = computed(() => {
-    return props.getSideRenderComponent?.(h, selectedTab.value.data?.props ?? {}) ?? selectedTab.value.data?.component;
+    const tab = selectedTab.value;
+    // 自持内容的 Tab（如文件产物）不走业务渲染器，避免空 props 被通用实现吃掉
+    if (tab.loadOnSelect === false) {
+      return tab.data?.component;
+    }
+    return props.getSideRenderComponent?.(h, tab.data?.props ?? {}) ?? tab.data?.component;
   });
   /**
    * 输入框菜单数据源：会话产物默认由容器从消息里自动收集；
@@ -529,55 +512,49 @@
   });
   useCommonTippyProvider({ tippyOptions: commonTippyOptions });
 
-  const {
-    displayTabs,
-    tabs,
-    selectedTab,
-    isCollapse,
-    addCustomTab,
-    ensureCustomTab,
-    removeCustomTab,
-    selectCustomTab,
-    resetCustomTab,
-  } = useCustomTabProvider<CustomBkFlowTabData>({
-    collapsed: asideCollapsed,
-    executionTabVisible: () => props.executionTabVisible,
-    onTabChange: async tab => {
-      // 文件产物 Tab 由 FileArtifactPanel 自行通过 onArtifactClick 异步取链，无需走自定义 Tab 拉取
-      if (tab.name === FILE_ARTIFACT_TAB_NAME) {
-        return;
-      }
-      const tabProps = selectedTab.value.data?.props || {
-        loading: true,
-        data: {},
-      };
-      selectedTab.value.data = {
-        ...selectedTab.value.data,
-        props: tabProps,
-      };
-      const data = await props.onCustomTabChange?.(tab);
-      selectedTab.value.data = {
-        ...selectedTab.value.data,
-        props: {
-          ...tabProps,
-          loading: false,
-          data,
-        },
-      };
-    },
-  });
-
-  /** 文件产物 Tab 元信息：排在执行情况之前，不可关闭 */
+  /**
+   * 「文件产物」Tab 元信息：侧栏常驻默认 Tab，order 最小排在最前、不可关闭，
+   * 不随产物有无增删，无产物时由面板展示空态。内容与图标都挂在 Tab 上，容器不再按 name 特判。
+   */
   const FILE_ARTIFACT_TAB = {
     closable: false,
+    data: { component: FileArtifactPanel },
+    icon: ArtifactTabIcon,
     label: t('文件产物'),
+    loadOnSelect: false,
     name: FILE_ARTIFACT_TAB_NAME,
     order: -1,
   };
-  // 常驻挂载：不随产物有无增删，无产物时由面板展示空态
-  ensureCustomTab(FILE_ARTIFACT_TAB);
 
-  const keyword = shallowRef('');
+  const { displayTabs, tabs, selectedTab, isCollapse, addCustomTab, removeCustomTab, selectCustomTab, resetCustomTab } =
+    useCustomTabProvider<CustomBkFlowTabData>({
+      collapsed: asideCollapsed,
+      defaultTab: FILE_ARTIFACT_TAB,
+      onTabChange: async tab => {
+        // 自持数据的 Tab（如文件产物）不走自定义拉取
+        if (tab.loadOnSelect === false) {
+          return;
+        }
+        const tabProps = selectedTab.value.data?.props || {
+          loading: true,
+          data: {},
+        };
+        selectedTab.value.data = {
+          ...selectedTab.value.data,
+          props: tabProps,
+        };
+        const data = await props.onCustomTabChange?.(tab);
+        selectedTab.value.data = {
+          ...selectedTab.value.data,
+          props: {
+            ...tabProps,
+            loading: false,
+            data,
+          },
+        };
+      },
+    });
+
   const selectedUserMessages = deepRef<Message[]>([]);
   // 记录触发多选态的按钮（share 或标记 triggerSelection 的自定义按钮），确认时作为来源参数回传
   const selectionSource = shallowRef<IToolBtn>();
@@ -596,7 +573,6 @@
 
   const {
     messageGroups,
-    executionGroups,
     sessionArtifacts: messageArtifacts,
     isShareMode,
     isAllSelected,
@@ -606,7 +582,6 @@
     pendingApprovalTipText,
     activeUserQuestionInterrupt,
   } = useMessageGroup({
-    keyword,
     messages: computed(() => props.messages),
     renderMode: computed(() => renderMode.value),
     selectedUserMessages,
@@ -623,6 +598,7 @@
 
   // 文件卡片点击 → 命中文件并展开侧栏、切到「文件产物」Tab
   const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
+    artifacts: sessionArtifacts,
     getOnArtifactClick: () => props.onArtifactClick,
     onOpen: () => {
       addCustomTab(FILE_ARTIFACT_TAB);
@@ -646,7 +622,6 @@
 
   watch(isCollapse, newVal => {
     if (newVal) {
-      keyword.value = '';
       resizeAsideWidth.value = 0;
     } else {
       // 展开时还原宽度，避免折叠时置 0 后主区宽度停留在 100%
@@ -727,21 +702,8 @@
     if (rect.bottom < 0 || rect.top > window.innerHeight) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   };
-  // 侧栏 Tab 默认图标：执行情况用 ExecutionIcon，文件产物用 ArtifactTabIcon，其余用 NodeTabIcon
-  const getSideTabIcon = (name: string) => {
-    if (name === EXECUTION_TAB_NAME) {
-      return ExecutionIcon;
-    }
-    if (name === FILE_ARTIFACT_TAB_NAME) {
-      return ArtifactTabIcon;
-    }
-    return NodeTabIcon;
-  };
   const handleUpdateTabActive = (name: string) => {
     selectCustomTab(tabs.value.find(tab => tab.name === name)!);
-  };
-  const handleUpdateKeyword = (v: string) => {
-    keyword.value = v;
   };
 
   /**
@@ -866,20 +828,20 @@
         font-size: 14px;
       }
 
-      .ai-execution-summary-label {
+      .ai-side-tab-label {
         display: flex;
         gap: 4px;
         align-items: center;
         justify-content: center;
 
-        .ai-execution-summary-icon {
+        .ai-side-tab-icon {
           flex-shrink: 0;
           width: 16px;
           height: 16px;
           font-size: 16px;
         }
 
-        &-text {
+        .ai-side-tab-label-text {
           max-width: 100px;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -887,7 +849,7 @@
         }
       }
 
-      .ai-execution-close-icon {
+      .ai-side-tab-close-icon {
         margin-left: 4px;
         cursor: pointer;
 

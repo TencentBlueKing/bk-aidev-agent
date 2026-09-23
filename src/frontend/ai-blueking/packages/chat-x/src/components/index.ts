@@ -39,7 +39,6 @@ export * from './chat-content';
 export type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityTheme } from './chat-input/model-selector';
 import MessageContainer from './chat-message/message-container/message-container.vue';
 import MessageRender from './chat-message/message-render/message-render.vue';
-import ExecutionSummary from './execution-summary/execution-summary.vue';
 import FileIcon from './file-icon/file-icon.vue';
 import HighlightKeyword from './highlight-keyword/highlight-keyword';
 import ImagePreviewGroup from './image-preview/image-preview-group.vue';
@@ -68,7 +67,6 @@ export {
   ChatInput,
   commonErrorContent,
   ContentRender,
-  ExecutionSummary,
   FileIcon,
   HighlightKeyword,
   ImagePreview,

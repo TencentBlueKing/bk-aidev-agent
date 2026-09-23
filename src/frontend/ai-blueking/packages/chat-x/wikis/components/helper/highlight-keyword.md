@@ -3,85 +3,53 @@ name: HighlightKeyword 关键词高亮
 slug: highlight-keyword
 kind: component
 domain: helper
-description: 根据注入关键词高亮文本片段。
+description: 按传入关键词高亮文本片段。
 aiSummary: >
-  根据注入关键词高亮文本片段。
+  按 keyword prop 高亮文本片段。
   源码位置：src/components/highlight-keyword/highlight-keyword.ts。
-relatedComponents:
-  - slug: toolcall-render
-    relation: 工具调用标题与状态文案高亮
-  - slug: desc-panel
-    relation: 工具详情键值与描述文本高亮
-  - slug: execution-summary
-    relation: 执行摘要搜索过滤与列表高亮
 sinceVersion: 1.0.0
 ---
 
 <script lang="ts" setup>
-  import { ref, provide, computed, h, defineComponent } from 'vue'
+  import { ref } from 'vue'
   import HighlightKeywordComp from '../../../src/components/highlight-keyword/highlight-keyword'
-  import { KEYWORD_TOKEN } from '../../../src/composables/use-common'
 
-  const keyword1 = ref('');
-  const demoText1 = 'Vue 3 引入了 Composition API，开发者可以使用 ref、computed 和 watch 等函数来组织代码。';
+  const keyword1 = ref('')
+  const demoText1 = 'Vue 3 引入了 Composition API，开发者可以使用 ref、computed 和 watch 等函数来组织代码。'
 
-  const keyword2 = ref('API');
-  const demoText2 = 'Composition API 是 Vue 3 的核心特性之一，提供了更灵活的 API 来复用逻辑。';
-
-  const KeywordDemoWrapper = defineComponent({
-    props: { keyword: { type: String, default: '' }, text: { type: String, default: '' } },
-    setup(props, { slots }) {
-      provide(KEYWORD_TOKEN, computed(() => props.keyword));
-      return () => slots.default?.();
-    },
-  });
+  const keyword2 = ref('API')
+  const demoText2 = 'Composition API 是 Vue 3 的核心特性之一，提供了更灵活的 API 来复用逻辑。'
 </script>
 
 # HighlightKeyword 关键词高亮
+
 ## 源码事实
 
 - **源码位置**：`src/components/highlight-keyword/highlight-keyword.ts`
 - **能力域**：辅助能力
-- **能力说明**：根据注入关键词高亮文本片段。
+- **能力说明**：按 `keyword` prop 高亮文本片段。
 
-
-
-> **能力域**：辅助能力
-
-函数式组件，用于在文本中高亮匹配的搜索关键词。通过 `useKeywordInject` 从上层注入关键词，自动将匹配部分包裹在带高亮样式的 `<span>` 中。
-
-主要配合 `ExecutionSummary` 的搜索功能使用，实现搜索结果的视觉高亮。
-
-## 工作原理
-
-```
-props.text + inject(keyword)
-        │
-        ├── keyword 为空 → 直接渲染原文本
-        │
-        └── keyword 非空
-            ├── 正则 split 文本为 parts[]
-            ├── parts.length === 1 → 无匹配，渲染原文本
-            └── parts.length > 1 → 匹配部分用 <span class="highlight"> 包裹
-```
-
-组件使用 `defineComponent` + `h()` 渲染函数实现，不依赖模板。
+函数式组件，把 `text` 里匹配 `keyword` 的片段包进带高亮样式的 `<span>`。未传或空关键词时原样渲染文本。
 
 ## 基础用法
 
 ```vue
 <template>
-  <HighlightKeyword :text="text" />
+  <HighlightKeyword
+    :keyword="keyword"
+    :text="text"
+  />
 </template>
 
 <script setup lang="ts">
+  import { ref } from 'vue';
+
   import { HighlightKeyword } from '@blueking/chat-x';
 
+  const keyword = ref('API');
   const text = '这是一段包含 Vue 3 Composition API 的示例文本';
 </script>
 ```
-
-> **注意**：关键词通过 `useKeywordProvider` / `useKeywordInject`（`provide/inject`）注入，不通过 props 传入。上层需先调用 `useKeywordProvider()` 设置关键词。
 
 **渲染效果**（在输入框中输入关键词，观察文本高亮变化）
 
@@ -89,9 +57,10 @@ props.text + inject(keyword)
   <div style="margin-bottom: 8px;">
     <input v-model="keyword1" placeholder="输入关键词搜索..." style="padding: 4px 8px; border: 1px solid #dcdee5; border-radius: 4px; width: 200px;" />
   </div>
-  <KeywordDemoWrapper :keyword="keyword1">
-    <HighlightKeywordComp :text="demoText1" />
-  </KeywordDemoWrapper>
+  <HighlightKeywordComp
+    :keyword="keyword1"
+    :text="demoText1"
+  />
 </div>
 
 ## 关键词高亮示例
@@ -99,72 +68,23 @@ props.text + inject(keyword)
 预设关键词为 `API`，文本中所有匹配部分会以高亮背景显示：
 
 <div class="demo">
-  <KeywordDemoWrapper :keyword="keyword2">
-    <HighlightKeywordComp :text="demoText2" />
-  </KeywordDemoWrapper>
+  <HighlightKeywordComp
+    :keyword="keyword2"
+    :text="demoText2"
+  />
 </div>
-
-## 与 ExecutionSummary 配合
-
-`ExecutionSummary` 内部通过 `useKeywordProvider` 提供搜索关键词，后代组件中的 `HighlightKeyword` 自动响应：
-
-```
-ExecutionSummary
-├── useKeywordProvider(keyword)  ← Input 绑定
-└── MessageRender
-    └── AssistantMessage
-        └── ToolcallRender
-            └── HighlightKeyword(:text)  ← inject(keyword)
-```
-
-## 配套 Composables（内部，未从包入口导出）
-
-`useKeywordProvider` / `useKeywordInject` / `useKeywordMatch` 在 `src/composables/use-common.ts`，**不能** `from '@blueking/chat-x'`。业务侧把 `HighlightKeyword` 放在 [ChatContainer](/components/setup/chat-container) / [ExecutionSummary](/components/agent/execution-summary) 子树即可，库已注入关键词。
-
-库内或文档站高级用法用相对路径：
-
-```typescript
-import { useKeywordProvider, useKeywordInject, useKeywordMatch } from '../../../src/composables/use-common';
-
-const { keyword } = useKeywordProvider();
-keyword.value = '搜索词';
-
-const injected = useKeywordInject();
-const { keywordMatched } = useKeywordMatch(() => [props.title, props.description, props.content]);
-```
-
-`useKeywordMatch` 的典型用途是在 `ExecutionSummary` 的搜索过滤中，让组件自行判断是否匹配搜索词，与 `HighlightKeyword` 配合实现搜索 + 高亮。
 
 ## API
 
 ### Props
 
-| 属性名 | 类型     | 必填 | 说明       |
-| ------ | -------- | ---- | ---------- |
-| text   | `string` | ✓    | 待高亮文本 |
-
-### 依赖注入
-
-| 注入项  | 提供方               | 说明                   |
-| ------- | -------------------- | ---------------------- |
-| keyword | `useKeywordProvider` | 搜索关键词，响应式更新 |
-
-### 配套 Composables
-
-| 函数名               | 参数                                            | 返回值                                     | 说明                                          |
-| -------------------- | ----------------------------------------------- | ------------------------------------------ | --------------------------------------------- |
-| `useKeywordProvider` | —                                               | `{ keyword: ShallowRef<string> }`          | 内部 API，见 `src/composables/use-common.ts` |
-| `useKeywordInject`   | —                                               | `ComputedRef<string> \| undefined`         | 内部 API，见 `src/composables/use-common.ts` |
-| `useKeywordMatch`    | `getSearchTexts: () => (string \| undefined)[]` | `{ keywordMatched: ComputedRef<boolean> }` | 内部 API；空关键词返回 true |
+| 属性名    | 类型     | 必填 | 说明                         |
+| --------- | -------- | ---- | ---------------------------- |
+| text      | `string` | ✓    | 待高亮文本                   |
+| keyword   | `string` |      | 要高亮的关键词，缺省空字符串 |
 
 ### CSS 类名
 
 | 类名                    | 说明                                |
 | ----------------------- | ----------------------------------- |
-| `.ai-highlight-keyword` | 匹配文本的高亮样式（背景色 + 圆角） |
-
-## 关联组件
-
-- [ToolCallRender](/components/agent/toolcall-render) — 工具调用头部高亮
-- [DescPanel](/components/rendering/desc-panel) — 详情面板键值高亮
-- [ExecutionSummary](/components/agent/execution-summary) — 执行摘要搜索
+| `.ai-is-keyword` | 匹配文本的高亮样式 |

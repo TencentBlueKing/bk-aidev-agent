@@ -285,7 +285,7 @@ describe('DescPanel', () => {
   });
 
   describe('word-break 样式测试', () => {
-    it('JSON 数据中 HighlightKeyword 应该有 word-break: break-all 样式', () => {
+    it('JSON 数据的值应该有 word-break: break-all 样式', () => {
       const desc = JSON.stringify({ longText: '这是一段很长的文本内容用于测试换行' });
 
       wrapper = mount(DescPanel, {
@@ -297,14 +297,14 @@ describe('DescPanel', () => {
 
       const descValue = wrapper.find('.desc-value');
       expect(descValue.exists()).toBe(true);
-      const highlightKeyword = descValue.find('[style]');
-      expect(highlightKeyword.exists()).toBe(true);
-      expect(highlightKeyword.attributes('style')).toContain('word-break');
+      const valueText = descValue.find('[style]');
+      expect(valueText.exists()).toBe(true);
+      expect(valueText.attributes('style')).toContain('word-break');
     });
   });
 
   describe('长文本展示测试', () => {
-    it('JSON 数据的 value 应在 desc-value 内展示 HighlightKeyword', () => {
+    it('JSON 数据的 value 应在 desc-value 内展示', () => {
       const desc = JSON.stringify({ longText: '这是一段很长的文本内容用于测试换行展示' });
 
       wrapper = mount(DescPanel, {

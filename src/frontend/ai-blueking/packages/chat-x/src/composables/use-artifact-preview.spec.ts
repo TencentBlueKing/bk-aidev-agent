@@ -96,6 +96,12 @@ describe('use-artifact-preview', () => {
       expect(consumerCtx?.canResolveArtifactUrl.value).toBe(false);
     });
 
+    it('未传入 artifacts 时应提供空列表', () => {
+      const { consumerCtx } = setup();
+
+      expect(consumerCtx?.artifacts.value).toEqual([]);
+    });
+
     it('resolveArtifactUrls 每次调用都应重新取链', async () => {
       const onArtifactClick = vi
         .fn()

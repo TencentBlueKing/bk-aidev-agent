@@ -35,7 +35,7 @@
 | `injectGlobalConfig`     | 任意后代组件                  | 取出全局展示配置，无 Provider 时返回 `undefined`                                        | [查看](./use-global-config.md)         |
 | `useCommandSelection`    | `AiSlashInput`                | edix 编辑器的光标位置快照工具；返回 `GetCursorPosition` 命令和 `commandSelection`       | [查看](./use-command-selection.md)     |
 | `useFlowNodeActions`     | `FlowAgentContent`            | **未从包入口导出**。源码在 `src/components/chat-content/flow-agent-content/use-flow-node-actions.ts` | [查看](./use-flow-node-actions.md) |
-| `use-common.ts`          | `ChatContainer` 等            | **未从包入口导出**。含 `useKeywordProvider` / `useRenderModeProvider` / `useCommonTippyProvider` / `useExecutionPanelProvider` / `useExecutionPanelInject` 等，无独立文档 | — |
+| `use-common.ts`          | `ChatContainer` 等            | **未从包入口导出**。含 `useRenderModeProvider` / `useCommonTippyProvider` 等，无独立文档 | — |
 
 ## 引入方式
 
@@ -124,9 +124,9 @@ const { chunks, animStyle } = useAnimationText(textRef, { immediate: false });
 ### useMessageGroup
 
 ```typescript
-const { messageGroups, executionGroups, isShareMode, isAllSelected, onToggleShareAll, onCancelShare, onConfirmShare } =
+const { messageGroups, isShareMode, isAllSelected, onToggleShareAll, onCancelShare, onConfirmShare } =
   useMessageGroup({ keyword, messages: computed(() => props.messages), selectedUserMessages });
-// messageGroups：完整消息分组；executionGroups：仅执行类消息分组
+// messageGroups：完整消息分组
 ```
 
 ### useCustomTabProvider / Consumer

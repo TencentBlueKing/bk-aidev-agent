@@ -51,6 +51,8 @@ export type SessionArtifact = AIFileInfo;
 type ArtifactPreviewContext = {
   /** 当前命中的文件 outputId */
   activeArtifactId: Ref<string>;
+  /** 会话级产物列表（消息产物 + 待发送上传），由容器提供 */
+  artifacts: ComputedRef<SessionArtifact[]>;
   /** 是否具备异步取链能力（有 onArtifactClick 时下载按钮可见） */
   canResolveArtifactUrl: ComputedRef<boolean>;
   /** 由文件卡片触发：命中文件并弹出/切换到文件产物侧栏 */
@@ -79,12 +81,15 @@ export const triggerArtifactDownload = (url: string, fileName: string) => {
  * 打开侧栏 Tab 的副作用由外部 onOpen 注入。
  */
 export const useArtifactPreviewProvider = (options: {
+  /** 会话级产物列表；缺省空列表，供文档站 / 单测自行注入 */
+  artifacts?: ComputedRef<SessionArtifact[]>;
   /** 读取业务侧异步取链回调（用 getter 保持对 props 变更敏感） */
   getOnArtifactClick?: () => OnArtifactClick | undefined;
   /** 命中文件后触发：由容器负责 addCustomTab + 展开侧栏 + 选中 Tab */
   onOpen: (outputId: string) => void;
 }) => {
   const activeArtifactId = shallowRef('');
+  const artifacts = options.artifacts ?? computed<SessionArtifact[]>(() => []);
   // 进行中的请求，避免同文件并发重复打接口
   const inflight = new Map<string, Promise<ArtifactUrlResult>>();
 
@@ -129,6 +134,7 @@ export const useArtifactPreviewProvider = (options: {
 
   provide<ArtifactPreviewContext>(ARTIFACT_PREVIEW_TOKEN, {
     activeArtifactId,
+    artifacts,
     canResolveArtifactUrl,
     openPreview,
     resolveArtifactUrls,
@@ -137,6 +143,7 @@ export const useArtifactPreviewProvider = (options: {
 
   return {
     activeArtifactId,
+    artifacts,
     canResolveArtifactUrl,
     openPreview,
     resolveArtifactUrls,

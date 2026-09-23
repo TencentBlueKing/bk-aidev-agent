@@ -27,6 +27,7 @@
 import { type Ref, computed, onMounted, onUnmounted, shallowRef, watch } from 'vue';
 
 import { DEFAULT_TAB_ORDER, useContainerScrollConsumer, useCustomTabConsumer } from '../../../composables';
+import { NodeTabIcon } from '../../../icons';
 import { t } from '../../../lang/lang';
 import BkFlowNodeDetail from './flow-agent-node-detail.vue';
 
@@ -88,6 +89,7 @@ export const useFlowTab = (options: { messageUid: Ref<string | undefined>; taskL
     customTab.addCustomTab?.({
       // 是否可关闭由后端下发的 closable 控制，缺省（undefined）保持默认可关闭
       closable: node.closable,
+      icon: NodeTabIcon,
       label: node.name,
       name: buildNodeTabName(task, node),
       // 排序优先采用后端下发的 tab_order（越小越靠前），缺省回退默认权重
@@ -114,10 +116,11 @@ export const useFlowTab = (options: { messageUid: Ref<string | undefined>; taskL
     customTab.addCustomTab?.({
       // 是否可关闭由后端下发的 closable 控制，缺省（undefined）保持默认可关闭
       closable: task.closable,
+      icon: NodeTabIcon,
       label: t('有效证据'),
       name: buildConfidenceTabName(task),
       // 排序优先采用后端下发的 tab_order（越小越靠前）；
-      // 缺省回退 10，固定排在「执行情况」(order 0) 之后、节点详情(默认 100)之前
+      // 缺省回退 10，固定排在「文件产物」(order -1) 之后、节点详情(默认 100)之前
       order: task.tab_order ?? 10,
       data: {
         component: BkFlowNodeDetail,
@@ -147,7 +150,7 @@ export const useFlowTab = (options: { messageUid: Ref<string | undefined>; taskL
 
   onUnmounted(() => {
     // 仅在 message-container 中（存在滚动上下文）被销毁时移除 Tab；
-    // 若是在执行情况面板内的销毁则不移除。
+    // 脱离滚动上下文（如侧栏内复用渲染）的销毁不移除，避免误删仍在展示的 Tab。
     if (!provideContainerScrollData?.value) {
       return;
     }

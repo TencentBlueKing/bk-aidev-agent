@@ -77,7 +77,7 @@ exportStatus: internal
 
 ## 基础用法
 
-面板**未从包入口导出**，业务侧请走下方「业务接入」；下列示例仅用于文档站 / 本地调试（与 `ExecutionSummary` 文档站写法一致：相对路径引入 + 自行挂 Provider）。
+面板**未从包入口导出**，业务侧请走下方「业务接入」；下列示例仅用于文档站 / 本地调试（相对路径引入 + 自行挂 Provider）。
 
 ```vue
 <template>
@@ -242,7 +242,7 @@ ArtifactFileCard（点击文件卡片）
 会话内以 **`outputId`** 作为文件产物唯一键：
 
 - 同一 `outputId` 在多条消息中出现时，聚合列表去重并保留最后一次出现的文件信息
-- `activeId`、列表 `:key`、`select` 事件参数均使用 `outputId`
+- 命中态与列表 `:key` 均使用 `outputId`，由 `ARTIFACT_PREVIEW_TOKEN` 注入
 - 文件名可能重复，**不可**作为唯一键
 
 ## 预览机制
@@ -307,18 +307,7 @@ message-artifacts/
 
 ## API
 
-### Props
-
-| 属性名    | 类型                | 必填 | 说明                                   |
-| --------- | ------------------- | ---- | -------------------------------------- |
-| activeId  | `string`            | ✓    | 当前命中的文件 `outputId`              |
-| artifacts | `SessionArtifact[]` | ✓    | 当前会话全部文件产物（已按 `outputId` 去重） |
-
-### Events
-
-| 事件名 | 参数              | 说明                       |
-| ------ | ----------------- | -------------------------- |
-| select | `(id: string)`    | 列表内切换选中文件，参数为文件 `outputId` |
+面板无 Props / Events。`artifacts`、`activeArtifactId`、`setActiveArtifactId` 均通过 `ARTIFACT_PREVIEW_TOKEN` 注入；无 Provider 时按空列表降级为空态。
 
 ### Slots / Expose
 
@@ -352,6 +341,5 @@ type AIFileInfo = {
 - [AssistantMessage](/components/message/assistant-message) — 文件产物来源（`property.artifacts`）
 - [ChatContainer](/components/setup/chat-container) — 侧栏「文件产物」Tab 挂载场景，提供 `onArtifactClick`
 - [MessageLoading](/components/helper/message-loading) — Host 预览区异步加载态
-- [ExecutionSummary](/components/agent/execution-summary) — 同为侧栏 Tab 面板
 - [MentionTag](/components/rendering/mention-tag) — 引用后在输入框内的标签形态
 - [useInputMention](/composables/use-input-mention) — 引用入口的上下文来源

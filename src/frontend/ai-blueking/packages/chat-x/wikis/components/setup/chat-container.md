@@ -20,8 +20,8 @@ relatedComponents:
     relation: 透传 models / selectedModel，在输入区展示模型选择器
   - slug: shortcut-render
     relation: 快捷指令表单浮层
-  - slug: execution-summary
-    relation: 执行摘要侧栏与定位
+  - slug: file-artifact-panel
+    relation: 侧栏默认文件产物面板
   - slug: selection-footer
     relation: 多选分享底部操作栏
 sinceVersion: 1.0.0
@@ -234,7 +234,7 @@ sinceVersion: 1.0.0
 
 > **能力域**：对话搭建 ｜ **源码**：`src/components/chat-container/chat-container.vue`
 
-顶层聊天容器，整合 `MessageContainer`（消息列表）、`ChatInput`（输入框）、`ExecutionSummary`（执行摘要）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏），提供完整 AI 对话界面布局。
+顶层聊天容器，整合 `MessageContainer`（消息列表）、`ChatInput`（输入框）、侧栏自定义 Tab（默认「文件产物」）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏），提供完整 AI 对话界面布局。
 
 ## 核心能力
 
@@ -265,7 +265,7 @@ ai-chat-container（:data-ai-size="size"）
     │   │   │   ├── 执行情况（默认 Tab）
     │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 getSideTabRenderComponent 自定义）
     │   │   │   └── #setting → 全屏/退出全屏 ToolBtn
-    │   │   ├── ExecutionSummary（执行情况 Tab 内容）
+    │   │   ├── FileArtifactPanel（文件产物 Tab 内容）
     │   │   └── 自定义 Tab 组件（getSideRenderComponent 优先，否则 data.component；可注入 #locateButton）
     └── main（主内容区）
         ├── MessageContainer（有消息时；#group / #message 可自定义）
@@ -401,13 +401,13 @@ ai-chat-container（:data-ai-size="size"）
 
 > CSS 变量与档位取值详见 [主题配置 — 字号主题](../../theme/theme#字号主题)。
 
-## 侧边栏与执行摘要
+## 侧边栏
 
-侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。Tab 标签内 `.ai-execution-summary-icon` 固定 16×16px，避免被 flex 压缩。
+侧边栏默认包含「文件产物」Tab（`order: -1`、不可关闭、`loadOnSelect: false`）。Tab 标签内 `.ai-side-tab-icon` 固定 16×16px，避免被 flex 压缩。节点详情、有效证据等由对话流按需 `addCustomTab`，Tab 自带 `icon` 与 `data.component`。
 
-面板内的消息虽与对话流复用同一套渲染链路，但按**只读回看**呈现：`ExecutionSummary` 会 provide 面板上下文，FlowAgent 失败节点在面板内不展示「重试 / 跳过」，只保留「详情」；对话流内不受影响。详见 [ExecutionSummary](/components/agent/execution-summary)。
+侧栏内容由当前选中 Tab 的 `data.component`（或业务 `getSideRenderComponent`）渲染，容器不再按 Tab name 特判。文件产物 Tab 自持数据，面板通过 `ARTIFACT_PREVIEW_TOKEN` 注入产物列表。
 
-**展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与 `executionGroups`、`keyword`、是否有文件产物均无关。无执行数据时 `ExecutionSummary` 展示自身空态，无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看流程智能体详情/证据/执行情况），仅底部输入区保持隐藏。
+**展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与是否有文件产物无关。无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看节点详情/证据/文件产物），仅底部输入区保持隐藏。
 
 **展开 / 折叠由外部判断（严格受控）**：只要传入了 `asideCollapsed`，折叠态就**一律以外部值为准**。容器内部的展开动作（点击文件卡片预览、`addCustomTab` 打开节点详情等）只发出 `update:asideCollapsed` 请求，外部不改值就不会展开 —— 所以务必用 `v-model:asideCollapsed` 绑定，只写 `:aside-collapsed` 会让这些内部入口失效。完全不传该 prop 时退化为组件内部状态（默认折叠），内部入口照常生效。容器不会因为数据变空而自动收起或重置自定义 Tab。
 
@@ -488,7 +488,7 @@ ai-chat-container（:data-ai-size="size"）
 | `closable` | `true` | 是否展示关闭按钮。「执行情况」强制不可关闭 |
 
 - 排序为稳定排序，`order` 相同的 Tab 保持插入先后顺序。
-- 「执行情况」Tab 的显隐统一由 `executionTabVisible` Prop 控制（见 Props 表），不通过 `visible` 字段配置。
+- 侧栏不再内建「执行情况」Tab；常驻默认 Tab 为「文件产物」。
 - 同名（同 `name`）`addCustomTab` 会**合并更新**已有 Tab，可用于运行时调整 `order` / `visible` / `label`。
 
 ### 侧栏渲染扩展
@@ -1148,7 +1148,6 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
 | commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件。原样透传，仅全屏态强制把 `appendTo` 改为全屏容器；未传 `appendTo` 时不注入该字段，各浮层沿用自身默认挂载点 |
-| executionTabVisible       | `boolean`                                                                                | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
 | getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
 | models                    | `IModelOption[]`                                                                         | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
@@ -1312,7 +1311,7 @@ interface Shortcut {
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
 - [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModel`）
 - [ShortcutRender](/components/input/shortcut-render) — 快捷指令表单
-- [ExecutionSummary](/components/agent/execution-summary) — 执行摘要侧栏
+- [FileArtifactPanel](/components/message/file-artifact-panel) — 文件产物侧栏
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制

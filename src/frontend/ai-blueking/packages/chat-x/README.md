@@ -41,7 +41,7 @@ yarn add @blueking/chat-x
 
 ### 方式一：ChatContainer 一站式方案（推荐）
 
-`ChatContainer` 封装了 `MessageContainer`、`ChatInput`、`ShortcutBtns`、`ShortcutRender`、`ExecutionSummary` 等子组件，内部自动完成消息分组、快捷指令渲染、执行摘要等逻辑。
+`ChatContainer` 封装了 `MessageContainer`、`ChatInput`、`ShortcutBtns`、`ShortcutRender` 等子组件，内部自动完成消息分组、快捷指令渲染与侧栏 Tab 编排。
 
 ````vue
 <template>
@@ -322,7 +322,6 @@ const message: Message = {
 | `MessageTools`        | 消息工具栏（复制、引用、点赞、分享等） |
 | `MessageUserFeedback` | 用户反馈组件                           |
 | `ToolCallRender`      | 工具调用卡片渲染                       |
-| `ExecutionSummary`    | 执行摘要侧栏                           |
 
 ### 辅助组件
 

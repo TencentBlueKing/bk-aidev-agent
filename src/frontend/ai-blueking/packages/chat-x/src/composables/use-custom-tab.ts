@@ -29,7 +29,6 @@ import {
   type Ref,
   type ShallowRef,
   computed,
-  ref as deepRef,
   inject,
   nextTick,
   provide,
@@ -37,44 +36,49 @@ import {
   watch,
 } from 'vue';
 
-import { t } from '../lang/lang';
-
 import type { CustomTab } from '../types';
 
 export const CUSTOM_TAB_TOKEN = Symbol('CUSTOM_TAB_TOKEN');
-export const EXECUTION_TAB_NAME = 'execution';
-/** 自定义 Tab 默认排序权重；执行情况固定为 0，业务自定义 Tab 缺省回退到此值 */
+/** 自定义 Tab 默认排序权重；业务自定义 Tab 缺省回退到此值 */
 export const DEFAULT_TAB_ORDER = 100;
 
+/** Provider 对外返回值；显式标注避免 dts 推断泄漏 @vue/shared 内部类型 */
+export type UseCustomTabProviderReturn<T extends Record<string, unknown>> = {
+  addCustomTab: (tab: CustomTab<T>) => void;
+  displayTabs: ComputedRef<CustomTab<T>[]>;
+  ensureCustomTab: (tab: CustomTab<T>) => void;
+  isCollapse: Ref<boolean>;
+  removeCustomTab: (tabName: CustomTab<T>['name']) => void;
+  resetCustomTab: () => void;
+  selectCustomTab: (tab: CustomTab<T>) => void;
+  selectedTab: ShallowRef<CustomTab<T>>;
+  tabs: ShallowRef<CustomTab<T>[]>;
+};
+
 export function useCustomTabProvider<T extends Record<string, unknown>>(options: {
+  /**
+   * 常驻默认 Tab：初始即挂载、作为选中态兜底、`resetCustomTab` 后仍保留。
+   * 由容器决定是哪一个（如 ChatContainer 的「文件产物」），composable 不内建任何业务 Tab。
+   */
+  defaultTab: CustomTab<T>;
   /** 侧栏折叠态；由容器传入受控 ref（如 ChatContainer 的 v-model:asideCollapsed），缺省内部自持 */
   collapsed?: Ref<boolean>;
-  /** 执行情况 Tab 是否展示，缺省 true；传 getter 以保持响应式 */
-  executionTabVisible?: () => boolean | undefined;
   onTabChange?: (tab: CustomTab<T>) => void;
-}) {
-  const EXECUTION_TAB: CustomTab<T> = {
-    closable: false,
-    label: t('执行情况'),
-    name: EXECUTION_TAB_NAME,
-    order: 0,
-  };
-  const tabs = shallowRef<CustomTab<T>[]>([EXECUTION_TAB]);
-  const selectedTab = deepRef<CustomTab<T>>(EXECUTION_TAB);
+}): UseCustomTabProviderReturn<T> {
+  const { defaultTab } = options;
+  const tabs = shallowRef<CustomTab<T>[]>([defaultTab]);
+  const selectedTab = shallowRef<CustomTab<T>>(defaultTab);
   const isCollapse = options.collapsed ?? shallowRef(true);
   /** 是否已被主动切换过；未切换前选中态跟随 Tab 栏首位 */
   const hasManualSelection = shallowRef(false);
 
-  /** 执行情况显隐由外部配置控制，缺省可见 */
-  const isExecutionVisible = computed(() => options.executionTabVisible?.() ?? true);
-  const isTabVisible = (tab: Pick<CustomTab<T>, 'name' | 'visible'>) =>
-    tab.name === EXECUTION_TAB_NAME ? isExecutionVisible.value : tab.visible !== false;
+  const isTabVisible = (tab: Pick<CustomTab<T>, 'visible'>) => tab.visible !== false;
 
   /**
    * Tab 栏实际展示列表：过滤掉不可见 Tab，并按 order 升序稳定排序（同 order 保持插入顺序）。
    * 原始 tabs 仍保留全部 Tab，供程序化选中与查找。
    */
-  const displayTabs = computed(() =>
+  const displayTabs = computed<CustomTab<T>[]>(() =>
     tabs.value
       .filter(isTabVisible)
       .slice()
@@ -96,7 +100,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
 
   /**
    * 确保 Tab 存在（可合并更新），不展开侧栏、不切换选中。
-   * 用于「侧栏已因执行情况打开时同步挂上文件产物」等场景。
+   * 用于「侧栏已因其他 Tab 打开时同步挂上新 Tab」等场景。
    */
   const ensureCustomTab = (tab: CustomTab<T>) => {
     upsertCustomTab(tab);
@@ -117,7 +121,7 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
   };
   /** 写入选中态并派发回调，不影响「是否被主动切换过」的标记 */
   const applySelectedTab = (tab: CustomTab<T>) => {
-    selectedTab.value = tab ?? EXECUTION_TAB;
+    selectedTab.value = tab ?? defaultTab;
     options.onTabChange?.(tab);
   };
 
@@ -127,8 +131,8 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
   };
 
   const resetCustomTab = () => {
-    tabs.value = [EXECUTION_TAB];
-    selectedTab.value = EXECUTION_TAB;
+    tabs.value = [defaultTab];
+    selectedTab.value = defaultTab;
     hasManualSelection.value = false;
     isCollapse.value = true;
   };
@@ -144,8 +148,9 @@ export function useCustomTabProvider<T extends Record<string, unknown>>(options:
       }
       return;
     }
-    // 选中 Tab 被隐藏时（如执行情况被配置隐藏），其内容不再渲染，自动切到首个可见 Tab
-    if (!isTabVisible(selectedTab.value)) {
+    // 按 name 在最新可见列表中比对，覆盖「选中 Tab 被置为不可见」与「被移除」两种失效场景；
+    // 不能读 selectedTab 自身快照，它不会随 tabs 里的元信息更新而变化
+    if (!list.some(tab => tab.name === selectedTab.value.name)) {
       applySelectedTab(list[0]);
     }
   });

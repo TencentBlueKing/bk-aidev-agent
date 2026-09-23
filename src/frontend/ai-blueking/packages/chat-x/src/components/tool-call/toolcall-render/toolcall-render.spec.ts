@@ -91,8 +91,6 @@ vi.mock('../desc-panel/desc-panel.vue', () => ({
 
 vi.mock('../../../composables/use-common', () => ({
   useCommonTippyInject: vi.fn(() => undefined),
-  useKeywordInject: vi.fn(() => undefined),
-  useKeywordMatch: vi.fn(() => ({ keywordMatched: { value: null }, keyword: { value: '' } })),
 }));
 
 describe('ToolcallRender', () => {
