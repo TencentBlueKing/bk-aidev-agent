@@ -165,25 +165,25 @@ describe('ToolcallRender', () => {
         },
       });
 
-    it('type 为 function 时应该显示「调用工具」前缀', () => {
-      wrapper = mountWithFunction({ type: 'function' });
+    it('function_type 为 function 时应该显示「调用工具」前缀', () => {
+      wrapper = mountWithFunction({ function_type: 'function' });
 
       expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 search');
     });
 
-    it('type 为 mcp 时应该显示「调用 MCP」前缀，标题带 MCP 名', () => {
-      wrapper = mountWithFunction({ type: 'mcp', mcpName: 'bk-data-server' });
+    it('function_type 为 mcp 时应该显示「调用 MCP」前缀，标题带 MCP 名', () => {
+      wrapper = mountWithFunction({ function_type: 'mcp', mcpName: 'bk-data-server' });
 
       expect(wrapper.find('.toolcall-header-title').text()).toBe('调用 MCP bk-data-server / search');
     });
 
-    it('type 为 skill 时应该显示「读取 Skill」前缀', () => {
-      wrapper = mountWithFunction({ type: 'skill' });
+    it('function_type 为 skill 时应该显示「读取 Skill」前缀', () => {
+      wrapper = mountWithFunction({ function_type: 'skill' });
 
       expect(wrapper.find('.toolcall-header-title').text()).toBe('读取 Skill search');
     });
 
-    it('无 type 且无 mcpName 时应该显示「调用工具」前缀', () => {
+    it('无 function_type 且无 mcpName 时应该显示「调用工具」前缀', () => {
       wrapper = mount(ToolcallRender, {
         props: {
           toolCall: mockToolCall,
@@ -194,16 +194,16 @@ describe('ToolcallRender', () => {
       expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 search');
     });
 
-    // 旧版数据兼容：未下发 type 时回退到 mcpName 判定
-    it('无 type 但有 mcpName 时应该兼容判定为「调用 MCP」', () => {
+    // 旧版数据兼容：未下发 function_type 时回退到 mcpName 判定
+    it('无 function_type 但有 mcpName 时应该兼容判定为「调用 MCP」', () => {
       wrapper = mountWithFunction({ mcpName: 'bk-data-server' });
 
       expect(wrapper.find('.toolcall-header-title').text()).toBe('调用 MCP bk-data-server / search');
     });
 
-    // type 优先于 mcpName：显式 function 不应被 mcpName 覆盖为 MCP
-    it('type 显式为 function 时即使有 mcpName 也显示「调用工具」前缀', () => {
-      wrapper = mountWithFunction({ type: 'function', mcpName: 'bk-data-server' });
+    // function_type 优先于 mcpName：显式 function 不应被 mcpName 覆盖为 MCP
+    it('function_type 显式为 function 时即使有 mcpName 也显示「调用工具」前缀', () => {
+      wrapper = mountWithFunction({ function_type: 'function', mcpName: 'bk-data-server' });
 
       expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 bk-data-server / search');
     });
@@ -239,7 +239,7 @@ describe('ToolcallRender', () => {
         props: {
           toolCall: {
             ...mockToolCall,
-            function: { ...mockToolCall.function, type: 'skill' },
+            function: { ...mockToolCall.function, function_type: 'skill' },
           },
           status: MessageStatus.Pending,
         },

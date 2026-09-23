@@ -394,7 +394,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 ### MCP 工具调用
 
-`function.type` 为 `'mcp'`（或旧数据仅有 `mcpName`）时，`ToolCallRender` 头部显示为「调用 MCP {mcpName} / {name}」：
+`function.function_type` 为 `'mcp'`（或旧数据仅有 `mcpName`）时，`ToolCallRender` 头部显示为「调用 MCP {mcpName} / {name}」：
 
 ```vue
 <script setup lang="ts">
@@ -403,7 +403,7 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
       id: 'call_mcp_1',
       type: 'function',
       function: {
-        type: 'mcp', // 调用类型，缺省时有 mcpName 也会兼容判定为 MCP
+        function_type: 'mcp', // 调用类型，缺省时有 mcpName 也会兼容判定为 MCP
         name: 'query_database',
         arguments: '{"sql": "SELECT * FROM users LIMIT 10"}',
         description: '执行数据库查询',
@@ -740,6 +740,7 @@ type FunctionCall = {
   arguments: string; // JSON 字符串格式的参数
   description?: string; // 函数描述
   mcpName?: string; // MCP 服务名（存在时标题显示 "调用 MCP"）
+  function_type?: 'function' | 'mcp' | 'skill'; // 调用类型，决定头部前缀；不传时有 mcpName 按 MCP 判定
 };
 
 // 工具执行结果

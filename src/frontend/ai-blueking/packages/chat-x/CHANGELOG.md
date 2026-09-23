@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2026-09-23 10:41:54
+
+### Breaking Changes
+
+- `FunctionCall.type` 重命名为 `function_type`，避免与 `ToolCall.type` 冲突。取值仍为 `'function' | 'mcp' | 'skill'`；不填时仍按 `mcpName` 兼容判定为 MCP。
+
+## 2026-09-22 23:59:59
 
 ### Breaking Changes
 
@@ -32,7 +38,7 @@
 - 输入框菜单不再被外层容器 `overflow` 裁切或盖住。
 - 展开模型选择器时同步收起输入框菜单。
 
-## 0.0.52-beta.1 (2026-09-03)
+## 0.0.52-beta.1 (2026-09-03 11:56:52)
 
 输入区资源引用能力重构：`/` `@` `\` 与左下角 `+` 共用统一菜单；选中资源以 Mention 标签插入，发送后可还原、编辑可回填；会话产物支持从消息卡片 / 侧栏引用进输入框。
 

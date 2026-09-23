@@ -1088,7 +1088,7 @@ const MOCK_TOOLCALL_STATE_MESSAGES = [
 
 /**
  * 第 2 组：调用类型前缀与重试
- * 覆盖 function.type 为 skill / function / mcp 的三种前缀、无 type 时按 mcpName 的旧版兼容判定，
+ * 覆盖 function.function_type 为 skill / function / mcp 的三种前缀、无 function_type 时按 mcpName 的旧版兼容判定，
  * 以及设计标注「同一个工具执行 2 次则有 2 行记录」的失败 + 重试成功场景
  */
 const MOCK_TOOLCALL_TYPE_MESSAGES = [
@@ -1110,13 +1110,13 @@ const MOCK_TOOLCALL_TYPE_MESSAGES = [
     messageId: 'mock-toolcall-type-assistant',
     createdAt: mockCreatedAt(0, 10, 6, 1),
     toolCalls: [
-      // function.type = 'skill'：前缀显示「读取 Skill」
+      // function.function_type = 'skill'：前缀显示「读取 Skill」
       {
         id: 'mock-tc-skill',
         type: 'function',
         function: {
           name: 'knowlege-ba1',
-          type: 'skill',
+          function_type: 'skill',
           description: '基于 AIDEV 产品知识手册模板，为新产品产出完整手册并发布到 iWiki。',
           arguments: '{"template": "aidev", "publish": true}',
         },
@@ -1127,13 +1127,13 @@ const MOCK_TOOLCALL_TYPE_MESSAGES = [
           duration: 150000,
         },
       },
-      // function.type = 'function'：前缀显示「调用工具」
+      // function.function_type = 'function'：前缀显示「调用工具」
       {
         id: 'mock-tc-plain-tool',
         type: 'function',
         function: {
           name: 'knowlege-ba2',
-          type: 'function',
+          function_type: 'function',
           description: '把 Markdown / HTML 通过 CDP 写进 iWiki 编辑页并发布。',
           arguments: '{"doc": "release-note.md"}',
         },
@@ -1144,13 +1144,13 @@ const MOCK_TOOLCALL_TYPE_MESSAGES = [
           duration: 150000,
         },
       },
-      // function.type = 'mcp'：前缀显示「调用 MCP」，标题带 mcpName
+      // function.function_type = 'mcp'：前缀显示「调用 MCP」，标题带 mcpName
       {
         id: 'mock-tc-mcp',
         type: 'function',
         function: {
           name: 'query_table',
-          type: 'mcp',
+          function_type: 'mcp',
           mcpName: 'bk-data-server',
           description: '通过 MCP 查询数据表。',
           arguments: '{"table": "bkdata_result", "limit": 10}',
@@ -1162,14 +1162,14 @@ const MOCK_TOOLCALL_TYPE_MESSAGES = [
           duration: 3200,
         },
       },
-      // 旧版数据兼容：无 type、仅靠 mcpName 判定为 MCP 调用
+      // 旧版数据兼容：无 function_type、仅靠 mcpName 判定为 MCP 调用
       {
         id: 'mock-tc-mcp-legacy',
         type: 'function',
         function: {
           name: 'query_metric',
           mcpName: 'bk-monitor-server',
-          description: '旧版数据：未下发 function.type，应按 mcpName 兼容判定为「调用 MCP」。',
+          description: '旧版数据：未下发 function.function_type，应按 mcpName 兼容判定为「调用 MCP」。',
           arguments: '{"metric": "cpu_usage"}',
         },
         toolMessage: {

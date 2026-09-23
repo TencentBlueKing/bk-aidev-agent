@@ -232,7 +232,7 @@ type FunctionCall = {
   description?: string;
   mcpName?: string;
   // 决定 ToolcallRender 头部前缀（调用工具 / 调用 MCP / 读取 Skill）
-  type?: FunctionCallType;
+  function_type?: FunctionCallType;
 };
 
 // 示例
