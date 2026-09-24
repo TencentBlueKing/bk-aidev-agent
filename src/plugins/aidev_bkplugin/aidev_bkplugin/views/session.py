@@ -380,6 +380,7 @@ class ChatSessionContentViewSet(PluginViewSet):
             resource_manager=self.get_resource_manager(),
         ).stop_chat_content(
             request.data,
+            run_id=request.data.get("run_id") or None,
             message_handler=message_handler,
         )
         return Response(data=data)

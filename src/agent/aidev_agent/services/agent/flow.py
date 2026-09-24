@@ -91,7 +91,7 @@ class FlowAgentCompletionAgent(BaseModel):
     event_handler: Callable[[BaseEvent], None] | None = None
 
     # 运行时状态：任务是否已启动根据 flow_agent_start 判断
-    # 用于取消时决定已启动任务是否需要查询并推送撤销快照
+    # 用于取消时决定发 RUN_FINISHED（已启动）还是 RUN_ERROR（未启动）
     _task_started: bool = False
 
     class Config:
@@ -287,18 +287,11 @@ class FlowAgentCompletionAgent(BaseModel):
             if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
                 logger.info("[FLOW_AGENT] Task cancelled: task_id=%s, poll_count=%d", task_id, _poll_count)
                 # 根据任务是否已启动决定事件类型：
-                # - 已启动（flow_agent_start 已发送）：revoke 后查询最新状态，发
-                #   flow_agent_result + RUN_ERROR + RUN_FINISHED
+                # - 已启动（flow_agent_start 已发送）：revoke 后查询最新状态，发 flow_agent_result + RUN_FINISHED
                 # - 未启动（任务还没真正开始）：发 RUN_ERROR，触发暂停补写逻辑
                 if self._task_started:
                     yield from self._emit_cancel_result(client, encoder, task_id, last_task_info)
-                    error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
-                    self._dispatch_event(error_event)
-                    yield encoder.encode(error_event)
-                    logger.info(
-                        "[FLOW_AGENT] Task already started, sending RUN_ERROR + RUN_FINISHED: task_id=%s",
-                        task_id,
-                    )
+                    logger.info("[FLOW_AGENT] Task already started, sending RUN_FINISHED: task_id=%s", task_id)
                     yield emit_run_finished_event(
                         thread_id=self.thread_id,
                         run_id=RunId.CANCELLED,
@@ -320,7 +313,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 return
 
             try:
-                task_info = client.get_flow_agent_task_info(task_id)
+                task_info = self._query_task_info(client, task_id)
                 consecutive_failures = 0
             except Exception as e:
                 consecutive_failures += 1
@@ -342,16 +335,6 @@ class FlowAgentCompletionAgent(BaseModel):
                 self._interruptible_sleep(self.poll_interval, stream_thread_id)
                 continue
 
-            task_state = self._get_task_state(task_info)
-            if task_state == FLOW_TASK_REVOKED_STATE:
-                # BKFlow revoke 可能先于 SDK 取消信号生效，普通轮询终态也必须归一化。
-                task_info = self._build_revoke_info(task_id, task_info)
-                logger.info(
-                    "[FLOW_AGENT] Revoke status normalized during polling: task_id=%s, task_state=%s",
-                    task_id,
-                    task_state,
-                )
-
             # 保存最后一次成功轮询结果，用于取消时查询失败的兜底
             last_task_info = task_info
 
@@ -371,6 +354,8 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(update_event)
             else:
                 yield encoder.encode(result_event)
+
+            task_state = self._get_task_state(task_info)
 
             if _poll_count <= 3 or task_state in FLOW_TASK_END_STATES:
                 logger.debug(
@@ -500,14 +485,7 @@ class FlowAgentCompletionAgent(BaseModel):
         """
         latest_task_info, is_end_state = self._get_task_info_after_revoke(client, task_id, last_task_info)
         latest_state = self._get_task_state(latest_task_info)
-        if is_end_state and latest_state == FLOW_TASK_REVOKED_STATE:
-            revoke_info = self._build_revoke_info(task_id, latest_task_info)
-            logger.info(
-                "[FLOW_AGENT] Revoke status confirmed and normalized: task_id=%s, task_state=%s",
-                task_id,
-                latest_state,
-            )
-        elif is_end_state:
+        if is_end_state:
             revoke_info = latest_task_info
             logger.info(
                 "[FLOW_AGENT] Revoke status confirmed: task_id=%s, task_state=%s",
@@ -546,7 +524,7 @@ class FlowAgentCompletionAgent(BaseModel):
         sleep_interval = min(max(self.poll_interval, 0.01), REVOKE_STATUS_POLL_INTERVAL_MAX)
         for attempt in range(REVOKE_STATUS_MAX_ATTEMPTS):
             try:
-                task_info = client.get_flow_agent_task_info(task_id)
+                task_info = self._query_task_info(client, task_id)
                 if isinstance(task_info, dict):
                     latest_task_info = task_info
                     if self._get_task_state(task_info) in FLOW_TASK_END_STATES:
@@ -568,11 +546,17 @@ class FlowAgentCompletionAgent(BaseModel):
                     )
 
             if attempt + 1 < REVOKE_STATUS_MAX_ATTEMPTS:
-                # 当前已进入取消分支，取消标记必然存在；可中断等待会立即返回，
-                # 无法给平台异步 revoke 留出实际生效时间。
+                # 取消分支中取消标记必然存在，可中断等待会立即返回，无法给异步 revoke 留出生效时间。
                 time.sleep(sleep_interval)
 
         return latest_task_info or {}, False
+
+    def _query_task_info(self, client: ResourceManagerProtocol, task_id: int) -> dict:
+        """查询任务快照；BKFlow 返回 REVOKED 时统一归一化节点状态。"""
+        task_info = client.get_flow_agent_task_info(task_id)
+        if self._get_task_state(task_info) == FLOW_TASK_REVOKED_STATE:
+            return self._build_revoke_info(task_id, task_info)
+        return task_info
 
     @staticmethod
     def _get_task_state(task_info: dict | None) -> str:

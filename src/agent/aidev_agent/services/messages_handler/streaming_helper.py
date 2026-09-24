@@ -9,7 +9,7 @@ from typing import Any, Callable, Generator
 from ag_ui.core import EventType, RawEvent, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
 
-from aidev_agent.core.ag_ui.types import RunFinishedSuccessOutcome, serialize_run_finished_outcome
+from aidev_agent.core.ag_ui.types import CustomMessageType, RunFinishedSuccessOutcome, serialize_run_finished_outcome
 from aidev_agent.utils.event import RunId, emit_run_finished_event, stamp_round_end_event
 
 try:
@@ -388,27 +388,19 @@ class GeneratorStreamingHelper:
         )
 
     @staticmethod
-    def _is_cancel_terminal_event_chunk(chunk: Any) -> bool:
-        """判断 chunk 是否为取消流程允许透传的终态事件。"""
+    def _is_flow_revoke_result_chunk(chunk: Any) -> bool:
+        """判断 chunk 是否为 Flow Agent 的 REVOKED 结果事件。"""
         if not isinstance(chunk, str) or not chunk.startswith("data:"):
             return False
         try:
             payload = json.loads(chunk.removeprefix("data:").strip())
         except (TypeError, json.JSONDecodeError):
             return False
-        if not isinstance(payload, dict) or payload.get("resume_replay", False):
-            return False
         if (
-            payload.get("type") == EventType.RUN_ERROR.value
-            and payload.get("message") == RunId.CANCELLED_MESSAGE
+            not isinstance(payload, dict)
+            or payload.get("type") != EventType.CUSTOM.value
+            or payload.get("name") != CustomMessageType.FLOW_AGENT_RESULT.value
         ):
-            return True
-        if (
-            payload.get("type") == EventType.RUN_FINISHED.value
-            and payload.get("runId") == RunId.CANCELLED
-        ):
-            return True
-        if payload.get("type") != EventType.CUSTOM.value or payload.get("name") != "flow_agent_result":
             return False
         value = payload.get("value")
         return (
@@ -1376,13 +1368,10 @@ class GeneratorStreamingHelper:
                     last_cross_process_check_time = current_time
 
                 # 在当前 chunk 入队前终止，避免停止后继续向前端发送工具/模型结果。
-                # Flow Agent 取消分支会依次产出 REVOKED 结果、原有的 RUN_ERROR
-                # 和取消态 RUN_FINISHED；这组三个终态必须透传，否则通用取消兜底
-                # 会在此处把它们丢弃。
-                if (
-                    _is_cancel_requested(check_cross_process=should_check_cross_process)
-                    and not self._is_cancel_terminal_event_chunk(chunk)
-                ):
+                # Flow Agent 取消后的 REVOKED 结果需透传，随后仍由标准取消事件收尾。
+                if _is_cancel_requested(
+                    check_cross_process=should_check_cross_process
+                ) and not self._is_flow_revoke_result_chunk(chunk):
                     _emit_cancel_and_complete()
                     break
 

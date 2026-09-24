@@ -31,6 +31,63 @@ STALE_SESSION_THRESHOLD_SECONDS = 1800  # 30 分钟
 DEFAULT_SESSION_NAME = "新会话"
 
 
+def _record_producer_before_stop(message_handler, session_code: str, run_id: str | None) -> bool | None:
+    """停止前记录 producer 状态并清理上一轮取消通知。"""
+    if not session_code:
+        return None
+
+    producer_active = None
+    try:
+        producer_active = bool(message_handler.has_active_producer(session_code))
+    except Exception:
+        logger.exception("Error checking active producer for session_code=%s", session_code)
+
+    if hasattr(message_handler, "clear_cancelled_signal"):
+        try:
+            message_handler.clear_cancelled_signal(session_code, run_id=run_id)
+        except Exception:
+            logger.exception("Error clearing stale cancelled signal: session_code=%s", session_code)
+    return producer_active
+
+
+def _build_platform_stop_payload(request_data: dict | None, producer_active: bool | None) -> dict:
+    """组装平台 stop_content 请求体（run_id 仅用于本进程流控制）。"""
+    payload = request_data.dict() if hasattr(request_data, "dict") else dict(request_data or {})
+    payload.pop("run_id", None)
+    if producer_active is not None:
+        payload["producer_active"] = producer_active
+    return payload
+
+
+def _cancel_local_stream_and_wait(message_handler, session_code: str, run_id: str | None) -> None:
+    """平台 stop 之后在本进程 cancel 并等待 SSE 终态。"""
+    if not session_code:
+        return
+
+    GeneratorStreamingHelper.cancel(session_code, message_handler=message_handler, run_id=run_id)
+
+    stream_finished = False
+    if hasattr(message_handler, "wait_for_consumer_cancelled"):
+        try:
+            stream_finished = message_handler.wait_for_consumer_cancelled(
+                session_code,
+                timeout=TimeoutConfig.STOP_WAIT_STREAM_FINISH_TIMEOUT,
+                run_id=run_id,
+            )
+            if stream_finished:
+                logger.info("Stream finished confirmed for session_code=%s", session_code)
+            else:
+                logger.warning(
+                    "Timeout waiting for stream to finish for session_code=%s, proceeding with stop anyway",
+                    session_code,
+                )
+        except Exception:
+            logger.exception("Error waiting for stream finish: session_code=%s", session_code)
+
+    if not stream_finished and hasattr(message_handler, "mark_stopped"):
+        message_handler.mark_stopped(session_code)
+
+
 class SessionManager:
     """会话管理：取/建 session、持久化 chat history、保存 AI 回复。
 
@@ -133,56 +190,19 @@ class SessionManager:
             headers=self._user_headers(),
         )
 
-    def stop_chat_content(self, request_data: dict | None, *, message_handler) -> dict:
+    def stop_chat_content(self, request_data: dict | None, *, run_id: str | None, message_handler) -> dict:
         """停止会话生成：先调平台 stop_content，再在本进程 cancel 并等待 SSE 终态。"""
         request_data = request_data or {}
         session_code = request_data.get("session_code", "") if hasattr(request_data, "get") else ""
-        run_id = (request_data.get("run_id") or None) if hasattr(request_data, "get") else None
-        producer_active = None
-        if session_code:
-            try:
-                producer_active = bool(message_handler.has_active_producer(session_code))
-            except Exception:
-                logger.exception("Error checking active producer for session_code=%s", session_code)
-
-            if hasattr(message_handler, "clear_cancelled_signal"):
-                try:
-                    message_handler.clear_cancelled_signal(session_code, run_id=run_id)
-                except Exception:
-                    logger.exception("Error clearing stale cancelled signal: session_code=%s", session_code)
-
-        platform_payload = request_data.dict() if hasattr(request_data, "dict") else dict(request_data)
-        platform_payload.pop("run_id", None)
-        if producer_active is not None:
-            platform_payload["producer_active"] = producer_active
-
+        producer_active = _record_producer_before_stop(message_handler, session_code, run_id)
+        platform_payload = _build_platform_stop_payload(request_data, producer_active)
         try:
             result = self._client().api.stop_chat_session_content(
                 json=platform_payload,
                 headers=self._user_headers(),
             )
         finally:
-            if session_code:
-                GeneratorStreamingHelper.cancel(session_code, message_handler=message_handler, run_id=run_id)
-                stream_finished = False
-                if hasattr(message_handler, "wait_for_consumer_cancelled"):
-                    try:
-                        stream_finished = message_handler.wait_for_consumer_cancelled(
-                            session_code,
-                            timeout=TimeoutConfig.STOP_WAIT_STREAM_FINISH_TIMEOUT,
-                            run_id=run_id,
-                        )
-                        if stream_finished:
-                            logger.info("Stream finished confirmed for session_code=%s", session_code)
-                        else:
-                            logger.warning(
-                                "Timeout waiting for stream to finish for session_code=%s, proceeding with stop anyway",
-                                session_code,
-                            )
-                    except Exception:
-                        logger.exception("Error waiting for stream finish: session_code=%s", session_code)
-                if not stream_finished and hasattr(message_handler, "mark_stopped"):
-                    message_handler.mark_stopped(session_code)
+            _cancel_local_stream_and_wait(message_handler, session_code, run_id)
         return result.get("data") or {}
 
     def retrieve_session(self, session_code: str) -> dict:

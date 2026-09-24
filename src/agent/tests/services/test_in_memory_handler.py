@@ -7,12 +7,11 @@ import time
 from contextvars import ContextVar
 from unittest.mock import MagicMock
 
-import pytest
-from ag_ui.core import CustomEvent, EventType, RunErrorEvent, RunFinishedEvent
-from ag_ui.encoder import EventEncoder
-
 import aidev_agent.services.messages_handler.in_memory as in_memory_module
 import aidev_agent.services.messages_handler.streaming_helper as streaming_helper_module
+import pytest
+from ag_ui.core import CustomEvent, EventType, RunFinishedEvent
+from ag_ui.encoder import EventEncoder
 from aidev_agent.enums import MessageHandlerType
 from aidev_agent.services.messages_handler import (
     CANCELLED_CHUNK,
@@ -623,36 +622,25 @@ class TestInMemoryQueueMessageHandler:
         assert len(collected) < 20
         assert handler.is_empty(thread_id)
 
-    def test_cancel_preserves_flow_revoke_result_and_finished(self, handler):
-        """取消后应透传 REVOKED 结果及原有取消收尾事件。"""
-        thread_id = "test_stream_revoke_terminal_events"
+    def test_cancel_preserves_flow_revoke_result(self, handler):
+        """取消后透传 Flow Agent 的 REVOKED 结果，再由标准取消事件收尾。"""
+        thread_id = "test_stream_revoke_result"
         cancel_event = threading.Event()
         revoke_chunk = EventEncoder().encode(
-            CustomEvent(
-                type=EventType.CUSTOM,
-                name="flow_agent_result",
-                value=[{"task_state": "REVOKED"}],
-            )
+            CustomEvent(type=EventType.CUSTOM, name="flow_agent_result", value=[{"task_state": "REVOKED"}])
         )
-        error_chunk = EventEncoder().encode(
-            RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
-        )
-        finished_chunk = emit_run_finished_event(thread_id=thread_id, run_id=RunId.CANCELLED)
 
         def revoke_generator():
             cancel_event.set()
             yield revoke_chunk
-            yield error_chunk
-            yield finished_chunk
+            yield emit_run_finished_event(thread_id=thread_id, run_id=RunId.CANCELLED)
 
         result = list(
-            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
-                revoke_generator(),
-                cancel_event=cancel_event,
-            )
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(revoke_generator(), cancel_event=cancel_event)
         )
 
-        assert result == [revoke_chunk, error_chunk, finished_chunk]
+        assert result[0] == revoke_chunk
+        assert _event_types(result[1:]) == [EventType.RUN_ERROR.value, EventType.RUN_FINISHED.value]
 
     def test_producer_stop_then_reconnect(self, handler):
         """停止后重连：cancel 后消费者断开，重连后恢复并读到 EOD_CHUNK 后清理"""
