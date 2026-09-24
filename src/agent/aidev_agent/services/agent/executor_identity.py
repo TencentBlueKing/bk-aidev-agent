@@ -8,6 +8,7 @@ import logging
 from enum import StrEnum
 from typing import Any, Awaitable, Callable
 
+from langchain_core.tools.base import ToolException
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
@@ -15,6 +16,7 @@ from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
 logger = logging.getLogger(__name__)
 
 AUTH_HEADER_KEY = "X-Bkapi-Authorization"
+APPROVER_CREDENTIAL_ERROR = "未正确授权当前 Agent SaaS，无法获取工具调用凭证，请确认已加入对应 Agent SaaS 并完成授权"
 
 
 class ExecutorIdentity(StrEnum):
@@ -45,19 +47,16 @@ def normalize_executor_identity(value: Any, *, approval_enabled: bool = True) ->
 
 def make_mcp_identity_ctx() -> dict[str, Any]:
     """MCP interceptor 与续流切换共享的可变上下文。"""
-    return {"approved_by": "", "approver_tools": set()}
+    return {"approved_by": "", "approver_access_token": "", "approver_tools": set()}
 
 
-def build_approver_auth_header(executor_info: dict | None, username: str) -> str:
-    """应用态 + bk_username 冒充审批人；不得携带使用者 access_token。"""
-    info = executor_info or {}
-    return json.dumps(
-        {
-            "bk_app_code": info.get("app_code") or "",
-            "bk_app_secret": info.get("app_secret") or "",
-            "bk_username": username,
-        }
-    )
+def build_approver_auth_header(executor_info: dict | None, username: str, access_token: str = "") -> str:
+    """使用审批人的 access_token 构造下游认证头，不回退到应用凭证。"""
+    del executor_info
+    token = str(access_token or "").strip()
+    if not token:
+        raise ToolException(f"审批人 {username} {APPROVER_CREDENTIAL_ERROR}")
+    return json.dumps({"access_token": token})
 
 
 def find_api_wrapper(tool: Any) -> Any | None:
@@ -74,13 +73,18 @@ def find_api_wrapper(tool: Any) -> Any | None:
     return None
 
 
-def apply_http_approver_identity(tools: list[Any] | None, executor_info: dict | None, approved_by: str) -> None:
-    """就地改写 HTTP 工具的 X-Bkapi-Authorization 为审批人应用态身份。"""
+def apply_http_approver_identity(
+    tools: list[Any] | None,
+    executor_info: dict | None,
+    approved_by: str,
+    approver_access_token: str = "",
+) -> None:
+    """就地改写 HTTP 工具的 X-Bkapi-Authorization 为审批人用户凭证。"""
     username = str(approved_by or "").strip()
     if not username:
         logger.warning("[ToolApproval] apply_http_approver_identity: approved_by 为空，跳过 HTTP 身份切换")
         return
-    header_value = build_approver_auth_header(executor_info, username)
+    header_value = build_approver_auth_header(executor_info, username, approver_access_token)
     switched = 0
     for tool in tools or []:
         approval = (getattr(tool, "metadata", None) or {}).get("approval") or {}
@@ -110,11 +114,9 @@ def apply_http_approver_identity(tools: list[Any] | None, executor_info: dict | 
         approval["approved_by"] = username
         switched += 1
         logger.info(
-            "[ToolApproval] HTTP 已切换审批人身份: tool=%s, bk_username=%s, has_app_code=%s, has_app_secret=%s",
+            "[ToolApproval] HTTP 已切换审批人身份: tool=%s, bk_username=%s",
             tool_name,
             username,
-            bool((executor_info or {}).get("app_code")),
-            bool((executor_info or {}).get("app_secret")),
         )
     logger.info("[ToolApproval] apply_http_approver_identity: approved_by=%s, switched=%s", username, switched)
 
@@ -136,7 +138,7 @@ def make_mcp_approver_interceptor(
     ctx: dict[str, Any],
     executor_info: dict | None,
 ) -> Callable[[MCPToolCallRequest, Callable[[MCPToolCallRequest], Awaitable[Any]]], Awaitable[Any]]:
-    """按 tool 名把本次 MCP 调用的 headers 换成审批人应用态身份。"""
+    """按 tool 名把本次 MCP 调用的 headers 换成审批人用户态身份。"""
 
     async def interceptor(request: MCPToolCallRequest, handler):
         approved_by = str(ctx.get("approved_by") or "").strip()
@@ -172,7 +174,11 @@ def make_mcp_approver_interceptor(
             )
         if will_switch:
             headers = dict(request.headers or {})
-            headers[AUTH_HEADER_KEY] = build_approver_auth_header(executor_info, approved_by)
+            headers[AUTH_HEADER_KEY] = build_approver_auth_header(
+                executor_info,
+                approved_by,
+                str(ctx.get("approver_access_token") or "").strip(),
+            )
             request = request.override(headers=headers)
         with recording_span(
             "mcp.tools.call",

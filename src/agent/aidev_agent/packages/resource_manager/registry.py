@@ -143,6 +143,10 @@ class ResourceManagerProtocol(Protocol):
         """
         ...
 
+    def resolve_user_access_token(self, username: str) -> str:
+        """只按指定用户名获取 access_token，不使用资源管理器自身的缓存 token。"""
+        ...
+
     def get_paas_sbx_client(self, executor_info: dict, **kwargs) -> Any:
         """Create a PaaS Sandbox API client authenticated with executor_info.
 

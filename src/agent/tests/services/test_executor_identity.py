@@ -4,6 +4,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+from langchain_core.tools.base import ToolException
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 
 from aidev_agent.services.agent.approval import ApprovalStateHandler
@@ -26,7 +28,7 @@ def test_normalize_executor_identity_rules():
     assert normalize_executor_identity("", approval_enabled=True) == "user"
 
 
-def test_apply_http_approver_identity_rewrites_auth_header_without_access_token():
+def test_apply_http_approver_identity_uses_approver_access_token():
     extra = SimpleNamespace(header={AUTH_HEADER_KEY: json.dumps({"access_token": "alice-token"})})
     wrapper = SimpleNamespace(_extra=extra)
     tool = MagicMock()
@@ -44,11 +46,11 @@ def test_apply_http_approver_identity_rewrites_auth_header_without_access_token(
         [tool, skipped],
         {"app_code": "app", "app_secret": "secret", "access_token": "alice-token"},
         "bob",
+        "bob-token",
     )
 
     auth = json.loads(extra.header[AUTH_HEADER_KEY])
-    assert auth == {"bk_app_code": "app", "bk_app_secret": "secret", "bk_username": "bob"}
-    assert "access_token" not in auth
+    assert auth == {"access_token": "bob-token"}
     assert json.loads(skipped.func._extra.header[AUTH_HEADER_KEY]) == {"access_token": "keep"}
 
 
@@ -56,6 +58,7 @@ def test_mcp_interceptor_overrides_headers_only_for_approver_tools():
     ctx = make_mcp_identity_ctx()
     ctx["approver_tools"] = {"echo"}
     ctx["approved_by"] = "bob"
+    ctx["approver_access_token"] = "bob-token"
     interceptor = make_mcp_approver_interceptor(ctx, {"app_code": "app", "app_secret": "secret"})
 
     async def handler(request):
@@ -68,18 +71,28 @@ def test_mcp_interceptor_overrides_headers_only_for_approver_tools():
         interceptor(MCPToolCallRequest(name="other", args={}, server_name="srv", headers=None), handler)
     )
 
-    assert json.loads(echoed.headers[AUTH_HEADER_KEY]) == {
-        "bk_app_code": "app",
-        "bk_app_secret": "secret",
-        "bk_username": "bob",
-    }
+    assert json.loads(echoed.headers[AUTH_HEADER_KEY]) == {"access_token": "bob-token"}
     assert skipped.headers is None
+
+
+def test_mcp_interceptor_requires_approver_access_token():
+    ctx = make_mcp_identity_ctx()
+    ctx["approver_tools"] = {"echo"}
+    ctx["approved_by"] = "bob"
+    interceptor = make_mcp_approver_interceptor(ctx, {"app_code": "app", "app_secret": "secret"})
+
+    async def handler(request):
+        return request
+
+    with pytest.raises(ToolException, match="正确授权"):
+        asyncio.run(interceptor(MCPToolCallRequest(name="echo", args={}, server_name="srv", headers=None), handler))
 
 
 def test_mcp_interceptor_records_effective_executor_identity():
     ctx = make_mcp_identity_ctx()
     ctx["approver_tools"] = {"echo"}
     ctx["approved_by"] = "bob"
+    ctx["approver_access_token"] = "bob-token"
     interceptor = make_mcp_approver_interceptor(
         ctx,
         {"app_code": "app", "app_secret": "secret", "executor": "alice"},
@@ -160,10 +173,56 @@ def test_switch_tools_to_approver_identity_updates_shared_ctx():
     agent = ChatCompletionAgent.model_construct(
         tools=[tool],
         executor_info={"app_code": "app", "app_secret": "secret"},
+        resource_manager=MagicMock(resolve_user_access_token=MagicMock(return_value="bob-token")),
         executor_identity_ctx=ctx,
     )
     agent._switch_tools_to_approver_identity("bob")
     assert ctx["approved_by"] == "bob"
-    assert json.loads(extra.header[AUTH_HEADER_KEY])["bk_username"] == "bob"
+    assert ctx["approver_access_token"] == "bob-token"
+    assert json.loads(extra.header[AUTH_HEADER_KEY]) == {"access_token": "bob-token"}
     assert tool.metadata["approval"]["effective_executor_identity"] == "approver"
     assert tool.metadata["approval"]["approved_by"] == "bob"
+
+
+def test_switch_tools_to_approver_identity_requires_authorized_approver():
+    ctx = make_mcp_identity_ctx()
+    ctx["approver_tools"] = {"weather"}
+    agent = ChatCompletionAgent.model_construct(
+        tools=[],
+        executor_info={"app_code": "app", "app_secret": "secret"},
+        resource_manager=MagicMock(resolve_user_access_token=MagicMock(return_value="")),
+        executor_identity_ctx=ctx,
+    )
+
+    with pytest.raises(ToolException, match="正确授权"):
+        agent._switch_tools_to_approver_identity("bob")
+
+
+def test_switch_tools_to_approver_identity_skips_token_for_user_tools():
+    ctx = make_mcp_identity_ctx()
+    resolver = MagicMock()
+    agent = ChatCompletionAgent.model_construct(
+        tools=[],
+        executor_info={"app_code": "app", "app_secret": "secret"},
+        resource_manager=MagicMock(resolve_user_access_token=resolver),
+        executor_identity_ctx=ctx,
+    )
+
+    agent._switch_tools_to_approver_identity("bob")
+
+    resolver.assert_not_called()
+    assert ctx["approver_access_token"] == ""
+
+
+def test_switch_tools_to_approver_identity_requires_approval_operator():
+    ctx = make_mcp_identity_ctx()
+    ctx["approver_tools"] = {"weather"}
+    agent = ChatCompletionAgent.model_construct(
+        tools=[],
+        executor_info={"app_code": "app", "app_secret": "secret"},
+        resource_manager=MagicMock(),
+        executor_identity_ctx=ctx,
+    )
+
+    with pytest.raises(ToolException, match="审批结果缺少审批人"):
+        agent._switch_tools_to_approver_identity("")

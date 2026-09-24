@@ -16,7 +16,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage, Sy
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_core.stores import ByteStore
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, ToolException
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -65,6 +65,7 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
 from aidev_agent.services.agent.executor_identity import (
+    APPROVER_CREDENTIAL_ERROR,
     apply_http_approver_identity,
     collect_approver_tool_names,
     make_mcp_approver_interceptor,
@@ -617,15 +618,33 @@ class ChatCompletionAgent(BaseModel):
                     model._owns_http_async_client = False
 
     def _switch_tools_to_approver_identity(self, approved_by: str) -> None:
-        """续流通过后，把 executor_identity=approver 的 tool / MCP 切到审批人应用态身份。"""
+        """续流通过后，把 executor_identity=approver 的 tool / MCP 切到审批人用户态身份。"""
+        ctx = self.executor_identity_ctx
+        approver_tools = (
+            ctx.get("approver_tools")
+            if isinstance(ctx, dict)
+            else collect_approver_tool_names(self.tools)
+        ) or set()
+        if not approver_tools:
+            logger.info("[ToolApproval] 本次审批没有配置 approver 身份工具，无需切换审批人凭证")
+            return
+
         username = str(approved_by or "").strip()
         if not username:
-            logger.warning("[ToolApproval] executor_identity=approver 但缺少 approved_by，保持使用者身份")
-            return
-        ctx = self.executor_identity_ctx
+            raise ToolException(f"{APPROVER_CREDENTIAL_ERROR}，审批结果缺少审批人")
+        resolver = getattr(self.resource_manager, "resolve_user_access_token", None)
+        try:
+            approver_access_token = str(resolver(username) or "").strip() if callable(resolver) else ""
+        except Exception:
+            logger.exception("[ToolApproval] 获取审批人 access_token 失败: approved_by=%s", username)
+            approver_access_token = ""
+        if not approver_access_token:
+            raise ToolException(f"审批人 {username} {APPROVER_CREDENTIAL_ERROR}")
+
+        apply_http_approver_identity(self.tools, self.executor_info, username, approver_access_token)
         if isinstance(ctx, dict):
             ctx["approved_by"] = username
-        apply_http_approver_identity(self.tools, self.executor_info, username)
+            ctx["approver_access_token"] = approver_access_token
         logger.info(
             "[ToolApproval] 已切换审批人身份: approved_by=%s, tools=%s",
             username,

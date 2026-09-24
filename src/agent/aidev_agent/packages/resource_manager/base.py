@@ -149,6 +149,19 @@ class BaseResourceManager(abc.ABC):
                 )
         return access_token
 
+    def resolve_user_access_token(self, username: str) -> str:
+        """只按指定用户名获取 access_token，不使用资源管理器自身的缓存 token。"""
+        _username = str(username or "").strip()
+        if not _username:
+            return ""
+        access_token = _get_access_token_by_user(_username) or ""
+        if not access_token:
+            _logger.warning(
+                f"[credential] resolve_user_access_token: empty result, "
+                f"app_code={self.app_code}, username={_username}, rm_type={type(self).__name__}"
+            )
+        return access_token
+
     def get_paas_sbx_client(self, executor_info: dict, **kwargs) -> Any:
         """构造 PaaS 沙箱 apigw client 并挂载鉴权头。
 

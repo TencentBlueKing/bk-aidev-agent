@@ -21,6 +21,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from langchain_core.tools import StructuredTool
+from langchain_core.tools.base import ToolException
+
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import (
     MCPExceptionWrapper,
@@ -32,8 +35,6 @@ from aidev_agent.packages.langchain_core.tools.base import (
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import ExecuteKwargs
-from langchain_core.tools import StructuredTool
-from langchain_core.tools.base import ToolException
 
 # ================== make_structured_tool Mock 测试 ==================
 
@@ -1249,6 +1250,17 @@ def test_make_mcp_tools_does_not_mutate_original_config(mock_mcp_client_class):
 
 
 # ================== construct_tool 的 X-Bkapi-Authorization 头部拼装 ==================
+
+
+def test_resolve_user_access_token_ignores_manager_access_token():
+    """按审批人取 token 时不能复用资源管理器中原执行人的 token。"""
+    rm = AgentResourceManager(access_token="alice-token", username="alice")
+    with patch(
+        "aidev_agent.packages.resource_manager.base._get_access_token_by_user",
+        return_value="bob-token",
+    ) as get_access_token:
+        assert rm.resolve_user_access_token("bob") == "bob-token"
+    get_access_token.assert_called_once_with("bob")
 
 
 def _rm_with_mocked_client(tool_data: dict, credential_type: str = "blueapps") -> AgentResourceManager:
