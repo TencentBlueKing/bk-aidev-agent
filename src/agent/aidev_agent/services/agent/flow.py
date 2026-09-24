@@ -342,6 +342,16 @@ class FlowAgentCompletionAgent(BaseModel):
                 self._interruptible_sleep(self.poll_interval, stream_thread_id)
                 continue
 
+            task_state = self._get_task_state(task_info)
+            if task_state == FLOW_TASK_REVOKED_STATE:
+                # BKFlow revoke 可能先于 SDK 取消信号生效，普通轮询终态也必须归一化。
+                task_info = self._build_revoke_info(task_id, task_info)
+                logger.info(
+                    "[FLOW_AGENT] Revoke status normalized during polling: task_id=%s, task_state=%s",
+                    task_id,
+                    task_state,
+                )
+
             # 保存最后一次成功轮询结果，用于取消时查询失败的兜底
             last_task_info = task_info
 
@@ -361,8 +371,6 @@ class FlowAgentCompletionAgent(BaseModel):
                 yield encoder.encode(update_event)
             else:
                 yield encoder.encode(result_event)
-
-            task_state = self._get_task_state(task_info)
 
             if _poll_count <= 3 or task_state in FLOW_TASK_END_STATES:
                 logger.debug(

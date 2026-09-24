@@ -223,6 +223,35 @@ class TestFlowAgentMainFlow:
         assert events[-1]["type"] == EventType.RUN_FINISHED
 
     @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
+    def test_poll_revoke_normalizes_running_nodes(self, mock_cancelled):
+        """BKFlow 先进入 REVOKED 时，普通轮询结果也应归一化节点状态。"""
+        mock_rm = MockResourceManager(
+            start_result={"task_id": 88889},
+            task_info_sequence=[
+                {"task_state": "RUNNING", "nodes": {"n1": {"state": "RUNNING"}}},
+                {
+                    "task_state": "REVOKED",
+                    "nodes": {
+                        "n1": {"state": "RUNNING"},
+                        "n2": {"state": "FINISHED"},
+                        "n3": {"state": "PENDING"},
+                    },
+                    "statistics": {"total": 3},
+                },
+            ],
+        )
+        agent = FlowAgentCompletionAgent(resource_manager=mock_rm, poll_interval=0.01, poll_timeout=10.0)
+
+        events = _parse_sse_events(agent._run_flow())
+        revoke_info = _find_custom_events(events, CustomMessageType.FLOW_AGENT_RESULT.value)[-1]["value"][0]
+
+        assert revoke_info["task_state"] == "REVOKED"
+        assert revoke_info["nodes"]["n1"]["state"] == "REVOKED"
+        assert revoke_info["nodes"]["n2"]["state"] == "FINISHED"
+        assert revoke_info["nodes"]["n3"]["state"] == "PENDING"
+        assert revoke_info["statistics"]["state_counts"] == {"REVOKED": 1, "FINISHED": 1, "PENDING": 1}
+
+    @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
     def test_start_error_emits_run_error(self, mock_cancelled):
         """start 接口异常时，应产出 RUN_ERROR + RUN_FINISHED，流程不崩溃"""
         mock_rm = MockResourceManager(start_error=ConnectionError("Gateway timeout"))
