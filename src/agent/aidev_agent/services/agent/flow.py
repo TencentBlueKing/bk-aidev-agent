@@ -313,7 +313,7 @@ class FlowAgentCompletionAgent(BaseModel):
                 return
 
             try:
-                task_info = client.get_flow_agent_task_info(task_id)
+                task_info = self._query_task_info(client, task_id)
                 consecutive_failures = 0
             except Exception as e:
                 consecutive_failures += 1
@@ -524,7 +524,7 @@ class FlowAgentCompletionAgent(BaseModel):
         sleep_interval = min(max(self.poll_interval, 0.01), REVOKE_STATUS_POLL_INTERVAL_MAX)
         for attempt in range(REVOKE_STATUS_MAX_ATTEMPTS):
             try:
-                task_info = client.get_flow_agent_task_info(task_id)
+                task_info = self._query_task_info(client, task_id)
                 if isinstance(task_info, dict):
                     latest_task_info = task_info
                     if self._get_task_state(task_info) in FLOW_TASK_END_STATES:
@@ -546,9 +546,17 @@ class FlowAgentCompletionAgent(BaseModel):
                     )
 
             if attempt + 1 < REVOKE_STATUS_MAX_ATTEMPTS:
-                self._interruptible_sleep(sleep_interval, self.session_code or self.thread_id)
+                # 取消分支中取消标记必然存在，可中断等待会立即返回，无法给异步 revoke 留出生效时间。
+                time.sleep(sleep_interval)
 
         return latest_task_info or {}, False
+
+    def _query_task_info(self, client: ResourceManagerProtocol, task_id: int) -> dict:
+        """查询任务快照；BKFlow 返回 REVOKED 时统一归一化节点状态。"""
+        task_info = client.get_flow_agent_task_info(task_id)
+        if self._get_task_state(task_info) == FLOW_TASK_REVOKED_STATE:
+            return self._build_revoke_info(task_id, task_info)
+        return task_info
 
     @staticmethod
     def _get_task_state(task_info: dict | None) -> str:
