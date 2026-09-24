@@ -399,6 +399,11 @@ class GeneratorStreamingHelper:
         if not isinstance(payload, dict) or payload.get("resume_replay", False):
             return False
         if (
+            payload.get("type") == EventType.RUN_ERROR.value
+            and payload.get("message") == RunId.CANCELLED_MESSAGE
+        ):
+            return True
+        if (
             payload.get("type") == EventType.RUN_FINISHED.value
             and payload.get("runId") == RunId.CANCELLED
         ):
@@ -1371,8 +1376,9 @@ class GeneratorStreamingHelper:
                     last_cross_process_check_time = current_time
 
                 # 在当前 chunk 入队前终止，避免停止后继续向前端发送工具/模型结果。
-                # Flow Agent 取消分支会先产出 REVOKED 结果，再产出取消态 RUN_FINISHED；
-                # 这两个终态必须透传，否则通用取消兜底会在此处把它们丢弃。
+                # Flow Agent 取消分支会依次产出 REVOKED 结果、原有的 RUN_ERROR
+                # 和取消态 RUN_FINISHED；这组三个终态必须透传，否则通用取消兜底
+                # 会在此处把它们丢弃。
                 if (
                     _is_cancel_requested(check_cross_process=should_check_cross_process)
                     and not self._is_cancel_terminal_event_chunk(chunk)

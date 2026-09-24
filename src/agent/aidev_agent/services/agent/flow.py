@@ -91,7 +91,7 @@ class FlowAgentCompletionAgent(BaseModel):
     event_handler: Callable[[BaseEvent], None] | None = None
 
     # 运行时状态：任务是否已启动根据 flow_agent_start 判断
-    # 用于取消时决定发 RUN_FINISHED（已启动）还是 RUN_ERROR（未启动）
+    # 用于取消时决定已启动任务是否需要查询并推送撤销快照
     _task_started: bool = False
 
     class Config:
@@ -287,11 +287,18 @@ class FlowAgentCompletionAgent(BaseModel):
             if GeneratorStreamingHelper.is_cancelled(stream_thread_id):
                 logger.info("[FLOW_AGENT] Task cancelled: task_id=%s, poll_count=%d", task_id, _poll_count)
                 # 根据任务是否已启动决定事件类型：
-                # - 已启动（flow_agent_start 已发送）：revoke 后查询最新状态，发 flow_agent_result + RUN_FINISHED
+                # - 已启动（flow_agent_start 已发送）：revoke 后查询最新状态，发
+                #   flow_agent_result + RUN_ERROR + RUN_FINISHED
                 # - 未启动（任务还没真正开始）：发 RUN_ERROR，触发暂停补写逻辑
                 if self._task_started:
                     yield from self._emit_cancel_result(client, encoder, task_id, last_task_info)
-                    logger.info("[FLOW_AGENT] Task already started, sending RUN_FINISHED: task_id=%s", task_id)
+                    error_event = RunErrorEvent(type=EventType.RUN_ERROR, message=RunId.CANCELLED_MESSAGE)
+                    self._dispatch_event(error_event)
+                    yield encoder.encode(error_event)
+                    logger.info(
+                        "[FLOW_AGENT] Task already started, sending RUN_ERROR + RUN_FINISHED: task_id=%s",
+                        task_id,
+                    )
                     yield emit_run_finished_event(
                         thread_id=self.thread_id,
                         run_id=RunId.CANCELLED,
@@ -485,7 +492,14 @@ class FlowAgentCompletionAgent(BaseModel):
         """
         latest_task_info, is_end_state = self._get_task_info_after_revoke(client, task_id, last_task_info)
         latest_state = self._get_task_state(latest_task_info)
-        if is_end_state:
+        if is_end_state and latest_state == FLOW_TASK_REVOKED_STATE:
+            revoke_info = self._build_revoke_info(task_id, latest_task_info)
+            logger.info(
+                "[FLOW_AGENT] Revoke status confirmed and normalized: task_id=%s, task_state=%s",
+                task_id,
+                latest_state,
+            )
+        elif is_end_state:
             revoke_info = latest_task_info
             logger.info(
                 "[FLOW_AGENT] Revoke status confirmed: task_id=%s, task_state=%s",
