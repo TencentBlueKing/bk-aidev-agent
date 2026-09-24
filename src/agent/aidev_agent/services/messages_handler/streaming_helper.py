@@ -387,6 +387,32 @@ class GeneratorStreamingHelper:
             and not payload.get("resume_replay", False)
         )
 
+    @staticmethod
+    def _is_cancel_terminal_event_chunk(chunk: Any) -> bool:
+        """判断 chunk 是否为取消流程允许透传的终态事件。"""
+        if not isinstance(chunk, str) or not chunk.startswith("data:"):
+            return False
+        try:
+            payload = json.loads(chunk.removeprefix("data:").strip())
+        except (TypeError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict) or payload.get("resume_replay", False):
+            return False
+        if (
+            payload.get("type") == EventType.RUN_FINISHED.value
+            and payload.get("runId") == RunId.CANCELLED
+        ):
+            return True
+        if payload.get("type") != EventType.CUSTOM.value or payload.get("name") != "flow_agent_result":
+            return False
+        value = payload.get("value")
+        return (
+            isinstance(value, list)
+            and bool(value)
+            and isinstance(value[0], dict)
+            and value[0].get("task_state") == "REVOKED"
+        )
+
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）
 
@@ -1345,7 +1371,12 @@ class GeneratorStreamingHelper:
                     last_cross_process_check_time = current_time
 
                 # 在当前 chunk 入队前终止，避免停止后继续向前端发送工具/模型结果。
-                if _is_cancel_requested(check_cross_process=should_check_cross_process):
+                # Flow Agent 取消分支会先产出 REVOKED 结果，再产出取消态 RUN_FINISHED；
+                # 这两个终态必须透传，否则通用取消兜底会在此处把它们丢弃。
+                if (
+                    _is_cancel_requested(check_cross_process=should_check_cross_process)
+                    and not self._is_cancel_terminal_event_chunk(chunk)
+                ):
                     _emit_cancel_and_complete()
                     break
 
