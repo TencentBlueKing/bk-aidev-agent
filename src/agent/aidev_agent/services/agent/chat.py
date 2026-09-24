@@ -16,7 +16,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage, Sy
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.runnables.fallbacks import RunnableWithFallbacks
 from langchain_core.stores import ByteStore
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, ToolException
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -45,6 +45,7 @@ from aidev_agent.exceptions import AgentDeadlineExceededError, AgentException
 from aidev_agent.packages.interrupt_manager import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
     ApprovalHandler,
+    ApproveResult,
     AskUserQuestionHandler,
     InterruptReason,
     InterruptStatus,
@@ -63,6 +64,14 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
 )
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
+from aidev_agent.services.agent.executor_identity import (
+    APPROVER_CREDENTIAL_ERROR,
+    apply_http_approver_identity,
+    collect_approver_tool_names,
+    make_mcp_approver_interceptor,
+    make_mcp_identity_ctx,
+    normalize_executor_identity,
+)
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -212,6 +221,11 @@ class ChatCompletionAgent(BaseModel):
         default=None,
         description="生成中关键词，来自 AgentConfig.generating_keyword；LLM 输入视图据此清理末条 assistant 占位",
     )
+    executor_identity_ctx: Any = Field(
+        default=None,
+        exclude=True,
+        description="审批人身份切换上下文，与 MCP interceptor 共享同一 dict",
+    )
 
     TOOL_EXECUTION_INTERVAL: ClassVar[int] = 10
     UPLOAD_IMAGE_PROMPT_PREFIX: ClassVar[Any] = "我上传了个图片文件,文件名为{file_name}。"
@@ -246,6 +260,7 @@ class ChatCompletionAgent(BaseModel):
         self.resource_manager = ctx.resource_manager
         self.skills = builder.build_skills()
         self.tools = builder.build_tools()
+        self.executor_identity_ctx = builder.executor_identity_ctx
         self.mcp_fetch_failures = builder.mcp_fetch_failures
         self.knowledge_bases = builder.build_knowledge_bases()
         self.knowledges = builder.build_knowledge_items()
@@ -602,6 +617,39 @@ class ChatCompletionAgent(BaseModel):
                 for model in owners:
                     model._owns_http_async_client = False
 
+    def _switch_tools_to_approver_identity(self, approved_by: str) -> None:
+        """续流通过后，把 executor_identity=approver 的 tool / MCP 切到审批人用户态身份。"""
+        ctx = self.executor_identity_ctx
+        approver_tools = (
+            ctx.get("approver_tools")
+            if isinstance(ctx, dict)
+            else collect_approver_tool_names(self.tools)
+        ) or set()
+        if not approver_tools:
+            logger.info("[ToolApproval] 本次审批没有配置 approver 身份工具，无需切换审批人凭证")
+            return
+
+        username = str(approved_by or "").strip()
+        if not username:
+            raise ToolException(f"{APPROVER_CREDENTIAL_ERROR}，审批结果缺少审批人")
+        resolver = getattr(self.resource_manager, "resolve_user_access_token", None)
+        try:
+            approver_access_token = str(resolver(username) or "").strip() if callable(resolver) else ""
+        except Exception:
+            logger.exception("[ToolApproval] 获取审批人 access_token 失败: approved_by=%s", username)
+            approver_access_token = ""
+        if not approver_access_token:
+            raise ToolException(f"审批人 {username} {APPROVER_CREDENTIAL_ERROR}")
+
+        apply_http_approver_identity(self.tools, self.executor_info, username, approver_access_token)
+        if isinstance(ctx, dict):
+            ctx["approved_by"] = username
+            ctx["approver_access_token"] = approver_access_token
+        logger.info(
+            "[ToolApproval] 已切换审批人身份: approved_by=%s, tools=%s",
+            username,
+            (ctx or {}).get("approver_tools") if isinstance(ctx, dict) else None,
+        )
     @staticmethod
     def _filter_messages_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
         """LLM 入口过滤 reasoning，不影响 MESSAGES_SNAPSHOT。"""
@@ -1278,12 +1326,15 @@ class ChatCompletionAgent(BaseModel):
         # （回放字段由 get_resume_input 产出，时序满足 F.4 硬约束 #1）。
         resume_result = preprocessed.get("resume_input_result") if preprocessed else None
         approve_result = getattr(resume_result, "approve_result", None) if resume_result is not None else None
+        approved_by = getattr(resume_result, "approved_by", "") if resume_result is not None else ""
         approval_interrupts = (
             getattr(resume_result, "approval_interrupts", None) or [] if resume_result is not None else []
         )
         ask_user_question_interrupts = (
             getattr(resume_result, "ask_user_question_interrupts", None) or [] if resume_result is not None else []
         )
+        if execute_kwargs.resume and approve_result == ApproveResult.APPROVED:
+            self._switch_tools_to_approver_identity(approved_by or "")
 
         # 未就绪（lw4）：不再 hand-roll SSE 早退——并入 Agent 快照-结束路径。
         # resume_result.ready=False → stream_input=None（_prepare_stream_input L801），
@@ -1708,6 +1759,7 @@ class ChatAgentBuilder:
         self._mcp_fetch_failures: list[dict] = []
         self._executor_info: dict | None = None
         self._runtime_backend_resolver: Any | None = None
+        self._executor_identity_ctx: dict[str, Any] = make_mcp_identity_ctx()
         # 装配前先从最后一条 user 消息提取 specific_resources，供 build_tools / build_knowledge_bases 过滤
         self._handle_last_human_message(ctx.session_context_data)
 
@@ -1720,6 +1772,11 @@ class ChatAgentBuilder:
     def file_resources(self) -> list[dict]:
         """返回当前用户消息中声明的文件资源。"""
         return list(self._file_resources)
+
+    @property
+    def executor_identity_ctx(self) -> dict[str, Any]:
+        """审批人身份切换上下文，与 MCP interceptor 共享。"""
+        return self._executor_identity_ctx
 
     def build_runtime_backend_resolver(self) -> RuntimeBackendResolver:
         """构造 RuntimeBackendResolver（每会话一个，scoping 归 RuntimeBackendDeferManager，决策 1）。
@@ -1928,6 +1985,9 @@ class ChatAgentBuilder:
             mcp_config=mcp_server_config,
             username=self.ctx.username,
             executor_info=self._executor_info,
+            tool_interceptors=[
+                make_mcp_approver_interceptor(self._executor_identity_ctx, self._executor_info),
+            ],
         )
         self._mcp_fetch_failures = [f.model_dump() for f in mcp_result.fetch_failures]
         logger.info(f"ChatAgentBuilder: mcp_server_config->[{mcp_server_config}]")
@@ -1946,6 +2006,7 @@ class ChatAgentBuilder:
             for tool_code in tool_codes
         ] + mcp_result.tools
         self._apply_tool_approval_settings(tools)
+        self._executor_identity_ctx["approver_tools"] = collect_approver_tool_names(tools)
         return tools
 
     def _apply_tool_approval_settings(self, tools: list[Any]) -> None:
@@ -2025,6 +2086,10 @@ class ChatAgentBuilder:
                 "approval_name": strategy.get("approval_name", ""),
                 "approvers": strategy.get("approvers") or [],
                 "strategy": strategy,
+                "executor_identity": normalize_executor_identity(
+                    binding_data.get("executor_identity"),
+                    approval_enabled=True,
+                ),
             }
             if resource_type == "tool":
                 tool_id = binding_data.get("tool_id")
@@ -2042,6 +2107,24 @@ class ChatAgentBuilder:
                 binding["mcp_name"] = binding_data.get("mcp_name") or mcp_code
                 binding["tool_code"] = binding_data.get("mcp_tool_name", "")
                 binding["tool_name"] = binding_data.get("mcp_tool_name", "")
+                logger.info(
+                    "[ToolApproval] mcp binding 解析: mcp_id=%s, mcp_code=%s, mcp_name=%s, "
+                    "mcp_tool_name=%s, executor_identity=%s, raw_executor_identity=%s, "
+                    "binding_data_keys=%s",
+                    mcp_id,
+                    binding.get("mcp_code"),
+                    binding.get("mcp_name"),
+                    binding.get("tool_code"),
+                    binding["executor_identity"],
+                    binding_data.get("executor_identity"),
+                    list(binding_data.keys()),
+                )
+            logger.info(
+                "[ToolApproval] 归一化 binding: resource_type=%s, tool=%s, executor_identity=%s",
+                resource_type,
+                binding.get("tool_code") or binding.get("tool_name"),
+                binding["executor_identity"],
+            )
             bindings.append(binding)
 
         return bindings

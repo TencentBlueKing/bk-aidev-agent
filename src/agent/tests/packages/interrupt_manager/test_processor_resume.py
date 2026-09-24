@@ -163,6 +163,89 @@ def test_build_resume_map_excludes_unready_pending_key():
 
 
 # ---------------------------------------------------------------------- #
+# 审批续流门禁：终态卡片不等于 DB 已拿到可消费的 resume value
+# ---------------------------------------------------------------------- #
+
+
+def _terminal_interrupt_history(interrupt_id="int-1", tool_call_id="tc-1"):
+    """构造一条平台已回写 success 的 interrupt 样例。"""
+    return [
+        SimpleNamespace(
+            role="interrupt",
+            content={
+                "outcome": {
+                    "type": "success",
+                    "interrupts": [
+                        {
+                            "id": interrupt_id,
+                            "reason": TOOL_APPROVAL_REASON,
+                            "toolCallId": tool_call_id,
+                            "metadata": {"status": "approved"},
+                        }
+                    ],
+                }
+            },
+        )
+    ]
+
+
+def test_terminal_interrupt_without_db_resume_value_stays_pending():
+    """DB 未返回当前 pending 的权威值时，不得构造空 Command 重新跑模型。"""
+    handler = SimpleNamespace(
+        query_resume_status=lambda session_code, pending: {
+            "action": "not_ready",
+            "resume_value": None,
+        }
+    )
+    task = _approval_pending_task()
+    processor = InterruptProcessor(handlers={TOOL_APPROVAL_REASON: handler})
+
+    result = processor.get_resume_input(
+        tasks=[task],
+        session_code="session-1",
+        thread_id="session-1",
+        chat_history=_terminal_interrupt_history(),
+    )
+
+    assert result.ready is False
+    assert result.command is None
+    assert result.next_interrupt is task.interrupts[0]
+
+
+def test_terminal_interrupt_uses_matching_db_resume_value():
+    """当前 pending 精确命中 DB 终态后，才允许构造可消费的 resume Command。"""
+    db_resume_value = [
+        {
+            "id": "int-1",
+            "interruptId": "int-1",
+            "toolCallId": "tc-1",
+            "metadata": {"status": "approved"},
+        }
+    ]
+    handler = SimpleNamespace(
+        query_resume_status=lambda session_code, pending: {
+            "action": "approved",
+            "resume_value": db_resume_value,
+            "approved_by": "weilunli",
+        }
+    )
+    processor = InterruptProcessor(handlers={TOOL_APPROVAL_REASON: handler})
+
+    result = processor.get_resume_input(
+        tasks=[_approval_pending_task()],
+        session_code="session-1",
+        thread_id="session-1",
+        chat_history=_terminal_interrupt_history(),
+    )
+
+    assert result.ready is True
+    assert isinstance(result.command, Command)
+    assert result.command.resume[0]["interruptId"] == "int-1"
+    assert result.command.resume[0]["payload"]["approved"] is True
+    assert result.approved_by == "weilunli"
+
+
+# ---------------------------------------------------------------------- #
 # GATE-03：_unified_resume_values ask_user 值改 DB 权威源（弃前端透传）
 # ---------------------------------------------------------------------- #
 

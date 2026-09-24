@@ -21,6 +21,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from langchain_core.tools import StructuredTool
+from langchain_core.tools.base import ToolException
+
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import (
     MCPExceptionWrapper,
@@ -32,8 +35,6 @@ from aidev_agent.packages.langchain_core.tools.base import (
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import ExecuteKwargs
-from langchain_core.tools import StructuredTool
-from langchain_core.tools.base import ToolException
 
 # ================== make_structured_tool Mock 测试 ==================
 
@@ -231,6 +232,41 @@ def test_make_structured_tool_get_request_success(mock_session_class, sample_wea
     assert "sheng" in call_args[1]["params"]
     assert call_args[1]["params"]["sheng"] == "广东"
     assert call_args[1]["params"]["place"] == "深圳"
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.recording_span")
+@patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
+def test_make_structured_tool_records_http_transport_identity(
+    mock_session_class,
+    recording_span,
+    sample_weather_tool_data,
+):
+    mock_response = Mock()
+    mock_response.json.return_value = {"status": "success"}
+    mock_response.headers.get.return_value = "application/json"
+    mock_response.raise_for_status = Mock()
+
+    mock_session = Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_class.return_value = mock_session
+    recording_span.return_value.__enter__.return_value = MagicMock()
+
+    tool = Tool.model_validate(sample_weather_tool_data)
+    structured_tool = make_structured_tool(
+        tool,
+        executor_identity="approver",
+        executor_username="bob",
+    )
+
+    assert structured_tool.invoke({"query__sheng": "广东", "query__place": "深圳"}) == {"status": "success"}
+    assert recording_span.call_args.args == ("http.tool.call",)
+    attributes = recording_span.call_args.kwargs["attributes"]
+    assert attributes["tool.type"] == "http_api"
+    assert attributes["tool.transport"] == "http"
+    assert attributes["tool.code"] == "weather-query"
+    assert attributes["executor.identity"] == "approver"
+    assert attributes["executor.username"] == "bob"
+    assert "X-Bkapi-Authorization" not in str(attributes)
 
 
 @patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
@@ -1214,6 +1250,17 @@ def test_make_mcp_tools_does_not_mutate_original_config(mock_mcp_client_class):
 
 
 # ================== construct_tool 的 X-Bkapi-Authorization 头部拼装 ==================
+
+
+def test_resolve_user_access_token_ignores_manager_access_token():
+    """按审批人取 token 时不能复用资源管理器中原执行人的 token。"""
+    rm = AgentResourceManager(access_token="alice-token", username="alice")
+    with patch(
+        "aidev_agent.packages.resource_manager.base._get_access_token_by_user",
+        return_value="bob-token",
+    ) as get_access_token:
+        assert rm.resolve_user_access_token("bob") == "bob-token"
+    get_access_token.assert_called_once_with("bob")
 
 
 def _rm_with_mocked_client(tool_data: dict, credential_type: str = "blueapps") -> AgentResourceManager:

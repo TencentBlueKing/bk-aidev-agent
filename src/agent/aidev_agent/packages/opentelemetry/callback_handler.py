@@ -65,6 +65,28 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 TIMEZONE = "Asia/Shanghai"
+
+
+def _resolve_tool_execution_identity(
+    approval: Dict[str, Any],
+    session_executor: str,
+) -> tuple[str, str, str]:
+    """只按本次实际切换结果计算身份，避免把配置身份当成生效身份。"""
+    configured_identity = str(approval.get("executor_identity") or "user").strip()
+    if configured_identity not in {"user", "approver"}:
+        configured_identity = "user"
+
+    effective_identity = str(approval.get("effective_executor_identity") or "").strip()
+    if not effective_identity:
+        effective_identity = configured_identity
+    approved_by = str(approval.get("approved_by") or "").strip()
+
+    # approver 必须同时满足配置/切换身份和真实审批人，缺一项都只能按 user 记录。
+    if effective_identity == "approver" and approved_by:
+        return configured_identity, "approver", approved_by
+    return configured_identity, "user", session_executor
+
+
 try:
     AGENT_SDK_VERSION = version("aidev_agent")
 except PackageNotFoundError:
@@ -1138,6 +1160,25 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             "tool.input": truncate_span_attribute(input_str, self.max_input_attribute_length),
         }
         metadata = metadata or {}
+        approval = metadata.get("approval") or {}
+        if not isinstance(approval, dict):
+            approval = {}
+        session_executor = str(
+            getattr(self._start_execute_kwargs, "executor", None) or ""
+        ).strip()
+        configured_identity, effective_identity, effective_executor = _resolve_tool_execution_identity(
+            approval,
+            session_executor,
+        )
+        approved_by = str(approval.get("approved_by") or "").strip()
+        attributes["executor.identity"] = effective_identity
+        if configured_identity != effective_identity:
+            attributes["executor.configured_identity"] = configured_identity
+        if effective_executor:
+            attributes["executor.username"] = effective_executor
+        if approved_by and effective_identity == "approver":
+            attributes["approval.approved_by"] = approved_by
+            attributes["approval.result"] = "approved"
         if mcp_name := metadata.get("mcp_name"):
             attributes.update(
                 {
@@ -1165,6 +1206,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                 **self._metric_agent_attributes,
                 "gen_ai.tool.name": tool_name,
                 "gen_ai.tool.type": "function",
+                "executor.identity": effective_identity,
             }
             self._tool_metric_attributes[run_id] = metric_attributes
             self._metrics.record_active_tool(1, metric_attributes)

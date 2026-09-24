@@ -149,6 +149,19 @@ class BaseResourceManager(abc.ABC):
                 )
         return access_token
 
+    def resolve_user_access_token(self, username: str) -> str:
+        """只按指定用户名获取 access_token，不使用资源管理器自身的缓存 token。"""
+        _username = str(username or "").strip()
+        if not _username:
+            return ""
+        access_token = _get_access_token_by_user(_username) or ""
+        if not access_token:
+            _logger.warning(
+                f"[credential] resolve_user_access_token: empty result, "
+                f"app_code={self.app_code}, username={_username}, rm_type={type(self).__name__}"
+            )
+        return access_token
+
     def get_paas_sbx_client(self, executor_info: dict, **kwargs) -> Any:
         """构造 PaaS 沙箱 apigw client 并挂载鉴权头。
 
@@ -517,10 +530,10 @@ class BaseResourceManager(abc.ABC):
         operation = getattr(client.api, operation_name)
         result = operation(path_params={"tool_code": tool_code}, **kwargs)
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
+        resolved_username = username or self.username or (executor_info or {}).get("executor") or ""
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
             # 归一化用户名来源：显式 username > self.username；
-            resolved_username = username or self.username or None
             app_code = (executor_info or {}).get("app_code") or self.app_code
             app_secret = (executor_info or {}).get("app_secret") or self.app_secret
             access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(resolved_username)
@@ -545,8 +558,8 @@ class BaseResourceManager(abc.ABC):
                 f"has_access_token={bool(access_token)}, "
                 f"username={resolved_username or ''}"
             )
-            return make_structured_tool(tool)
-        return make_structured_tool(Tool.model_validate(result["data"]))
+            return make_structured_tool(tool, executor_username=resolved_username)
+        return make_structured_tool(Tool.model_validate(result["data"]), executor_username=resolved_username)
 
     def construct_mcp(
         self,
@@ -554,6 +567,7 @@ class BaseResourceManager(abc.ABC):
         agent_options: Any = None,
         username: str = None,
         executor_info: dict | None = None,
+        tool_interceptors: list | None = None,
         **kwargs,
     ) -> Any:
         """按 MCP 配置装配 LangChain ``StructuredTool`` 列表。
@@ -566,6 +580,7 @@ class BaseResourceManager(abc.ABC):
         :param username: 用户名，用于 BLUEAPPS 认证
         :param executor_info: 执行用户信息（含 app_code/app_secret/access_token），
             优先用于 MCP 凭证注入，与 skill sandbox 保持一致
+        :param tool_interceptors: MCP 工具调用 interceptor 列表，用于按次改写请求头
         :return: McpToolsResult 对象，包含 tools 和 fetch_failures
         """
         new_server_config = deepcopy(mcp_config)
@@ -639,7 +654,10 @@ class BaseResourceManager(abc.ABC):
                         _inject_mcp_trace_headers(client_config)
                         client = MultiServerMCPClient(
                             client_config,
-                            tool_interceptors=[_mcp_trace_context_interceptor],
+                            tool_interceptors=[
+                                _mcp_trace_context_interceptor,
+                                *(tool_interceptors or []),
+                            ],
                         )
                         tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
                         span.set_attribute("mcp.tool.count", len(tools))
