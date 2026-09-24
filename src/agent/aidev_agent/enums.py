@@ -122,6 +122,13 @@ class ChannelType(str, enum.Enum):
     RTX = "rtx"
 
 
+class ExecutorIdentity(enum.StrEnum):
+    """审批通过后下游 tool / MCP 调用使用的身份。"""
+
+    USER = "user"
+    APPROVER = "approver"
+
+
 class SessionsStatus(enum.Enum):
     """会话状态（断点续传）"""
 

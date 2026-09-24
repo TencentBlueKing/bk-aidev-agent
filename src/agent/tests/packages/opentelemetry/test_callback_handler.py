@@ -629,10 +629,7 @@ class TestBkAidevAgentCallbackHandler:
 
     def test_mcp_tool_execution_span_has_mcp_semantic_attributes(self, tracer_and_exporter):
         tracer, exporter = tracer_and_exporter
-        handler = BkAidevAgentCallbackHandler(
-            tracer=tracer,
-            start_execute_kwargs=MagicMock(executor="alice"),
-        )
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
         run_id = uuid4()
 
         asyncio.run(
@@ -640,15 +637,7 @@ class TestBkAidevAgentCallbackHandler:
                 serialized={"name": "search"},
                 input_str='{"query": "blueking"}',
                 run_id=run_id,
-                metadata={
-                    "mcp_name": "resource",
-                    "mcp_transport": "streamable_http",
-                    "approval": {
-                        "executor_identity": "approver",
-                        "effective_executor_identity": "approver",
-                        "approved_by": "bob",
-                    },
-                },
+                metadata={"mcp_name": "resource", "mcp_transport": "streamable_http"},
             )
         )
         asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
@@ -660,17 +649,10 @@ class TestBkAidevAgentCallbackHandler:
         assert span.attributes["mcp.server.name"] == "resource"
         assert span.attributes["mcp.tool.name"] == "search"
         assert span.attributes["mcp.transport"] == "streamable_http"
-        assert span.attributes["executor.identity"] == "approver"
-        assert span.attributes["executor.username"] == "bob"
-        assert span.attributes["approval.approved_by"] == "bob"
-        assert span.attributes["approval.result"] == "approved"
 
     def test_http_tool_execution_span_has_interface_attributes(self, tracer_and_exporter):
         tracer, exporter = tracer_and_exporter
-        handler = BkAidevAgentCallbackHandler(
-            tracer=tracer,
-            start_execute_kwargs=MagicMock(executor="alice"),
-        )
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
         run_id = uuid4()
 
         asyncio.run(
@@ -678,10 +660,7 @@ class TestBkAidevAgentCallbackHandler:
                 serialized={"name": "get_ticket"},
                 input_str="{}",
                 run_id=run_id,
-                metadata={
-                    "tool_code": "get_ticket",
-                    "approval": {"executor_identity": "user"},
-                },
+                metadata={"tool_code": "get_ticket"},
             )
         )
         asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
@@ -689,38 +668,6 @@ class TestBkAidevAgentCallbackHandler:
         span = exporter.get_finished_spans()[0]
         assert span.attributes["tool.type"] == "http_api"
         assert span.attributes["tool.code"] == "get_ticket"
-        assert span.attributes["executor.identity"] == "user"
-        assert span.attributes["executor.username"] == "alice"
-
-    def test_missing_approved_by_does_not_claim_approver_execution(self, tracer_and_exporter):
-        tracer, exporter = tracer_and_exporter
-        recorder = MagicMock()
-        handler = BkAidevAgentCallbackHandler(
-            tracer=tracer,
-            start_execute_kwargs=MagicMock(executor="alice"),
-            metric_recorder=recorder,
-        )
-        run_id = uuid4()
-
-        asyncio.run(
-            handler.on_tool_start(
-                serialized={"name": "get_ticket"},
-                input_str="{}",
-                run_id=run_id,
-                metadata={
-                    "tool_code": "get_ticket",
-                    "approval": {"executor_identity": "approver"},
-                },
-            )
-        )
-        asyncio.run(handler.on_tool_end(output="ok", run_id=run_id))
-
-        span = exporter.get_finished_spans()[0]
-        assert span.attributes["executor.identity"] == "user"
-        assert span.attributes["executor.configured_identity"] == "approver"
-        assert span.attributes["executor.username"] == "alice"
-        assert "approval.approved_by" not in span.attributes
-        assert recorder.record_active_tool.call_args_list[0].args[1]["executor.identity"] == "user"
 
     def test_rag_retrieval_span_attributes(self, tracer_and_exporter):
         """测试 rag.retrieval span 包含 rag.knowledge_bases 和 rag.knowledge_items 属性"""

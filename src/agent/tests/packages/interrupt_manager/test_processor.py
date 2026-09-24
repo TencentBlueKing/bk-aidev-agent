@@ -526,12 +526,6 @@ class _ApprovedRm:
                     "outcome": {
                         "type": "success",
                         "interrupts": [{"id": "int-1", "reason": TOOL_APPROVAL_REASON, "toolCallId": "call_1"}],
-                    },
-                },
-                "property": {
-                    "builtin_property": {
-                        "approve_result": "approved",
-                        "approved_by": "weilunli",
                     }
                 },
             }

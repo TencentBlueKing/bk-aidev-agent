@@ -37,6 +37,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     _extract_mcp_tools_error_detail,
 )
 from aidev_agent.pydantic_models import AgentConfig
+from aidev_agent.utils.executor_identity import AUTHORIZATION_HEADER, approver_authorization
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
@@ -77,6 +78,19 @@ async def _mcp_trace_context_interceptor(
     if not current_headers:
         return await handler(request)
     headers = {**(request.headers or {}), **current_headers}
+    return await handler(request.override(headers=headers))
+
+
+async def _mcp_approver_identity_interceptor(
+    request: MCPToolCallRequest,
+    handler: Callable[[MCPToolCallRequest], Awaitable[MCPToolCallResult]],
+) -> MCPToolCallResult:
+    """审批通过且配置审批人身份时，按次改写 MCP 调用凭证。"""
+
+    approver_auth = approver_authorization("mcp", f"{request.server_name}/{request.name}")
+    if approver_auth is None:
+        return await handler(request)
+    headers = {**(request.headers or {}), AUTHORIZATION_HEADER: approver_auth}
     return await handler(request.override(headers=headers))
 
 
@@ -517,10 +531,10 @@ class BaseResourceManager(abc.ABC):
         operation = getattr(client.api, operation_name)
         result = operation(path_params={"tool_code": tool_code}, **kwargs)
         result["data"]["tool_cn_name"] = result["data"]["tool_name"]
-        resolved_username = username or self.username or (executor_info or {}).get("executor") or ""
         if result["data"].get("credential_type", "") != CredentialType.NULL.value:
             tool = Tool.model_validate(result["data"])
             # 归一化用户名来源：显式 username > self.username；
+            resolved_username = username or self.username or None
             app_code = (executor_info or {}).get("app_code") or self.app_code
             app_secret = (executor_info or {}).get("app_secret") or self.app_secret
             access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(resolved_username)
@@ -545,8 +559,8 @@ class BaseResourceManager(abc.ABC):
                 f"has_access_token={bool(access_token)}, "
                 f"username={resolved_username or ''}"
             )
-            return make_structured_tool(tool, executor_username=resolved_username)
-        return make_structured_tool(Tool.model_validate(result["data"]), executor_username=resolved_username)
+            return make_structured_tool(tool)
+        return make_structured_tool(Tool.model_validate(result["data"]))
 
     def construct_mcp(
         self,
@@ -554,7 +568,6 @@ class BaseResourceManager(abc.ABC):
         agent_options: Any = None,
         username: str = None,
         executor_info: dict | None = None,
-        tool_interceptors: list | None = None,
         **kwargs,
     ) -> Any:
         """按 MCP 配置装配 LangChain ``StructuredTool`` 列表。
@@ -567,7 +580,6 @@ class BaseResourceManager(abc.ABC):
         :param username: 用户名，用于 BLUEAPPS 认证
         :param executor_info: 执行用户信息（含 app_code/app_secret/access_token），
             优先用于 MCP 凭证注入，与 skill sandbox 保持一致
-        :param tool_interceptors: MCP 工具调用 interceptor 列表，用于按次改写请求头
         :return: McpToolsResult 对象，包含 tools 和 fetch_failures
         """
         new_server_config = deepcopy(mcp_config)
@@ -641,10 +653,7 @@ class BaseResourceManager(abc.ABC):
                         _inject_mcp_trace_headers(client_config)
                         client = MultiServerMCPClient(
                             client_config,
-                            tool_interceptors=[
-                                _mcp_trace_context_interceptor,
-                                *(tool_interceptors or []),
-                            ],
+                            tool_interceptors=[_mcp_trace_context_interceptor, _mcp_approver_identity_interceptor],
                         )
                         tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
                         span.set_attribute("mcp.tool.count", len(tools))

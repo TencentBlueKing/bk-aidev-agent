@@ -9,9 +9,11 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import interrupt
 
+from aidev_agent.enums import ExecutorIdentity
 from aidev_agent.packages.interrupt_manager.approval import (
     TOOL_APPROVAL_REASON,
     TOOL_APPROVAL_STATE_KEY,
+    ApprovalIdentityError,
     ApprovalTarget,
     _approval_config,
     _tool_call_id,
@@ -19,6 +21,7 @@ from aidev_agent.packages.interrupt_manager.approval import (
     _tool_name,
     is_approval_configured,
 )
+from aidev_agent.utils.executor_identity import ApproverIdentity, approver_identity_scope
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +102,7 @@ def get_itsm_approval_target(request: ToolCallRequest) -> ApprovalTarget | None:
 
 
 def _is_approved(decision: Any) -> bool:
-    logger.info("[ToolApproval] 检查审批结果: decision=%s, type=%s", str(decision)[:500], type(decision).__name__)
+    logger.info("[ToolApproval] 检查审批结果: type=%s", type(decision).__name__)
     if isinstance(decision, list) and decision:
         decision = decision[0]
     if not isinstance(decision, dict):
@@ -134,20 +137,24 @@ class ItsmApprovalStrategy:
 
     reason = TOOL_APPROVAL_REASON
 
-    def interrupt(self, request: ToolCallRequest) -> ToolMessage | None:
+    def interrupt(self, request: ToolCallRequest) -> tuple[ToolMessage | None, ApproverIdentity | None]:
+        """返回 ``(拒绝消息, 审批人身份)``；拒绝消息为 None 表示放行执行。"""
         # 从 request.tool 直接识别审批目标（get_itsm_approval_target 幂等纯函数）
         approval_target = get_itsm_approval_target(request)
         if approval_target is None:
-            return None  # 无需审批
+            return None, None  # 无需审批
 
         # 恢复重复审批检查（避免重复审批）：基于 state 审批终态短路。
         # True → 已 approved 直接执行；False → 已 rejected 拒绝短路；
         # None → 无终态，才调 interrupt(value)。
         approval_status = get_tool_call_approval_status_from_state(request.state, approval_target.target_id)
         if approval_status is True:
-            return None  # 已通过，直接执行
+            if approval_target.approval.get("executor_identity") == ExecutorIdentity.APPROVER:
+                # state 短路没有本卡审批人，禁止回退调用者身份
+                raise ApprovalIdentityError(f"工具 {approval_target.target_code} 审批已通过但缺少审批人")
+            return None, None  # 已通过，直接执行
         if approval_status is False:
-            return _rejected_message(request)  # 已拒绝，短路
+            return _rejected_message(request), None  # 已拒绝，短路
 
         # 直抛 ApprovalTarget（alias 协议名 + reason），不在抛出层构造 payload：
         # 单据未创建时 callback_token 拿不到，建单与 payload 构造移交流结束 prepare。
@@ -158,11 +165,31 @@ class ItsmApprovalStrategy:
         decision_tool_call_id = _extract_tool_call_id_from_decision(decision)
         if decision_tool_call_id is not None and decision_tool_call_id != approval_target.target_id:
             # resume 值不对应当前 tool_call，不能直接使用，视为拒绝
-            return _rejected_message(request)
+            return _rejected_message(request), None
 
         if not _is_approved(decision):
-            return _rejected_message(request)  # 返回拒绝 ToolMessage
-        return None  # 通过，wrapper 继续 execute(request)
+            return _rejected_message(request), None  # 返回拒绝 ToolMessage
+        return None, _approver_identity(approval_target, decision)  # 通过，wrapper 继续 execute(request)
+
+
+def _approver_identity(target: ApprovalTarget, decision: Any) -> ApproverIdentity | None:
+    """本卡快照为审批人身份时，从本卡 decision 取审批人；缺失直接抛出，禁止回退调用者身份。"""
+    if target.approval.get("executor_identity") != ExecutorIdentity.APPROVER:
+        return None
+    card = decision[0] if isinstance(decision, list) and decision else decision
+    card = card if isinstance(card, dict) else {}
+    if card.get("executorIdentity") != ExecutorIdentity.APPROVER:
+        raise ApprovalIdentityError(f"工具 {target.target_code} 审批卡缺少审批人身份标记")
+    payload = card.get("payload") if isinstance(card.get("payload"), dict) else {}
+    approved_by = payload.get("approvedBy")
+    if not approved_by:
+        logger.error(
+            "[ToolApproval] 审批已通过但缺少审批人，拒绝执行: tool=%s, tool_call_id=%s",
+            target.target_code,
+            target.target_id,
+        )
+        raise ApprovalIdentityError(f"工具 {target.target_code} 审批已通过但缺少审批人，拒绝按调用者身份执行")
+    return ApproverIdentity(approved_by=approved_by, tool_call_id=target.target_id)
 
 
 def _extract_tool_call_id_from_decision(decision: Any) -> str | None:
@@ -197,10 +224,11 @@ def itsm_approval_sync_wrapper(
     无需审批 / 审批通过 → execute(request)；审批拒绝 → 短路返回拒绝 ToolMessage。
     返回 ToolMessage（不返回 Command）。
     """
-    result = _ITSM_APPROVAL_STRATEGY.interrupt(request)
-    if result is not None:
-        return result  # 审批拒绝 → 返回拒绝 ToolMessage
-    return execute(request)  # 通过 → 执行工具
+    rejected, approver = _ITSM_APPROVAL_STRATEGY.interrupt(request)
+    if rejected is not None:
+        return rejected  # 审批拒绝 → 返回拒绝 ToolMessage
+    with approver_identity_scope(approver):
+        return execute(request)  # 审批人身份按本卡绑定；其他调用显式清空外层身份
 
 
 async def itsm_approval_async_wrapper(
@@ -208,10 +236,11 @@ async def itsm_approval_async_wrapper(
     execute: Callable[[ToolCallRequest], Awaitable[ToolMessage]],
 ) -> ToolMessage:
     """ITSM 审批异步 wrapper（ToolNode ``awrap_tool_call`` 直插函数）。返回 ToolMessage（不返回 Command）。"""
-    result = _ITSM_APPROVAL_STRATEGY.interrupt(request)
-    if result is not None:
-        return result
-    return await execute(request)
+    rejected, approver = _ITSM_APPROVAL_STRATEGY.interrupt(request)
+    if rejected is not None:
+        return rejected
+    with approver_identity_scope(approver):
+        return await execute(request)
 
 
 __all__ = [

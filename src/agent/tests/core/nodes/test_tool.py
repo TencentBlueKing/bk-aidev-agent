@@ -5,19 +5,31 @@
 
 import time
 from typing import AsyncGenerator, List
+from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
-from aidev_agent.core.nodes.tool.approval_wrapper import (
-    TOOL_APPROVAL_STATE_KEY,
-    is_approval_configured,
-)
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables.schema import StreamEvent
 from langchain_core.tools import tool
+from langgraph.errors import GraphBubbleUp, GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import Annotated, TypedDict
+
+from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
+from aidev_agent.core.nodes.tool.approval_wrapper import (
+    TOOL_APPROVAL_STATE_KEY,
+    ItsmApprovalStrategy,
+    is_approval_configured,
+)
+from aidev_agent.core.nodes.tool.node import (
+    _chain_async_tool_call_wrappers,
+    _chain_tool_call_wrappers,
+    default_tool_call_handler,
+)
+from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
+from aidev_agent.enums import ExecutorIdentity
+from aidev_agent.packages.interrupt_manager.approval import ApprovalHandler, ApprovalIdentityError, ApprovalTarget
 
 # ============================================================================
 # 测试状态定义
@@ -431,9 +443,6 @@ class TestBuildToolNode:
         - state 无终态 → 调 interrupt 一次。
         策略只直抛 ApprovalTarget，建单副作用在流结束层 prepare。
         """
-        from unittest.mock import MagicMock, patch
-
-        from aidev_agent.core.nodes.tool.approval_wrapper import ItsmApprovalStrategy
 
         def build_request(status: str | None) -> MagicMock:
             tool = MagicMock()
@@ -462,7 +471,7 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "approved"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is None  # approved 终态 → 放行 execute
         assert mock_interrupt.call_count == 0
 
@@ -472,7 +481,7 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "rejected"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is not None and result.status == "error"
         assert mock_interrupt.call_count == 0
 
@@ -482,9 +491,51 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "approved"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is None
         assert mock_interrupt.call_count == 1
+
+    def test_approver_identity_bound_from_card_decision(self):
+        """身份取自本卡快照：审批人卡用本卡审批人，缺审批人直接抛出；使用者卡不解析审批人。"""
+        tool = MagicMock()
+        tool.name = "calculator"
+        tool.metadata = {"approval": {"approval_enabled": True, "executor_identity": ExecutorIdentity.APPROVER}}
+        request = MagicMock(tool=tool, state={"messages": []})
+        request.tool_call = {"id": "call_1", "name": "calculator", "args": {}, "type": "tool_call"}
+        target = ApprovalTarget.model_validate(
+            {"toolCallId": "call_1", "toolName": "calculator", "approval": tool.metadata["approval"]}
+        )
+        card = ApprovalHandler()._build_first_run_interrupt(target)
+        assert card["executorIdentity"] == ExecutorIdentity.APPROVER
+        decision = {**card, "payload": {"approved": True, "approvedBy": "bob"}}
+
+        with patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[decision]):
+            rejected, approver = ItsmApprovalStrategy().interrupt(request)
+        assert rejected is None
+        assert (approver.approved_by, approver.tool_call_id) == ("bob", "call_1")
+
+        user_approval = {"approval_enabled": True}
+        user_target = target.model_copy(update={"approval": user_approval})
+        user_card = ApprovalHandler()._build_first_run_interrupt(user_target)
+        assert "executorIdentity" not in user_card
+        user_decision = {**user_card, "payload": {"approved": True}}
+        tool.metadata = {"approval": user_approval}
+        with patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[user_decision]):
+            assert ItsmApprovalStrategy().interrupt(request) == (None, None)
+
+        tool.metadata = {"approval": target.approval}
+        with (
+            patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[user_decision]),
+            pytest.raises(ApprovalIdentityError),
+        ):
+            ItsmApprovalStrategy().interrupt(request)
+
+        decision["payload"].pop("approvedBy")
+        with (
+            patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[decision]),
+            pytest.raises(ApprovalIdentityError),
+        ):
+            ItsmApprovalStrategy().interrupt(request)
 
     def test_is_approval_configured_accepts_skill_metadata_without_need_approval(self):
         original_metadata = dict(getattr(calculator, "metadata", None) or {})
@@ -1304,7 +1355,6 @@ class TestDefaultToolCallHandler:
 
     def test_empty_exception_message_with_args(self):
         """测试空异常消息时回退到 args"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         # 创建一个异常，str(error) 为空但有 args
         class EmptyStrException(Exception):
@@ -1317,7 +1367,6 @@ class TestDefaultToolCallHandler:
 
     def test_empty_exception_message_with_multiple_args(self):
         """测试空异常消息时回退到多个 args"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         class EmptyStrException(Exception):
             def __str__(self):
@@ -1329,7 +1378,6 @@ class TestDefaultToolCallHandler:
 
     def test_exception_without_args(self):
         """测试无 args 异常返回通用错误消息"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         class EmptyException(Exception):
             def __str__(self):
@@ -1346,26 +1394,18 @@ class TestDefaultToolCallHandler:
         捕获中间件链异常并调用 default_tool_call_handler，如果 GraphBubbleUp 被转为
         字符串而非抛出，interrupt() 会被吞掉，图不会暂停。
         """
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
-        from langgraph.errors import GraphBubbleUp
-
         error = GraphBubbleUp("interrupt value")
         with pytest.raises(GraphBubbleUp):
             default_tool_call_handler(error)
 
     def test_graph_interrupt_subclass_is_reraised(self):
         """GraphInterrupt（GraphBubbleUp 子类）也必须重新抛出。"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
-        from langgraph.errors import GraphInterrupt
-
         error = GraphInterrupt("interrupt payload")
         with pytest.raises(GraphInterrupt):
             default_tool_call_handler(error)
 
     def test_non_bubbleup_exception_returns_string(self):
         """普通异常仍返回字符串，不受 GraphBubbleUp 判断影响。"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
-
         error = ValueError("something went wrong")
         result = default_tool_call_handler(error)
         assert result == "something went wrong"
@@ -1376,14 +1416,11 @@ class TestWrapperChaining:
 
     def test_empty_wrapper_list_returns_none(self):
         """测试空 wrapper 列表返回 None"""
-        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
-
         result = _chain_tool_call_wrappers([])
         assert result is None
 
     def test_single_wrapper_returns_original(self):
         """测试单个 wrapper 直接返回原 wrapper"""
-        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
 
         def my_wrapper(request, execute):
             return execute(request)
@@ -1393,14 +1430,11 @@ class TestWrapperChaining:
 
     def test_empty_async_wrapper_list_returns_none(self):
         """测试空异步 wrapper 列表返回 None"""
-        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
-
         result = _chain_async_tool_call_wrappers([])
         assert result is None
 
     def test_single_async_wrapper_returns_original(self):
         """测试单个异步 wrapper 直接返回原 wrapper"""
-        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
 
         async def my_async_wrapper(request, execute):
             return await execute(request)
@@ -1518,10 +1552,6 @@ class TestToolMsgContentLen:
 
     def test_content_none_via_getattr(self):
         """测试 getattr 获取 content 为 None 的情况"""
-        from unittest.mock import MagicMock
-
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
-
         # 使用 MagicMock 模拟一个 content 为 None 的消息对象
         msg = MagicMock()
         msg.content = None
@@ -1530,16 +1560,12 @@ class TestToolMsgContentLen:
 
     def test_content_string(self):
         """测试 content 为字符串的情况"""
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
-
         msg = ToolMessage(content="hello", tool_call_id="test")
         result = _tool_msg_content_len(msg)
         assert result == 5
 
     def test_content_non_string(self):
         """测试 content 为非字符串的情况"""
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
-
         msg = ToolMessage(content=12345, tool_call_id="test")
         result = _tool_msg_content_len(msg)
         assert result == 5  # str(12345) = "12345"

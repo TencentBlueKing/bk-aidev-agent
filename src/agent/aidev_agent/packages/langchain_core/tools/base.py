@@ -24,7 +24,6 @@ import re
 from hashlib import md5
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Type
-from urllib.parse import urlsplit
 
 import requests
 from langchain_core.prompts import jinja2_formatter
@@ -36,7 +35,7 @@ from requests.exceptions import JSONDecodeError
 from typing_extensions import Annotated
 
 from aidev_agent.config import settings
-from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span
+from aidev_agent.utils.executor_identity import AUTHORIZATION_HEADER, approver_authorization
 
 try:
     from bkoauth import get_access_token_by_user
@@ -214,13 +213,11 @@ class ApiWrapper:
         extra: dict | None = None,
         timeout: int | None = None,
         tool_code: str = "",
-        executor_identity: str = "user",
-        executor_username: str = "",
     ):
         self.session = requests.Session()
+        self._tool_code = tool_code
         self._method = http_method
         self._url = url
-        self._tool_code = tool_code
         self._query = query if query else {}
         self._header = header if header else {}
         self._body = body if body else {}
@@ -231,31 +228,6 @@ class ApiWrapper:
         self._builtin_fields = builtin_fields or {}
         self._extra = ToolExtra.model_validate(extra or {})
         self._timeout = timeout if timeout is not None else settings.get("TOOL_CALL_TIMEOUT", 60)
-        self.set_execution_identity(executor_identity, executor_username)
-
-    def set_execution_identity(self, identity: str, username: str = "") -> None:
-        """记录本次 HTTP transport 实际使用的身份，不保存认证头内容。"""
-        self._executor_identity = identity if identity in {"user", "approver"} else "user"
-        self._executor_username = str(username or "").strip()
-
-    def _transport_span_attributes(self) -> dict[str, str]:
-        """构造不包含 query、body 和凭证的 HTTP transport Span 属性。"""
-        parsed_url = urlsplit(self._url)
-        attributes = {
-            "tool.type": "http_api",
-            "tool.transport": "http",
-            "http.method": str(self._method).upper(),
-            "executor.identity": self._executor_identity,
-        }
-        if self._tool_code:
-            attributes["tool.code"] = self._tool_code
-        if parsed_url.hostname:
-            attributes["server.address"] = parsed_url.hostname
-        if parsed_url.path:
-            attributes["url.path"] = parsed_url.path
-        if self._executor_username:
-            attributes["executor.username"] = self._executor_username
-        return attributes
 
     def __call__(self, **kwargs):
         # 提取 config 和 state (如果通过 InjectedState 和 RunnableConfig 注入)
@@ -292,28 +264,26 @@ class ApiWrapper:
                 self._body.update(self._extra.body)
             if self._extra.path:
                 self._path.update(self._extra.path)
+        # 审批人凭证只作用于本次请求，且仅替换已有的 APIGW 凭证头，避免发给无需鉴权的工具地址
+        headers = self._header
+        if AUTHORIZATION_HEADER in headers:
+            approver_auth = approver_authorization("http", self._tool_code)
+            if approver_auth is not None:
+                headers = {**headers, AUTHORIZATION_HEADER: approver_auth}
 
         # LLM填充url模版
         self._url = self._build_dynamic_url()
 
         try:
-            with recording_span(
-                "http.tool.call",
-                kind=CLIENT_SPAN_KIND,
-                attributes=self._transport_span_attributes(),
-            ) as span:
-                resp = self.session.request(
-                    self._method,
-                    self._url,
-                    headers=self._header if self._header else None,
-                    params=self._query if self._query else None,
-                    json=self._body if self._body else None,
-                    timeout=self._timeout,
-                )
-                status_code = getattr(resp, "status_code", None)
-                if isinstance(status_code, int):
-                    span.set_attribute("http.status_code", status_code)
-                resp.raise_for_status()
+            resp = self.session.request(
+                self._method,
+                self._url,
+                headers=headers if headers else None,
+                params=self._query if self._query else None,
+                json=self._body if self._body else None,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
             try:
                 if resp.headers.get("content-type", "") == "application/json":
                     return resp.json()
@@ -467,8 +437,6 @@ def make_structured_tool(
     debug: bool = False,
     builtin_fields: dict | None = None,
     inject_context: bool = True,
-    executor_identity: str = "user",
-    executor_username: str = "",
 ) -> StructuredTool:
     """根据Tool的ORM定义构建对应的langchain Tool
     注意的是会将嵌套的字段通过`__`打平,例如:
@@ -484,8 +452,6 @@ def make_structured_tool(
         debug: 是否开启调试模式
         builtin_fields: 内置字段，用于渲染模板变量
         inject_context: 是否注入上下文（包括 RunnableConfig 和 State），允许在工具中访问运行时配置和图状态
-        executor_identity: 当前 HTTP transport 的实际执行身份
-        executor_username: 当前 HTTP transport 的实际执行用户名
     """
     default_values: dict[str, dict[str, Any]] = {
         "header": {},
@@ -538,8 +504,6 @@ def make_structured_tool(
         builtin_fields=builtin_fields,
         extra=tool.extra,
         tool_code=tool.tool_code,
-        executor_identity=executor_identity,
-        executor_username=executor_username,
     )
 
     # 如果需要注入上下文（config 和 state），创建一个带注解的wrapper函数
