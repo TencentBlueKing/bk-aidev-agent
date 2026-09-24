@@ -546,7 +546,9 @@ class FlowAgentCompletionAgent(BaseModel):
                     )
 
             if attempt + 1 < REVOKE_STATUS_MAX_ATTEMPTS:
-                self._interruptible_sleep(sleep_interval, self.session_code or self.thread_id)
+                # 当前已进入取消分支，取消标记必然存在；可中断等待会立即返回，
+                # 无法给平台异步 revoke 留出实际生效时间。
+                time.sleep(sleep_interval)
 
         return latest_task_info or {}, False
 

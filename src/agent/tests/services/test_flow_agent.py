@@ -395,6 +395,22 @@ class TestFlowAgentStop:
         assert warning.call_count == 9
         assert exception.call_count == 1
 
+    def test_revoke_query_waits_even_when_cancel_signal_exists(self):
+        """进入取消分支后仍按固定间隔等待平台异步 revoke 生效。"""
+        client = MockResourceManager(task_info_sequence=[{"task_state": "RUNNING"}] * 10)
+        agent = FlowAgentCompletionAgent(poll_interval=0.2, session_code="revoke-wait-session")
+
+        with (
+            patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=True) as is_cancelled,
+            patch("aidev_agent.services.agent.flow.time.sleep") as sleep,
+        ):
+            task_info, is_end_state = agent._get_task_info_after_revoke(client, 3005, None)
+
+        assert task_info == {"task_state": "RUNNING"}
+        assert is_end_state is False
+        assert [item.args for item in sleep.call_args_list] == [(0.2,)] * 9
+        is_cancelled.assert_not_called()
+
     def test_cancel_emits_revoke_result_with_nodes(self):
         """任务已启动后取消 → 基于 last_task_info 手动构造 revoke 事件
 
