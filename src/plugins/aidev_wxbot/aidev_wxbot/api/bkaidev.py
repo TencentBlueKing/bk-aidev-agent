@@ -21,3 +21,12 @@ class BkAiDevApi:
             json={"openid": openid},
             headers=trace_headers(),
         )
+
+    def convert_knowledge_image_urls(self, urls: list[str], expires_in: int = 600) -> list[str]:
+        result = self.api.call_action(
+            "openapi/aidev/app/v1/knowledges/image_download_urls",
+            "POST",
+            json={"urls": urls, "expires_in": expires_in},
+            headers=trace_headers(),
+        )
+        return [item["download_url"] for item in result["results"]]
