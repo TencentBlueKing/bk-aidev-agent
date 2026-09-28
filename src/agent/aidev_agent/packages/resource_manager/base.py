@@ -18,9 +18,11 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from functools import partial
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, List, Optional
 
+import httpx
 from ag_ui.core import BaseEvent
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -65,6 +67,30 @@ def _inject_mcp_trace_headers(server_config: dict[str, dict[str, Any]]) -> None:
             headers = {}
             connection["headers"] = headers
         headers.update(current_headers)
+
+
+def _create_mcp_http_client(
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
+    auth: httpx.Auth | None = None,
+    *,
+    ssl_verify: bool,
+) -> httpx.AsyncClient:
+    """创建 MCP HTTP 客户端，并保留 MCP 依赖的默认连接行为。"""
+    kwargs: dict[str, Any] = {"follow_redirects": True, "verify": ssl_verify}
+    kwargs["timeout"] = timeout or httpx.Timeout(30.0, read=300.0)
+    if headers is not None:
+        kwargs["headers"] = headers
+    if auth is not None:
+        kwargs["auth"] = auth
+    return httpx.AsyncClient(**kwargs)
+
+
+def _inject_mcp_http_client_factory(server_config: dict[str, dict[str, Any]], ssl_verify: bool) -> None:
+    """为 HTTP MCP 注入使用指定证书校验策略的客户端工厂。"""
+    for connection in server_config.values():
+        if connection.get("transport") in {"sse", "streamable_http"}:
+            connection["httpx_client_factory"] = partial(_create_mcp_http_client, ssl_verify=ssl_verify)
 
 
 async def _mcp_trace_context_interceptor(
@@ -458,6 +484,7 @@ class BaseResourceManager(abc.ABC):
             related_tools=related_tools_data,
             opening_mark=conversation_settings.get("opening_remark"),
             mcp_server_config=res.get("mcp_server_config", {}).get("mcpServers", {}),
+            tool_ssl_verify=res.get("tool_ssl_verify", True),
             related_skills=related_skills,
             approval_settings=res.get("approval_settings") or {},
             resources=res.get("resources") or [],
@@ -510,6 +537,7 @@ class BaseResourceManager(abc.ABC):
         tool_code: str,
         username: str | None = None,
         executor_info: dict | None = None,
+        ssl_verify: bool = True,
         **kwargs,
     ) -> StructuredTool:
         operation_name = "retrieve_tool" if kwargs.pop("appspace", True) else "appspace_retrieve_tool"
@@ -545,8 +573,8 @@ class BaseResourceManager(abc.ABC):
                 f"has_access_token={bool(access_token)}, "
                 f"username={resolved_username or ''}"
             )
-            return make_structured_tool(tool)
-        return make_structured_tool(Tool.model_validate(result["data"]))
+            return make_structured_tool(tool, ssl_verify=ssl_verify)
+        return make_structured_tool(Tool.model_validate(result["data"]), ssl_verify=ssl_verify)
 
     def construct_mcp(
         self,
@@ -554,6 +582,7 @@ class BaseResourceManager(abc.ABC):
         agent_options: Any = None,
         username: str = None,
         executor_info: dict | None = None,
+        ssl_verify: bool = True,
         **kwargs,
     ) -> Any:
         """按 MCP 配置装配 LangChain ``StructuredTool`` 列表。
@@ -637,6 +666,7 @@ class BaseResourceManager(abc.ABC):
                     ) as span:
                         client_config = deepcopy(new_server_config)
                         _inject_mcp_trace_headers(client_config)
+                        _inject_mcp_http_client_factory(client_config, ssl_verify)
                         client = MultiServerMCPClient(
                             client_config,
                             tool_interceptors=[_mcp_trace_context_interceptor],

@@ -496,6 +496,7 @@ class AgentConfig(BaseModel):
     opening_mark: str | None = Field(None, description="智能体开场白")
     generating_keyword: str | None = Field(description="生成关键词", default="生成中")
     mcp_server_config: dict | None = Field(None, description="MCP服务器配置")
+    tool_ssl_verify: bool = Field(default=True, description="工具和 HTTP MCP 是否校验 HTTPS 证书")
     related_skills: list | None = Field(None, description="关联技能配置")
     approval_settings: dict | None = Field(None, description="审批策略配置")
     resources: list[dict] = Field(default_factory=list, description="资源列表（含 id/code/type 映射）")
