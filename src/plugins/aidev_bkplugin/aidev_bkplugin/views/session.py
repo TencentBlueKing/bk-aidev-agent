@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from aidev_agent.enums import ChannelType
-from aidev_agent.services.messages_handler import GeneratorStreamingHelper
-from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.sandbox_pv_files import (
-    IMAGE_DOWNLOAD_URL_EXPIRES_IN,
     SandboxFileError,
     SandboxFileInvalidArgumentError,
     SandboxFileInvalidRequestError,
@@ -26,7 +23,7 @@ from rest_framework.parsers import FileUploadParser, MultiPartParser
 from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
-from aidev_bkplugin.services.agent_config import AgentConfigFetcher
+from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
 
@@ -377,89 +374,16 @@ class ChatSessionContentViewSet(PluginViewSet):
 
     @action(["POST"], url_path="stop", detail=False)
     def stop(self, request):
-        username = request.user.username
-        session_code = request.data.get("session_code", "")
-        run_id = request.data.get("run_id") or None
-
-        # 获取 message_handler 用于清理
         message_handler = message_handler_factory.get()
-        producer_active = None
-
-        # 停止 agent 侧的流式生产者
-        if session_code:
-            # 在发送 cancel 前记录 producer 状态；发送后 producer 可能立即退出，无法区分
-            # “本次被停止”与“请求到达前已无 producer”两种场景。
-            try:
-                producer_active = bool(message_handler.has_active_producer(session_code))
-            except Exception:
-                logger.exception(f"Error checking active producer for session_code={session_code}")
-
-            # 1. 先清理上一轮完成通知，避免误消费旧通知
-            if hasattr(message_handler, "clear_cancelled_signal"):
-                try:
-                    message_handler.clear_cancelled_signal(session_code, run_id=run_id)
-                except Exception as e:
-                    logger.exception(f"Error clearing stale cancelled signal: {e}")
-
-            # 2. 发送取消信号（进程内 + 跨进程）
-            GeneratorStreamingHelper.cancel(session_code, message_handler=message_handler, run_id=run_id)
-
-            # 3. 等待 SSE 消费者真正退出（收到取消终态与 EOD）
-            #    正常情况下几百毫秒内完成，超时则降级为当前行为
-            stream_finished = False
-            if hasattr(message_handler, "wait_for_consumer_cancelled"):
-                try:
-                    stream_finished = message_handler.wait_for_consumer_cancelled(
-                        session_code,
-                        timeout=TimeoutConfig.STOP_WAIT_STREAM_FINISH_TIMEOUT,
-                        run_id=run_id,
-                    )
-                    if stream_finished:
-                        logger.info(f"Stream finished confirmed for session_code={session_code}")
-                    else:
-                        logger.warning(
-                            f"Timeout waiting for stream to finish for session_code={session_code}, "
-                            f"proceeding with stop anyway"
-                        )
-                except Exception as e:
-                    logger.exception(f"Error waiting for stream finish: {e}")
-
-            # 4. 如果等待超时（如工具仍在执行），保留 stopped 标记；
-            #    真正的取消完成通知仍由消费者在收到 EOD 后发送。
-            if not stream_finished and hasattr(message_handler, "mark_stopped"):
-                message_handler.mark_stopped(session_code)
-
-        # 5. 如果是 flow 类型智能体，额外调用 flow agent stop 接口撤销 bkflow 任务（不可恢复）
-        #    用户点击「停止」→ revoke（任务变为 REVOKED/FAILED），不可恢复
-        if session_code:
-            try:
-                agent_info = AgentConfigFetcher.get_info(username=username)
-                if agent_info.get("agent_type") == "flow":
-                    logger.info(f"Flow agent detected, revoking flow task for session_code={session_code}")
-                    rm = PluginResourceManager(username=username)
-                    revoke_result = rm.stop_flow_agent_task(session_code=session_code)
-                    logger.info(f"[FLOW_AGENT] revoke 调用成功: session_code={session_code}, result={revoke_result}")
-                    # revoke 后更新 session 中的 flow_agent_status 为 failed
-                    try:
-                        self.client.api.update_chat_session(
-                            path_params={"session_code": session_code},
-                            json={"flow_agent_status": "failed"},
-                            headers={"X-BKAIDEV-USER": username},
-                        )
-                    except Exception as e:
-                        logger.exception(
-                            f"Error updating flow_agent_status after revoke: session_code={session_code}, error={e}"
-                        )
-            except Exception as e:
-                logger.exception(f"Error revoking flow agent task: session_code={session_code}, error={e}")
-
-        platform_payload = request.data.copy()
-        platform_payload.pop("run_id", None)
-        if producer_active is not None:
-            platform_payload["producer_active"] = producer_active
-        result = self.client.api.stop_chat_session_content(json=platform_payload, headers={"X-BKAIDEV-USER": username})
-
-        return Response(data=result["data"])
+        data = SessionManager(
+            username=request.user.username,
+            resource_manager=self.get_resource_manager(),
+        ).stop_chat_content(
+            request.data,
+            run_id=request.data.get("run_id") or None,
+            message_handler=message_handler,
+        )
+        return Response(data=data)
 
 
 class ChatSessionContentFeedbackViewSet(PluginViewSet):

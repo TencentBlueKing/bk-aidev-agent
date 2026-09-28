@@ -182,14 +182,7 @@ export class SessionBusinessManager {
    * @param options 创建选项
    */
   async createSession(options: CreateSessionOptions = {}): Promise<void> {
-    // 权限检查
-    if (this.config.enableChatSession === false) {
-      throw new Error('Chat session is disabled');
-    }
-    if (this.agentModule?.info?.value?.conversationSettings?.enableChatSession === false) {
-      throw new Error('Chat session is disabled');
-    }
-
+    // enableChatSession 只控制 Header 历史/新建入口的显隐，不阻断建会话与初始化
     try {
       // model 统一由 ModelSelectionManager 解析，保证是前端可选中的模型
       const model = await this.resolveSessionModel(options.model);

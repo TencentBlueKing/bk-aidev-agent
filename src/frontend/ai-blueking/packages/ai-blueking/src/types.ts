@@ -242,7 +242,7 @@ export interface AIBluekingProps {
 
   /** 下拉菜单配置 */
   dropdownMenuConfig?: DropdownMenuConfig;
-  /** 是否启用会话管理（与 info conversationSettings.enableChatSession 联动） */
+  /** 是否展示历史/新建会话入口（与 info conversationSettings.enableChatSession 联动，仅 UI，不阻断建会话） */
   enableChatSession?: boolean;
   /**
    * 是否启用模型选择（默认 true）

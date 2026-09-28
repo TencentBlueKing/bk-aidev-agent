@@ -1,6 +1,6 @@
 {
   "name": "ai-blueking-docs",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "AI 小鲸智能对话组件文档 — v2.4",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -37,7 +37,7 @@
     "koa-send": ">=4.0.0"
   },
   "dependencies": {
-    "@blueking/ai-blueking": "2.4.0",
+    "@blueking/ai-blueking": "2.4.1",
     "@blueking/chat-helper": "2.4.0",
     "@blueking/chat-x": "2.4.0",
     "bkui-vue": "^2.0.2-beta.81",

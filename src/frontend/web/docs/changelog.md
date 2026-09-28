@@ -1,5 +1,17 @@
 # 更新日志
 
+## v2.4.1
+
+### 修复
+
+- **`enableChatSession` 只隐藏入口**（≥ v2.4.1）：宿主 prop 或 info `conversationSettings.enableChatSession` 为 `false` 时，只隐藏 Header 历史 / 新建会话入口，不再拦截 `createSession` / `loadRecentSession`。调试页带 `alwaysCreateNewSession` 时初始化仍会建立当前会话。详见 [会话管理](/guide/core-features/session-management#历史会话开关)、[FAQ](/faq#如何关闭多会话或划词弹窗为什么设了-prop-还不生效)
+
+### 文档
+
+- 更新 [会话管理](/guide/core-features/session-management)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)、[AIBlueking API](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[FAQ](/faq)
+
+---
+
 ## v2.4.0
 
 配套 `@blueking/chat-x` `2.4.0`、`@blueking/chat-helper` `2.4.0`。ChatBot / AIBlueking 仍保留 `prompts` / `resources`（ChatBot 另有 `skills`），内部映射为 `menuSources`。

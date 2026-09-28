@@ -89,7 +89,8 @@ exportStatus: internal
 
 ## 核心能力
 
-- **状态聚合统计**：汇总所有任务的 `statistics.state_counts`，在标题栏按「执行中 / 成功 / 失败 / 挂起 / 待执行」分类展示带颜色的计数（超过 99 显示 `99+`）
+- **状态聚合统计**：汇总所有任务的 `statistics.state_counts`，在标题栏按「执行中 / 成功 / 失败 / 挂起 / 已终止 / 待执行 / 跳过」分类展示带颜色的计数（超过 99 显示 `99+`）
+- **已终止整体覆盖**：任一任务 `task_state === REVOKED` 时，标题栏在统计前展示橙红色「已终止」，并用括号包裹统计：`执行情况：已终止（…）`；任务行使用终止图标，叶子节点使用已终止圆点（`#F55B0E` 描边 / `#FEE8DD` 浅底）
 - **两级折叠**：任务整体由 `ActivityLayout` 折叠；每个任务节点列表可单独展开/收起
 - **耗时格式化**：节点耗时与任务总耗时按 `d/h/m/s` 紧凑展示，小于 1 秒显示 `<1s`
 - **节点行尾操作**：hover 失败节点行显示「重试 / 跳过 / 详情」按钮组（间距 12px）；成功 / 运行中等非失败节点仅显示「详情」。重试 / 跳过依赖节点 `retryable` / `skippable` 能力位，通过 `onInterruptResume` 回传 Agent
@@ -100,15 +101,17 @@ exportStatus: internal
 
 ## 状态映射
 
-组件将后端原始 `state` / `task_state` 归一为 5 类收敛状态（`getConvergedState`），用于图标、颜色与统计分类：
+组件将后端原始 `state` / `task_state` 归一为收敛状态（`getConvergedState`），用于图标、颜色与统计分类。配置源为 `STATE_DEFS`：
 
-| 收敛状态    | 颜色        | 原始状态                                                                          |
-| ----------- | ----------- | --------------------------------------------------------------------------------- |
-| `success`   | `#18B456`   | `FINISHED`                                                                        |
-| `failed`    | `#EA3636`   | `FAILED`、`REVOKED`、`ROLL_BACK_FAILED`                                            |
-| `suspended` | `#F59500`   | `SUSPENDED`                                                                       |
-| `pending`   | `#4D4F56`   | `PENDING`                                                                         |
-| `running`   | `#3A84FF`   | `CREATED`、`LOOP_READY`、`READY`、`RUNNING`、`BLOCKED`、`ROLLING_BACK`、`ROLL_BACK_SUCCESS` 及未知状态（兜底） |
+| 收敛状态      | 颜色        | 原始状态                                                                          | 统计 | 整体 header |
+| ------------- | ----------- | --------------------------------------------------------------------------------- | ---- | ----------- |
+| `running`     | `#3A84FF`   | `CREATED`、`LOOP_READY`、`READY`、`RUNNING`、`BLOCKED`、`ROLLING_BACK`、`ROLL_BACK_SUCCESS` 及未知状态（兜底） | 是   | 否          |
+| `success`     | `#65C389`   | `FINISHED`                                                                        | 是   | 否          |
+| `failed`      | `#EA3636`   | `FAILED`、`ROLL_BACK_FAILED`                                                      | 是   | 否          |
+| `suspended`   | `#F59500`   | `SUSPENDED`                                                                       | 是   | 否          |
+| `terminated`  | `#F55B0E`   | `REVOKED`                                                                         | 是   | 是          |
+| `pending`     | `#4D4F56`   | `PENDING`                                                                         | 是   | 否          |
+| `skipped`     | `#5B7290`   | `SKIPPED`                                                                         | 是   | 否          |
 
 ## 基础用法
 
@@ -244,7 +247,8 @@ addCustomTab?.({
 ActivityLayout（activity-type=flow_agent，v-model:collapsed）
 ├── #title（执行情况统计栏）
 │   ├── AiLoading / ArrowRightIcon（加载态 / 折叠箭头）
-│   └── flow-agent-stat-item × N（按收敛状态分类的计数）
+│   ├── flow-agent-flow-header（任一任务 REVOKED 时展示「已终止」）
+│   └── flow-agent-stat-item × N（按收敛状态分类的计数，含 terminated）
 └── flow-agent-task-group × N（任务）
     ├── flow-agent-task-header（点击折叠当前任务）
     │   ├── task-arrow（任务展开箭头）
@@ -338,10 +342,11 @@ interface BkFlowNode {
 3. **任务总耗时为节点累加**：`task-time` 由各节点 `elapsed_time` 求和得到，并非任务级独立字段。
 4. **`task_outputs` 暂不渲染**：模板中任务输出展示区块已注释，传入也不会显示。
 5. **未知状态兜底为 `running`**：`getConvergedState` 对未识别的原始状态统一归为运行中。
-6. **Share 模式只读查看**：`RenderMode.Share` 下保留节点/任务耗时与「详情」「有效证据」查看入口，仅过滤「重试 / 跳过」等交互式 resume 操作（由 `useFlowNodeActions` 的 `hideResumeActions` 收敛）。
-7. **侧栏「执行情况」面板同为只读**：面板内经 `ExecutionSummary` → `MessageRender` 渲染的本组件不展示「重试 / 跳过」，只保留「详情」；判定来自 `useExecutionPanelInject()`（内部上下文，未从包入口导出；缺省 `false`），与 Share 态一起并入 `hideResumeActions`。因此脱离 `ExecutionSummary` 独立使用组件时，行为与对话流内一致。
-8. **`onInterruptResume` 透传链路**：`MessageRender` → `ActivityMessage` → `FlowAgentContent`；未传入时重试 / 跳过按钮仍展示但点击无回调。
-9. **pending 自动收敛**：`useFlowNodeActions` 以 `task_id:node_id:retry` 为 pending 键；节点重试再次失败（`retry` +1）后键变化，进行中态自动解除，无需手动清理。
+6. **已终止整体覆盖**：判定只看任务 `task_state`（不扫节点）；叶子节点 `state === REVOKED` 使用已终止圆点；`REVOKED` 计入标题栏 / tooltip 统计，与叶子节点同色 `#F55B0E`。
+7. **Share 模式只读查看**：`RenderMode.Share` 下保留节点/任务耗时与「详情」「有效证据」查看入口，仅过滤「重试 / 跳过」等交互式 resume 操作（由 `useFlowNodeActions` 的 `hideResumeActions` 收敛）。
+8. **侧栏「执行情况」面板同为只读**：面板内经 `ExecutionSummary` → `MessageRender` 渲染的本组件不展示「重试 / 跳过」，只保留「详情」；判定来自 `useExecutionPanelInject()`（内部上下文，未从包入口导出；缺省 `false`），与 Share 态一起并入 `hideResumeActions`。因此脱离 `ExecutionSummary` 独立使用组件时，行为与对话流内一致。
+9. **`onInterruptResume` 透传链路**：`MessageRender` → `ActivityMessage` → `FlowAgentContent`；未传入时重试 / 跳过按钮仍展示但点击无回调。
+10. **pending 自动收敛**：`useFlowNodeActions` 以 `task_id:node_id:retry` 为 pending 键；节点重试再次失败（`retry` +1）后键变化，进行中态自动解除，无需手动清理。
 
 ## 关联组件
 

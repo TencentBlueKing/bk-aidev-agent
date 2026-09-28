@@ -36,6 +36,35 @@ def test_retrieve_consumes_api_result_without_local_rerank():
     api_client.query_knowledge.assert_called_once()
 
 
+@pytest.mark.parametrize("decision", ["PRIVATE_QA", "QUERY_CLARIFICATION", "GENERAL_QA"])
+def test_retrieve_preserves_api_order_thresholds_and_references(decision):
+    documents = (
+        [
+            {"page_content": "first", "metadata": {"relevance_level": "high", "fine_grained_score": 0.01}},
+            {"page_content": "second", "metadata": {"relevance_level": "high", "fine_grained_score": 0.99}},
+        ]
+        if decision != "GENERAL_QA"
+        else []
+    )
+    api_result = {
+        "documents": documents,
+        "decision": decision,
+        "knowledge_content": [doc["page_content"] for doc in documents],
+        "reference_documents": [{"metadata": {"file_path": doc["page_content"]}} for doc in documents],
+    }
+    api_client = MagicMock()
+    api_client.query_knowledge.return_value = api_result
+    rag = KnowledgeRag(llm=MagicMock(), kb_retriever=api_client)
+
+    result = rag.retrieve("query", KnowledgeSettings(knowledge_resource_rough_recall_topk=1))
+
+    assert result["knowledge_resources_emb_recalled"] == documents
+    assert result["reference_doc"] == api_result["reference_documents"]
+    assert result["knowledge_content"] == api_result["knowledge_content"]
+    assert result["decision"] == Decision(decision)
+    api_client.query_knowledge.assert_called_once()
+
+
 def test_retrieve_rejects_unknown_api_decision():
     api_client = MagicMock()
     api_client.query_knowledge.return_value = {"documents": [], "decision": "UNKNOWN"}

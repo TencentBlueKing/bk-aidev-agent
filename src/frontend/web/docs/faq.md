@@ -325,4 +325,4 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 <AIBlueking :enable-chat-session="false" />
 ```
 
-若宿主保持默认 `true`，仍可能被智能体配置关掉。shortcut 为空时划词弹窗回退内置「问问小鲸」。详见 [内容引用](/guide/core-features/content-referencing)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。
+若宿主保持默认 `true`，仍可能被智能体配置关掉。自 **v2.4.1** 起，`enableChatSession` 只隐藏入口，不阻断建会话：调试页即使带 `alwaysCreateNewSession`，初始化仍会创建当前会话。shortcut 为空时划词弹窗回退内置「问问小鲸」。详见 [会话管理 · 历史会话开关](/guide/core-features/session-management#历史会话开关)、[内容引用](/guide/core-features/content-referencing)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。

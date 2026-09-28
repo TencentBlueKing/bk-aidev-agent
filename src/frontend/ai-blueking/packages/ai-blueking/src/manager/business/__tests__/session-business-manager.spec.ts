@@ -196,7 +196,7 @@ describe('SessionBusinessManager.createSession enableChatSession', () => {
     sessionModule = createSessionModule();
   });
 
-  it('should throw when agent conversationSettings.enableChatSession is false', async () => {
+  it('should still create a session when agent conversationSettings.enableChatSession is false', async () => {
     const agentModule = {
       handleRole: vi.fn(),
       info: ref({
@@ -205,17 +205,43 @@ describe('SessionBusinessManager.createSession enableChatSession', () => {
     };
     const manager = new SessionBusinessManager(sessionModule as never, agentModule as never, null, {});
 
-    await expect(manager.createSession({ name: '新会话' })).rejects.toThrow('Chat session is disabled');
-    expect(sessionModule.createSession).not.toHaveBeenCalled();
+    await manager.createSession({ name: '新会话', sessionCode: 'session-ui-off' });
+
+    expect(sessionModule.createSession).toHaveBeenCalledTimes(1);
   });
 
-  it('should throw when constructor config.enableChatSession is false', async () => {
+  it('should still create a session when constructor config.enableChatSession is false', async () => {
     const manager = new SessionBusinessManager(sessionModule as never, null, null, {
       enableChatSession: false,
     });
 
-    await expect(manager.createSession({ name: '新会话' })).rejects.toThrow('Chat session is disabled');
-    expect(sessionModule.createSession).not.toHaveBeenCalled();
+    await manager.createSession({ name: '新会话', sessionCode: 'session-config-off' });
+
+    expect(sessionModule.createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('should still create a session on init when history UI is off and alwaysCreateNewSession is true', async () => {
+    const agentModule = {
+      handleRole: vi.fn(),
+      info: ref({
+        conversationSettings: { enableChatSession: false },
+      }),
+    };
+    const manager = new SessionBusinessManager(sessionModule as never, agentModule as never, null, {
+      enableChatSession: false,
+    });
+    sessionModule.list.value = [
+      {
+        sessionCode: 'recent-with-content',
+        sessionName: '已有会话',
+        sessionContentCount: 2,
+      },
+    ];
+
+    await manager.loadRecentSession({ skipLoadSessions: true, alwaysCreateNewSession: true });
+
+    expect(sessionModule.createSession).toHaveBeenCalledTimes(1);
+    expect(sessionModule.chooseSession).not.toHaveBeenCalled();
   });
 });
 

@@ -92,7 +92,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `defaultLeft` | `number` | — | 面板默认左偏移（px），不传则自动计算 |
 | `defaultTop` | `number` | — | 面板默认上偏移（px），不传则自动计算 |
 | `miniPadding` | `number` | `10` | 面板最小化时距离屏幕边缘的间距（px） |
-| `enableChatSession` | `boolean` | `true` | 是否启用会话管理（Header 历史/新建会话 icon）；与 info `enableChatSession` 联动 |
+| `enableChatSession` | `boolean` | `true` | 是否展示历史/新建会话入口；与 info `enableChatSession` 联动。仅 UI，不阻断建会话和初始化 |
 | `showAsideToggle` | `boolean` | `true` | 是否显示侧栏展开/收起按钮（在压缩图标左侧） |
 
 > **提示**：`AIBlueking` 同样支持 `ChatBot` 的所有 Props（如 `url`、`requestOptions` 等），具体请参考 [ChatBot 页面嵌入模式](./chatbot-embedded.md)。

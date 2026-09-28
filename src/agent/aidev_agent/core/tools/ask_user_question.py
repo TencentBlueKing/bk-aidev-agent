@@ -32,6 +32,7 @@ from aidev_agent.packages.interrupt_manager import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
 )
 from aidev_agent.packages.interrupt_manager.ask_user_question import (
+    AskUserQuestionHandler,
     AskUserQuestionTarget,
     parse_resume_answers,
 )
@@ -61,8 +62,15 @@ def _ask_user_question(  # nosemgrep: aidev-no-bare-any  (返回值为用户提�
     """
     tool_call_id = runtime.tool_call_id if runtime else ""
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    # 归一化 LLM 可能传入的脏 questions（str / ["字符串"] / None / 混合），避免
+    # 直接把非 list[dict] 灌进 AskUserQuestionTarget 触发 Pydantic ValidationError；
+    # 归一化后为空说明 LLM 未给出任何有效问题，直接返回跳过文案让流程继续，
+    # 而不是抛错造成 500 / 空弹窗（对齐 2.2.1 UserQuestionStrategy 的提前归一化 + 跳过）。
+    normalized_questions = AskUserQuestionHandler._normalize_questions(questions)
+    if not normalized_questions:
+        return ASK_USER_QUESTION_SKIPPED_CONTENT
     target = AskUserQuestionTarget(
-        questions=questions,
+        questions=normalized_questions,
         message="请求用户回答以下问题",
         toolCallId=tool_call_id,
         expiresAt=expires_at,

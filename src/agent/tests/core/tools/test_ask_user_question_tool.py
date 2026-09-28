@@ -31,3 +31,44 @@ def test_tool_returns_parsed_answers_on_resolved_resume(monkeypatch):
     result = tool_mod._ask_user_question(questions=[{"header": "h", "question": "q"}])
 
     assert result == answers
+
+
+# ---------- 脏 questions 兜底（复刻 2.2.1 a14fe8a7：工具层提前归一化 + 空跳过） ----------
+
+
+def test_tool_skips_when_questions_normalize_to_empty(monkeypatch):
+    """LLM 传 None / 空白 str 等归一化后为空 → 直接返回跳过文案，不触发 interrupt。"""
+    called = {"interrupt": False}
+
+    def _interrupt(value):
+        called["interrupt"] = True
+        return []
+
+    monkeypatch.setattr(tool_mod, "interrupt", _interrupt)
+
+    for dirty in (None, "   ", [], [None, 123]):
+        result = tool_mod._ask_user_question(questions=dirty)
+        assert result == ASK_USER_QUESTION_SKIPPED_CONTENT
+    # 归一化后为空时不应进入 interrupt
+    assert called["interrupt"] is False
+
+
+def test_tool_normalizes_str_questions_without_crash(monkeypatch):
+    """LLM 把 questions 传成纯字符串 → 归一化成合法 dict 后正常构造 target，不再 500。"""
+    captured = {}
+
+    def _interrupt(value):
+        captured["value"] = value
+        # 模拟用户答复
+        return [{"interruptId": "x", "status": "resolved", "payload": {"answers": [{"question": "天气", "answer": []}]}}]
+
+    monkeypatch.setattr(tool_mod, "interrupt", _interrupt)
+
+    result = tool_mod._ask_user_question(questions="今天天气怎么样？")
+
+    # 归一化后的 questions 进入了 interrupt target
+    normalized = captured["value"]["questions"]
+    assert len(normalized) == 1
+    assert normalized[0]["question"] == "今天天气怎么样？"
+    # 正常拿到答案返回值
+    assert result == [{"question": "天气", "answer": []}]

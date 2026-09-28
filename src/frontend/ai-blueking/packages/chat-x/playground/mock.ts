@@ -1414,6 +1414,59 @@ const MOCK_FLOW_AGENT_CONTENT: BkFlowMessageContent = [
   },
 ];
 
+/** flow_agent 已终止会话 mock：task_state = REVOKED，用于验证标题栏「已终止（统计）」与叶子节点已终止圆点 */
+const MOCK_FLOW_AGENT_TERMINATED_CONTENT: BkFlowMessageContent = [
+  {
+    is_active: false,
+    nodes: {
+      'node-finished': {
+        elapsed_time: 2,
+        finish_time: '2026-09-21 15:00:02',
+        id: 'node-finished',
+        loop: 0,
+        name: '已完成节点',
+        retry: 0,
+        skip: false,
+        start_time: '2026-09-21 15:00:00',
+        state: 'FINISHED',
+        type: 'task',
+      },
+      'node-revoked': {
+        elapsed_time: 1,
+        finish_time: '2026-09-21 15:00:04',
+        id: 'node-revoked',
+        loop: 0,
+        name: '被终止节点',
+        retry: 0,
+        skip: false,
+        start_time: '2026-09-21 15:00:02',
+        state: 'REVOKED',
+        type: 'task',
+      },
+      'node-pending': {
+        elapsed_time: 0,
+        finish_time: '',
+        id: 'node-pending',
+        loop: 0,
+        name: '待执行节点',
+        retry: 0,
+        skip: false,
+        start_time: '',
+        state: 'PENDING',
+        type: 'task',
+      },
+    },
+    statistics: {
+      state_counts: { FINISHED: 1, PENDING: 1, REVOKED: 1 },
+      total: 3,
+    },
+    task_id: 1787195769001,
+    task_name: 'flow_agent_terminated_session',
+    task_outputs: {},
+    task_state: 'REVOKED',
+  },
+];
+
 /** flow_agent 会话 mock：user 提问作为执行情况面板的分组标题，activity 承载流程内容 */
 export const MOCK_FLOW_AGENT_MESSAGES = [
   {
@@ -1433,6 +1486,28 @@ export const MOCK_FLOW_AGENT_MESSAGES = [
     status: MessageStatus.Completed,
     messageId: 'mock-flow-agent-activity',
     createdAt: mockCreatedAt(0, 16, 20),
+  },
+] as Message[];
+
+/** flow_agent 已终止会话 mock */
+export const MOCK_FLOW_AGENT_TERMINATED_MESSAGES = [
+  {
+    id: 'mock-flow-agent-terminated-user',
+    role: MessageRole.User,
+    content: '终止流程',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-flow-agent-terminated-user',
+    createdAt: mockCreatedAt(0, 16, 30),
+  },
+  {
+    id: 'mock-flow-agent-terminated-activity',
+    role: MessageRole.Activity,
+    activityType: MessageContentType.FlowAgent,
+    content: MOCK_FLOW_AGENT_TERMINATED_CONTENT,
+    status: MessageStatus.Completed,
+    messageId: 'mock-flow-agent-terminated-activity',
+    createdAt: mockCreatedAt(0, 16, 30),
   },
 ] as Message[];
 
