@@ -25,12 +25,13 @@
  * IN THE SOFTWARE.
  */
 
-import { defineComponent, h, nextTick } from 'vue';
+import { computed, defineComponent, h, nextTick } from 'vue';
 
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ShortcutRender from './shortcut-render.vue';
+import { COMMON_TIPPY_OPTIONS_TOKEN } from '../../../composables/use-common';
 
 import type { Shortcut, ShortcutComponent } from '../../../types';
 
@@ -96,6 +97,7 @@ vi.mock('bkui-vue', () => {
         name: 'Select',
         props: {
           modelValue: { type: [String, Number, Array], default: '' },
+          popoverOptions: { type: Object, default: () => ({}) },
         },
         emits: ['update:modelValue', 'change'],
         setup(props, { slots }) {
@@ -368,6 +370,41 @@ describe('ShortcutRender', () => {
       });
 
       expect(wrapper.find('.mock-select').exists()).toBe(true);
+      expect(wrapper.getComponent({ name: 'Select' }).props('popoverOptions')).toEqual({ boundary: 'body' });
+    });
+
+    it('select 下拉应挂到注入的浮层容器，并保留调用方的 popoverOptions', () => {
+      const host = document.createElement('div');
+      const components: ShortcutComponent[] = [
+        {
+          key: 'option',
+          name: '选择',
+          type: 'select',
+          props: {
+            options: [{ label: '选项1', value: '1' }],
+            popoverOptions: { extCls: 'keep-me', placement: 'top-start' },
+          },
+        },
+      ];
+
+      wrapper = mount(ShortcutRender, {
+        props: {
+          id: 'test',
+          name: '测试',
+          components,
+        },
+        global: {
+          provide: {
+            [COMMON_TIPPY_OPTIONS_TOKEN]: computed(() => ({ appendTo: () => host })),
+          },
+        },
+      });
+
+      expect(wrapper.getComponent({ name: 'Select' }).props('popoverOptions')).toEqual({
+        boundary: host,
+        extCls: 'keep-me',
+        placement: 'top-start',
+      });
     });
 
     it('应该渲染 switcher 类型组件', () => {

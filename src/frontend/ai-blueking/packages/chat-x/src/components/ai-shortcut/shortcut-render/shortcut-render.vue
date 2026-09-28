@@ -55,11 +55,13 @@
 
   import { Button, Checkbox, Form, Input, Radio, Select, Switcher } from 'bkui-vue';
 
+  import { useCommonTippyInject } from '../../../composables/use-common';
   import { CloseIcon, ThinkingIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
 
   import type { Shortcut, ShortcutComponent } from '../../../types';
   const props = defineProps<Partial<Shortcut>>();
+  const commonTippyOptions = useCommonTippyInject();
   export type ShortcutRenderEmits = {
     (e: 'close'): void;
     (e: 'submit', formModel: Record<string, unknown>): void;
@@ -107,6 +109,20 @@
       required: component.fillBack ?? component.formItemProps?.required,
     };
   };
+  /** 与 tippy appendTo 同一挂载点，让下拉留在小鲸层叠上下文内；没有注入时回到 body。 */
+  const resolvePopoverBoundary = (): 'body' | HTMLElement => {
+    const appendTo = commonTippyOptions?.value?.appendTo;
+    if (appendTo instanceof HTMLElement) {
+      return appendTo;
+    }
+    if (typeof appendTo === 'function') {
+      const target = appendTo(document.body);
+      if (target instanceof HTMLElement) {
+        return target;
+      }
+    }
+    return 'body';
+  };
   const getComponent = (component: ShortcutComponent) => {
     const { options: componentOptions, ...otherProps } = component?.props ?? {};
     const { options: oldOptions, ...oldProps } = component ?? {};
@@ -138,9 +154,19 @@
           type: 'number',
         });
       case 'select': {
+        const userPopoverOptions =
+          typeof componentProps.popoverOptions === 'object' && componentProps.popoverOptions !== null
+            ? (componentProps.popoverOptions as Record<string, unknown>)
+            : {};
         return h(
           Select,
-          componentProps,
+          {
+            ...componentProps,
+            popoverOptions: {
+              boundary: resolvePopoverBoundary(),
+              ...userPopoverOptions,
+            },
+          },
           options?.map(option =>
             h(Select.Option, {
               ...option,

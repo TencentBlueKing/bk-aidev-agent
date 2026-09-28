@@ -306,6 +306,24 @@ const components: ShortcutComponent[] = [
 ];
 ```
 
+`type: 'select'` 时，组件会把默认挂载点写进 `popoverOptions.boundary`，再与 `component.props.popoverOptions` 浅合并。调用方传入的字段（含 `boundary`）优先。
+
+## select 下拉挂载
+
+Select 的下拉是 bkui Popover，默认会 Teleport 到 `document.body`，层级从 8000 起算。小鲸浮窗是 `position: fixed; z-index: 10000`，下拉挂到 body 后会画在浮窗后面。
+
+`ShortcutRender` 挂在 `ChatContainer` 内时，复用同一份 tippy `appendTo`（`useCommonTippyInject`）作为 `popoverOptions.boundary`：
+
+| `appendTo` | `boundary` |
+| --- | --- |
+| `HTMLElement` | 该元素 |
+| 返回 `HTMLElement` 的函数 | 函数返回值。ChatBot 默认是 `() => rootRef ?? document.body`，即 `.ai-chatbot` |
+| 未注入，或值为 `'parent'` 等无法解析的结果 | `'body'` |
+
+这样下拉留在小鲸自己的层叠上下文里，bkui 自己的递增 z-index 即可盖过表单，不必再写死一个高于浮窗的数字。
+
+不要把 `boundary` 设成 `'parent'`。`.ai-shortcut-render` 有 `overflow: hidden`，下拉会被裁掉。全屏时 `ChatContainer` 会把 `appendTo` 换成全屏容器，下拉跟着挂到那里。
+
 通过 `component.formItemProps` 透传给 `Form.FormItem`：
 
 ```typescript
@@ -365,7 +383,7 @@ const components: ShortcutComponent[] = [
 | `text`          | `Input`                | 同 `input`，兼容旧版写法     |
 | `textarea`      | `Input[type=textarea]` | 多行文本，**始终独占一行**   |
 | `number`        | `Input[type=number]`   | 数字输入，支持 `min` / `max` |
-| `select`        | `Select`               | 下拉选择，需配置 `options`   |
+| `select`        | `Select`               | 下拉选择，需配置 `options`；下拉挂载见 [select 下拉挂载](#select-下拉挂载) |
 | `radioGroup`    | `Radio.Group`          | 单选组，需配置 `options`     |
 | `checkboxGroup` | `Checkbox.Group`       | 多选组，需配置 `options`     |
 | `switcher`      | `Switcher`             | 开关，值为 `boolean`         |
