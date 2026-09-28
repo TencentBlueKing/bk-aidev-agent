@@ -451,8 +451,8 @@ importers:
   web:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.4.0
-        version: 2.4.0(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
+        specifier: 2.4.1
+        version: 2.4.1(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-helper':
         specifier: 2.4.0
         version: 2.4.0(vue@3.5.27(typescript@5.9.3))
@@ -677,8 +677,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@blueking/ai-blueking@2.4.0':
-    resolution: {integrity: sha512-I28tYssi1ymdiFkHkvnoahnWBEOAe3tes1e/Zg6jCD1+2ZoZvGsvb73KihmjDc2h2EflT7prLePUXJPZEitYog==}
+  '@blueking/ai-blueking@2.4.1':
+    resolution: {integrity: sha512-+SgQY/O3tQfzJZ4ossVaLMPAkdwfuQlidruL/3rpyUAhF4buFBwuiAqZGY2DKrCG8QcId1kdlLD+HmVqeb0nhw==}
     peerDependencies:
       '@blueking/chat-x': '>=0.0.52-beta.1'
       vue: ^3.5.24
@@ -4675,6 +4675,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -8704,7 +8705,7 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@blueking/ai-blueking@2.4.0(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/ai-blueking@2.4.1(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))':
     dependencies:
       '@blueking/chat-helper': 2.4.0(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-x': 2.4.0(typescript@5.9.3)
@@ -10772,7 +10773,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.4(@types/node@25.5.2)(@vitest/coverage-v8@4.1.4)(@vitest/ui@1.6.1(vitest@1.6.1))(happy-dom@20.8.9)(vite@8.0.8(@types/node@25.5.2)(esbuild@0.27.7)(jiti@2.6.1)(less@4.6.4)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
+      vitest: 4.1.4(@types/node@25.5.2)(@vitest/coverage-v8@4.1.4)(@vitest/ui@1.6.1(vitest@1.6.1))(happy-dom@20.8.9)(rolldown-vite@7.2.5(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.25.12)(jiti@2.6.1)(less@4.6.4)(sass-embedded@1.99.0)(sass@1.99.0)(stylus@0.64.0)(sugarss@4.0.1(postcss@8.5.9))(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
 
   '@vitest/expect@1.6.1':
     dependencies:
