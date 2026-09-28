@@ -102,7 +102,7 @@ def get_itsm_approval_target(request: ToolCallRequest) -> ApprovalTarget | None:
 
 
 def _is_approved(decision: Any) -> bool:
-    logger.info("[ToolApproval] 检查审批结果: type=%s", type(decision).__name__)
+    logger.info("[ToolApproval] 检查审批结果: decision=%s, type=%s", str(decision)[:500], type(decision).__name__)
     if isinstance(decision, list) and decision:
         decision = decision[0]
     if not isinstance(decision, dict):

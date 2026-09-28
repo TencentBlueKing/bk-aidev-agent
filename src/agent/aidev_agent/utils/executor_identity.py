@@ -29,12 +29,15 @@ from aidev_agent.utils.tracing import recording_span
 
 try:
     import bkoauth
+    from bkoauth.exceptions import TokenNotExist
 except ImportError:
     bkoauth = None
 
-_logger = getLogger(__name__)
+    class TokenNotExist(Exception):
+        """bkoauth 未安装时的占位异常，不会被抛出。"""
 
-AUTHORIZATION_HEADER = "X-Bkapi-Authorization"
+
+_logger = getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -91,14 +94,11 @@ def _get_access_token_by_user(username: str) -> str:
     fn = getattr(bkoauth, "get_access_token_by_user", None) if bkoauth else None
     if fn is None:
         raise ToolException("bkoauth 不可用，无法获取审批人凭证")
+    # 仅“无授权记录”视为审批人未授权；接口或网络异常原样抛出，避免误导为未授权
     try:
         token = fn(username)
-    except Exception as error:
-        _logger.error(
-            "[ToolApproval] 获取审批人 access_token 失败: approved_by=%s, error_type=%s",
-            username,
-            type(error).__name__,
-        )
+    except TokenNotExist as error:
+        _logger.error("[ToolApproval] 审批人无 access_token 记录: approved_by=%s", username)
         raise unauthorized from error
     access_token = getattr(token, "access_token", None) if token else None
     if not access_token:

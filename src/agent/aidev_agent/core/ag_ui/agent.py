@@ -388,15 +388,19 @@ class LangGraphAgent:
                 str(value.get("message"))[:200],
             )
             interrupt_id = f"int-{uuid.uuid4().hex[:12]}"
-        return Interrupt(
-            id=interrupt_id,
+        interrupt_kwargs = {
+            "id": interrupt_id,
             # 兼容 target 形态（reason=None + interrupt_reason，真实图 ask_user 直抛；
             # 与 processor._reason_of 的提取链对齐），最终回退 "tool_call"
-            reason=value.get("reason") or value.get("interrupt_reason") or "tool_call",
-            message=value.get("message"),
-            toolCallId=value.get("toolCallId") or value.get("tool_call_id"),  # 驼峰命名（容错 snake）
-            metadata=metadata or None,
-        )
+            "reason": value.get("reason") or value.get("interrupt_reason") or "tool_call",
+            "message": value.get("message"),
+            "toolCallId": value.get("toolCallId") or value.get("tool_call_id"),  # 驼峰命名（容错 snake）
+            "metadata": metadata or None,
+        }
+        # 审批人身份是审批卡的协议扩展字段，必须透传到平台落库和续流。
+        if "executorIdentity" in value:
+            interrupt_kwargs["executorIdentity"] = value["executorIdentity"]
+        return Interrupt(**interrupt_kwargs)
 
     def _resolve_exit(self, state: Any, last_node_name: str | None) -> ExitResult:
         """LangGraph Agent 退出时中断处理器：流结束 dispatch 与退出原因定位一体。

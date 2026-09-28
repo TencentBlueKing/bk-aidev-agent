@@ -34,8 +34,9 @@ from pydantic import BaseModel, Field, ValidationError, create_model, field_vali
 from requests.exceptions import JSONDecodeError
 from typing_extensions import Annotated
 
+from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.config import settings
-from aidev_agent.utils.executor_identity import AUTHORIZATION_HEADER, approver_authorization
+from aidev_agent.utils.executor_identity import approver_authorization
 
 try:
     from bkoauth import get_access_token_by_user

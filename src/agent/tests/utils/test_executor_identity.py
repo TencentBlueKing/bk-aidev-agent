@@ -8,11 +8,12 @@ import pytest
 from langchain_core.tools import ToolException
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
 
+from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.packages.interrupt_manager.approval import ApprovalStateHandler
 from aidev_agent.packages.langchain_core.tools.base import ApiWrapper
-from aidev_agent.packages.resource_manager.base import _mcp_approver_identity_interceptor
+from aidev_agent.packages.resource_manager.base import _mcp_approver_identity_interceptor, _mcp_tool_interceptors
 from aidev_agent.utils import executor_identity
-from aidev_agent.utils.executor_identity import AUTHORIZATION_HEADER, ApproverIdentity, approver_identity_scope
+from aidev_agent.utils.executor_identity import ApproverIdentity, approver_identity_scope
 
 CALLER_AUTH = json.dumps({"access_token": "caller-token"})
 BOB = ApproverIdentity(approved_by="bob", tool_call_id="call_1")
@@ -75,6 +76,22 @@ def test_missing_approver_token_raises_before_request(bkoauth_tokens):
     wrapper.session.request.assert_not_called()
 
 
+def test_only_token_not_exist_is_reported_as_unauthorized(monkeypatch):
+    class FakeTokenNotExist(Exception):
+        pass
+
+    def get_token(username):
+        raise FakeTokenNotExist() if username == "bob" else ConnectionError("timeout")
+
+    monkeypatch.setattr(executor_identity, "TokenNotExist", FakeTokenNotExist)
+    monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=get_token))
+
+    with approver_identity_scope(BOB), pytest.raises(ToolException, match="Agent SaaS"):
+        executor_identity.approver_authorization("http", "tool")
+    with approver_identity_scope(ApproverIdentity("carol", "call_2")), pytest.raises(ConnectionError):
+        executor_identity.approver_authorization("http", "tool")
+
+
 def test_mcp_interceptor_uses_approver_token_and_nested_user_scope_clears_it(bkoauth_tokens):
     received: list[MCPToolCallRequest] = []
 
@@ -93,3 +110,11 @@ def test_mcp_interceptor_uses_approver_token_and_nested_user_scope_clears_it(bko
 
     assert json.loads(received[0].headers[AUTHORIZATION_HEADER]) == {"access_token": "bob-token"}
     assert received[1].headers is None
+
+
+def test_mcp_approver_interceptor_only_mounted_for_apigw_server():
+    assert _mcp_approver_identity_interceptor in _mcp_tool_interceptors(
+        {"headers": {AUTHORIZATION_HEADER: CALLER_AUTH}}
+    )
+    assert _mcp_approver_identity_interceptor not in _mcp_tool_interceptors({"headers": {"Authorization": "Bearer x"}})
+    assert _mcp_approver_identity_interceptor not in _mcp_tool_interceptors({})

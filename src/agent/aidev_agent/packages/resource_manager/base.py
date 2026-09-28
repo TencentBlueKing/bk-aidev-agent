@@ -26,6 +26,7 @@ from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest, MCPToolCallResult
 
+from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.api.paas_client import BkPaaSSandboxApi
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
@@ -37,7 +38,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     _extract_mcp_tools_error_detail,
 )
 from aidev_agent.pydantic_models import AgentConfig
-from aidev_agent.utils.executor_identity import AUTHORIZATION_HEADER, approver_authorization
+from aidev_agent.utils.executor_identity import approver_authorization
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
 
@@ -92,6 +93,13 @@ async def _mcp_approver_identity_interceptor(
         return await handler(request)
     headers = {**(request.headers or {}), AUTHORIZATION_HEADER: approver_auth}
     return await handler(request.override(headers=headers))
+
+
+def _mcp_tool_interceptors(server_config: dict[str, Any]) -> list:
+    """审批人凭证仅替换已有的 APIGW 凭证头；request.headers 看不到连接级请求头，需按 server 配置挂载。"""
+    if AUTHORIZATION_HEADER in (server_config.get("headers") or {}):
+        return [_mcp_trace_context_interceptor, _mcp_approver_identity_interceptor]
+    return [_mcp_trace_context_interceptor]
 
 
 def _get_access_token_by_user(username: str) -> str | None:
@@ -550,7 +558,7 @@ class BaseResourceManager(abc.ABC):
                 if resolved_username:
                     auth_info["bk_username"] = resolved_username
 
-            tool.extra = ToolExtra(header={"X-Bkapi-Authorization": json.dumps(auth_info)})
+            tool.extra = ToolExtra(header={AUTHORIZATION_HEADER: json.dumps(auth_info)})
 
             _logger.info(
                 f"[credential] construct_tool: tool_code={tool_code}, "
@@ -614,7 +622,7 @@ class BaseResourceManager(abc.ABC):
                     }
                 else:
                     auth_info = {"bk_app_code": app_code, "bk_app_secret": app_secret}
-                _server_config["headers"] = {"X-Bkapi-Authorization": json.dumps(auth_info)}
+                _server_config["headers"] = {AUTHORIZATION_HEADER: json.dumps(auth_info)}
                 _server_config["headers"]["X-Bkapi-Timeout"] = str(settings.BKAI_MCP_TIMEOUT)
             else:
                 _non_blueapps_servers.append(_server_config)
@@ -653,7 +661,7 @@ class BaseResourceManager(abc.ABC):
                         _inject_mcp_trace_headers(client_config)
                         client = MultiServerMCPClient(
                             client_config,
-                            tool_interceptors=[_mcp_trace_context_interceptor, _mcp_approver_identity_interceptor],
+                            tool_interceptors=_mcp_tool_interceptors(server_config),
                         )
                         tools: list[StructuredTool] = await client.get_tools(server_name=server_name)
                         span.set_attribute("mcp.tool.count", len(tools))

@@ -1930,7 +1930,7 @@ class ChatAgentBuilder:
             executor_info=self._executor_info,
         )
         self._mcp_fetch_failures = [f.model_dump() for f in mcp_result.fetch_failures]
-        logger.info(f"ChatAgentBuilder: mcp_server_names->{sorted(mcp_server_config)}")
+        logger.info(f"ChatAgentBuilder: mcp_server_config->[{mcp_server_config}]")
         specific_tools = [each.get("code") for each in self._specific_resources if each.get("type") == "tool"]
         if specific_tools:
             tool_codes = [each for each in config.tool_codes if each in specific_tools]
