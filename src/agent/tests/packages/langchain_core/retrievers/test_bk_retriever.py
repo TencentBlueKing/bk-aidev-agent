@@ -78,3 +78,27 @@ def test_query_knowledge_omits_unspecified_optional_fields():
 
     assert "recall_channels" not in retriever.query_payload
     assert "knowledge_template_id" not in retriever.query_payload
+
+
+@pytest.mark.parametrize("topk", [1, 5, 13])
+@pytest.mark.parametrize("channels", [["dense"], ["sparse"], ["dense", "sparse"]])
+@pytest.mark.parametrize("mode", ["INIT", "REWRITE"])
+def test_query_configuration_preserves_topk_channels_and_policy(topk, channels, mode):
+    retriever = CapturingBkRetriever()
+    settings = KnowledgeSettings(
+        knowledge_resource_rough_recall_topk=topk,
+        recall_channels=channels,
+        independent_query_mode=mode,
+        knowledge_template_id=7,
+        knowledge_resource_fine_grained_score_type="EMBEDDING",
+        knowledge_resource_reject_threshold=(0.2, 0.8),
+    )
+    retriever.query_knowledge("needle", settings, [HumanMessage(content="previous")])
+    payload = retriever.query_payload
+    assert payload["topk"] == payload["document_fragment_count"] == topk
+    assert payload["recall_channels"] == channels
+    assert payload["independent_query_mode"] == mode
+    assert payload["knowledge_template_id"] == 7
+    assert payload["knowledge_resource_fine_grained_score_type"] == "EMBEDDING"
+    assert payload["knowledge_resource_reject_threshold"] == [0.2, 0.8]
+    assert payload["chat_history"] == [{"role": "user", "content": "previous"}]
