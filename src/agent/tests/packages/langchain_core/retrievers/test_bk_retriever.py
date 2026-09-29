@@ -4,7 +4,7 @@
 import pytest
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.pydantic_models import KnowledgeSettings
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 
 class CapturingBkRetriever(BkRetriever):
@@ -102,3 +102,46 @@ def test_query_configuration_preserves_topk_channels_and_policy(topk, channels, 
     assert payload["knowledge_resource_fine_grained_score_type"] == "EMBEDDING"
     assert payload["knowledge_resource_reject_threshold"] == [0.2, 0.8]
     assert payload["chat_history"] == [{"role": "user", "content": "previous"}]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "with_index_specific_search",
+        "with_index_specific_search_init",
+        "with_index_specific_search_translation",
+        "with_index_specific_search_keywords",
+        "with_query_cls",
+        "merge_query_cls_with_resp_or_rewrite",
+        "use_independent_query_in_translation",
+        "use_translated_query_in_scores",
+        "use_independent_query_in_scores",
+    ],
+)
+@pytest.mark.parametrize("value", [False, True])
+def test_query_strategy_is_transmitted(name, value):
+    retriever = CapturingBkRetriever()
+    retriever.query_knowledge("q", KnowledgeSettings(**{name: value}))
+    assert retriever.query_payload["query_strategy"][name] is value
+
+
+@pytest.mark.parametrize("document", [None, {}, {"metadata": []}, {"metadata": {}}])
+def test_reject_malformed_documents(document):
+    with pytest.raises(RuntimeError):
+        BkRetriever._validate_documents([document])
+
+
+def test_history_excludes_non_dialogue_messages():
+    assert BkRetriever._serialize_chat_history([SystemMessage(content="private"), HumanMessage(content="q")]) == [
+        {"role": "user", "content": "q"}
+    ]
+
+
+def test_transport_and_valid_document_validation(mocker):
+    transport = mocker.Mock(return_value={"documents": [{"metadata": {"__score__": 0.8}}]})
+    mocker.patch(
+        "aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager"
+    ).return_value.knowledge_query = transport
+    result = BkRetriever().query_knowledge("q", KnowledgeSettings())
+    assert result["documents"][0]["metadata"]["__score__"] == 0.8
+    transport.assert_called_once()
