@@ -147,5 +147,5 @@ def make_knowledge_retrieval_tool(
         name="knowledge_retrieval",
         description=description,
         args_schema=KnowledgeRetrievalInput,
-        metadata={"tool_name": "知识库检索"},
+        metadata={"tool_name": "知识库检索", "deduplicate_in_tool_batch": True},
     )
