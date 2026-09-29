@@ -145,10 +145,23 @@ def test_transport_and_valid_document_validation(mocker):
     transport.assert_called_once()
 
 
-@pytest.mark.parametrize("field", ["qa_response_kb_ids", "qa_response_knowledge_bases"])
-def test_retired_qa_scope_cannot_silently_widen_retrieval(field):
-    with pytest.raises(ValueError, match="QA response-library recall has been removed"):
-        KnowledgeSettings(**{field: [1]})
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("qa_response_kb_ids", []),
+        ("qa_response_kb_ids", [2]),
+        ("qa_response_knowledge_bases", []),
+        ("qa_response_knowledge_bases", [{"id": 2}]),
+    ],
+)
+@pytest.mark.parametrize("ordinary", [[], [{"id": 1}]])
+def test_retired_qa_configuration_is_ignored(field, value, ordinary):
+    settings = KnowledgeSettings(knowledge_bases=ordinary, **{field: value})
+    retriever = CapturingBkRetriever()
+    retriever.query_knowledge("q", settings)
+    assert field not in settings.model_dump()
+    assert "qa_response_knowledge_base_id" not in retriever.query_payload
+    assert retriever.query_payload["knowledge_base_id"] == [base["id"] for base in ordinary]
 
 
 def test_legacy_disabled_options_and_retired_expansions_are_not_sent():

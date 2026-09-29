@@ -203,13 +203,6 @@ class KnowledgeSettings(BaseModel):
     retrievers 包内部统一使用此模型。
     """
 
-    @model_validator(mode="before")
-    @classmethod
-    def reject_retired_qa_scope(cls, data):
-        if isinstance(data, dict) and (data.get("qa_response_kb_ids") or data.get("qa_response_knowledge_bases")):
-            raise ValueError("QA response-library recall has been removed; select ordinary knowledge bases instead")
-        return data
-
     # --- 知识库 / 知识条目 ---
     knowledge_bases: list[dict] = Field(default_factory=list, description="关联知识库")
     knowledge_items: list[dict] = Field(default_factory=list, description="关联知识条目")
