@@ -28,6 +28,7 @@ from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, 
 from langgraph.types import Command
 
 from .approval_wrapper import itsm_approval_async_wrapper, itsm_approval_sync_wrapper
+from .deduplication import KnowledgeToolNode, deduplicate_async, deduplicate_sync
 from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .pydantic_models import ToolNodeSettings
 from .result_limit_wrapper import build_result_limit_async_wrapper, build_result_limit_sync_wrapper
@@ -241,10 +242,13 @@ def build_tool_node(
         sync_wrapper_list.extend(wrappers)
     if async_wrappers:
         async_wrapper_list.extend(async_wrappers)
+    # Keep approval and custom wrappers outside result reuse.
+    sync_wrapper_list.append(deduplicate_sync)
+    async_wrapper_list.append(deduplicate_async)
     # 构建wrapper链
     final_sync_wrapper = _chain_tool_call_wrappers(sync_wrapper_list)
     final_async_wrapper = _chain_async_tool_call_wrappers(async_wrapper_list)
-    return ToolNode(
+    return KnowledgeToolNode(
         tools=tools,
         name=name,
         tags=tags,
