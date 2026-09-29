@@ -359,7 +359,7 @@ def test_knowledge_query_options_data_merges_intent_recognition():
 
     assert cfg.knowledge_query_options_data["with_index_specific_search_init"] is True
     assert cfg.knowledge_query_options_data["with_index_specific_search_translation"] is False
-    assert cfg.knowledge_query_options_data["with_index_specific_search_keywords"] is True
+    assert "with_index_specific_search_keywords" not in cfg.knowledge_query_options_data
 
 
 def test_model_context_options_data_no_agent_type():

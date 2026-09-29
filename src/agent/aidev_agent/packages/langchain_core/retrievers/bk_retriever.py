@@ -40,20 +40,11 @@ class BkRetriever:
         llm_code: str | None,
     ) -> dict:
         knowledge_base_ids = self._knowledge_ids(knowledge_query_options.knowledge_bases)
-        qa_knowledge_base_ids = list(
-            dict.fromkeys(
-                [
-                    *knowledge_query_options.qa_response_kb_ids,
-                    *self._knowledge_ids(knowledge_query_options.qa_response_knowledge_bases),
-                ]
-            )
-        )
         query_payload = {
             "query": query,
             "type": "nature",
             "raw": False,
-            "knowledge_base_id": list(dict.fromkeys([*knowledge_base_ids, *qa_knowledge_base_ids])),
-            "qa_response_knowledge_base_id": qa_knowledge_base_ids,
+            "knowledge_base_id": knowledge_base_ids,
             "knowledge_id": self._knowledge_ids(knowledge_query_options.knowledge_items),
             "topk": knowledge_query_options.knowledge_resource_rough_recall_topk,
             "document_fragment_count": knowledge_query_options.knowledge_resource_rough_recall_topk,
@@ -63,7 +54,6 @@ class BkRetriever:
                 "with_index_specific_search": knowledge_query_options.with_index_specific_search,
                 "with_index_specific_search_init": knowledge_query_options.with_index_specific_search_init,
                 "with_index_specific_search_translation": knowledge_query_options.with_index_specific_search_translation,
-                "with_index_specific_search_keywords": knowledge_query_options.with_index_specific_search_keywords,
                 "with_query_cls": knowledge_query_options.with_query_cls,
                 "merge_query_cls_with_resp_or_rewrite": knowledge_query_options.merge_query_cls_with_resp_or_rewrite,
                 "use_independent_query_in_translation": knowledge_query_options.use_independent_query_in_translation,

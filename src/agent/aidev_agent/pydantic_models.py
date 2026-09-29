@@ -207,10 +207,6 @@ class KnowledgeSettings(BaseModel):
     knowledge_bases: list[dict] = Field(default_factory=list, description="关联知识库")
     knowledge_items: list[dict] = Field(default_factory=list, description="关联知识条目")
 
-    # --- QA 响应知识库 ---
-    qa_response_kb_ids: list[int] = Field(default_factory=list, description="历史反馈问答知识库id")
-    qa_response_knowledge_bases: list[dict] = Field(default_factory=list, description="历史反馈问答知识库")
-
     # --- 召回参数 ---
     knowledge_resource_fine_grained_score_type: FineGrainedScoreType = Field(
         default=FineGrainedScoreType(os.getenv("KNOWLEDGE_FINE_GRAINED_SCORE_TYPE", "LLM")),
@@ -266,25 +262,9 @@ class KnowledgeSettings(BaseModel):
         default=os.getenv("WITH_INDEX_SPECIFIC_SEARCH_TRANSLATION", "false").lower() == "true",
         description="是否使用翻译后的查询进行 index specific 召回",
     )
-    with_index_specific_search_keywords: bool = Field(
-        default=os.getenv("WITH_INDEX_SPECIFIC_SEARCH_KEYWORDS", "false").lower() == "true",
-        description="是否使用提取的关键词进行 index specific 召回",
-    )
-    with_es_search_query: bool = Field(
-        default=os.getenv("WITH_ES_SEARCH_QUERY", "false").lower() == "true",
-        description="是否使用原始 query 在 ES 上进行召回",
-    )
-    with_es_search_keywords: bool = Field(
-        default=os.getenv("WITH_ES_SEARCH_KEYWORDS", "false").lower() == "true",
-        description="是否使用 query 提取的关键词 在 ES 上进行召回",
-    )
     with_rrf: bool = Field(
         default=os.getenv("WITH_RRF", "true").lower() == "true",
         description="是否使用 weighted reciprocal rank fusion 对多路召回的结果进行融合",
-    )
-    with_structured_data: bool = Field(
-        default=os.getenv("WITH_STRUCTURED_DATA", "false").lower() == "true",
-        description="用户勾选的知识中是否带结构化数据",
     )
     with_scalar_data: bool = Field(
         default=os.getenv("WITH_SCALAR_DATA", "false").lower() == "true",
