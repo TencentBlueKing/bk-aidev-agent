@@ -122,3 +122,8 @@ def test_retrieve_maps_api_relevance_groups_without_rescoring():
 
     assert [document["page_content"] for document in result["knowledge_resources_highly_relevant"]] == ["high"]
     assert [document["page_content"] for document in result["knowledge_resources_moderately_relevant"]] == ["moderate"]
+
+
+def test_api_conclusion_is_preserved():
+    result = KnowledgeRag._map_api_response({"documents": [], "conclusion": "Goodbye"})
+    assert result["response"] == "Goodbye"

@@ -254,3 +254,29 @@ async def test_unhandled_owner_exception_completes_shared_future(batch_requests,
                 dedup.deduplicate_sync(request, execute)
     assert all(future.done() for future in batch.results.values())
     assert not batch.lock.locked()
+
+
+@pytest.mark.parametrize(
+    "args,approval", [({"query": "q"}, True), ({"query": object()}, False), ({"query": float("nan")}, False)]
+)
+def test_approval_and_invalid_arguments_do_not_claim(args, approval):
+    batch = dedup._Batch()
+    token = dedup._batch.set(batch)
+    request = SimpleNamespace(
+        tool=SimpleNamespace(metadata={"deduplicate_in_tool_batch": True, "approval": approval}),
+        tool_call={"name": "knowledge_retrieval", "args": args},
+    )
+    try:
+        assert dedup._claim(request) is None
+        assert batch.results == {}
+        assert batch.lock.acquire(blocking=False)
+        batch.lock.release()
+    finally:
+        dedup._batch.reset(token)
+
+
+async def test_cancelled_observer_does_not_raise():
+    future = asyncio.get_running_loop().create_future()
+    future.cancel()
+    dedup._observe_waiter_exception(future)
+    assert future.cancelled()
