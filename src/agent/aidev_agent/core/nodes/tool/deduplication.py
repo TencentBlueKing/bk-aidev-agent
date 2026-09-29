@@ -10,6 +10,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
 
+DUPLICATE_WAIT_TIMEOUT_SECONDS = 60.0
+
 
 class _Batch:
     def __init__(self):
@@ -79,7 +81,7 @@ def deduplicate_sync(request, execute):
         return execute(request)
     future, owner = claim
     if not owner:
-        result = future.result()
+        result = future.result(timeout=DUPLICATE_WAIT_TIMEOUT_SECONDS)
         return _copy_result(result, request) if isinstance(result, ToolMessage) else execute(request)
     try:
         result = execute(request)
@@ -97,7 +99,11 @@ async def deduplicate_async(request, execute):
     future, owner = claim
     if not owner:
         # Cancelling a waiter must not cancel the shared owner's future.
-        result = await asyncio.shield(asyncio.wrap_future(future))
+        waiter = asyncio.wrap_future(future)
+        # A timed-out/cancelled waiter may outlive this coroutine. Retrieve a later
+        # exception so asyncio does not report an unobserved Future exception.
+        waiter.add_done_callback(_observe_waiter_exception)
+        result = await asyncio.wait_for(asyncio.shield(waiter), timeout=DUPLICATE_WAIT_TIMEOUT_SECONDS)
         return _copy_result(result, request) if isinstance(result, ToolMessage) else await execute(request)
     try:
         result = await execute(request)
@@ -106,3 +112,8 @@ async def deduplicate_async(request, execute):
     except BaseException as error:
         future.set_exception(error)
         raise
+
+
+def _observe_waiter_exception(future: asyncio.Future) -> None:
+    if not future.cancelled():
+        future.exception()
