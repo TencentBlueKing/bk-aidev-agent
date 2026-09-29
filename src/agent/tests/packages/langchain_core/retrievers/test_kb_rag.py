@@ -84,7 +84,8 @@ def test_retrieve_ignores_removed_sdk_recall_switches():
         with_index_specific_search_translation=False,
         with_index_specific_search_keywords=False,
         with_es_search_query=False,
-        with_es_search_keywords=False,
+        with_es_search_keywords=True,
+        with_structured_data=True,
     )
 
     result = knowledge_rag.retrieve("query", knowledge_settings)
@@ -127,3 +128,17 @@ def test_retrieve_maps_api_relevance_groups_without_rescoring():
 def test_api_conclusion_is_preserved():
     result = KnowledgeRag._map_api_response({"documents": [], "conclusion": "Goodbye"})
     assert result["response"] == "Goodbye"
+
+
+def test_retired_qa_response_cannot_reactivate_special_context():
+    result = KnowledgeRag._map_api_response(
+        {
+            "documents": [],
+            "knowledge_content": ["ordinary row"],
+            "knowledge_qa_content": ["retired QA"],
+            "with_qa_response": True,
+        }
+    )
+    assert result["knowledge_content"] == ["ordinary row"]
+    assert "knowledge_qa_content" not in result
+    assert "with_qa_response" not in result

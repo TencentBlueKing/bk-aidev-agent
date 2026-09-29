@@ -406,7 +406,6 @@ class BaseResourceManager(abc.ABC):
         for key in (
             "with_index_specific_search_init",
             "with_index_specific_search_translation",
-            "with_index_specific_search_keywords",
         ):
             if key in intent_recognition_data:
                 knowledge_query_options_data[key] = intent_recognition_data[key]

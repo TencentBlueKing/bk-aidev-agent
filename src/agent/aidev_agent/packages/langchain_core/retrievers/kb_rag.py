@@ -38,8 +38,6 @@ class KnowledgeRagRetrieveResult(TypedDict):
     knowledge_resources_lowly_relevant: list
     knowledge_resources_emb_recalled: NotRequired[list]
     knowledge_content: NotRequired[list]
-    knowledge_qa_content: NotRequired[list]
-    with_qa_response: NotRequired[bool]
     reference_doc: NotRequired[list]
     response: NotRequired[str]
 
@@ -80,8 +78,6 @@ class KnowledgeRag:
             knowledge_resources_lowly_relevant=relevance_groups["low"],
             knowledge_resources_emb_recalled=documents,
             knowledge_content=response.get("knowledge_content") or [],
-            knowledge_qa_content=response.get("knowledge_qa_content") or [],
-            with_qa_response=bool(response.get("with_qa_response")),
             reference_doc=response.get("reference_documents") or [],
         )
         if response.get("conclusion"):

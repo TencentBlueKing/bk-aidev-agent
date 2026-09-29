@@ -60,7 +60,7 @@ def test_migration_knowledge_query_options_from_agent_options_v1_maps_platform_d
     assert migrated.knowledge_resource_rough_recall_topk == 3
     assert migrated.with_index_specific_search_init is False
     assert migrated.with_index_specific_search_translation is True
-    assert migrated.with_index_specific_search_keywords is True
+    assert "with_index_specific_search_keywords" not in migrated.model_dump()
     assert migrated.rejection_message == KnowledgeSettings().rejection_message
 
 

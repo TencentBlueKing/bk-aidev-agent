@@ -15,7 +15,6 @@ logger = logging.getLogger("aidev-agent")
 _INDEX_SPECIFIC_SEARCH_KEYS = (
     "with_index_specific_search_init",
     "with_index_specific_search_translation",
-    "with_index_specific_search_keywords",
 )
 
 

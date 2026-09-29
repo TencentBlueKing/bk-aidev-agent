@@ -25,7 +25,6 @@ def test_query_knowledge_sends_one_complete_api_request():
     settings = KnowledgeSettings(
         knowledge_bases=[{"id": 305}],
         knowledge_items=[{"id": 99}],
-        qa_response_kb_ids=[307],
         recall_channels=["dense", "sparse"],
         rrf_weights={"dense": 0.4, "sparse": 0.6},
     )
@@ -40,8 +39,8 @@ def test_query_knowledge_sends_one_complete_api_request():
     assert response == {"documents": []}
     assert retriever.query_payload["type"] == "nature"
     assert retriever.query_payload["raw"] is False
-    assert retriever.query_payload["knowledge_base_id"] == [305, 307]
-    assert retriever.query_payload["qa_response_knowledge_base_id"] == [307]
+    assert retriever.query_payload["knowledge_base_id"] == [305]
+    assert "qa_response_knowledge_base_id" not in retriever.query_payload
     assert retriever.query_payload["knowledge_id"] == [99]
     assert retriever.query_payload["chat_history"] == [
         {"role": "user", "content": "previous question"},
@@ -110,7 +109,6 @@ def test_query_configuration_preserves_topk_channels_and_policy(topk, channels, 
         "with_index_specific_search",
         "with_index_specific_search_init",
         "with_index_specific_search_translation",
-        "with_index_specific_search_keywords",
         "with_query_cls",
         "merge_query_cls_with_resp_or_rewrite",
         "use_independent_query_in_translation",
@@ -145,3 +143,25 @@ def test_transport_and_valid_document_validation(mocker):
     result = BkRetriever().query_knowledge("q", KnowledgeSettings())
     assert result["documents"][0]["metadata"]["__score__"] == 0.8
     transport.assert_called_once()
+
+
+@pytest.mark.parametrize("field", ["qa_response_kb_ids", "qa_response_knowledge_bases"])
+def test_retired_qa_scope_cannot_silently_widen_retrieval(field):
+    with pytest.raises(ValueError, match="QA response-library recall has been removed"):
+        KnowledgeSettings(**{field: [1]})
+
+
+def test_legacy_disabled_options_and_retired_expansions_are_not_sent():
+    settings = KnowledgeSettings(
+        qa_response_kb_ids=[],
+        qa_response_knowledge_bases=[],
+        with_index_specific_search_keywords=True,
+        with_structured_data=True,
+        with_es_search_query=True,
+        with_es_search_keywords=True,
+    )
+    retriever = CapturingBkRetriever()
+    retriever.query_knowledge("q", settings)
+    assert "with_index_specific_search_keywords" not in retriever.query_payload["query_strategy"]
+    assert "qa_response_knowledge_base_id" not in retriever.query_payload
+    assert "with_structured_data" not in settings.model_dump()
