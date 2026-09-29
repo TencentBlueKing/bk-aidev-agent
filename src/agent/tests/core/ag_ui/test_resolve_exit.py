@@ -16,7 +16,12 @@ import inspect
 
 from aidev_agent.core.ag_ui.agent import LangGraphAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
-from aidev_agent.core.ag_ui.types import Interrupt, RunFinishedInterruptOutcome, RunFinishedSuccessOutcome
+from aidev_agent.core.ag_ui.types import (
+    Interrupt,
+    RunFinishedInterruptOutcome,
+    RunFinishedSuccessOutcome,
+    serialize_run_finished_outcome,
+)
 from aidev_agent.packages.interrupt_manager import TOOL_APPROVAL_REASON
 from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 
@@ -104,6 +109,19 @@ def test_resolve_exit_interrupt_outcome_and_values():
     assert isinstance(result.interrupt_values, list)
     assert isinstance(result.interrupt_values[0], Interrupt)
     assert result.interrupt_values[0].reason == "tool_call"
+
+
+def test_resolve_exit_preserves_executor_identity():
+    """审批卡的 executorIdentity 应透传到 RUN_FINISHED，供平台续流识别审批人身份。"""
+    agent = _make_agent()
+    intr = _pending_intr()
+    intr.value["executorIdentity"] = "approver"
+    state = _fake_state(tasks=[_task(intr)], next_nodes=("tools",), values={"messages": []})
+
+    result = agent._resolve_exit(state, last_node_name="tools")
+    payload = serialize_run_finished_outcome(result.outcome)
+
+    assert payload["interrupts"][0]["executorIdentity"] == "approver"
 
 
 def test_resolve_exit_no_event_production():

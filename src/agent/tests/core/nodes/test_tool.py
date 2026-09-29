@@ -5,13 +5,17 @@
 
 import time
 from typing import AsyncGenerator, List
+from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
 from aidev_agent.core.nodes.tool.approval_wrapper import (
     TOOL_APPROVAL_STATE_KEY,
+    ItsmApprovalStrategy,
     is_approval_configured,
 )
+from aidev_agent.enums import ExecutorIdentity
+from aidev_agent.packages.interrupt_manager.approval import ApprovalHandler, ApprovalIdentityError, ApprovalTarget
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables.schema import StreamEvent
 from langchain_core.tools import tool
@@ -431,9 +435,6 @@ class TestBuildToolNode:
         - state 无终态 → 调 interrupt 一次。
         策略只直抛 ApprovalTarget，建单副作用在流结束层 prepare。
         """
-        from unittest.mock import MagicMock, patch
-
-        from aidev_agent.core.nodes.tool.approval_wrapper import ItsmApprovalStrategy
 
         def build_request(status: str | None) -> MagicMock:
             tool = MagicMock()
@@ -462,7 +463,7 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "approved"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is None  # approved 终态 → 放行 execute
         assert mock_interrupt.call_count == 0
 
@@ -472,7 +473,7 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "rejected"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is not None and result.status == "error"
         assert mock_interrupt.call_count == 0
 
@@ -482,9 +483,45 @@ class TestBuildToolNode:
             "aidev_agent.core.nodes.tool.approval_wrapper.interrupt",
             return_value={"toolCallId": "call_1", "status": "approved"},
         ) as mock_interrupt:
-            result = strategy.interrupt(request)
+            result, _ = strategy.interrupt(request)
         assert result is None
         assert mock_interrupt.call_count == 1
+
+    def test_approver_identity_bound_from_card_decision(self):
+        """审批人卡用本卡审批人；缺身份标记或审批人直接抛出；使用者卡不解析审批人。"""
+        tool = MagicMock()
+        tool.name = "calculator"
+        tool.metadata = {"approval": {"approval_enabled": True, "executor_identity": ExecutorIdentity.APPROVER}}
+        request = MagicMock(tool=tool, state={"messages": []})
+        request.tool_call = {"id": "call_1", "name": "calculator", "args": {}, "type": "tool_call"}
+        target = ApprovalTarget.model_validate(
+            {"toolCallId": "call_1", "toolName": "calculator", "approval": tool.metadata["approval"]}
+        )
+        card = ApprovalHandler()._build_first_run_interrupt(target)
+        assert card["executorIdentity"] == ExecutorIdentity.APPROVER
+        decision = {**card, "payload": {"approved": True, "approvedBy": "bob"}}
+
+        with patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[decision]):
+            rejected, approver = ItsmApprovalStrategy().interrupt(request)
+        assert rejected is None
+        assert (approver.approved_by, approver.tool_call_id) == ("bob", "call_1")
+
+        user_approval = {"approval_enabled": True}
+        user_card = ApprovalHandler()._build_first_run_interrupt(target.model_copy(update={"approval": user_approval}))
+        assert "executorIdentity" not in user_card
+        user_decision = {**user_card, "payload": {"approved": True}}
+        tool.metadata = {"approval": user_approval}
+        with patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[user_decision]):
+            assert ItsmApprovalStrategy().interrupt(request) == (None, None)
+
+        tool.metadata = {"approval": target.approval}
+        decision["payload"].pop("approvedBy")
+        for bad_decision in (user_decision, decision):
+            with (
+                patch("aidev_agent.core.nodes.tool.approval_wrapper.interrupt", return_value=[bad_decision]),
+                pytest.raises(ApprovalIdentityError),
+            ):
+                ItsmApprovalStrategy().interrupt(request)
 
     def test_is_approval_configured_accepts_skill_metadata_without_need_approval(self):
         original_metadata = dict(getattr(calculator, "metadata", None) or {})

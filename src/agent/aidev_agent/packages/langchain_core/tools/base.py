@@ -34,7 +34,9 @@ from pydantic import BaseModel, Field, ValidationError, create_model, field_vali
 from requests.exceptions import JSONDecodeError
 from typing_extensions import Annotated
 
+from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.config import settings
+from aidev_agent.utils.executor_identity import approver_authorization
 
 try:
     from bkoauth import get_access_token_by_user
@@ -211,8 +213,10 @@ class ApiWrapper:
         builtin_fields: dict | None = None,
         extra: dict | None = None,
         timeout: int | None = None,
+        tool_code: str = "",
     ):
         self.session = requests.Session()
+        self._tool_code = tool_code
         self._method = http_method
         self._url = url
         self._query = query if query else {}
@@ -261,6 +265,12 @@ class ApiWrapper:
                 self._body.update(self._extra.body)
             if self._extra.path:
                 self._path.update(self._extra.path)
+        # 审批人凭证只作用于本次请求，且仅替换已有的 APIGW 凭证头，避免发给无需鉴权的工具地址
+        headers = self._header
+        if AUTHORIZATION_HEADER in headers:
+            approver_auth = approver_authorization("http", self._tool_code)
+            if approver_auth is not None:
+                headers = {**headers, AUTHORIZATION_HEADER: approver_auth}
 
         # LLM填充url模版
         self._url = self._build_dynamic_url()
@@ -269,7 +279,7 @@ class ApiWrapper:
             resp = self.session.request(
                 self._method,
                 self._url,
-                headers=self._header if self._header else None,
+                headers=headers if headers else None,
                 params=self._query if self._query else None,
                 json=self._body if self._body else None,
                 timeout=self._timeout,
@@ -494,6 +504,7 @@ def make_structured_tool(
         complex_fields=complex_fields,
         builtin_fields=builtin_fields,
         extra=tool.extra,
+        tool_code=tool.tool_code,
     )
 
     # 如果需要注入上下文（config 和 state），创建一个带注解的wrapper函数

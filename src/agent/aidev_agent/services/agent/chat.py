@@ -2025,6 +2025,7 @@ class ChatAgentBuilder:
                 "approval_name": strategy.get("approval_name", ""),
                 "approvers": strategy.get("approvers") or [],
                 "strategy": strategy,
+                "executor_identity": binding_data.get("executor_identity"),
             }
             if resource_type == "tool":
                 tool_id = binding_data.get("tool_id")

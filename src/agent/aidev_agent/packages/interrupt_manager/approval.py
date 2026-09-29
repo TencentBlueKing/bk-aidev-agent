@@ -58,7 +58,7 @@ from typing import Any, Literal, Optional
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from aidev_agent.enums import PromptRole
+from aidev_agent.enums import ExecutorIdentity, PromptRole
 from aidev_agent.packages.interrupt_manager.types import CREATE_TICKET_ERROR, TOOL_APPROVAL_REASON
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,10 @@ class InvalidApprovalInterruptError(ValueError):
     其他形态属程序错误：静默拦截或虚构 ApprovalTarget 建单（空审批人工单）
     都是生产事故，必须抛出让上层显式失败。
     """
+
+
+class ApprovalIdentityError(ValueError):
+    """审批已通过但无法确定本卡审批人，禁止回退调用者身份执行。"""
 
 
 class ApproveResult:
@@ -571,6 +575,12 @@ class ApprovalStateHandler:
                 )
                 return None
             interrupts = self._extract_interrupts_from_content(record.get("content"))
+            approved_by = builtin.get("approved_by")
+            if approved_by:
+                # 审批人随 resume 值下发到本卡对应的 tool call，由审批 wrapper 绑定执行身份
+                for item in interrupts:
+                    if isinstance(item, dict):
+                        item["payload"] = {**(item.get("payload") or {}), "approvedBy": approved_by}
             logger.info(
                 "[Approval] query_approval_info_for_interrupt: session_code=%s, tool_call_id=%s, approve_result=%s",
                 session_code,
@@ -1197,6 +1207,9 @@ class ApprovalHandler:
             ),
         )
         payload = model.model_dump(by_alias=True)
+        # 仅审批人身份卡片携带顶层快照（metadata 落库会被精简），平台回调与 SDK 续流据此分流
+        if target.approval.get("executor_identity") == ExecutorIdentity.APPROVER:
+            payload["executorIdentity"] = ExecutorIdentity.APPROVER
         logger.info(
             "[ToolApproval] _build_first_run_interrupt: tool=%s, payload_keys=%s",
             target.target_name,
