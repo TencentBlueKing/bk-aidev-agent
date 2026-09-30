@@ -60,10 +60,12 @@ def iter_direct_stream_frames(
         yield DirectStreamFrame(content=content or "未获取到回答内容", finish=True)
         return
 
-    if agent_stream.kind == "flow":
-        yield from _iter_flow_frames(agent_stream, stream_id, on_run_started)
-        return
-    yield from _iter_chat_frames(agent_stream, stream_id, on_run_started)
+    frames = (
+        _iter_flow_frames(agent_stream, stream_id, on_run_started)
+        if agent_stream.kind == "flow"
+        else _iter_chat_frames(agent_stream, stream_id, on_run_started)
+    )
+    yield from frames
 
 
 def _run_id_of(event: dict) -> str:

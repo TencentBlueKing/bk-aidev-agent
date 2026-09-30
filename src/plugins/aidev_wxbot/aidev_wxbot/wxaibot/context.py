@@ -40,14 +40,17 @@ MAX_THINK_ONLY_BATCH_CONSUME_COUNT = 10
 THINKING_MSG = THINKING_MESSAGE
 
 
-def stream_msg(content, is_finish, stream_id):
+def stream_msg(content, is_finish, stream_id, msg_items: list[dict] | None = None):
+    stream = {
+        "id": stream_id,
+        "finish": is_finish,
+        "content": content,
+    }
+    if is_finish and msg_items:
+        stream["msg_item"] = msg_items
     return {
         "msgtype": "stream",
-        "stream": {
-            "id": stream_id,
-            "finish": is_finish,
-            "content": content,
-        },
+        "stream": stream,
     }
 
 
@@ -83,6 +86,7 @@ class LlmChunkMsg(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     is_finish: bool = Field(default=False)
     docs: list[dict] = Field(default_factory=list)
+    msg_items: list[dict] = Field(default_factory=list)
     content: str = Field(default_factory=str)
     stream_id: str = Field(default_factory=str)
     think_content: str = Field(default_factory=str)
@@ -123,6 +127,11 @@ class LlmChunkMsg(BaseModel):
             if self.think_content:
                 self._cached_think_content = self.think_content
 
+            if self.is_finish and not self.msg_items:
+                from .image_reply import prepare_callback_image_reply
+
+                self.content, self.msg_items = prepare_callback_image_reply(self.content)
+
             # 准备消息数据，包含 cached_think_content 以支持跨实例读取
             message_data = {
                 "content": self.content,
@@ -130,6 +139,7 @@ class LlmChunkMsg(BaseModel):
                 "cached_think_content": self._cached_think_content,
                 "is_finish": self.is_finish,
                 "docs": self.docs,
+                "msg_items": self.msg_items,
                 "timestamp": time.time(),
             }
             # 使用独立的连接发送消息，避免并发冲突
@@ -207,6 +217,7 @@ class LlmChunkMsg(BaseModel):
                 return stream_msg(THINKING_MSG, self.is_finish, self.stream_id)
 
             self.is_finish = latest_message_data.get("is_finish", False)
+            msg_items = latest_message_data.get("msg_items", []) if self.is_finish else []
             content = latest_message_data.get("content", "")
             thinking_content = latest_message_data.get("think_content", "")
             if thinking_content:
@@ -220,7 +231,7 @@ class LlmChunkMsg(BaseModel):
                 except Exception as e:
                     logger.error(f"stream_id:{self.stream_id} 删除队列 {queue_name} 失败: {e}")
             logger.info(f"stream_id:{self.stream_id} 回复的内容: {content}")
-            return stream_msg(content, self.is_finish, self.stream_id)
+            return stream_msg(content, self.is_finish, self.stream_id, msg_items)
         except Exception as e:
             logger.error(f"stream_id:{self.stream_id} wxaibot_msg_json_from_cache 出错: {e}")
             return stream_msg("读取消息失败，请重试", True, self.stream_id)
