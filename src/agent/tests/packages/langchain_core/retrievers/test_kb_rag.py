@@ -4,9 +4,13 @@
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.core.graphs.react.graph import DefaultState
+from aidev_agent.core.nodes.model.basic_middleware import get_context_type_from_state
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
 
 
 @pytest.fixture(autouse=True)
@@ -140,5 +144,24 @@ def test_retired_qa_response_cannot_reactivate_special_context():
         }
     )
     assert result["knowledge_content"] == ["ordinary row"]
-    assert "knowledge_qa_content" not in result
-    assert "with_qa_response" not in result
+    assert result["knowledge_qa_content"] == []
+    assert result["with_qa_response"] is False
+
+
+@pytest.mark.parametrize("previous_qa", [[], ["previous QA"]])
+@pytest.mark.parametrize("ordinary,context_type", [([], ""), (["ordinary row"], "private")])
+def test_retrieval_clears_retired_qa_from_persisted_state(previous_qa, ordinary, context_type):
+    graph = StateGraph(DefaultState)
+    response = {"documents": [], "knowledge_content": ordinary}
+    graph.add_node("knowledge", lambda state: KnowledgeRag._map_api_response(response))
+    graph.add_edge(START, "knowledge")
+    graph.add_edge("knowledge", END)
+    compiled = graph.compile(checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "compatibility-thread"}}
+    compiled.update_state(config, {"messages": [], "knowledge_qa_content": previous_qa, "with_qa_response": True})
+    result = compiled.invoke({"messages": []}, config)
+    assert result["knowledge_content"] == ordinary
+    assert result["knowledge_qa_content"] == []
+    assert result["with_qa_response"] is False
+    assert get_context_type_from_state(result) == context_type
+    assert compiled.get_state(config).values["knowledge_qa_content"] == []
