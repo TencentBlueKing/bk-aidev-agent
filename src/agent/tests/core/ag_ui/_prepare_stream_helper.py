@@ -15,6 +15,7 @@ from aidev_agent.core.ag_ui.utils import (
     get_stream_payload_input,
 )
 from aidev_agent.enums import PromptRole
+from aidev_agent.packages.langchain_core.tools.assemble import assemble_bound_tools
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -65,18 +66,7 @@ def _merge_state(
           context 固定为 []（原 tools/context 参数总是传空值）。
     """
     merged_messages = messages
-    # 11.9: tools 从 state.get("tools", []) 获取（原 tools 参数总是传 []，等价）
-    all_tools = state.get("tools", [])
-
-    seen_names: set[str] = set()
-    unique_tools: list = []
-    for tool in all_tools:
-        tool_name = tool.get("name") if isinstance(tool, dict) else getattr(tool, "name", None)
-        if tool_name and tool_name not in seen_names:
-            seen_names.add(tool_name)
-            unique_tools.append(tool)
-        elif not tool_name:
-            unique_tools.append(tool)
+    unique_tools = assemble_bound_tools(state.get("tools", []))
 
     merged_state = {
         **state,

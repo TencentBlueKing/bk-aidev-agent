@@ -53,6 +53,7 @@ from aidev_agent.packages.interrupt_manager import (
 from aidev_agent.packages.interrupt_manager.processor import InterruptProcessor
 from aidev_agent.packages.interrupt_manager.types import ProcessorContext
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel, ChatModelRunnable
+from aidev_agent.packages.langchain_core.tools.assemble import assemble_bound_tools
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import (
@@ -770,20 +771,7 @@ class ChatCompletionAgent(BaseModel):
         """
         # 直接使用传入的 messages（后端数据库的完整历史）
         merged_messages = messages
-        # tools 从 state.get("tools", []) 获取（原 tools 参数总是传 []，等价）
-        all_tools = state.get("tools", [])
-
-        # Remove duplicates based on tool name
-        seen_names: set[str] = set()
-        unique_tools: list = []
-        for tool in all_tools:
-            tool_name = tool.get("name") if isinstance(tool, dict) else getattr(tool, "name", None)
-            if tool_name and tool_name not in seen_names:
-                seen_names.add(tool_name)
-                unique_tools.append(tool)
-            elif not tool_name:
-                # Keep tools without names (shouldn't happen, but just in case)
-                unique_tools.append(tool)
+        unique_tools = assemble_bound_tools(state.get("tools", []))
 
         merged_state = {
             **state,
@@ -1937,14 +1925,17 @@ class ChatAgentBuilder:
         else:
             tool_codes = config.tool_codes
         logger.info(f"ChatAgentBuilder: tool_codes->[{tool_codes}]")
-        tools = [
-            self.ctx.resource_manager.construct_tool(
-                tool_code,
-                username=self.ctx.username,
-                executor_info=self._executor_info,
-            )
-            for tool_code in tool_codes
-        ] + mcp_result.tools
+        tools = assemble_bound_tools(
+            [
+                self.ctx.resource_manager.construct_tool(
+                    tool_code,
+                    username=self.ctx.username,
+                    executor_info=self._executor_info,
+                )
+                for tool_code in tool_codes
+            ]
+            + mcp_result.tools
+        )
         self._apply_tool_approval_settings(tools)
         return tools
 

@@ -1187,6 +1187,35 @@ def _make_dummy_chat_ctx():
     return ctx
 
 
+def test_build_tools_keeps_first_duplicate_name():
+    """平台工具与跨 MCP 重名时，build_tools 只保留先到者。"""
+    platform = SimpleNamespace(name="Node_ListNode", metadata={"tool_code": "platform-node"})
+    mcp_dup = SimpleNamespace(name="Node_ListNode", metadata={"mcp_name": "bcs-api-gateway-mcp-cluster"})
+    mcp_other = SimpleNamespace(name="GetCluster", metadata={"mcp_name": "bcs-api-gateway-mcp-cluster"})
+    ctx = _make_dummy_chat_ctx()
+    ctx.username = "tester"
+    ctx.agent_config = SimpleNamespace(mcp_server_config={"cluster": {}}, tool_codes=["Node_ListNode"])
+    ctx.resource_manager = MagicMock()
+    ctx.resource_manager.construct_tool.return_value = platform
+    ctx.resource_manager.construct_mcp.return_value = SimpleNamespace(tools=[mcp_dup, mcp_other], fetch_failures=[])
+
+    tools = ChatAgentBuilder(ctx).build_tools()
+
+    assert tools == [platform, mcp_other]
+
+
+def test_merge_state_delegates_to_assemble_bound_tools():
+    """_merge_state 必须走 assemble_bound_tools，不得自建第二套去重。"""
+    first = {"name": "Node_ListNode", "mcp_name": "bcs-api-gateway-mcp-resource"}
+    second = {"name": "Node_ListNode", "mcp_name": "bcs-api-gateway-mcp-cluster"}
+    agent = ChatCompletionAgent.__new__(ChatCompletionAgent)
+
+    merged = ChatCompletionAgent._merge_state(agent, {"tools": [first, second]}, [])
+
+    assert merged["tools"] == [first]
+    assert merged["ag-ui"]["tools"] == [first]
+
+
 def test_chat_agent_builder_ignores_none_extra_in_last_user_message():
     """最后一条 user 消息 extra=None 时，应按无指定资源处理。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder
