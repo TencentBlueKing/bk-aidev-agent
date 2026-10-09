@@ -32,7 +32,6 @@ from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
 from aidev_agent.enums import ActivityType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
-from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
 from aidev_agent.pydantic_models import KnowledgeSettings
 from aidev_agent.utils.migrations import migration_knowledge_query_options_from_agent_options_v1
 
@@ -110,10 +109,6 @@ class BaseKnowledgeNode:
                 query = messages[-1].content
         return query
 
-    def get_query(self, state: KnowledgeInputState) -> str:
-        """Return text for legacy callers, keeping image content in get_query_input."""
-        return normalize_query_for_search(self.get_query_input(state))
-
 
 class AgentKnowledgeNode(BaseKnowledgeNode):
     """Agent 知识库召回阶段的节点实现。
@@ -149,8 +144,7 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
         )
 
         query_input = self.get_query_input(state)
-        query = self.get_query(state)
-        ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query_input)
+        ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
 
         duration = round(time.time() - t1, 4) * 1000
         result = self.process_result(ret, config, store, duration)
@@ -269,8 +263,7 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
             输出状态
         """
         query_input = self.get_query_input(state)
-        query = self.get_query(state)
-        ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query_input)
+        ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
         ret = cast(AidevKnowledgeOutputState, ret)
         # 排序、阈值过滤和 topk 均由 WEB API 负责；SDK 不再二次处理知识候选。
         ret["retrieved_docs"] = ret.get("knowledge_resources_emb_recalled", [])

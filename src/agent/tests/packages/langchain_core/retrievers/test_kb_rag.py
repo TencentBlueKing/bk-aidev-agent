@@ -98,7 +98,8 @@ def test_retrieve_ignores_removed_sdk_recall_switches():
     api_client.query_knowledge.assert_called_once()
 
 
-def test_retrieve_preserves_multimodal_input_for_platform_processing():
+@pytest.mark.parametrize("legacy_input", [False, True])
+def test_retrieve_preserves_multimodal_input_for_platform_processing(legacy_input):
     api_client = MagicMock()
     api_client.query_knowledge.return_value = {"documents": [], "decision": "GENERAL_QA"}
     knowledge_rag = KnowledgeRag(llm=MagicMock(), kb_retriever=api_client)
@@ -107,10 +108,28 @@ def test_retrieve_preserves_multimodal_input_for_platform_processing():
         {"type": "text", "text": "蓝鲸是什么"},
     ]
 
-    knowledge_rag.retrieve("fallback", KnowledgeSettings(), input=multimodal_input)
+    if legacy_input:
+        knowledge_rag.retrieve("fallback", KnowledgeSettings(), input=multimodal_input)
+    else:
+        knowledge_rag.retrieve(multimodal_input, KnowledgeSettings())
 
     assert api_client.query_knowledge.call_args.args[0] == multimodal_input
     api_client.query_knowledge.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [("蓝鲸是什么", "蓝鲸是什么"), ("", ""), (None, ""), (42, "42"), ({"text": "query"}, "{'text': 'query'}")],
+)
+def test_retrieve_normalizes_non_list_input_before_api_call(query, expected):
+    api_client = MagicMock()
+    api_client.query_knowledge.return_value = {"documents": [], "decision": "GENERAL_QA"}
+    knowledge_rag = KnowledgeRag(llm=MagicMock(), kb_retriever=api_client)
+
+    knowledge_rag.retrieve(query, KnowledgeSettings())
+
+    api_client.query_knowledge.assert_called_once()
+    assert api_client.query_knowledge.call_args.args[0] == expected
 
 
 def test_retrieve_maps_api_relevance_groups_without_rescoring():

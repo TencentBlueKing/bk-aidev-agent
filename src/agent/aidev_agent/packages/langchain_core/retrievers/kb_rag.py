@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from typing_extensions import NotRequired
 
@@ -53,7 +53,7 @@ class KnowledgeRag:
         self.kb_retriever = kb_retriever or BkRetriever()
 
     def retrieve(
-        self, query: str, knowledge_query_options: KnowledgeSettings, chat_history: Optional[list] = None, **kwargs
+        self, query: Any, knowledge_query_options: KnowledgeSettings, chat_history: Optional[list] = None, **kwargs
     ) -> KnowledgeRagRetrieveResult:
         """Submit one API request and map the final knowledge result to Agent state."""
 
