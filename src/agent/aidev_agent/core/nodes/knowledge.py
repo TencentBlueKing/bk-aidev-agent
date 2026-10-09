@@ -91,7 +91,7 @@ class BaseKnowledgeNode:
         self.retriever = KnowledgeRag(llm, self.kb_retriever)
 
     def get_query_input(self, state: KnowledgeInputState) -> Any:
-        """从 state 中获取查询文本。
+        """从 state 中获取原始查询内容，保留文本或图文 content。
 
         优先级: query > input > messages[-1].content
 
@@ -99,7 +99,7 @@ class BaseKnowledgeNode:
             state: 输入状态
 
         Returns:
-            查询文本
+            原始查询内容
         """
         query = state.get("query")
         if query is None:
@@ -149,7 +149,7 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
         )
 
         query_input = self.get_query_input(state)
-        query = normalize_query_for_search(query_input)
+        query = self.get_query(state)
         ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query_input)
 
         duration = round(time.time() - t1, 4) * 1000
@@ -269,7 +269,7 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
             输出状态
         """
         query_input = self.get_query_input(state)
-        query = normalize_query_for_search(query_input)
+        query = self.get_query(state)
         ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query_input)
         ret = cast(AidevKnowledgeOutputState, ret)
         # 排序、阈值过滤和 topk 均由 WEB API 负责；SDK 不再二次处理知识候选。
