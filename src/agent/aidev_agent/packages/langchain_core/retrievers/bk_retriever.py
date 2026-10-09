@@ -1,5 +1,5 @@
 import logging
-from typing import Callable
+from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -18,7 +18,7 @@ class BkRetriever:
 
     def query_knowledge(
         self,
-        query: str,
+        query: str | list[dict[str, Any]],
         knowledge_query_options: KnowledgeSettings,
         chat_history: list | None = None,
         *,
@@ -27,14 +27,14 @@ class BkRetriever:
         """Submit one complete knowledge query and return the API result unchanged."""
 
         query_payload = self._build_query_payload(query, knowledge_query_options, chat_history or [], llm_code)
-        logger.info("查询知识库： %s", query_payload)
+        logger.info("查询知识库: knowledge_base_count=%s", len(query_payload["knowledge_base_id"]))
         response = self._query_instance(query_payload)
         self._validate_documents(response["documents"])
         return response
 
     def _build_query_payload(
         self,
-        query: str,
+        query: str | list[dict[str, Any]],
         knowledge_query_options: KnowledgeSettings,
         chat_history: list,
         llm_code: str | None,

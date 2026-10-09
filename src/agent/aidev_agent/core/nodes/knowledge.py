@@ -32,7 +32,6 @@ from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
 from aidev_agent.enums import ActivityType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
-from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
 from aidev_agent.pydantic_models import KnowledgeSettings
 from aidev_agent.utils.migrations import migration_knowledge_query_options_from_agent_options_v1
 
@@ -44,8 +43,8 @@ class KnowledgeInputState(TypedDict):
     知识库召回的 State 输入字段
     """
 
-    query: NotRequired[str]
-    input: NotRequired[str]
+    query: NotRequired[Any]
+    input: NotRequired[Any]
     messages: NotRequired[list[BaseMessage]]
 
 
@@ -90,8 +89,8 @@ class BaseKnowledgeNode:
         self.kb_retriever = kb_retriever or BkRetriever()
         self.retriever = KnowledgeRag(llm, self.kb_retriever)
 
-    def get_query(self, state: KnowledgeInputState) -> str:
-        """从 state 中获取查询文本。
+    def get_query_input(self, state: KnowledgeInputState) -> Any:
+        """从 state 中获取原始查询内容，保留文本或图文 content。
 
         优先级: query > input > messages[-1].content
 
@@ -99,7 +98,7 @@ class BaseKnowledgeNode:
             state: 输入状态
 
         Returns:
-            查询文本
+            原始查询内容
         """
         query = state.get("query")
         if query is None:
@@ -108,7 +107,7 @@ class BaseKnowledgeNode:
             messages = state.get("messages")
             if messages:
                 query = messages[-1].content
-        return normalize_query_for_search(query)
+        return query
 
 
 class AgentKnowledgeNode(BaseKnowledgeNode):
@@ -144,8 +143,8 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
             config=config,
         )
 
-        query = self.get_query(state)
-        ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query)
+        query_input = self.get_query_input(state)
+        ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
 
         duration = round(time.time() - t1, 4) * 1000
         result = self.process_result(ret, config, store, duration)
@@ -263,8 +262,8 @@ class AidevKnowledgeNode(BaseKnowledgeNode):
         Returns:
             输出状态
         """
-        query = self.get_query(state)
-        ret = self.retriever.retrieve(query, self.knowledge_query_options, self.chat_history, input=query)
+        query_input = self.get_query_input(state)
+        ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
         ret = cast(AidevKnowledgeOutputState, ret)
         # 排序、阈值过滤和 topk 均由 WEB API 负责；SDK 不再二次处理知识候选。
         ret["retrieved_docs"] = ret.get("knowledge_resources_emb_recalled", [])

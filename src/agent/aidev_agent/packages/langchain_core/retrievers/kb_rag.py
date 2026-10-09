@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from typing_extensions import NotRequired
 
@@ -53,15 +53,16 @@ class KnowledgeRag:
         self.kb_retriever = kb_retriever or BkRetriever()
 
     def retrieve(
-        self, query: str, knowledge_query_options: KnowledgeSettings, chat_history: Optional[list] = None, **kwargs
+        self, query: Any, knowledge_query_options: KnowledgeSettings, chat_history: Optional[list] = None, **kwargs
     ) -> KnowledgeRagRetrieveResult:
         """Submit one API request and map the final knowledge result to Agent state."""
 
         dispatch_rag_event_chunk("开始召回知识")
         llm = kwargs.get("llm", self.llm)
         llm_code = getattr(llm, "model_name", None) or getattr(llm, "model", None)
+        raw_input = kwargs.get("input", query)
         response = kwargs.get("kb_retriever", self.kb_retriever).query_knowledge(
-            normalize_query_for_search(kwargs.get("input", query)),
+            raw_input if isinstance(raw_input, list) else normalize_query_for_search(raw_input),
             knowledge_query_options,
             chat_history,
             llm_code=llm_code if isinstance(llm_code, str) else None,

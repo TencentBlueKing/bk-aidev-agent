@@ -331,8 +331,8 @@ class TestAidevKnowledgeNode:
         assert len(result["retrieved_docs"]) == 4
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
-    def test_get_query_priority(self, mock_rag_class, mock_llm, mock_knowledge_settings):
-        """测试 get_query 的优先级: query > input > messages"""
+    def test_get_query_input_priority(self, mock_rag_class, mock_llm, mock_knowledge_settings):
+        """测试原始输入的优先级: query > input > messages"""
         mock_rag_instance = MagicMock()
         mock_rag_instance.retrieve.return_value = create_mock_retrieve_result()
         mock_rag_class.return_value = mock_rag_instance
@@ -353,36 +353,33 @@ class TestAidevKnowledgeNode:
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
     @pytest.mark.parametrize(
-        "content, expected",
+        "content",
         [
-            (
-                [
-                    {"type": "image_url", "image_url": {"url": "https://example.com/test.png"}},
-                    {"type": "text", "text": "这张图片有什么内容?"},
-                ],
-                "这张图片有什么内容?",
-            ),
-            ([{"type": "image_url", "image_url": {"url": "https://example.com/test.png"}}], ""),
+            [
+                {"type": "image_url", "image_url": {"url": "https://example.com/test.png"}},
+                {"type": "text", "text": "这张图片有什么内容?"},
+            ],
+            [{"type": "image_url", "image_url": {"url": "https://example.com/test.png"}}],
         ],
     )
-    def test_get_query_normalizes_multimodal_content(
-        self, mock_rag_class, mock_llm, mock_knowledge_settings, content, expected
+    def test_get_query_input_preserves_multimodal_content(
+        self, mock_rag_class, mock_llm, mock_knowledge_settings, content
     ):
-        """测试多模态 content 会归一化为知识库可检索文本"""
+        """原始输入提取不丢弃图文 content。"""
         mock_rag_class.return_value = MagicMock()
         node = AidevKnowledgeNode(llm=mock_llm, knowledge_query_options=mock_knowledge_settings)
 
-        assert node.get_query({"messages": [HumanMessage(content=content)]}) == expected
+        assert node.get_query_input({"messages": [HumanMessage(content=content)]}) == content
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
-    def test_get_query_stringifies_non_text_query_dict(self, mock_rag_class, mock_llm, mock_knowledge_settings):
-        """测试 query 字段传入非文本字典时会按通用归一化逻辑转为字符串。"""
+    def test_get_query_input_preserves_image_query(self, mock_rag_class, mock_llm, mock_knowledge_settings):
+        """query 字段的纯图片内容保持原样。"""
         mock_rag_class.return_value = MagicMock()
         node = AidevKnowledgeNode(llm=mock_llm, knowledge_query_options=mock_knowledge_settings)
 
         query = [{"type": "image_url", "image_url": {"url": "https://example.com/test.png"}}]
 
-        assert node.get_query({"query": query}) == ""
+        assert node.get_query_input({"query": query}) == query
 
     @patch("aidev_agent.core.nodes.knowledge.KnowledgeRag")
     def test_empty_query_fallback(self, mock_rag_class, mock_llm, mock_knowledge_settings):
@@ -399,5 +396,33 @@ class TestAidevKnowledgeNode:
         run_knowledge_node_in_graph(node, state)
 
         call_args = mock_rag_instance.retrieve.call_args
-        # 应该返回空字符串
-        assert call_args[0][0] == ""
+        # 空值由 RAG 在提交 API 前归一化。
+        assert call_args[0][0] is None
+
+
+@pytest.mark.parametrize("state_key", ["query", "input", "messages"])
+@pytest.mark.parametrize("node_class", [AgentKnowledgeNode, AidevKnowledgeNode])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "数据库错误怎么处理",
+        [{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}],
+        [
+            {"type": "text", "text": "数据库错误怎么处理"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+        ],
+    ],
+)
+def test_node_preserves_content_through_api_request(mocker, state_key, node_class, content):
+    mocker.patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
+    mocker.patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
+    resource_manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
+    api_client = resource_manager.return_value.knowledge_query
+    api_client.return_value = {"documents": [], "decision": "GENERAL_QA"}
+    node = node_class(llm=MagicMock(), knowledge_query_options=KnowledgeSettings(), chat_history=[])
+    state = {state_key: [HumanMessage(content=content)] if state_key == "messages" else content}
+
+    node(state, {}, store=InMemoryStore())
+
+    api_client.assert_called_once()
+    assert api_client.call_args.args[0]["query"] == content
