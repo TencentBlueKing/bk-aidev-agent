@@ -981,6 +981,87 @@ class TestLongConnectionStreaming:
             (expected, {"msgtype": "template_card", "template_card": {"card_type": "text_notice"}})
         ]
 
+    async def test_terminal_knowledge_images_send_markdown_then_collage(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        raw = "答案 ![示意图](https://knowledge.example.com/1.png)"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            "chat",
+            iter([f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{raw}"}}\n', 'data: {"type":"RUN_FINISHED"}\n']),
+            "session-1",
+        )
+        request = SimpleNamespace(content="问题", stream_id="image-terminal", username="u", group_id="g1")
+        prepared = SimpleNamespace(markdown="答案\n> **图片占位符 [IMG-01]**", image=b"png", image_count=1)
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(long_connection_module, "prepare_long_connection_collage", return_value=prepared) as prepare,
+            patch.object(long_connection_module, "upload_collage", AsyncMock(return_value="media-1")) as upload,
+        ):
+            frame = {"body": {"chattype": "single", "from": {"userid": "wecom-user-1"}}}
+            await service._start_direct_stream(frame, request)
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls[-1] == (prepared.markdown, True)
+        assert service._client.send_message_calls == [
+            ("wecom-user-1", {"msgtype": "image", "image": {"media_id": "media-1"}})
+        ]
+        prepare.assert_called_once()
+        upload.assert_awaited_once_with(service._client, b"png")
+
+    async def test_terminal_collage_failure_falls_back_to_original_markdown(self):
+        service = _service()
+        service._view._get_or_create_thread_id.return_value = "thread-1"
+        raw = "答案 ![示意图](https://knowledge.example.com/1.png)"
+        strategy = MagicMock()
+        strategy.open_stream.return_value = AgentStream(
+            "chat",
+            iter([f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{raw}"}}\n', 'data: {"type":"RUN_FINISHED"}\n']),
+            "session-1",
+        )
+        request = SimpleNamespace(content="问题", stream_id="image-fallback", username="u", group_id="g1")
+
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=strategy),
+            patch.object(long_connection_module, "get_agent_executor", return_value=ThreadExecutor()),
+            patch.object(
+                long_connection_module,
+                "prepare_long_connection_collage",
+                side_effect=RuntimeError("conversion failed"),
+            ),
+            patch.object(long_connection_module, "upload_collage", AsyncMock()) as upload,
+        ):
+            await service._start_direct_stream({}, request)
+            await service._active_streams[request.stream_id].task
+
+        assert service._client.reply_stream_calls[-1] == (raw, True)
+        assert service._client.send_message_calls == []
+        upload.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"chattype": "single", "from": {"userid": "user-1"}}, "user-1"),
+            ({"chattype": "group", "chatid": "chat-1"}, "chat-1"),
+        ],
+    )
+    async def test_collage_is_sent_to_original_conversation(self, payload, expected):
+        service = _service()
+
+        await service._send_collage_image({"body": payload}, "media-1")
+
+        assert service._client.send_message_calls == [
+            (expected, {"msgtype": "image", "image": {"media_id": "media-1"}})
+        ]
+
+    async def test_collage_send_rejects_missing_original_conversation(self):
+        service = _service()
+
+        with pytest.raises(ValueError, match="Missing original WeCom recipient"):
+            await service._send_collage_image({"body": {}}, "media-1")
+
     @pytest.mark.parametrize(
         ("status", "ok", "label"),
         [
@@ -1228,7 +1309,10 @@ class TestLongConnectionStreaming:
 
         service._consume_direct_stream = consume
 
-        with patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel:
+        with (
+            patch.object(long_connection_module, "resolve_strategy", return_value=FlowAgentStrategy()),
+            patch.object(long_connection_module.stream_registry, "cancel", return_value=True) as cancel,
+        ):
             await service._start_direct_stream(
                 {}, SimpleNamespace(stream_id="active", username="u", group_id="group-1")
             )
@@ -1254,8 +1338,9 @@ class TestLongConnectionStreaming:
             await release.wait()
 
         service._consume_direct_stream = consume
-        await service._start_direct_stream({}, SimpleNamespace(stream_id="active", username="alice", group_id="g"))
-        await service._start_direct_stream({}, SimpleNamespace(stream_id="second", username="bob", group_id="g"))
+        with patch.object(long_connection_module, "resolve_strategy", return_value=FlowAgentStrategy()):
+            await service._start_direct_stream({}, SimpleNamespace(stream_id="active", username="alice", group_id="g"))
+            await service._start_direct_stream({}, SimpleNamespace(stream_id="second", username="bob", group_id="g"))
 
         assert service._client.reply_stream_calls == [(BUSY_BY_OTHERS_REPLY, True)]
         release.set()
@@ -1270,15 +1355,18 @@ class TestLongConnectionStreaming:
             await releases[request.stream_id].wait()
 
         service._consume_direct_stream = consume
-        await service._start_direct_stream({}, SimpleNamespace(stream_id="first", username="u", group_id="group-1"))
-        first_task = service._active_streams["first"].task
+        with patch.object(long_connection_module, "resolve_strategy", return_value=FlowAgentStrategy()):
+            await service._start_direct_stream({}, SimpleNamespace(stream_id="first", username="u", group_id="group-1"))
+            first_task = service._active_streams["first"].task
 
-        releases["first"].set()
-        await first_task
-        await asyncio.sleep(0)  # 让 done callback 完成清理
-        assert not service._group_streams
+            releases["first"].set()
+            await first_task
+            await asyncio.sleep(0)  # 让 done callback 完成清理
+            assert not service._group_streams
 
-        await service._start_direct_stream({}, SimpleNamespace(stream_id="second", username="u", group_id="group-1"))
+            await service._start_direct_stream(
+                {}, SimpleNamespace(stream_id="second", username="u", group_id="group-1")
+            )
 
         assert list(service._active_streams) == ["second"]
         assert service._metrics.rejected_busy == 0

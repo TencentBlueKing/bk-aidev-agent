@@ -168,7 +168,7 @@ def _prepare_images(content: str) -> tuple[str, list[PreparedImage]]:
         if len(images) >= MAX_IMAGE_ITEMS:
             return _fallback_link(alt, url)
         image = _download_image(alt, url)
-        if image is None:
+        if image is None or not _is_supported_image(image.data):
             return _fallback_link(alt, url)
         images.append(image)
         return ""
