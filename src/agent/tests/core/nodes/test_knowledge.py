@@ -401,3 +401,12 @@ class TestAidevKnowledgeNode:
         call_args = mock_rag_instance.retrieve.call_args
         # 应该返回空字符串
         assert call_args[0][0] == ""
+
+
+@pytest.mark.parametrize("state_key", ["query", "input", "messages"])
+def test_node_preserves_images_at_the_retrieval_boundary(state_key):
+    content = [{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}]
+    node = AidevKnowledgeNode(llm=MagicMock(), knowledge_query_options=KnowledgeSettings())
+    state = {state_key: [HumanMessage(content=content)] if state_key == "messages" else content}
+    assert node.get_query_input(state) == content
+    assert node.get_query(state) == ""

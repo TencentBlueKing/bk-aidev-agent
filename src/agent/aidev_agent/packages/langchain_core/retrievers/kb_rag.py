@@ -60,8 +60,9 @@ class KnowledgeRag:
         dispatch_rag_event_chunk("开始召回知识")
         llm = kwargs.get("llm", self.llm)
         llm_code = getattr(llm, "model_name", None) or getattr(llm, "model", None)
+        raw_input = kwargs.get("input", query)
         response = kwargs.get("kb_retriever", self.kb_retriever).query_knowledge(
-            normalize_query_for_search(kwargs.get("input", query)),
+            raw_input if isinstance(raw_input, list) else normalize_query_for_search(raw_input),
             knowledge_query_options,
             chat_history,
             llm_code=llm_code if isinstance(llm_code, str) else None,

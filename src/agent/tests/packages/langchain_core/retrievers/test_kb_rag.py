@@ -98,7 +98,7 @@ def test_retrieve_ignores_removed_sdk_recall_switches():
     api_client.query_knowledge.assert_called_once()
 
 
-def test_retrieve_normalizes_multimodal_input_before_api_call():
+def test_retrieve_preserves_multimodal_input_for_platform_processing():
     api_client = MagicMock()
     api_client.query_knowledge.return_value = {"documents": [], "decision": "GENERAL_QA"}
     knowledge_rag = KnowledgeRag(llm=MagicMock(), kb_retriever=api_client)
@@ -109,7 +109,8 @@ def test_retrieve_normalizes_multimodal_input_before_api_call():
 
     knowledge_rag.retrieve("fallback", KnowledgeSettings(), input=multimodal_input)
 
-    assert api_client.query_knowledge.call_args.args[0] == "蓝鲸是什么"
+    assert api_client.query_knowledge.call_args.args[0] == multimodal_input
+    api_client.query_knowledge.assert_called_once()
 
 
 def test_retrieve_maps_api_relevance_groups_without_rescoring():
