@@ -28,11 +28,20 @@ class PersonalMemoryRuntime:
         manager=None,
         reference_model=None,
         schemas: list[dict] | None = None,
+        best_effort: bool = False,
+        request_timeout: float | None = None,
+        merge_state_history: bool = True,
     ):
         self.context_provider = context_provider
         self.manager = manager if manager is not None else resource_manager()
         self.reference_model = reference_model
         self.schemas = schemas
+        self.best_effort = best_effort
+        self.request_timeout = request_timeout
+        self.merge_state_history = merge_state_history
+
+    def request_options(self) -> dict:
+        return {"timeout": self.request_timeout} if self.request_timeout is not None else {}
 
     def context(self, config: RunnableConfig) -> tuple[str, dict]:
         context = copy.deepcopy(self.context_provider(config))
@@ -51,7 +60,7 @@ class PersonalMemoryRuntime:
         schemas = self.schemas
         if schemas is None:
             username, _ = self.context(config or {})
-            schemas = self.manager.memory_schemas(username=username)
+            schemas = self.manager.memory_schemas(username=username, **self.request_options())
         if {item["function"]["name"] for item in schemas} != TOOL_NAMES or len(schemas) != 3:
             raise ValueError("Platform did not return the three personal-memory tool schemas")
         return [self.make_tool(item["function"]) for item in schemas]
@@ -60,10 +69,18 @@ class PersonalMemoryRuntime:
         name = schema["name"]
 
         def invoke_memory(config: RunnableConfig, **arguments):
-            username, context = self.context(config)
-            result = self.manager.memory_tool({"name": name, "call": arguments, "context": context}, username=username)
-            artifact = {"personal_memory_hits": result.get("hits", [])} if name == "memory_search" else {}
-            return json.dumps(result, ensure_ascii=False), artifact
+            try:
+                username, context = self.context(config)
+                result = self.manager.memory_tool(
+                    {"name": name, "call": arguments, "context": context}, username=username, **self.request_options()
+                )
+                artifact = {"personal_memory_hits": result.get("hits", [])} if name == "memory_search" else {}
+                return json.dumps(result, ensure_ascii=False), artifact
+            except Exception as error:
+                if not self.best_effort:
+                    raise
+                logger.warning("Personal-memory tool unavailable: %s", type(error).__name__)
+                return "Personal memory is temporarily unavailable.", {}
 
         return StructuredTool.from_function(
             func=invoke_memory,
@@ -112,6 +129,15 @@ class PersonalMemoryRuntime:
         return sorted(set(selected))
 
     def complete(self, state: dict, config: RunnableConfig) -> dict:
+        try:
+            return self._complete(state, config)
+        except Exception as error:
+            if not self.best_effort:
+                raise
+            logger.warning("Personal-memory completion unavailable: %s", type(error).__name__)
+            return {}
+
+    def _complete(self, state: dict, config: RunnableConfig) -> dict:
         messages = state.get("messages", [])
         if not messages or not isinstance(messages[-1], AIMessage):
             return {}
@@ -120,7 +146,7 @@ class PersonalMemoryRuntime:
             return {}
         username, context = self.context(config)
         by_id = {message["message_id"]: message for message in context["messages"]}
-        for message in messages:
+        for message in messages if self.merge_state_history else [answer]:
             if (
                 (isinstance(message, HumanMessage) or (isinstance(message, AIMessage) and not message.tool_calls))
                 and message.id
@@ -140,6 +166,6 @@ class PersonalMemoryRuntime:
             logger.exception("Personal-memory reference audit failed")
             ids = []
         self.manager.complete_memory_round(
-            {"round_id": answer.id, "memory_ids": ids, "context": context}, username=username
+            {"round_id": answer.id, "memory_ids": ids, "context": context}, username=username, **self.request_options()
         )
         return {}

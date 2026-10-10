@@ -1,16 +1,24 @@
 # 个人记忆接入
 
-个人记忆一期使用平台权威 schema 提供 memory_write、memory_update、memory_search。SDK 不自行复制提示词；平台负责用户隔离、持久化、TTL、检索和自动抽取整理。需要平台与 SDK 同步升级，并配置平台 memory 的 APIGateway 路由、迁移和后台 worker/beat。
+个人记忆一期使用平台权威 schema 提供 memory_write、memory_update、memory_search。SDK 不自行复制提示词；平台负责用户隔离、持久化、TTL、检索和自动抽取整理。平台发布需要配置 memory 的 APIGateway 路由、迁移和后台 worker/beat；接入方升级 SDK 后，标准聊天入口自动接入。
 
-## 宿主接入
+## 默认启用
 
-每次调用的宿主负责提供认证用户、会话 ID、会话日期和已完成的 user/assistant 消息快照。不得从模型工具参数解析身份。消息的 `message_id` 和最终回答的 AIMessage.id 必须稳定，以便失败重试和续流去重。`complete=False` 的消息不参与写入和抽取。
+使用 ChatCompletionAgent、AgentInstanceFactory 或 SDK 生成的标准模板时，无需新增接入代码或开关。SDK 从每次请求已有的 ResourceManager、认证用户、会话 ID 和完整聊天记录构建 PersonalMemoryRuntime，自动加入三项记忆工具和回答完成回调。身份来自认证构建上下文，不能通过模型参数或 ExecuteKwargs.executor 覆盖。
+
+SDK 每次请求先探测平台 schema。平台接口未部署、响应不合法或服务暂不可用时，本次聊天跳过记忆，下次请求重新探测。记忆 HTTP 请求使用 2 秒超时；工具和完成回调失败时保留原有聊天流程。缺少认证用户时跳过自动接入，不将应用身份当作个人身份。允许先发布 SDK，再发布平台服务。
+
+SDK 保留完整宿主聊天记录，不使用被截断或改写的模型输入替代会话快照。已有消息 ID 保持不变，缺失 ID 使用会话和消息内容生成稳定标识；会话日期优先读取历史记录的创建时间。未完成的 assistant 消息不参与抽取。
 
 SDK 调用 `/openapi/aidev/agents/v1/memory/` 智能体运行时入口，沿用应用凭证，同时将每次调用的 username 写入网关认证字段 `bk_username`，按该用户解析 access_token。username 不保证自动存在：只配置应用凭证的宿主必须补齐真实认证用户，空值或纯空白在调用前被拒绝。网关与平台还会核对用户认证状态；`X-BKAIDEV-USER` 不能指定记忆归属，也不能用自定义认证头覆盖 ResourceManager 凭证。
 
 显式提供 access_token 时，ResourceManager 的 username 必须与该次调用用户一致。共享图的动态用户不能复用固定用户的 token，应使用可按用户解析凭证的 ResourceManager 或按请求创建绑定用户的实例。
 
 平台同时提供 `/openapi/aidev/private/v1/memory/` 用户入口，沿用用户态鉴权和个人 OAuth 支持；个人记忆不提供 app 类入口。两入口共用 `(tenant_id, username)` 归属；同租户同用户跨智能体和空间共享个人记忆，其他用户或租户保持隔离。
+
+## 自定义图接入
+
+完全绕过标准 ChatCompletionAgent，直接调用 CommonQAAgent 或 ReActAgentBuilder 的自定义宿主，可以显式提供以下运行时。此时宿主负责认证用户、会话 ID、日期和已完成消息快照，消息 ID 和最终回答 ID 应保持稳定。显式运行时默认将接口错误抛给宿主；需要容错时可设置 `best_effort=True` 和 `request_timeout`。
 
 ```python
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
@@ -47,6 +55,6 @@ agent, config = CommonQAAgent.get_agent_executor(
 
 ## 验证范围
 
-新增测试覆盖工具参数与宿主身份分离、工具 artifact、完成回答快照、检索与引用的区别、前轮结果隔离、未完成回答过滤、非法审计输出、动态身份和图结束回调。同时回归已有 ReAct Builder 与资源管理方法。平台测试覆盖 MySQL 5.7 事务、真实 Milvus dense/BM25 与生命周期。
+新增测试覆盖标准聊天入口自动接入、完整历史保留、稳定消息 ID、缺失身份跳过、平台未部署时正常回答，以及工具和完成回调故障容错。另覆盖工具参数与宿主身份分离、工具 artifact、完成回答快照、检索与引用的区别、前轮结果隔离、未完成回答过滤、非法审计输出、动态身份和图结束回调。同时回归已有 ReAct Builder 与资源管理方法。平台测试覆盖 MySQL 5.7 事务、真实 Milvus dense/BM25 与生命周期。
 
 真实线上模型、消息代理和部署环境中的定时任务尚需联调验收。
