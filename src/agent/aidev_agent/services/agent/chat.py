@@ -1928,6 +1928,7 @@ class ChatAgentBuilder:
             mcp_config=mcp_server_config,
             username=self.ctx.username,
             executor_info=self._executor_info,
+            ssl_verify=config.tool_ssl_verify,
         )
         self._mcp_fetch_failures = [f.model_dump() for f in mcp_result.fetch_failures]
         logger.info(f"ChatAgentBuilder: mcp_server_config->[{mcp_server_config}]")
@@ -1942,6 +1943,7 @@ class ChatAgentBuilder:
                 tool_code,
                 username=self.ctx.username,
                 executor_info=self._executor_info,
+                ssl_verify=config.tool_ssl_verify,
             )
             for tool_code in tool_codes
         ] + mcp_result.tools
