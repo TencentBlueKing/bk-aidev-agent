@@ -16,8 +16,8 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.4.0"
-source = { registry = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/simple/" }
+version = "3.0.0rc119"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "asgiref" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0.tar.gz", hash = "sha256:89c51a8343f0f2623ca99b77effae1295ae21d92e88d3332262886fd5db6f8ca" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/84/d24a180e38abded26a9d3891d0a869bed84f2b34edab09e76d5ed6b0a6f4/aidev_agent-3.0.0rc119.tar.gz", hash = "sha256:274d0f375f4d6800a632678bef802669d77e346413c93d84e5ce4d675446d1e4", size = 1063326, upload-time = "2026-10-10T07:03:19.14Z" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0-py3-none-any.whl", hash = "sha256:153ee4d64a6e63300ead66c6d094769bce090b8a40f3a3a5ffbacd05fcbe4120" },
+    { url = "https://files.pythonhosted.org/packages/c2/10/a2514bce820ebb2f9a32665b677f734cbd0799f9db1d1a566bf4046b93e3/aidev_agent-3.0.0rc119-py3-none-any.whl", hash = "sha256:7d91eb70467fb7681f6bfbb6d6ec2ba01bba1155320f7460b4974a4422e1b627", size = 687672, upload-time = "2026-10-10T07:03:04.247Z" },
 ]
 
 [package.optional-dependencies]
@@ -71,7 +71,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.4.0"
+version = "2.4.0.post1"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -96,7 +96,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.4.0" },
+    { name = "aidev-agent", specifier = ">=2.4.0.post1" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.15.1,<5.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },

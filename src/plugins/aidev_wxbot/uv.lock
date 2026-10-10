@@ -23,8 +23,8 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.4.0"
-source = { registry = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/simple/" }
+version = "3.0.0rc119"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "asgiref" },
@@ -55,28 +55,28 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0.tar.gz", hash = "sha256:89c51a8343f0f2623ca99b77effae1295ae21d92e88d3332262886fd5db6f8ca" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/84/d24a180e38abded26a9d3891d0a869bed84f2b34edab09e76d5ed6b0a6f4/aidev_agent-3.0.0rc119.tar.gz", hash = "sha256:274d0f375f4d6800a632678bef802669d77e346413c93d84e5ce4d675446d1e4", size = 1063326, upload-time = "2026-10-10T07:03:19.14Z" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0-py3-none-any.whl", hash = "sha256:153ee4d64a6e63300ead66c6d094769bce090b8a40f3a3a5ffbacd05fcbe4120" },
+    { url = "https://files.pythonhosted.org/packages/c2/10/a2514bce820ebb2f9a32665b677f734cbd0799f9db1d1a566bf4046b93e3/aidev_agent-3.0.0rc119-py3-none-any.whl", hash = "sha256:7d91eb70467fb7681f6bfbb6d6ec2ba01bba1155320f7460b4974a4422e1b627", size = 687672, upload-time = "2026-10-10T07:03:04.247Z" },
 ]
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.4.0"
-source = { registry = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/simple/" }
+version = "3.0.0rc119"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aidev-agent" },
     { name = "blueapps" },
     { name = "django" },
 ]
-sdist = { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/2.4.0/aidev_bkplugin-2.4.0.tar.gz", hash = "sha256:e07415834e97dface80f8fa26a47b977daac20589a0b15b688ced4de7ec09e11" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/9b/b7aaff6205b3b62c95edc4e405f8d538c9492dd7538fddb899b31a0381f6/aidev_bkplugin-3.0.0rc119.tar.gz", hash = "sha256:d9cb97f8f1a113c99079d99ff15afebd2194c7b2fa83ca804cd86816b0979a87", size = 137210, upload-time = "2026-10-10T07:03:30.255Z" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-bkplugin/2.4.0/aidev_bkplugin-2.4.0-py3-none-any.whl", hash = "sha256:c3c811eb950210c83f93f316e08f5ece7bced7c592e01f4807af1152013edaed" },
+    { url = "https://files.pythonhosted.org/packages/fc/89/ee1aa40e1cacb20a79fdf1bf2463c577e2d7181b4aa855e3bc47f4dc3d01/aidev_bkplugin-3.0.0rc119-py3-none-any.whl", hash = "sha256:35c2fb13d60e7d85e3cf50a1deec20548f8e7f62bc32996a51bf961023deff38", size = 113135, upload-time = "2026-10-10T07:03:26.437Z" },
 ]
 
 [[package]]
 name = "aidev-wxbot"
-version = "2.4.0"
+version = "2.4.0.post1"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-bkplugin" },
@@ -102,7 +102,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-bkplugin", specifier = ">=2.4.0" },
+    { name = "aidev-bkplugin", specifier = ">=2.4.0.post1" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
     { name = "djangorestframework", specifier = ">=3.14.0" },
     { name = "pika", specifier = ">=1.3.0,<2.0" },
@@ -338,7 +338,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/f9/64/0dc8465f1d54e4b86
 
 [[package]]
 name = "blueapps"
-version = "4.16rc4"
+version = "4.16rc6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bkoauth" },
@@ -353,7 +353,7 @@ dependencies = [
     { name = "werkzeug" },
     { name = "whitenoise" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/8d/f3c1a8138c0f1acabf7f84563984bd3ec8fd750426c7da601da5477b8eba/blueapps-4.16rc4.tar.gz", hash = "sha256:0547054e65572e4667e26888cf219ff9fc8bfdfe28a9df001ac15152f0bc8616", size = 241684, upload-time = "2026-01-20T03:18:50.853Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/b5/f97c758315c3157ba91b47bc2506bbe0b3cf358557df2928846e71350fb2/blueapps-4.16rc6.tar.gz", hash = "sha256:4b2e68cf130d7f1ce3cd6c4bd3d0b4518a98b664ad7a1e5c99ba90cd89ff7396", size = 245905, upload-time = "2026-06-09T11:22:25.534Z" }
 
 [[package]]
 name = "bracex"
