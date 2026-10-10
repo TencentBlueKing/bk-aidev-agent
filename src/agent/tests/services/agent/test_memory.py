@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -75,6 +76,24 @@ def test_legacy_ledger_ids_are_stable():
     records = [{"role": "user", "content": "Hi"}]
     assert completed_history(records, "s") == completed_history(records, "s")
     assert completed_history(records, "s") != completed_history(records, "other")
+
+
+@pytest.mark.parametrize("timestamp", ["2026-10-09T08:00:00Z", datetime(2026, 10, 9, 8, tzinfo=timezone.utc)])
+def test_multiday_history_retains_each_message_time(manager, timestamp):
+    history = [
+        {"id": "old", "role": "user", "content": "Hi", "created_at": "2026-10-01T08:00:00Z"},
+        {"id": "new", "role": "user", "content": "Meeting tomorrow", "created_at": timestamp},
+    ]
+    runtime = automatic_personal_memory(manager, "alice", "s", history, [])
+    _, context = runtime.context({})
+    assert context["session_date"] == "2026-10-01"
+    assert context["messages"][-1]["timestamp"] == "2026-10-09T08:00:00+00:00"
+
+
+@pytest.mark.parametrize("created_at", [None, "invalid", 123])
+def test_invalid_created_at_falls_back_to_timestamp(created_at):
+    history = [{"role": "user", "content": "Hello", "created_at": created_at, "timestamp": "2026-10-09T08:00:00+08:00"}]
+    assert completed_history(history, "s")[0]["timestamp"] == "2026-10-09T08:00:00+08:00"
 
 
 def test_tool_failure_does_not_interrupt_chat(manager):
