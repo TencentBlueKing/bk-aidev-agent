@@ -5,11 +5,72 @@ import pytest
 from aidev_agent.api.bk_aidev import Client
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
+from aidev_agent.packages.langchain_core.models.mock import MockChatModel
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import AgentExecutorKwargs
 from bkapi_client_core.client import BaseClient
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.tracers._streaming import _StreamingCallbackHandler
 from requests import Request, Response
+
+
+class UserStreamSpy(BaseCallbackHandler, _StreamingCallbackHandler):
+    def __init__(self):
+        self.tokens = []
+
+    def on_llm_new_token(self, token, **kwargs):
+        self.tokens.append(token)
+
+    def tap_output_iter(self, run_id, output):
+        return output
+
+    def tap_output_aiter(self, run_id, output):
+        return output
+
+
+class FailingChatModel(MockChatModel):
+    def _generate(self, *args, **kwargs):
+        raise ConnectionError("Try the fallback")
+
+
+@pytest.mark.parametrize("wrapper", ["plain", "bound", "fallback"])
+def test_reference_audit_isolates_model_callbacks(wrapper):
+    spy = UserStreamSpy()
+    model = MockChatModel(responses=['{"memory_ids": ["used"]}'], callbacks=[spy])
+    reference = model.bind(stream=True) if wrapper == "bound" else model
+    if wrapper == "fallback":
+        reference = FailingChatModel(callbacks=[spy]).with_fallbacks([model])
+    runtime = PersonalMemoryRuntime(lambda _: {}, reference_model=reference)
+    assert runtime.referenced_ids(AIMessage(content="Use Python"), [{"memory_id": "used", "text": "Use Python"}]) == [
+        "used"
+    ]
+    assert spy.tokens == []
+    assert model.callbacks == [spy]
+    model.invoke("Main answer")
+    assert spy.tokens
+
+
+def test_completion_preserves_source_times_and_retry_timestamp(runtime):
+    runtime.merge_state_history = False
+    runtime.context_provider = lambda _: {
+        "username": "alice",
+        "session_id": "s",
+        "session_date": "2026-10-01",
+        "messages": [
+            {"message_id": "a", "role": "assistant", "text": "Answer", "timestamp": "2026-10-09T08:00:00+00:00"}
+        ],
+    }
+    runtime.complete({"messages": [AIMessage(content="Answer", id="a")]}, {})
+    assert (
+        runtime.manager.complete_memory_round.call_args.args[0]["context"]["messages"][0]["timestamp"]
+        == "2026-10-09T08:00:00+00:00"
+    )
+    state = {"messages": [AIMessage(content="New answer", id="new")]}
+    runtime.complete(state, {})
+    first = runtime.manager.complete_memory_round.call_args.args[0]
+    runtime.complete(state, {})
+    assert runtime.manager.complete_memory_round.call_args.args[0] == first
 
 
 @pytest.fixture
