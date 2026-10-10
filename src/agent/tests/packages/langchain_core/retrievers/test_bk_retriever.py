@@ -20,6 +20,41 @@ class CapturingBkRetriever(BkRetriever):
         return query
 
 
+@pytest.mark.parametrize("capability", [None, False, True])
+@pytest.mark.parametrize(
+    "content,text",
+    [
+        ("query", "query"),
+        (["first", {"type": "text", "text": "second"}], "first\nsecond"),
+        ([{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}], ""),
+        (
+            [{"type": "text", "text": "query"}, {"type": "input_image", "image_url": "data:image/png;base64,abc"}],
+            "query",
+        ),
+    ],
+)
+def test_query_uses_target_platform_capability(content, text, capability):
+    retriever = CapturingBkRetriever()
+    options = KnowledgeSettings(**({} if capability is None else {"supports_multimodal_query": capability}))
+
+    retriever.query_knowledge(content, options)
+
+    assert retriever.query_payload["query"] == (content if capability else text)
+    assert "supports_multimodal_query" not in retriever.query_payload
+    if capability:
+        assert retriever.query_payload["query"] is content
+
+
+def test_capability_does_not_hide_platform_errors(mocker):
+    retriever = BkRetriever()
+    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
+    request = manager.return_value.knowledge_query
+    request.side_effect = RuntimeError("platform failure")
+    with pytest.raises(RuntimeError, match="platform failure"):
+        retriever.query_knowledge([{"type": "text", "text": "query"}], KnowledgeSettings())
+    request.assert_called_once()
+
+
 def test_query_knowledge_sends_one_complete_api_request():
     retriever = CapturingBkRetriever()
     settings = KnowledgeSettings(

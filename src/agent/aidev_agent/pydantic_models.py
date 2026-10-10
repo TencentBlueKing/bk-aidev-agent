@@ -207,6 +207,11 @@ class KnowledgeSettings(BaseModel):
     knowledge_bases: list[dict] = Field(default_factory=list, description="关联知识库")
     knowledge_items: list[dict] = Field(default_factory=list, description="关联知识条目")
 
+    supports_multimodal_query: bool = Field(
+        default=False,
+        description="目标平台支持多模态知识查询；缺省沿用提取文字的兼容请求",
+    )
+
     # --- 召回参数 ---
     knowledge_resource_fine_grained_score_type: FineGrainedScoreType = Field(
         default=FineGrainedScoreType(os.getenv("KNOWLEDGE_FINE_GRAINED_SCORE_TYPE", "LLM")),
