@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from aidev_agent.core.tools.task import TeamTaskRecord, TeamTaskStatus, get_task_tools
+from aidev_agent.core.tools.task import TeamTaskRecord, TeamTaskStatus, get_task_tools, merge_task_list
 from langgraph.types import Command
 
 
@@ -93,8 +93,9 @@ def test_task_create_increments_id():
     r2 = create_tool.func(subject="Task 2", description="desc 2", runtime=runtime2)
     task_list_2 = _extract_task_list(r2)
 
-    assert task_list_1[0].task_id == "1"
-    assert task_list_2[1].task_id == "2"
+    assert task_list_1[0].task_id.split("~", 1)[0] == "1"
+    assert task_list_2[1].task_id.split("~", 1)[0] == "2"
+    assert task_list_1[0].task_id != task_list_2[1].task_id
 
 
 def test_task_get_returns_full_details():
@@ -244,20 +245,22 @@ def test_task_update_dependencies():
     runtime = make_runtime()
     r1 = create_tool.func(subject="Task 1", description="first", runtime=runtime)
     task_list = _extract_task_list(r1)
+    task_id_1 = task_list[0].task_id
     runtime2 = make_runtime(task_list=task_list)
     r2 = create_tool.func(subject="Task 2", description="second", runtime=runtime2)
     task_list = _extract_task_list(r2)
+    task_id_2 = next(task.task_id for task in task_list if task.task_id != task_id_1)
 
     # Task 2 被 Task 1 阻塞
     runtime3 = make_runtime(task_list=task_list)
-    update_result = update_tool.func(task_id="2", add_blocked_by=["1"], runtime=runtime3)
+    update_result = update_tool.func(task_id=task_id_2, add_blocked_by=[task_id_1], runtime=runtime3)
     updated_list = _extract_task_list(update_result)
 
-    task1 = next(t for t in updated_list if t.task_id == "1")
-    task2 = next(t for t in updated_list if t.task_id == "2")
+    task1 = next(t for t in updated_list if t.task_id == task_id_1)
+    task2 = next(t for t in updated_list if t.task_id == task_id_2)
 
-    assert "1" in task2.blocked_by
-    assert "2" in task1.blocks
+    assert task_id_1 in task2.blocked_by
+    assert task_id_2 in task1.blocks
 
 
 def test_task_list_returns_all_tasks():
@@ -291,32 +294,34 @@ def test_task_list_shows_open_blockers_only():
     runtime = make_runtime()
     r1 = create_tool.func(subject="Blocker", description="blocks task 2", runtime=runtime)
     task_list = _extract_task_list(r1)
+    blocker_id = task_list[0].task_id
     runtime2 = make_runtime(task_list=task_list)
     r2 = create_tool.func(subject="Blocked", description="blocked by task 1", runtime=runtime2)
     task_list = _extract_task_list(r2)
+    blocked_id = next(task.task_id for task in task_list if task.task_id != blocker_id)
 
     # 设置依赖
     runtime3 = make_runtime(task_list=task_list)
-    ur = update_tool.func(task_id="2", add_blocked_by=["1"], runtime=runtime3)
+    ur = update_tool.func(task_id=blocked_id, add_blocked_by=[blocker_id], runtime=runtime3)
     task_list = _extract_task_list(ur)
 
     # 完成阻塞任务前
     runtime4 = make_runtime(task_list=task_list)
     list_result = list_tool.func(runtime=runtime4)
     content = json.loads(_extract_content(list_result))
-    task2_info = next(t for t in content["tasks"] if t["id"] == "2")
-    assert task2_info["blockedBy"] == ["1"]
+    task2_info = next(t for t in content["tasks"] if t["id"] == blocked_id)
+    assert task2_info["blockedBy"] == [blocker_id]
 
     # 完成阻塞任务
     runtime5 = make_runtime(task_list=task_list)
-    ur2 = update_tool.func(task_id="1", status="completed", runtime=runtime5)
+    ur2 = update_tool.func(task_id=blocker_id, status="completed", runtime=runtime5)
     task_list = _extract_task_list(ur2)
 
     # 完成阻塞任务后
     runtime6 = make_runtime(task_list=task_list)
     list_result2 = list_tool.func(runtime=runtime6)
     content2 = json.loads(_extract_content(list_result2))
-    task2_info2 = next(t for t in content2["tasks"] if t["id"] == "2")
+    task2_info2 = next(t for t in content2["tasks"] if t["id"] == blocked_id)
     assert task2_info2["blockedBy"] is None
 
 
@@ -325,3 +330,27 @@ def test_get_task_tools_returns_four_tools():
     assert len(tools) == 4
     tool_names = {t.name for t in tools}
     assert tool_names == {"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
+
+
+def test_parallel_creates_get_distinct_ids_and_merge():
+    tools = get_task_tools()
+    create_tool = next(tool for tool in tools if tool.name == "TaskCreate")
+    shared = make_runtime().state
+    first = create_tool.func(subject="A", description="a", runtime=MockToolRuntime(state=shared, tool_call_id="call_a"))
+    second = create_tool.func(
+        subject="B", description="b", runtime=MockToolRuntime(state=shared, tool_call_id="call_b")
+    )
+    merged = merge_task_list(_extract_task_list(first), _extract_task_list(second))
+    assert {task.subject for task in merged} == {"A", "B"}
+    assert len({task.task_id for task in merged}) == 2
+
+
+def test_merge_task_list_keeps_newer_parallel_updates():
+    task_a = TeamTaskRecord(task_id="1", subject="A", description="a", created_at_ms=1000)
+    task_b = TeamTaskRecord(task_id="2", subject="B", description="b", created_at_ms=1000)
+    updated_a = task_a.model_copy(update={"status": TeamTaskStatus.COMPLETED, "updated_at_ms": 2000})
+    updated_b = task_b.model_copy(update={"owner": "alice", "updated_at_ms": 2000})
+    merged = merge_task_list([task_a, task_b], [updated_a, task_b])
+    merged = merge_task_list(merged, [task_a, updated_b])
+    assert next(task for task in merged if task.task_id == "1").status == TeamTaskStatus.COMPLETED
+    assert next(task for task in merged if task.task_id == "2").owner == "alice"

@@ -8,7 +8,7 @@
 import json
 from typing import Annotated, List, Optional
 
-from aidev_agent.core.tools.task import TeamTaskRecord, TeamTaskStatus, get_task_tools
+from aidev_agent.core.tools.task import TeamTaskRecord, TeamTaskStatus, get_task_tools, merge_task_list
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END, START
@@ -22,7 +22,7 @@ class GraphState(TypedDict):
     """测试用最小状态模式。"""
 
     messages: Annotated[List[BaseMessage], add_messages]
-    task_list: Optional[List[TeamTaskRecord]]
+    task_list: Annotated[Optional[List[TeamTaskRecord]], merge_task_list]
 
 
 def _build_test_graph(tool_calls: list[dict]):
@@ -242,3 +242,18 @@ def test_task_update_with_dependencies():
     t2 = next(t for t in result["task_list"] if t.task_id == "2")
     assert "1" in (t2.blocked_by or [])
     assert "2" in (t1.blocks or [])
+
+
+def test_parallel_task_creates_merge():
+    """同一步的多个 TaskCreate 合并进 task_list。"""
+    tool_calls = [
+        {"name": "TaskCreate", "args": {"subject": "Task A", "description": "a"}, "id": "call_a", "type": "tool_call"},
+        {"name": "TaskCreate", "args": {"subject": "Task B", "description": "b"}, "id": "call_b", "type": "tool_call"},
+    ]
+    graph = _build_test_graph(tool_calls)
+    result = graph.invoke(
+        {"messages": [], "task_list": None},
+        config={"configurable": {"thread_id": "test-parallel-create"}},
+    )
+    assert {task.subject for task in result["task_list"]} == {"Task A", "Task B"}
+    assert len({task.task_id for task in result["task_list"]}) == 2
