@@ -525,6 +525,7 @@ class LangGraphAgent:
             subgraphs=bool(subgraphs_stream_enabled),
             version="v2",
             config=config,
+            durability="exit",
         )
         stream = self.graph.astream_events(**kwargs)
         return {"stream": stream, "state": state, "config": config}
@@ -1036,6 +1037,7 @@ class LangGraphAgent:
         version: Literal["v1", "v2"] = "v2",
         config: RunnableConfig | None = None,
         context: dict[str, Any] | None = None,
+        durability: str | None = "exit",
     ):
         kwargs = {
             "input": input,
@@ -1043,8 +1045,13 @@ class LangGraphAgent:
             "version": version,
         }
 
-        # Only add context if supported
         sig = inspect.signature(self.graph.astream_events)
+        # durability：仅在图退出时写一次 checkpoint（对齐 legacy BK-AI 路径）。
+        # astream_events 经 **kwargs 透传到 astream；旧版本无此能力时跳过。
+        if durability is not None and ("durability" in sig.parameters or "kwargs" in sig.parameters):
+            kwargs["durability"] = durability
+
+        # Only add context if supported
         if "context" in sig.parameters:
             base_context = {}
             if isinstance(config, dict) and "configurable" in config and isinstance(config["configurable"], dict):
