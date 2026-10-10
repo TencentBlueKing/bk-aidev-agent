@@ -41,6 +41,8 @@ _SSE_HEARTBEAT_EVENT = EventEncoder().encode(
 # 断点续传时需要过滤的事件类型
 # flow_agent_start 事件在续聊时不应该重复发送，避免前端重新渲染
 _RESUME_FILTER_EVENT_TYPES: frozenset[str] = frozenset({"flow_agent_start"})
+# Flow Agent 终态，与 flow.py 的 FLOW_TASK_END_STATES 保持一致（flow.py 依赖本模块，不能反向导入）
+_FLOW_TASK_TERMINAL_STATES: frozenset[str] = frozenset({"FINISHED", "FAILED", "REVOKED"})
 
 
 def _get_message_handler_metric_attributes(handler: BaseMessageQueueHandler) -> dict[str, str]:
@@ -388,27 +390,24 @@ class GeneratorStreamingHelper:
         )
 
     @staticmethod
-    def _is_flow_revoke_result_chunk(chunk: Any) -> bool:
-        """判断 chunk 是否为 Flow Agent 的 REVOKED 结果事件。"""
+    def _get_flow_agent_result_state(chunk: Any) -> str | None:
+        """chunk 为 Flow Agent 的 flow_agent_result 事件时返回其 task_state，否则返回 None。"""
         if not isinstance(chunk, str) or not chunk.startswith("data:"):
-            return False
+            return None
         try:
             payload = json.loads(chunk.removeprefix("data:").strip())
         except (TypeError, json.JSONDecodeError):
-            return False
+            return None
         if (
             not isinstance(payload, dict)
             or payload.get("type") != EventType.CUSTOM.value
             or payload.get("name") != CustomMessageType.FLOW_AGENT_RESULT.value
         ):
-            return False
+            return None
         value = payload.get("value")
-        return (
-            isinstance(value, list)
-            and bool(value)
-            and isinstance(value[0], dict)
-            and value[0].get("task_state") == "REVOKED"
-        )
+        if not isinstance(value, list) or not value or not isinstance(value[0], dict):
+            return None
+        return value[0].get("task_state") or ""
 
     def _is_cancelled(self, cancel_event: threading.Event) -> bool:
         """检查是否被取消（同时检查进程内事件和跨进程信号）
@@ -1266,6 +1265,8 @@ class GeneratorStreamingHelper:
         run_finished_seen = False
         cancel_error_emitted = False
         cancel_finished_emitted = False
+        # 取消后 Flow Agent 在途快照的排空截止时间（monotonic），首次观察到取消时设置
+        cancel_deadline: float | None = None
 
         def _record_published_sse_event() -> None:
             if metric_recorder is None:
@@ -1368,12 +1369,21 @@ class GeneratorStreamingHelper:
                     last_cross_process_check_time = current_time
 
                 # 在当前 chunk 入队前终止，避免停止后继续向前端发送工具/模型结果。
-                # Flow Agent 取消后的 REVOKED 结果需透传，随后仍由标准取消事件收尾。
-                if _is_cancel_requested(
-                    check_cross_process=should_check_cross_process
-                ) and not self._is_flow_revoke_result_chunk(chunk):
-                    _emit_cancel_and_complete()
-                    break
+                # 取消后仅 Flow Agent 快照可排空：终态快照透传，非终态快照在宽限期内丢弃，
+                # 让生成器走完撤销分支产出 REVOKED；其他 chunk 或宽限耗尽时立即收尾。
+                if _is_cancel_requested(check_cross_process=should_check_cross_process):
+                    if cancel_deadline is None:
+                        cancel_deadline = time.monotonic() + self.CANCEL_DRAIN_TIMEOUT
+                    flow_task_state = self._get_flow_agent_result_state(chunk)
+                    if flow_task_state is None:
+                        _emit_cancel_and_complete()
+                        break
+                    if flow_task_state not in _FLOW_TASK_TERMINAL_STATES:
+                        if time.monotonic() < cancel_deadline:
+                            # 丢弃取消前已在途的非终态快照，等待生成器的撤销分支产出终态
+                            continue
+                        _emit_cancel_and_complete()
+                        break
 
                 if self._is_done_event_chunk(chunk):
                     done_event_seen = True

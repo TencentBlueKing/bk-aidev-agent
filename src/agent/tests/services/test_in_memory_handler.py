@@ -32,6 +32,13 @@ def _event_types(chunks: list[str]) -> list[str]:
     return [json.loads(chunk.removeprefix("data: "))["type"] for chunk in chunks if chunk.startswith("data: ")]
 
 
+def _flow_result_chunk(task_state: str) -> str:
+    """构造 Flow Agent 的 flow_agent_result 事件，用于模拟取消前后的快照时序。"""
+    return EventEncoder().encode(
+        CustomEvent(type=EventType.CUSTOM, name="flow_agent_result", value=[{"task_state": task_state}])
+    )
+
+
 class ReplayFromStartHandler:
     """测试用 replay handler：模拟 RabbitMQ 的非破坏性会话日志读取。"""
 
@@ -641,6 +648,73 @@ class TestInMemoryQueueMessageHandler:
 
         assert result[0] == revoke_chunk
         assert _event_types(result[1:]) == [EventType.RUN_ERROR.value, EventType.RUN_FINISHED.value]
+
+    def test_cancel_drops_in_flight_flow_snapshot_before_revoke(self, handler):
+        """取消后在途的 RUNNING 快照被丢弃，等待生成器的撤销分支产出 REVOKED 再收尾。"""
+        thread_id = "test_stream_in_flight_snapshot"
+        cancel_event = threading.Event()
+        running_chunk = _flow_result_chunk("RUNNING")
+        revoke_chunk = _flow_result_chunk("REVOKED")
+
+        def in_flight_generator():
+            cancel_event.set()
+            yield running_chunk
+            yield revoke_chunk
+            yield emit_run_finished_event(thread_id=thread_id, run_id=RunId.CANCELLED)
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                in_flight_generator(), cancel_event=cancel_event
+            )
+        )
+
+        assert running_chunk not in result
+        assert result[0] == revoke_chunk
+        assert _event_types(result[1:]) == [EventType.RUN_ERROR.value, EventType.RUN_FINISHED.value]
+
+    @pytest.mark.parametrize("task_state", ["FINISHED", "FAILED"])
+    def test_cancel_forwards_flow_terminal_snapshot(self, handler, task_state):
+        """取消后 Flow Agent 的 FINISHED / FAILED 终态快照同样透传，不被丢弃。"""
+        thread_id = f"test_stream_terminal_{task_state.lower()}"
+        cancel_event = threading.Event()
+        terminal_chunk = _flow_result_chunk(task_state)
+
+        def terminal_generator():
+            cancel_event.set()
+            yield terminal_chunk
+            yield emit_run_finished_event(thread_id=thread_id, run_id=RunId.CANCELLED)
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
+                terminal_generator(), cancel_event=cancel_event
+            )
+        )
+
+        assert result[0] == terminal_chunk
+        assert _event_types(result[1:]) == [EventType.RUN_ERROR.value, EventType.RUN_FINISHED.value]
+
+    def test_cancel_closes_flow_generator_after_drain_deadline(self, handler, monkeypatch):
+        """宽限期耗尽仍无终态快照时，关闭 Flow 生成器并走标准取消收尾。"""
+        monkeypatch.setattr(GeneratorStreamingHelper, "CANCEL_DRAIN_TIMEOUT", 0.05)
+        thread_id = "test_stream_drain_deadline"
+        cancel_event = threading.Event()
+        closed = threading.Event()
+
+        def stuck_generator():
+            cancel_event.set()
+            try:
+                while True:
+                    time.sleep(0.01)
+                    yield _flow_result_chunk("RUNNING")
+            finally:
+                closed.set()
+
+        result = list(
+            GeneratorStreamingHelper(handler, thread_id=thread_id).stream(stuck_generator(), cancel_event=cancel_event)
+        )
+
+        assert _event_types(result) == [EventType.RUN_ERROR.value, EventType.RUN_FINISHED.value]
+        assert closed.wait(timeout=1.0)
 
     def test_producer_stop_then_reconnect(self, handler):
         """停止后重连：cancel 后消费者断开，重连后恢复并读到 EOD_CHUNK 后清理"""
