@@ -65,6 +65,7 @@ from aidev_agent.core.tools.a2a_tools import BkAiBackend as BkAiA2ABackend
 from aidev_agent.core.tools.a2a_tools import LocalBackend as LocalA2ABackend
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
+from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.core.tools.read_image import make_read_image_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
@@ -238,10 +239,16 @@ class ReActAgentBuilder:
         # 请求级执行参数（工具加载模式 mode 的来源）；未注入时为默认 ExecuteKwargs
         self._execute_kwargs: ExecuteKwargs = ExecuteKwargs()
         self._resource_manager = None
+        self._personal_memory: PersonalMemoryRuntime | None = None
 
     # ====================================================================================================
     # 模型设置
     # ====================================================================================================
+    def enable_personal_memory(self, runtime: PersonalMemoryRuntime) -> "ReActAgentBuilder":
+        """Enable automatic personal memory using host-owned request context."""
+        self._personal_memory = runtime
+        return self
+
     def set_llm(self, llm: BaseChatModel) -> "ReActAgentBuilder":
         self._llm = llm
         return self
@@ -600,6 +607,8 @@ class ReActAgentBuilder:
 
     def set_bkai_options(self, options: AgentExecutorKwargs) -> "ReActAgentBuilder":
         """将 BkAi 平台通用配置（AgentExecutorKwargs）映射到 builder 内部状态。"""
+        if options.personal_memory_runtime is not None:
+            self.enable_personal_memory(options.personal_memory_runtime)
         if options.resource_manager is not None:
             self._resource_manager = options.resource_manager
         if options.security_settings is not None:
@@ -969,6 +978,9 @@ class ReActAgentBuilder:
                 builtin_tools.append(knowledge_tool)
                 logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
 
+        if self._personal_memory is not None:
+            builtin_tools.extend(self._personal_memory.make_tools())
+
         if settings.BKAI_TOOL_NAME_DEDUPE_ENABLED:
             # 延迟加载开启时元工具名同样是内置保留名，在唯一一次去重里一并占位
             lazy_enabled = not ignore_errors and settings.BKAI_TOOL_LAZY_LOADING_ENABLED
@@ -1297,6 +1309,12 @@ class ReActAgentBuilder:
         """
         graph = StateGraph(state_schema=state_schema)
 
+        end_node = END
+        if self._personal_memory is not None:
+            graph.add_node("memory_complete", self._personal_memory.complete)
+            graph.add_edge("memory_complete", END)
+            end_node = "memory_complete"
+
         # 如果配置了知识库,添加 knowledge 节点
         if knowledge_node:
             graph.add_node("knowledge", knowledge_node)
@@ -1323,7 +1341,7 @@ class ReActAgentBuilder:
                 self._should_continue,
                 {
                     "pv_node": "pv_node",
-                    "end": END,
+                    "end": end_node,
                 },
             )
             # pv_node →(Send 分派)→ tools → model (形成 ReAct 循环)
@@ -1331,7 +1349,7 @@ class ReActAgentBuilder:
             graph.add_edge("tools", "model")
         else:
             # 无工具时直接结束
-            graph.add_edge("model", END)
+            graph.add_edge("model", end_node)
 
         compile_graph = graph.compile(
             checkpointer=checkpointer,
@@ -1358,6 +1376,8 @@ class ReActAgentBuilder:
         """构建并返回 compiled graph 与 runnable config。"""
         if self._llm is None:
             raise ValueError("ReActAgentBuilder 构建失败：缺少 llm，请先调用 set_llm(...) 或 set_bkai_options(...)")
+        if self._personal_memory is not None and self._personal_memory.reference_model is None:
+            self._personal_memory.reference_model = self._llm
         callbacks = list(self._callbacks or [])
         non_thinking_llm = self._non_thinking_llm or self._llm
         # judge_llm 回退到 non_thinking_llm / 主 llm，未配置 non_thinking_llm 时使用主 llm
