@@ -6,12 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from aidev_wxbot.wxaibot.approval_cards import (
-    ApprovalCancelAction,
-    approval_task_id,
-    build_pending_approval_card,
-    encode_cancel_event_key,
-)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -24,6 +18,15 @@ def card_signing_settings():
 
 @pytest.fixture
 def approval_card_case(monkeypatch):
+    # 根 conftest 会在 pytest_configure 中初始化轻量 Django 测试环境；这里延迟
+    # 导入，避免测试收集阶段先加载业务模型并触发 AppRegistryNotReady。
+    from aidev_wxbot.wxaibot.approval_cards import (
+        ApprovalCancelAction,
+        approval_task_id,
+        build_pending_approval_card,
+        encode_cancel_event_key,
+    )
+
     monkeypatch.setattr(
         "aidev_wxbot.wxaibot.approval_cards.AgentHelper.build_session_detail_url",
         lambda _session: "https://agent.example.com/session-1",
