@@ -27,9 +27,11 @@ from aidev_agent.packages.opentelemetry.callback_handler import (
 )
 from aidev_agent.packages.opentelemetry.config import OTelConfig
 from aidev_agent.packages.opentelemetry.instrumentor import (
+    AgentKnowledgeNodeCallWrapper,
     BkAidevAgentInstrumentor,
     ChatCompletionAgentGetAgentWrapper,
 )
+from aidev_agent.pydantic_models import KnowledgeSettings
 from langchain_core.messages import HumanMessage
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -253,7 +255,7 @@ class TestChatCompletionAgentGetAgentWrapper:
 
         - on_chain_start (顶层) → injector.on_bk_agent_start → root span 创建
         - on_chain_end (顶层) → injector.on_bk_agent_end → root span 结束
-        - chain.workflow span 以 root span 为父
+        - 顶层 invoke_agent chain span 以 root span 为父
         """
         import asyncio
         from uuid import uuid4
@@ -297,9 +299,9 @@ class TestChatCompletionAgentGetAgentWrapper:
         assert injector.root_span.end_time is not None
         assert handler._injector_ended is True
 
-        # chain.workflow 应当以 root span 为父
+        # 顶层 invoke_agent chain span 应当以 root span 为父
         spans = exporter.get_finished_spans()
-        chain_span = next((s for s in spans if s.name.startswith("chain.")), None)
+        chain_span = next((s for s in spans if s.name.startswith("invoke_agent")), None)
         agent_span = next((s for s in spans if s.name == "agent.execution"), None)
         assert chain_span is not None and agent_span is not None
         assert chain_span.parent.span_id == agent_span.context.span_id
@@ -353,9 +355,9 @@ class TestChatCompletionAgentGetAgentWrapper:
     def test_external_instrumentation_span_attaches_to_root_not_chain(self, tracer_and_config):
         """模拟 ``opentelemetry.instrumentation.langchain.LangchainInstrumentor`` 行为：
         在顶层 chain 执行期间，用 ``tracer.start_span(name)`` 不显式传 context 启动一个 span。
-        该 span 应当挂在 ``agent.execution`` 下，而不是被压到 ``chain.workflow`` 之下。
+        该 span 应当挂在 ``agent.execution`` 下，而不是被压到顶层 ``invoke_agent`` chain span 之下。
 
-        这是历史层级（``agent.execution → [外部插桩 span, chain.workflow]``）的关键性质，
+        这是历史层级（``agent.execution → [外部插桩 span, invoke_agent chain span]``）的关键性质，
         本次修复通过在顶层 ``on_chain_start`` 末尾把 root span 重新 attach 为当前 active context
         来恢复该性质。
         """
@@ -399,17 +401,63 @@ class TestChatCompletionAgentGetAgentWrapper:
         root_span = captured["root_span"]
         assert root_span is not None
 
-        # 验证：external span 的父应当是 root span，而不是 chain.workflow
+        # 验证：external span 的父应当是 root span，而不是顶层 invoke_agent chain span
         assert captured["external_parent"] is not None, "external span should have a parent"
         assert captured["external_parent"].span_id == root_span.get_span_context().span_id, (
-            "external span should attach to root (agent.execution), not chain.workflow"
+            "external span should attach to root (agent.execution), not the top-level invoke_agent chain span"
         )
 
         # 同时验证 chain span 仍以 root 为父（保持原有结构）
         spans = exporter.get_finished_spans()
-        chain_span = next((s for s in spans if s.name.startswith("chain.")), None)
+        chain_span = next((s for s in spans if s.name.startswith("invoke_agent")), None)
         assert chain_span is not None
         assert chain_span.parent.span_id == root_span.get_span_context().span_id
 
         # 进而验证 LIFO 栈平衡：on_chain_end 后 _root_attach_token 已被清理
         assert handler._root_attach_token is None
+
+
+class TestAgentKnowledgeNodeCallWrapper:
+    """测试知识库检索 span 的采样期属性：既有 rag.* 与官方 gen_ai.* 并存"""
+
+    @pytest.mark.parametrize(
+        "kb_options, expected_source_id, expected_top_k",
+        [
+            (KnowledgeSettings(knowledge_bases=[{"id": "kb1"}], knowledge_items=[{"id": "ki1"}]), True, 1),
+            (KnowledgeSettings(knowledge_bases=[{"id": "kb1"}]), True, None),
+            (None, False, None),
+        ],
+    )
+    def test_get_attributes_appends_gen_ai_retrieval_keys(self, kb_options, expected_source_id, expected_top_k):
+        wrapper = AgentKnowledgeNodeCallWrapper()
+        instance = MagicMock()
+        instance.agent_options = None if kb_options is None else MagicMock(knowledge_query_options=kb_options)
+
+        attributes = wrapper.get_attributes({"query": "怎么重置密码"}, None, instance)
+
+        assert attributes["rag.query"] == "怎么重置密码"
+        # operation.name=retrieval 由建 span 漏斗按 rag.retrieval span 名统一写入，直测不再验证
+        assert "gen_ai.operation.name" not in attributes
+        assert attributes["gen_ai.retrieval.query.text"] == "怎么重置密码"
+        assert ("gen_ai.data_source.id" in attributes) is expected_source_id
+        assert ("rag.knowledge_bases" in attributes) is expected_source_id
+        assert attributes.get("gen_ai.retrieval.top_k") == expected_top_k
+
+    @pytest.mark.parametrize(
+        "knowledge_bases, expected_ids",
+        [
+            ([{"id": "kb1"}], ["kb1"]),
+            ([{"id": "kb1"}, {"id": None}, {"name": "no-id"}], ["kb1"]),
+            ([{"id": 7}, {"id": "kb2"}], ["7", "kb2"]),
+        ],
+    )
+    def test_data_source_id_normalizes_ids(self, knowledge_bases, expected_ids):
+        """id 统一字符串化并剔除缺失值：None / 类型混排会让 OTel 丢弃整个数组属性"""
+        wrapper = AgentKnowledgeNodeCallWrapper()
+        instance = MagicMock()
+        instance.agent_options = MagicMock(knowledge_query_options=KnowledgeSettings(knowledge_bases=knowledge_bases))
+
+        attributes = wrapper.get_attributes({"query": "q"}, None, instance)
+
+        assert attributes["gen_ai.data_source.id"] == expected_ids
+        assert attributes["rag.knowledge_bases"] == expected_ids

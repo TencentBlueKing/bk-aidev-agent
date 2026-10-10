@@ -124,7 +124,7 @@ def test_logging_trace_exporter_writes_span_without_remote_export(mocker, caplog
     "attribute_name",
     [
         "agent.session.input",
-        "gen_ai.request.tools",
+        "gen_ai.tool.definitions",
         "llm.input",
         "llm.output",
         "tool.input",
