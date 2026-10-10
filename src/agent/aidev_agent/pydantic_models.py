@@ -994,6 +994,8 @@ class AgentExecutorKwargs(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
+    personal_memory_runtime: Optional[Any] = Field(default=None, description="宿主认证上下文绑定的个人记忆运行时")
+
     # 核心模型配置
     llm: Optional[Any] = Field(default=None, description="用于 agent 执行的主模型（BaseChatModel）")
     knowledge_llm: Optional[Any] = Field(
