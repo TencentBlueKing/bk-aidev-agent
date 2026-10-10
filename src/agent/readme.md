@@ -1,5 +1,16 @@
 # BK AIDev 平台
 
+## 多模态知识查询兼容性
+
+SDK 可以先于平台升级。默认 `KnowledgeSettings.supports_multimodal_query=False`，
+content 列表在构造 API 请求时沿用原来的文字提取：图文混合只提交文字，纯文字列表合并为字符串，
+纯图片转为空字符串，空查询的处理仍由原平台规则决定。字符串查询不变。
+
+新平台启用 `KNOWLEDGE_IMAGE_MODEL` 后，在智能体运行配置的 `knowledgebase_settings` 中下发
+`supports_multimodal_query=true`；SDK 装配后的配置才允许透传原始图文列表。
+旧平台缺少该字段时保持关闭。自定义装配配置的调用方，应在确认目标平台已支持多模态后显式设置该字段。
+该标记只控制 SDK 请求编码，不加入知识查询 API 的请求字段，不增加探测请求或失败重试。
+
 ## 开发指南
 
 ### 初始化

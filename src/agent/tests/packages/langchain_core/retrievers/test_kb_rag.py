@@ -99,7 +99,7 @@ def test_retrieve_ignores_removed_sdk_recall_switches():
 
 
 @pytest.mark.parametrize("legacy_input", [False, True])
-def test_retrieve_preserves_multimodal_input_for_platform_processing(legacy_input):
+def test_retrieve_keeps_raw_input_until_request_boundary(legacy_input):
     api_client = MagicMock()
     api_client.query_knowledge.return_value = {"documents": [], "decision": "GENERAL_QA"}
     knowledge_rag = KnowledgeRag(llm=MagicMock(), kb_retriever=api_client)
@@ -115,6 +115,25 @@ def test_retrieve_preserves_multimodal_input_for_platform_processing(legacy_inpu
 
     assert api_client.query_knowledge.call_args.args[0] == multimodal_input
     api_client.query_knowledge.assert_called_once()
+
+
+@pytest.mark.parametrize("legacy_input", [False, True])
+@pytest.mark.parametrize("supports_multimodal", [False, True])
+def test_retrieve_applies_capability_at_real_request_boundary(mocker, legacy_input, supports_multimodal):
+    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
+    request = manager.return_value.knowledge_query
+    request.return_value = {"documents": [], "decision": "GENERAL_QA"}
+    rag = KnowledgeRag(llm=MagicMock())
+    options = KnowledgeSettings(supports_multimodal_query=supports_multimodal)
+    content = [{"type": "text", "text": "query"}, {"type": "image_url", "image_url": "https://example.com/a.png"}]
+
+    if legacy_input:
+        rag.retrieve("fallback", options, input=content)
+    else:
+        rag.retrieve(content, options)
+
+    request.assert_called_once()
+    assert request.call_args.args[0]["query"] == (content if supports_multimodal else "query")
 
 
 @pytest.mark.parametrize(

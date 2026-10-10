@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Optional
 
 import pytest
+from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import KnowledgeSettings, ModelContextSettings
 
@@ -151,6 +152,23 @@ def test_get_agent_config_calls_retrieve_each_time():
     assert cfg1 is not cfg2
     assert cfg1.agent_code == "a1"
     assert cfg2.agent_code == "a1"
+
+
+@pytest.mark.parametrize("capability", [None, False, True])
+def test_platform_multimodal_capability_reaches_request(mocker, capability):
+    raw = _build_raw()
+    if capability is not None:
+        raw["knowledgebase_settings"]["supports_multimodal_query"] = capability
+    config = _StubResourceManager(raw_factory=lambda *_: raw).get_agent_config("a")
+    options = KnowledgeSettings.model_validate(config.knowledge_query_options_data)
+    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
+    manager.return_value.knowledge_query.return_value = {"documents": []}
+    content = [{"type": "text", "text": "query"}]
+
+    BkRetriever().query_knowledge(content, options)
+
+    assert options.supports_multimodal_query is (capability is True)
+    assert manager.return_value.knowledge_query.call_args.args[0]["query"] == (content if capability else "query")
 
 
 @pytest.mark.parametrize("version", ["v2", None])

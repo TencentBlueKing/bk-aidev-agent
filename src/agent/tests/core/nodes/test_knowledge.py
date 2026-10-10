@@ -400,29 +400,36 @@ class TestAidevKnowledgeNode:
         assert call_args[0][0] is None
 
 
+@pytest.mark.parametrize("supports_multimodal", [False, True])
 @pytest.mark.parametrize("state_key", ["query", "input", "messages"])
 @pytest.mark.parametrize("node_class", [AgentKnowledgeNode, AidevKnowledgeNode])
 @pytest.mark.parametrize(
-    "content",
+    "content, text",
     [
-        "数据库错误怎么处理",
-        [{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}],
-        [
-            {"type": "text", "text": "数据库错误怎么处理"},
-            {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
-        ],
+        ("数据库错误怎么处理", "数据库错误怎么处理"),
+        ([{"type": "text", "text": "数据库错误怎么处理"}], "数据库错误怎么处理"),
+        ([{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}], ""),
+        (
+            [
+                {"type": "text", "text": "数据库错误怎么处理"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+            ],
+            "数据库错误怎么处理",
+        ),
     ],
 )
-def test_node_preserves_content_through_api_request(mocker, state_key, node_class, content):
+def test_node_preserves_content_through_api_request(mocker, state_key, node_class, content, text, supports_multimodal):
     mocker.patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
     mocker.patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
     resource_manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
     api_client = resource_manager.return_value.knowledge_query
     api_client.return_value = {"documents": [], "decision": "GENERAL_QA"}
-    node = node_class(llm=MagicMock(), knowledge_query_options=KnowledgeSettings(), chat_history=[])
+    options = KnowledgeSettings(supports_multimodal_query=supports_multimodal)
+    node = node_class(llm=MagicMock(), knowledge_query_options=options, chat_history=[])
     state = {state_key: [HumanMessage(content=content)] if state_key == "messages" else content}
 
     node(state, {}, store=InMemoryStore())
 
     api_client.assert_called_once()
-    assert api_client.call_args.args[0]["query"] == content
+    assert api_client.call_args.args[0]["query"] == (content if supports_multimodal else text)
+    assert "supports_multimodal_query" not in api_client.call_args.args[0]

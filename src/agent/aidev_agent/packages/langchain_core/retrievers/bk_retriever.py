@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import KnowledgeSettings
 
@@ -39,6 +40,10 @@ class BkRetriever:
         chat_history: list,
         llm_code: str | None,
     ) -> dict:
+        # Old platforms only accept a string. Keep the original text fallback unless
+        # the target platform advertises multimodal support in its agent config.
+        if isinstance(query, list) and not knowledge_query_options.supports_multimodal_query:
+            query = normalize_query_for_search(query)
         knowledge_base_ids = self._knowledge_ids(knowledge_query_options.knowledge_bases)
         query_payload = {
             "query": query,
