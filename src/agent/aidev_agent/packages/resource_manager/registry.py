@@ -69,6 +69,18 @@ class ResourceManagerProtocol(Protocol):
         """查询会话是否为续流（resume）会话（业务返回结构 = 后端 ``data`` 布尔值）"""
         ...
 
+    def memory_schemas(self, *, username: str, **kwargs) -> list[dict]:
+        """Return authoritative personal-memory tool schemas for an authenticated user."""
+        ...
+
+    def memory_tool(self, payload: dict, *, username: str, **kwargs) -> dict:
+        """Invoke a memory tool with host-owned session context and user identity."""
+        ...
+
+    def complete_memory_round(self, payload: dict, *, username: str, **kwargs) -> dict:
+        """Submit a completed answer snapshot and the IDs actually referenced by it."""
+        ...
+
     def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
         """创建工具调用审批单（业务返回结构 = 后端 ``data`` 字段）"""
         ...
