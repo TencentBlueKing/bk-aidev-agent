@@ -68,6 +68,45 @@ def _get_task_list(state: dict | None) -> List[TeamTaskRecord]:
     return list(state.get("task_list") or [])
 
 
+def _task_revision(task: TeamTaskRecord) -> int:
+    """同一 task_id 冲突时，更新时间优先于创建时间。"""
+    return task.updated_at_ms or task.created_at_ms or 0
+
+
+def _allocate_task_id(tasks: List[TeamTaskRecord], tool_call_id: str) -> str:
+    """分配任务 ID。序号按已有任务递增，并带上本次 tool_call_id。
+
+    并行工具读到的是同一步之前的同一份列表，只靠序号会都得到同一个 ID。
+    """
+    stems = []
+    for task in tasks:
+        head = task.task_id.split("~", 1)[0]
+        if head.isdigit():
+            stems.append(int(head))
+    base = max(stems, default=0) + 1
+    if not tool_call_id:
+        return str(base)
+    return f"{base}~{tool_call_id}"
+
+
+def merge_task_list(
+    left: Optional[List[TeamTaskRecord]],
+    right: Optional[List[TeamTaskRecord]],
+) -> List[TeamTaskRecord]:
+    """按 task_id 合并两次写入。新 ID 追加；同一 ID 保留修订时间更新的那条。"""
+    merged = [] if left is None else list(left)
+    index = {task.task_id: position for position, task in enumerate(merged)}
+    for task in right or []:
+        position = index.get(task.task_id)
+        if position is None:
+            index[task.task_id] = len(merged)
+            merged.append(task)
+            continue
+        if _task_revision(task) > _task_revision(merged[position]):
+            merged[position] = task
+    return merged
+
+
 def _make_update_command(task_list: List[TeamTaskRecord], content: str, tool_call_id: str) -> Command:
     """创建一个 Command 来更新状态中的 task_list 并包含一条 ToolMessage。"""
     return Command(
@@ -111,8 +150,7 @@ def TaskCreate(
     metadata = _coerce_metadata(metadata)
 
     tasks = _get_task_list(state)
-    existing_ids = [int(t.task_id) for t in tasks if t.task_id.isdigit()]
-    next_id = str(max(existing_ids, default=0) + 1)
+    next_id = _allocate_task_id(tasks, tool_call_id)
 
     task = TeamTaskRecord(
         task_id=next_id,
@@ -253,12 +291,13 @@ def TaskUpdate(
             if bid not in task.blocked_by:
                 task.blocked_by.append(bid)
             # 同时更新反向关系
-            for t in tasks:
-                if t.task_id == bid:
-                    if t.blocks is None:
-                        t.blocks = []
-                    if task_id not in t.blocks:
-                        t.blocks.append(task_id)
+            for other in tasks:
+                if other.task_id == bid:
+                    if other.blocks is None:
+                        other.blocks = []
+                    if task_id not in other.blocks:
+                        other.blocks.append(task_id)
+                        other.mark_updated()
 
     # 添加 blocks 依赖
     if add_blocks:
@@ -268,12 +307,13 @@ def TaskUpdate(
             if bid not in task.blocks:
                 task.blocks.append(bid)
             # 同时更新反向关系
-            for t in tasks:
-                if t.task_id == bid:
-                    if t.blocked_by is None:
-                        t.blocked_by = []
-                    if task_id not in t.blocked_by:
-                        t.blocked_by.append(task_id)
+            for other in tasks:
+                if other.task_id == bid:
+                    if other.blocked_by is None:
+                        other.blocked_by = []
+                    if task_id not in other.blocked_by:
+                        other.blocked_by.append(task_id)
+                        other.mark_updated()
 
     task.mark_updated()
     content = f"Updated task #{task_id} status"

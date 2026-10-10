@@ -68,7 +68,7 @@ from aidev_agent.core.tools.skill.bkai_backend import BkAiBackend
 from aidev_agent.core.tools.skill.local_backend import LocalBackend as LocalSkillBackend
 from aidev_agent.core.tools.skill.provider import SkillRegistry
 from aidev_agent.core.tools.skill.types import SkillOptions, SkillProviderBackend
-from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools
+from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools, merge_task_list
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
@@ -1270,7 +1270,11 @@ class ReActAgentBuilder:
 
         # 定义 _TaskState（如需）——仅在 task/team/a2a 分支中使用
         if self._enable_task or self._a2a_specs or self._enable_team:
-            _TaskState = TypedDict("_TaskState", {"task_list": Optional[List[TeamTaskRecord]]})
+            # 并行工具会在同一步各写一份 task_list，必须用 reducer 合并。
+            _TaskState = TypedDict(
+                "_TaskState",
+                {"task_list": Annotated[Optional[List[TeamTaskRecord]], merge_task_list]},
+            )
 
         # 定制 ReAct chat prompt template
         state_schema = self._prepare_state_schema(
