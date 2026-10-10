@@ -233,6 +233,21 @@ class BaseResourceManager(abc.ABC):
         client = self.get_client()
         return client.api.is_resume_session(path_params={"session_code": session_code}, **kwargs).get("data", False)
 
+    def memory_schemas(self, *, username: str, **kwargs) -> list[dict]:
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers["X-BKAIDEV-USER"] = username
+        return self.get_client().api.memory_schemas(headers=headers, **kwargs)["data"]
+
+    def memory_tool(self, payload: dict, *, username: str, **kwargs) -> dict:
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers["X-BKAIDEV-USER"] = username
+        return self.get_client().api.memory_tool(json=payload, headers=headers, **kwargs)["data"]
+
+    def complete_memory_round(self, payload: dict, *, username: str, **kwargs) -> dict:
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers["X-BKAIDEV-USER"] = username
+        return self.get_client().api.complete_memory_round(json=payload, headers=headers, **kwargs)["data"]
+
     def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:
         """创建工具调用审批单。
 
