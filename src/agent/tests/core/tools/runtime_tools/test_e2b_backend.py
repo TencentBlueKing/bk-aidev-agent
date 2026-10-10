@@ -18,7 +18,7 @@ from datetime import datetime
 
 import pytest
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
-from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, WriteResult
+from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, ReadResult, WriteResult
 
 
 @dataclass
@@ -179,15 +179,56 @@ class TestE2BSandboxBackendLsInfo:
 
 
 class TestE2BSandboxBackendRead:
-    def test_read_success(self):
+    """read 返回**原始行数据**（ReadResult）；诊断仍是 str。"""
+
+    def test_read_success_returns_raw_lines(self):
         dummy_files = DummyFiles()
         dummy_files._files["/workspace/test.txt"] = "line1\nline2\nline3\n"
         DummySandbox._dummy_files = dummy_files
 
         backend = E2BSandboxBackend()
         out = backend.read("/workspace/test.txt", offset=0, limit=2)
-        assert "     1\tline1" in out
-        assert "     2\tline2" in out
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["line1", "line2"]
+        assert out.start_line == 1
+
+    def test_read_with_offset_sets_source_start_line(self):
+        dummy_files = DummyFiles()
+        dummy_files._files["/workspace/test.txt"] = "a\nb\nc\nd"
+        DummySandbox._dummy_files = dummy_files
+
+        backend = E2BSandboxBackend()
+        out = backend.read("/workspace/test.txt", offset=2, limit=1)
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["c"]
+        assert out.start_line == 3
+
+    def test_read_keeps_trailing_blank_line(self):
+        """``split("\\n")`` 往返无损：末尾空行不被吞掉。"""
+        dummy_files = DummyFiles()
+        dummy_files._files["/workspace/test.txt"] = "x\n\n"
+        DummySandbox._dummy_files = dummy_files
+
+        backend = E2BSandboxBackend()
+        out = backend.read("/workspace/test.txt")
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == ["x", "", ""]
+        assert "\n".join(out.lines).split("\n") == out.lines
+
+    def test_read_segment_is_single_empty_line(self):
+        dummy_files = DummyFiles()
+        dummy_files._files["/workspace/test.txt"] = "a\n\nb"
+        DummySandbox._dummy_files = dummy_files
+
+        backend = E2BSandboxBackend()
+        out = backend.read("/workspace/test.txt", offset=1, limit=1)
+
+        assert isinstance(out, ReadResult)
+        assert out.lines == [""]
+        assert out.start_line == 2
 
     def test_read_empty_file(self):
         dummy_files = DummyFiles()
@@ -196,6 +237,7 @@ class TestE2BSandboxBackendRead:
 
         backend = E2BSandboxBackend()
         out = backend.read("/workspace/empty.txt")
+        assert isinstance(out, str)
         assert "文件存在但内容为空" in out
 
     def test_read_offset_exceeds(self):
@@ -205,12 +247,27 @@ class TestE2BSandboxBackendRead:
 
         backend = E2BSandboxBackend()
         out = backend.read("/workspace/test.txt", offset=3, limit=10)
+        assert isinstance(out, str)
         assert "exceeds file length" in out
 
     def test_read_file_not_found(self):
         backend = E2BSandboxBackend()
         out = backend.read("/workspace/nonexistent.txt")
+        assert isinstance(out, str)
         assert "not found" in out
+
+    def test_read_denied_path(self):
+        backend = E2BSandboxBackend()
+        out = backend.read("/root/.ssh/id_rsa")
+        assert isinstance(out, str)
+        assert "拒绝访问敏感路径" in out
+
+    def test_read_has_no_transform_parameter(self):
+        """第一版的 transform 回调参数已移除，且不保留兼容路径。"""
+        import inspect
+
+        params = inspect.signature(E2BSandboxBackend.read).parameters
+        assert "transform" not in params
 
 
 class TestE2BSandboxBackendWriteEdit:

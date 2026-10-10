@@ -49,6 +49,10 @@ from .prompt_middleware import (
 )
 from .pydantic_models import ModelChainState, ModelNodeSettings, ProcessorContext
 from .quality_gate import QualityGate
+from .security_middleware import (
+    ContentGuardMiddleware,
+    SecurityGuidanceMiddleware,
+)
 from .token_compression import (
     ChatHistoryCompressionMiddleware,
     KnowledgeCompressionMiddleware,
@@ -128,6 +132,9 @@ def build_model_node(
     context_assembly.add_middleware("template", ImageRenderingMiddleware())
     context_assembly.add_middleware("template", NoSystemInThinkingMiddleware())
     context_assembly.add_middleware("template", HistorySystemPromptMiddleware())
+    # 注入数据安全行为契约（模型引导层，软引导；硬约束见 utils 级防护）
+    if node_options.enable_security_guidance:
+        context_assembly.add_middleware("template", SecurityGuidanceMiddleware())
     # 加载由 graph 层注入的额外模板中间件（例如 SkillsPromptMiddleware）
     for middleware in node_options.extra_template_middlewares:
         context_assembly.add_middleware("template", middleware)
@@ -142,6 +149,9 @@ def build_model_node(
             enable_parallel_tool_calls=enable_parallel_tool_calls,
         ),
     )
+    # 提示词装配侧注入净化：扫描知识库内容与 role_prompts，命中注入即阻断
+    if node_options.enable_prompt_injection_guard:
+        context_assembly.add_middleware("variable", ContentGuardMiddleware())
     # 知识库的压缩器
     context_assembly.add_middleware(
         "variable",

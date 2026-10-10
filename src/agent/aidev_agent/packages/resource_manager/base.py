@@ -37,7 +37,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     McpToolsResult,
     _extract_mcp_tools_error_detail,
 )
-from aidev_agent.pydantic_models import AgentConfig
+from aidev_agent.pydantic_models import AgentConfig, SecuritySettings
 from aidev_agent.utils.executor_identity import approver_authorization
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
@@ -490,6 +490,7 @@ class BaseResourceManager(abc.ABC):
             temperature=prompt_setting.get("temperature"),
             max_tokens=prompt_setting.get("max_tokens"),
             agent_info=agent_info,
+            security_settings=SecuritySettings(**(agent_info.get("security_settings") or {})),
         )
 
     def check_agent_call_permission(self, caller_app_code: str, username: Optional[str] = None, **kwargs) -> dict:

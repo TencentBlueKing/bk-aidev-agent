@@ -8,10 +8,12 @@
 - 运行时工具提供者与路由（provider）
 - 沙箱延迟销毁：内存版 store 与 DeferManager（defer_manager）
 - 本地文件系统后端（local_backend）
+- 内核沙箱文件系统后端（bubblewrap_backend）
 - E2B 远程沙箱后端（e2b_backend）
 - PaaS 远程沙箱后端（paas_backend）
 """
 
+from .bubblewrap_backend import BubblewrapFilesystemBackend
 from .defer_manager import RuntimeBackendDeferInMemoryStore, RuntimeBackendDeferManager
 from .e2b_backend import E2BSandboxBackend
 from .local_backend import FilesystemBackend
@@ -94,6 +96,7 @@ __all__ = [
     "package_dir",
     # backends
     "FilesystemBackend",
+    "BubblewrapFilesystemBackend",
     "E2BSandboxBackend",
     "PaasSandboxBackend",
 ]

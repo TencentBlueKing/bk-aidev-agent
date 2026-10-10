@@ -155,6 +155,19 @@ class ModelNodeSettings(BaseModel):
     )
 
     # ---------------------------------------------------------------------
+    # Security settings（由 graph 装配层从 SecuritySettings 拆解注入）
+    # ---------------------------------------------------------------------
+
+    enable_security_guidance: bool = Field(
+        default=True,
+        description="是否注入数据安全行为契约（模型引导层，软引导）",
+    )
+    enable_prompt_injection_guard: bool = Field(
+        default=True,
+        description="是否启用提示词注入防护（净化知识库/role_prompts 内容）",
+    )
+
+    # ---------------------------------------------------------------------
     # ContextAssembly configuration
     # ---------------------------------------------------------------------
 

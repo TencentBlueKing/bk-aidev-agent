@@ -34,7 +34,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.prebuilt import InjectedState
 
-from aidev_agent.core.tools.runtime_tools.security import validate_path
+from aidev_agent.core.tools.runtime_tools.utils import validate_path
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
 from aidev_agent.services.sandbox_pv_files import SESSION_UPLOAD_IMAGE_EXTENSIONS
 

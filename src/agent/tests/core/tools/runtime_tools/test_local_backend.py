@@ -6,12 +6,15 @@ This module contains tests for the FilesystemBackend class which provides
 direct file system read/write operations.
 """
 
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory, gettempdir
+from unittest.mock import patch
 
 import pytest
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
-from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, WriteResult
+from aidev_agent.core.tools.runtime_tools.types import EditResult, ExecuteResult, ReadResult, WriteResult
+from aidev_agent.core.tools.runtime_tools.utils import LINE_NUMBER_WIDTH, format_content_with_line_numbers
 
 
 class TestFilesystemBackendInitialization:
@@ -91,6 +94,51 @@ class TestFilesystemBackendResolvePath:
                 backend._resolve_path("../../../etc/passwd")
 
 
+class TestFilesystemBackendDenyList:
+    """Test sensitive-path deny list integration in FilesystemBackend."""
+
+    def test_resolve_path_denies_ssh_dir(self):
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / ".ssh").mkdir()
+            backend = FilesystemBackend(root_dir=tmpdir)
+            with pytest.raises(ValueError, match="拒绝访问敏感路径"):
+                backend._resolve_path(".ssh/id_rsa")
+
+    def test_read_denies_env_file(self):
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / ".env").write_text("SECRET=123")
+            backend = FilesystemBackend(root_dir=tmpdir)
+            result = backend.read(".env")
+            assert "拒绝访问敏感路径" in result
+
+    def test_write_denies_pem_file(self):
+        with TemporaryDirectory() as tmpdir:
+            backend = FilesystemBackend(root_dir=tmpdir)
+            result = backend.write("server.pem", "key")
+            assert isinstance(result, WriteResult)
+            assert "拒绝访问敏感路径" in result.error
+
+    def test_edit_denies_aws_credentials(self):
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / ".aws").mkdir()
+            backend = FilesystemBackend(root_dir=tmpdir)
+            result = backend.edit(".aws/credentials", "old", "new")
+            assert isinstance(result, EditResult)
+            assert "拒绝访问敏感路径" in result.error
+
+    def test_deny_list_always_enforced(self):
+        """拒绝清单无条件生效：配置字段已删除，环境变量不再能关闭它。"""
+        from aidev_agent.pydantic_models import SecuritySettings
+
+        assert "file_deny_list" not in SecuritySettings.model_fields
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / ".env").write_text("SECRET=123")
+            backend = FilesystemBackend(root_dir=tmpdir)
+            with patch.dict(os.environ, {"AIDEV_FILE_DENY_LIST": "false"}):
+                result = backend.read(".env")
+        assert "拒绝访问敏感路径" in result
+
+
 class TestFilesystemBackendLsInfo:
     """Test ls_info method."""
 
@@ -141,17 +189,28 @@ class TestFilesystemBackendLsInfo:
 
 
 class TestFilesystemBackendRead:
-    """Test read method."""
+    """Test read method.
+
+    read 的契约（见 ``types.ReadResult``）：成功时返回**原始行数据**
+    （``lines`` + 原文件 1-based ``start_line``），**不带任何行号 / 展示修饰**；
+    缺文件、偏移越界、空文件仍是 ``str`` 返回型诊断。
+    """
+
+    @staticmethod
+    def _render(result: ReadResult) -> str:
+        """模拟 provider 的展示步骤：先脱敏（此处无）再加行号。"""
+        return format_content_with_line_numbers(result.lines, start_line=result.start_line)
 
     def test_read_non_existent_file(self):
         """Test reading non-existent file."""
         with TemporaryDirectory() as tmpdir:
             backend = FilesystemBackend(root_dir=tmpdir)
             result = backend.read("/nonexistent.txt")
+            assert isinstance(result, str)
             assert "not found" in result.lower()
 
-    def test_read_file_success(self):
-        """Test reading existing file."""
+    def test_read_file_success_returns_raw_lines(self):
+        """成功读取返回 ReadResult：lines 是原文，不含行号。"""
         with TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
             test_file = tmppath / "test.txt"
@@ -160,12 +219,15 @@ class TestFilesystemBackendRead:
             backend = FilesystemBackend(root_dir=tmpdir)
             result = backend.read("test.txt")
 
-            assert "     1\tline1" in result
-            assert "     2\tline2" in result
-            assert "     3\tline3" in result
+            assert isinstance(result, ReadResult)
+            assert result.lines == ["line1", "line2", "line3"]
+            assert result.start_line == 1
+            # 后端不得越权添加行号
+            assert "\t" not in "".join(result.lines)
+            assert self._render(result) == "     1\tline1\n     2\tline2\n     3\tline3"
 
     def test_read_with_offset(self):
-        """Test reading file with offset."""
+        """offset 为非零时，start_line 是原文件中的真实行号。"""
         with TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
             test_file = tmppath / "test.txt"
@@ -174,12 +236,13 @@ class TestFilesystemBackendRead:
             backend = FilesystemBackend(root_dir=tmpdir)
             result = backend.read("test.txt", offset=2, limit=2)
 
-            assert "     3\tline3" in result
-            assert "     4\tline4" in result
-            assert "line1" not in result
+            assert isinstance(result, ReadResult)
+            assert result.lines == ["line3", "line4"]
+            assert result.start_line == 3
+            assert "line1" not in "".join(result.lines)
 
     def test_read_with_limit(self):
-        """Test reading file with limit."""
+        """limit 只截取前 N 行。"""
         with TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
             test_file = tmppath / "test.txt"
@@ -188,10 +251,9 @@ class TestFilesystemBackendRead:
             backend = FilesystemBackend(root_dir=tmpdir)
             result = backend.read("test.txt", limit=3)
 
-            assert "     1\tline1" in result
-            assert "     2\tline2" in result
-            assert "     3\tline3" in result
-            assert "line4" not in result
+            assert isinstance(result, ReadResult)
+            assert result.lines == ["line1", "line2", "line3"]
+            assert result.start_line == 1
 
     def test_read_empty_file(self):
         """Test reading empty file."""
@@ -203,7 +265,89 @@ class TestFilesystemBackendRead:
             backend = FilesystemBackend(root_dir=tmpdir)
             result = backend.read("empty.txt")
 
+            assert isinstance(result, str)
             assert "文件存在但内容为空" in result
+
+    def test_read_offset_exceeds_is_diagnostic_string(self):
+        """偏移越界是返回型诊断（str），不抛异常。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "f.txt").write_text("only\n")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            result = backend.read("f.txt", offset=99)
+
+            assert isinstance(result, str)
+            assert "exceeds file length" in result
+
+    def test_read_denied_path_returns_diagnostic_string(self):
+        """敏感路径拒绝是返回型诊断（str），不抛异常。"""
+        with TemporaryDirectory() as tmpdir:
+            backend = FilesystemBackend(root_dir=tmpdir)
+            result = backend.read(".env")
+            assert isinstance(result, str)
+            assert "拒绝访问敏感路径" in result
+
+    def test_read_decode_error_returns_message(self):
+        """(OSError, UnicodeDecodeError) 分支仍是返回型诊断，不抛异常。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "bin.txt").write_bytes(b"\xff\xfe\x00bad")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            result = backend.read("bin.txt")
+
+            assert isinstance(result, str)
+            assert result.startswith("Error reading")
+
+    def test_read_has_no_transform_parameter(self):
+        """第一版的 transform 回调参数已移除，且不保留兼容路径。"""
+        import inspect
+
+        params = inspect.signature(FilesystemBackend.read).parameters
+        assert "transform" not in params
+
+    def test_read_round_trips_through_split_newline(self):
+        """``"\\n".join(lines)`` 必须能无损还原片段（含末尾空行）。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "f.txt").write_text("x\n\n", encoding="utf-8")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            result = backend.read("f.txt")
+
+            assert isinstance(result, ReadResult)
+            # splitlines("x\n\n") == ["x"]（丢尾空行）；split("\n") == ["x", "", ""]（正确，
+            # 2 个 LF ⇒ 3 个元素 ⇒ 文件共 3 行，最后一行是空行）
+            assert result.lines == ["x", "", ""]
+            assert "\n".join(result.lines) == "x\n\n"
+            assert self._render(result) == (
+                f"{1:>{LINE_NUMBER_WIDTH}}\tx\n{2:>{LINE_NUMBER_WIDTH}}\t\n{3:>{LINE_NUMBER_WIDTH}}\t"
+            )
+
+    def test_read_segment_is_single_empty_line(self):
+        """片段为单个空串时，lines == [""]，行号仍按 start_line 输出。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "f.txt").write_text("a\n\nb", encoding="utf-8")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            result = backend.read("f.txt", offset=1, limit=1)
+
+            assert isinstance(result, ReadResult)
+            assert result.lines == [""]
+            assert result.start_line == 2
+            assert self._render(result) == f"{2:>{LINE_NUMBER_WIDTH}}\t"
+
+    def test_read_round_trip_non_zero_offset(self):
+        """非零 offset 下往返同样无损。"""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "f.txt").write_text("1\n2\n3\n", encoding="utf-8")
+            backend = FilesystemBackend(root_dir=tmpdir)
+
+            result = backend.read("f.txt", offset=2)
+
+            assert isinstance(result, ReadResult)
+            # "1\n2\n3\n".split("\n") == ["1","2","3",""] ⇒ 从 idx=2 起是 ["3", ""]
+            assert result.lines == ["3", ""]
+            assert result.start_line == 3
+            assert "\n".join(result.lines).split("\n") == result.lines
 
 
 class TestFilesystemBackendWrite:
@@ -619,3 +763,28 @@ class TestConfigStatePassThrough:
             state = {"user": "bob"}
             result = backend.execute("echo hello", config=config, state=state)
             assert isinstance(result, ExecuteResult)
+
+
+class TestLocalBackendHasNoBubblewrapDependency:
+    """``local_backend`` 必须是零 bubblewrap 依赖的纯同进程后端。
+
+    内核沙箱能力已独立为 ``bubblewrap_backend.BubblewrapFilesystemBackend``；
+    此护栏钉住模块源码中不残留任何 bwrap 符号（import / 方法 / 构造参数），
+    防止同进程后端再次被沙箱细节渗入。
+    """
+
+    def test_module_source_has_no_bwrap_symbols(self):
+        import re
+
+        import aidev_agent.core.tools.runtime_tools.local_backend as module
+
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        hits = re.findall(r".*\b(?:bwrap|Bubblewrap|SandboxPolicy)\b.*", source, flags=re.IGNORECASE)
+        assert hits == [], f"local_backend.py 不应含 bubblewrap 符号，命中 {len(hits)} 处: {hits[:3]}"
+
+    def test_no_bwrap_attributes_on_instance(self):
+        with TemporaryDirectory() as tmpdir:
+            backend = FilesystemBackend(root_dir=tmpdir)
+            assert not hasattr(backend, "_bwrap")
+            assert not hasattr(backend, "_bwrap_ready")
+            assert not hasattr(backend, "_sandbox")

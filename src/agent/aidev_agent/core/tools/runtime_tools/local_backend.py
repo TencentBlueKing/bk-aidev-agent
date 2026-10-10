@@ -34,6 +34,8 @@ from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 
+from aidev_agent.packages.security.file_safety import deny_reason
+
 from .types import (
     EditResult,
     ExecuteResult,
@@ -41,14 +43,83 @@ from .types import (
     FileInfo,
     FileUploadResponse,
     GrepMatch,
+    ReadResult,
     RuntimeBackend,
     WriteResult,
 )
 from .utils import (
     check_empty_content,
-    format_content_with_line_numbers,
     perform_string_replacement,
 )
+
+# ========== 路径解析共享 helper ==========
+#
+# 同进程后端与内核沙箱子后端（见 :mod:`.bubblewrap_backend`）必须对
+# 「虚拟路径映射」与「敏感路径拒绝」保持完全一致的语义，故把这两段纯逻辑提到
+# 模块级，供两边复用，避免复制粘贴造成的语义漂移。
+
+
+def resolve_sandbox_path(cwd: Path, virtual_mode: bool, key: str) -> Path:
+    """解析文件路径并进行安全检查（共享实现）。
+
+    当 `virtual_mode=True` 时，将传入路径视为 `cwd` 下的虚拟绝对路径，
+    禁止遍历（`..`、`~`）并确保解析后的路径保持在根目录内。
+
+    当 `virtual_mode=False` 时，保持传统行为：绝对路径直接使用；
+    相对路径在 cwd 下解析。
+
+    无论哪种模式，解析结果都会经过敏感路径拒绝清单（`.ssh` / `.aws` /
+    `.gnupg` / `.env` / 私钥 / 凭据库等）。
+
+    Args:
+        cwd: 解析基准目录。
+        virtual_mode: 是否启用基于路径的访问限制。
+        key: 文件路径（绝对路径、相对路径，或当 `virtual_mode=True` 时为虚拟路径）。
+
+    Returns:
+        解析后的绝对 `Path` 对象。
+
+    Raises:
+        ValueError: 当在 `virtual_mode` 下尝试路径遍历、
+            解析后的路径逃逸根目录，或命中敏感路径拒绝清单时抛出。
+    """
+    if virtual_mode:
+        vpath = key if key.startswith("/") else "/" + key
+        if ".." in vpath or vpath.startswith("~"):
+            raise ValueError("不允许路径遍历")
+        full = (cwd / vpath.lstrip("/")).resolve()
+        try:
+            full.relative_to(cwd)
+        except ValueError:
+            raise ValueError(f"路径 {full} 超出根目录范围: {cwd}") from None
+    else:
+        path = Path(key)
+        full = path if path.is_absolute() else (cwd / path).resolve()
+
+    # 敏感路径拒绝清单（.ssh / .aws / .gnupg / .env / 私钥 / 凭据库等）
+    # 无条件生效：file_deny_list 开关已随统一配置收口移除，后端不再读取环境变量。
+    reason = deny_reason(full)
+    if reason:
+        raise ValueError(f"拒绝访问敏感路径: {key}（{reason}）")
+
+    return full
+
+
+def to_virtual_path(cwd: Path, virtual_mode: bool, abs_path: str) -> str:
+    """将绝对路径映射为虚拟路径（virtual_mode 时去 cwd 前缀）。"""
+    if not virtual_mode:
+        return abs_path
+    cwd_str = str(cwd)
+    if not cwd_str.endswith("/"):
+        cwd_str += "/"
+    if abs_path.startswith(cwd_str):
+        relative = abs_path[len(cwd_str) :]
+    elif abs_path.startswith(str(cwd)):
+        relative = abs_path[len(str(cwd)) :].lstrip("/")
+    else:
+        relative = abs_path
+    return "/" + relative
+
 
 # ========== FilesystemBackend 实现 ==========
 
@@ -106,7 +177,7 @@ class FilesystemBackend(RuntimeBackend):
     Example:
         >>> backend = FilesystemBackend(root_dir="/workspace", virtual_mode=True)
         >>> infos = backend.ls_info("/src")
-        >>> content = backend.read("/src/main.py", offset=0, limit=100)
+        >>> result = backend.read("/src/main.py", offset=0, limit=100)  # ReadResult 或错误文案
     """
 
     def __init__(
@@ -151,13 +222,7 @@ class FilesystemBackend(RuntimeBackend):
                 self.cwd = Path(target).resolve()
 
     def _resolve_path(self, key: str) -> Path:
-        """解析文件路径并进行安全检查。
-
-        当 `virtual_mode=True` 时，将传入路径视为 `self.cwd` 下的虚拟绝对路径，
-        禁止遍历（`..`、`~`）并确保解析后的路径保持在根目录内。
-
-        当 `virtual_mode=False` 时，保持传统行为：绝对路径直接使用；
-        相对路径在 cwd 下解析。
+        """解析文件路径并进行安全检查（薄包装，实体见 :func:`resolve_sandbox_path`）。
 
         Args:
             key: 文件路径（绝对路径、相对路径，或当 `virtual_mode=True` 时为虚拟路径）
@@ -166,24 +231,29 @@ class FilesystemBackend(RuntimeBackend):
             解析后的绝对 `Path` 对象
 
         Raises:
-            ValueError: 当在 `virtual_mode` 下尝试路径遍历，
+            ValueError: 当在 `virtual_mode` 下尝试路径遍历、
                 或解析后的路径逃逸根目录时抛出
         """
-        if self.virtual_mode:
-            vpath = key if key.startswith("/") else "/" + key
-            if ".." in vpath or vpath.startswith("~"):
-                raise ValueError("不允许路径遍历")
-            full = (self.cwd / vpath.lstrip("/")).resolve()
-            try:
-                full.relative_to(self.cwd)
-            except ValueError:
-                raise ValueError(f"路径 {full} 超出根目录范围: {self.cwd}") from None
-            return full
+        return resolve_sandbox_path(self.cwd, self.virtual_mode, key)
 
-        path = Path(key)
-        if path.is_absolute():
-            return path
-        return (self.cwd / path).resolve()
+    def _to_virtual_path(self, abs_path: str) -> str:
+        """将绝对路径映射为虚拟路径（薄包装，实体见 :func:`to_virtual_path`）。"""
+        return to_virtual_path(self.cwd, self.virtual_mode, abs_path)
+
+    @staticmethod
+    def _select_lines(content: str, offset: int, limit: int) -> tuple[list[str] | None, str | None]:
+        """按原文 offset/limit 选行，返回 ``(lines, error)``。
+
+        切分用 ``content.split("\\n")`` 而非 ``splitlines()``：后者会丢掉末尾
+        空行，破坏「``"\\n".join(lines)`` 无损还原片段」的契约
+        （见 :class:`~.types.ReadResult`）。
+
+        ``lines`` 为 ``None`` 表示选中失败，此时 ``error`` 为返回型错误文案。
+        """
+        lines = content.split("\n")
+        if offset >= len(lines):
+            return None, f"Error: Line offset {offset} exceeds file length ({len(lines)} lines)"
+        return lines[offset : offset + limit], None
 
     def ls_info(self, path: str, *, config: RunnableConfig | None = None, state: dict | None = None) -> list[FileInfo]:
         """列出目录中的文件和目录（非递归）。
@@ -302,16 +372,21 @@ class FilesystemBackend(RuntimeBackend):
         *,
         config: RunnableConfig | None = None,
         state: dict | None = None,
-    ) -> str:
-        """读取文件内容（带行号）。
+    ) -> ReadResult | str:
+        """读取文件，返回选定片段的**原始行数据**（不带行号）。
+
+        成功时返回 :class:`ReadResult`；缺文件 / 偏移越界 / 空文件提示仍是
+        ``str`` 返回型诊断。行号与脱敏由 provider 统一处理。
 
         Args:
             file_path: 文件路径（绝对或相对）
             offset: 起始行号（0-indexed）
             limit: 最大读取行数
+            config: LangGraph 运行时配置（透传，本方法不使用）
+            state: LangGraph 状态（透传，本方法不使用）
 
         Returns:
-            带行号格式化的文件内容，或错误信息
+            ReadResult（原始行 + 原文件 1-based 起始行号），或错误 / 提示文案
         """
         try:
             resolved_path = self._resolve_path(file_path)
@@ -331,15 +406,10 @@ class FilesystemBackend(RuntimeBackend):
             if empty_msg:
                 return empty_msg
 
-            lines = content.splitlines()
-            start_idx = offset
-            end_idx = min(start_idx + limit, len(lines))
-
-            if start_idx >= len(lines):
-                return f"Error: Line offset {offset} exceeds file length ({len(lines)} lines)"
-
-            selected_lines = lines[start_idx:end_idx]
-            return format_content_with_line_numbers(selected_lines, start_line=start_idx + 1)
+            lines, error = self._select_lines(content, offset, limit)
+            if lines is None:
+                return error  # type: ignore[return-value]
+            return ReadResult(lines=lines, start_line=offset + 1)
         except (OSError, UnicodeDecodeError) as e:
             return f"Error reading file '{file_path}': {e}"
 

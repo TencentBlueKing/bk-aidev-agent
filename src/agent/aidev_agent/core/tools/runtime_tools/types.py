@@ -21,6 +21,7 @@ to the current version of the project delivered to anyone in the future.
 该模块包含所有运行时后端（local/e2b/paas）共享的类型合约：
 - ls/glob 返回的 FileInfo
 - grep 返回的 GrepMatch
+- read 返回的 ReadResult
 - write/edit/execute 返回的结果结构
 - upload/download 返回的结构
 - 延迟销毁记录共享存储抽象契约 RuntimeBackendDeferStore（内存实现见 defer_manager）
@@ -30,11 +31,87 @@ to the current version of the project delivered to anyone in the future.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
 from langchain_core.runnables import RunnableConfig
 from typing_extensions import NotRequired, TypedDict
+
+from aidev_agent.packages.security.redaction.policy import RedactionPurpose
+from aidev_agent.pydantic_models import SecurityRedactionSettings
+
+
+def _settings_digest(settings: SecurityRedactionSettings) -> str:
+    """对**脱敏策略**取摘要，刻意排除 ``known_sensitive_values``。
+
+    ``known_sensitive_values`` 会被 provider 按 backend 逐次合并（见
+    ``provider._merge_known_values``），故它在签发侧与校验侧天然不同。
+    把它算进摘要会让凭据恒不匹配、跳过逻辑静默失效（空 PEM 块又被误遮）。
+    已知值本身仍需覆盖 —— 但它们已体现在 ``content_digest`` 里：合并值不同
+    就会产出不同的脱敏结果，摘要随之不匹配。
+    """
+    payload = settings.model_dump(mode="json")
+    payload.pop("known_sensitive_values", None)
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class _RuntimeRedactionReceipt:
+    """进程内结果凭据：只证明这份内容已按同一配置在格式化前处理。
+
+    防伪来自 ``content_digest`` —— 外层工具若要伪造，必须让内容与**同一配置**下
+    脱敏后的结果一致，而那时它已经做了脱敏，跳过重扫正是期望行为。
+    ``settings_digest`` 另行保证「配置变更后旧凭据失效」。
+    """
+
+    content_digest: str
+    settings_digest: str
+    purpose: RedactionPurpose = RedactionPurpose.MODEL_OUTPUT
+
+    @classmethod
+    def create(cls, content: str, settings: SecurityRedactionSettings) -> _RuntimeRedactionReceipt:
+        return cls(hashlib.sha256(content.encode()).hexdigest(), _settings_digest(settings))
+
+    def matches(self, content: str, settings: SecurityRedactionSettings) -> bool:
+        return (
+            self.purpose == RedactionPurpose.MODEL_OUTPUT
+            and self.content_digest == hashlib.sha256(content.encode()).hexdigest()
+            and self.settings_digest == _settings_digest(settings)
+        )
+
+
+@dataclass
+class ReadResult:
+    """读取文件成功时返回的**原始行数据**。
+
+    后端只负责「按原文件 offset/limit 选行」，**不做任何展示修饰**：
+    行号、脱敏都在 provider 层统一处理（先脱敏、后加行号）。
+
+    无损还原契约（provider 与后端的接口约定）：
+    调用方以 ``"\\n".join(lines)`` 取回片段原文，脱敏后 ``split("\\n")``
+    再切开，最后交给 :func:`~aidev_agent.core.tools.runtime_tools.utils.format_content_with_line_numbers`。
+    因此 ``lines`` 必须满足 ``"\\n".join(lines).split("\\n") == lines`` ——
+    即用 ``split("\\n")`` 而非 ``splitlines()`` 切分（后者会丢掉末尾空行，
+    也会把 ``\\r`` / ``\\x0b`` 等当成行界）。典型用例：
+
+    - 文件 ``"x\\n\\n"`` 选中整段 ⇒ ``lines == ["x", "", ""]``（2 个 LF ⇒ 3 行），
+      ``start_line == 1``；
+    - 片段为单个空行 ⇒ ``lines == [""]``；
+    - ``offset=2`` ⇒ ``start_line == 3``（原文件中的真实 1-based 行号）。
+
+    注：PaaS 后端由远端 ``awk print $0`` 逐行产出，文件末尾那个换行是**行终止符**
+    而非独立一行，故其 ``lines`` 不含该终止符产生的末尾空串 ——
+    两种行模型都满足上面的不动点，且都不丢真实空行。
+
+    Attributes:
+        lines: 选定片段的原始行（**不含行号**）；末行为空时以空串结尾。
+        start_line: 片段首行在原文件中的 1-based 行号。
+    """
+
+    lines: list[str]
+    start_line: int
 
 
 class FileInfo(TypedDict):
@@ -163,7 +240,27 @@ class RuntimeBackend:
         *,
         config: RunnableConfig | None = None,
         state: dict | None = None,
-    ) -> str:
+    ) -> ReadResult | str:
+        """读取文件并返回选定片段的**原始行数据**（不做展示修饰）。
+
+        成功时返回 :class:`ReadResult`（原始行 + 原文件 1-based 起始行号），
+        行号由 provider 统一在脱敏之后添加。
+
+        返回 ``str`` 的既有返回型诊断（缺文件、偏移越界、空文件提示）保持不变；
+        各后端原有的**抛异常**分支（如 PaaS 的 ``FileNotFoundError`` /
+        ``IndexError``）同样保持抛异常语义。
+
+        选行必须用 ``content.split("\\n")`` 而非 ``splitlines()`` ——
+        后者会丢掉片段末尾的空行，破坏 ``"\\n".join(lines)`` 的无损往返
+        （见 :class:`ReadResult`）。
+
+        Args:
+            file_path: 文件路径。
+            offset: 起始行号（0-indexed）。
+            limit: 最大读取行数。
+            config: LangGraph 运行时配置（透传）。
+            state: LangGraph 状态（透传）。
+        """
         raise NotImplementedError
 
     def write(
@@ -341,6 +438,7 @@ class RuntimeBackendDeferStore(Protocol):
 __all__ = [
     "FileInfo",
     "GrepMatch",
+    "ReadResult",
     "WriteResult",
     "EditResult",
     "ExecuteResult",

@@ -16,9 +16,16 @@ from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings
 from aidev_agent.core.nodes.tool import ToolNodeSettings
 from aidev_agent.core.tools.a2a_tools.types import AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
+from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
-from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
+from aidev_agent.pydantic_models import (
+    AgentExecutorKwargs,
+    KnowledgeSettings,
+    ModelContextSettings,
+    SandboxPolicy,
+    SecuritySettings,
+)
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
@@ -95,6 +102,17 @@ def _write_skill(root: Path, *, name: str, description: str, body: str, runtime:
 # ============================================================================
 # 用于 build 测试的通用 patch 上下文
 # ============================================================================
+
+# 安全配置不再回落默认：构建 ReActAgentBuilder 的用例必须显式注入
+# SecuritySettings()，否则 build() 经 _prepare_agent_options 抛 ValueError
+# （与生产一致）。仅关注非安全功能的用例用本 helper 注入空配置表达
+# 「不关心安全配置」。
+_DEFAULT_SECURITY = SecuritySettings()
+
+
+def _builder_with_security() -> ReActAgentBuilder:
+    """构造已注入默认安全配置的 builder（等价于生产链路 security_settings 必传）。"""
+    return ReActAgentBuilder().set_bkai_options(AgentExecutorKwargs(security_settings=_DEFAULT_SECURITY))
 
 
 # ============================================================================
@@ -451,7 +469,7 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            ReActAgentBuilder().set_llm(llm).set_tools([calculator, multiplier]).set_enable_ask_user_question_tool(
+            _builder_with_security().set_llm(llm).set_tools([calculator, multiplier]).set_enable_ask_user_question_tool(
                 False
             ).build()
             kwargs = mock_prepare_tools.call_args.kwargs
@@ -530,7 +548,7 @@ class TestReActAgentBuilder:
         resolver = MagicMock()
         resolver.runtime_param_description.return_value = "runtime target"
         builder = (
-            ReActAgentBuilder()
+            _builder_with_security()
             .set_llm(llm)
             .set_enable_skills(True)
             .set_enable_runtime_tool(True)
@@ -566,7 +584,7 @@ class TestReActAgentBuilder:
         resolver = MagicMock()
         resolver.runtime_param_description.return_value = "runtime target"
         builder = (
-            ReActAgentBuilder()
+            _builder_with_security()
             .set_llm(llm)
             .set_enable_runtime_tool(True)
             .set_runtime_backend_resolver(resolver)
@@ -602,7 +620,9 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            builder = ReActAgentBuilder().set_llm(llm).set_enable_skills(True).set_skill_sources([str(skills_root)])
+            builder = (
+                _builder_with_security().set_llm(llm).set_enable_skills(True).set_skill_sources([str(skills_root)])
+            )
             builder.build()
 
         assert builder._skill_registry is not None
@@ -622,7 +642,10 @@ class TestReActAgentBuilder:
             ),
         ):
             builder = (
-                ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True).set_runtime_backend_resolver(resolver)
+                _builder_with_security()
+                .set_llm(llm)
+                .set_enable_runtime_tool(True)
+                .set_runtime_backend_resolver(resolver)
             )
             builder.build()
 
@@ -650,7 +673,13 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            (ReActAgentBuilder().set_llm(llm).set_enable_skills(True).set_skill_sources([str(skills_root)]).build())
+            (
+                _builder_with_security()
+                .set_llm(llm)
+                .set_enable_skills(True)
+                .set_skill_sources([str(skills_root)])
+                .build()
+            )
 
         middlewares = captured_node_options["opts"].extra_template_middlewares
         assert any(isinstance(m, SkillsPromptMiddleware) for m in middlewares)
@@ -680,6 +709,7 @@ class TestReActAgentBuilder:
                 .set_bkai_options(
                     AgentExecutorKwargs(
                         knowledge_query_options=KnowledgeSettings(enable_knowledge_node=True),
+                        security_settings=SecuritySettings(),
                     )
                 )
             )
@@ -701,7 +731,7 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            ReActAgentBuilder().set_llm(llm).build()
+            _builder_with_security().set_llm(llm).build()
 
             kwargs = mock_model_node.call_args.kwargs
             assert kwargs["llm"] is llm
@@ -730,7 +760,7 @@ class TestReActAgentBuilder:
             mock_resolver_instance.runtime_param_description.return_value = "runtime target"
 
             builder = (
-                ReActAgentBuilder()
+                _builder_with_security()
                 .set_llm(llm)
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
@@ -768,7 +798,7 @@ class TestReActAgentBuilder:
             mock_resolver_instance.runtime_param_description.return_value = "runtime target"
 
             builder = (
-                ReActAgentBuilder()
+                _builder_with_security()
                 .set_llm(llm)
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
@@ -805,7 +835,7 @@ class TestReActAgentBuilder:
             resolver.runtime_param_description.return_value = "runtime target"
             resolver.have_runtime_cls.side_effect = lambda name: name == "local"
             builder = (
-                ReActAgentBuilder()
+                _builder_with_security()
                 .set_llm(llm)
                 .set_enable_skills(True)
                 .set_enable_runtime_tool(True)
@@ -837,7 +867,10 @@ class TestReActAgentBuilder:
             resolver._backends = {}
             resolver.runtime_param_description.return_value = "runtime target"
             builder = (
-                ReActAgentBuilder().set_llm(llm).set_enable_runtime_tool(True).set_runtime_backend_resolver(resolver)
+                _builder_with_security()
+                .set_llm(llm)
+                .set_enable_runtime_tool(True)
+                .set_runtime_backend_resolver(resolver)
             )
             builder.build()
 
@@ -857,7 +890,7 @@ class TestReActAgentBuilder:
         mw_no = CustomMiddlewareNoOverride()
 
         mock_build_tool_node.return_value = MagicMock()
-        builder = ReActAgentBuilder()
+        builder = _builder_with_security()
         builder._prepare_agent_tool_node(
             tools=tools,
             name="custom_tools",
@@ -884,6 +917,47 @@ class TestReActAgentBuilder:
         builder = ReActAgentBuilder()
         result = builder._prepare_agent_tool_node(tools=[], langchain_middleware=[])
         assert result is None
+
+    @patch("aidev_agent.core.graphs.react.graph.build_tool_node")
+    def test_prepare_agent_tool_node_security_overrides_explicit_options(self, mock_build_tool_node):
+        """显式传入 node_options 时，安全字段仍须被 SecuritySettings 覆盖（不被遮蔽）。"""
+        mock_build_tool_node.return_value = MagicMock()
+        node_options = ToolNodeSettings(use_timer=False, result_limit_thrd=500)
+        builder = _builder_with_security()
+        builder._security_settings = SecuritySettings(
+            enable_tool_redaction=False,
+            enable_tool_untrusted_sanitize=False,
+            enable_tool_result_limit=False,
+        )
+        builder._prepare_agent_tool_node(
+            tools=[calculator],
+            langchain_middleware=[],
+            node_options=node_options,
+        )
+        kw = mock_build_tool_node.call_args.kwargs
+        # 安全字段被 security_settings 覆盖（node_options 中的 True 被改写为 False）
+        assert kw["node_options"].use_tool_redaction is False
+        assert kw["node_options"].use_tool_untrusted_sanitize is False
+        assert kw["node_options"].use_result_limit is False
+        # 非安全字段保留调用方显式值
+        assert kw["node_options"].use_timer is False
+        assert kw["node_options"].result_limit_thrd == 500
+
+    @patch("aidev_agent.core.graphs.react.graph.build_tool_node")
+    def test_prepare_agent_tool_node_defaults_security_when_no_options(self, mock_build_tool_node):
+        """未传入 node_options 时，构造的 ToolNodeSettings 安全字段取自 SecuritySettings。"""
+        mock_build_tool_node.return_value = MagicMock()
+        builder = _builder_with_security()
+        builder._security_settings = SecuritySettings(
+            enable_tool_redaction=False,
+            enable_tool_untrusted_sanitize=False,
+            enable_tool_result_limit=False,
+        )
+        builder._prepare_agent_tool_node(tools=[calculator], langchain_middleware=[])
+        kw = mock_build_tool_node.call_args.kwargs
+        assert kw["node_options"].use_tool_redaction is False
+        assert kw["node_options"].use_tool_untrusted_sanitize is False
+        assert kw["node_options"].use_result_limit is False
 
     # ----------------------------------------------------------------
     # B (continued). _should_continue 测试
@@ -934,12 +1008,20 @@ class TestReActAgentBuilder:
         builder = (
             ReActAgentBuilder()
             .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_bkai_options(AgentExecutorKwargs(security_settings=SecuritySettings()))
             .set_enable_runtime_tool(True)
             .set_runtime_backend_resolver(resolver)
         )
         # 不应抛出异常
         builder._prepare_agent_options()
         assert builder._runtime_backend_resolver is resolver
+
+    def test_prepare_agent_options_raises_without_security_settings(self):
+        """未注入 security_settings 时 _prepare_agent_options 应抛出 ValueError（不回落默认）。"""
+        builder = ReActAgentBuilder()
+        assert builder._security_settings is None
+        with pytest.raises(ValueError, match="缺少 security_settings"):
+            builder._prepare_agent_options()
 
     def test_prepare_agent_options_raises_when_knowledge_configured_but_all_llm_none(self):
         """配置了知识库但 knowledge_llm/non_thinking_llm/llm 全为 None 时应触发 has_knowledge 校验。
@@ -1055,7 +1137,7 @@ class TestReActAgentBuilder:
         llm = MagicMock()
         llm.model_name = "gpt-4o"
         builder = (
-            ReActAgentBuilder()
+            _builder_with_security()
             .set_llm(llm)
             .enable_a2a_tool(True)
             .enable_a2a_backend_local(True)
@@ -1133,7 +1215,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_model_node_extracts_model_context_options(self):
         """_prepare_agent_model_node 应从 model_context_options 提取 token_limit/token_margin/compress_thrd"""
-        builder = ReActAgentBuilder()
+        builder = _builder_with_security()
         builder._llm = MagicMock(model_name="gpt-4o")
         builder._model_context_options = ModelContextSettings(
             llm_token_limit=8000,
@@ -1156,7 +1238,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_model_node_no_model_context_options_uses_defaults(self):
         """无 model_context_options 时 ModelNodeSettings 应使用默认值"""
-        builder = ReActAgentBuilder()
+        builder = _builder_with_security()
         builder._llm = MagicMock(model_name="gpt-4o")
         captured = {}
 
@@ -1175,7 +1257,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_model_node_injects_team_prompt_middleware(self):
         """配置了 a2a_specs 和 a2a_resolver 时应注入 TeamPromptMiddleware"""
-        builder = ReActAgentBuilder()
+        builder = _builder_with_security()
         builder._llm = MagicMock(model_name="gpt-4o")
         builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
         builder._a2a_resolver = MagicMock()
@@ -1193,7 +1275,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_model_node_no_team_middleware_without_a2a(self):
         """未配置 a2a_specs/a2a_resolver 时不应注入 TeamPromptMiddleware"""
-        builder = ReActAgentBuilder()
+        builder = _builder_with_security()
         builder._llm = MagicMock(model_name="gpt-4o")
         captured = {}
 
@@ -1429,6 +1511,103 @@ class TestReActAgentBuilder:
         assert params.get("client") is expected_client
         rm.get_paas_sbx_client.assert_called_once()
 
+    def test_prepare_skills_local_without_sandbox_stays_filesystem_backend(self, tmp_path, monkeypatch):
+        """local skill 且未要求沙箱时，注册/构造纯同进程 FilesystemBackend。"""
+        monkeypatch.chdir(tmp_path)
+        skills_root = tmp_path / ".agent" / "skills"
+        _write_skill(skills_root, name="local-skill", description="d", body="b", runtime="local")
+
+        mock_resolver = MagicMock()
+        mock_resolver.have_runtime_cls.side_effect = lambda name: name == "local"
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_skills(True)
+            .set_skill_sources([str(skills_root)])
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(mock_resolver)
+            .enable_runtime_local(True)
+        )
+        builder._security_settings = SecuritySettings()
+
+        builder._prepare_skills()
+
+        call = mock_resolver.get_or_create_backend.call_args
+        assert call.kwargs.get("runtime_name") == "local_local-skill"
+        assert call.kwargs.get("runtime_cls_name") == "local"
+        params = call.kwargs.get("construct_params") or {}
+        assert "sandbox_policy" not in params
+
+    def test_prepare_skills_local_with_sandbox_policy_routes_to_bubblewrap_backend(self, tmp_path, monkeypatch):
+        """local skill 且平台下发 sandbox_policy 时，改注册/构造 bubblewrap 运行时。"""
+        monkeypatch.chdir(tmp_path)
+        skills_root = tmp_path / ".agent" / "skills"
+        _write_skill(skills_root, name="local-skill", description="d", body="b", runtime="local")
+
+        # 路由断言与运行环境无关：显式令 bwrap 探测为可用。
+        monkeypatch.setattr(BubblewrapFilesystemBackend, "is_available", lambda self: True)
+
+        mock_resolver = MagicMock()
+        mock_resolver.have_runtime_cls.side_effect = lambda name: name == "local"
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_skills(True)
+            .set_skill_sources([str(skills_root)])
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(mock_resolver)
+            .enable_runtime_local(True)
+        )
+        policy = SandboxPolicy(mode="readonly", allow_network=True)
+        builder._security_settings = SecuritySettings(sandbox_policy=policy)
+
+        builder._prepare_skills()
+
+        # 新类型名注册到 resolver
+        assert any(
+            c.args[:2] == ("bubblewrap", BubblewrapFilesystemBackend)
+            for c in mock_resolver.register_runtime_cls.call_args_list
+        )
+        call = mock_resolver.get_or_create_backend.call_args
+        assert call.kwargs.get("runtime_name") == "bubblewrap_local-skill"
+        assert call.kwargs.get("runtime_cls_name") == "bubblewrap"
+        params = call.kwargs.get("construct_params") or {}
+        # 仅引入 sandbox_policy，其余 bwrap 项由后端构造默认值补足
+        assert params.get("sandbox_policy") is policy
+        assert "bwrap_path" not in params
+        assert "bwrap_allow_network" not in params
+        assert "bwrap_enabled" not in params
+
+    def test_prepare_skills_local_bwrap_unavailable_falls_back_to_filesystem(self, tmp_path, monkeypatch):
+        """sandbox_policy 已下发但 bwrap 不可用时降级回同进程 FilesystemBackend（fail-open）。"""
+        monkeypatch.chdir(tmp_path)
+        skills_root = tmp_path / ".agent" / "skills"
+        _write_skill(skills_root, name="local-skill", description="d", body="b", runtime="local")
+
+        # bwrap 不可用（缺二进制 / user namespace 被禁）
+        monkeypatch.setattr(BubblewrapFilesystemBackend, "is_available", lambda self: False)
+
+        mock_resolver = MagicMock()
+        mock_resolver.have_runtime_cls.side_effect = lambda name: name == "local"
+        builder = (
+            ReActAgentBuilder()
+            .set_llm(MagicMock(model_name="gpt-4o"))
+            .set_enable_skills(True)
+            .set_skill_sources([str(skills_root)])
+            .set_enable_runtime_tool(True)
+            .set_runtime_backend_resolver(mock_resolver)
+            .enable_runtime_local(True)
+        )
+        builder._security_settings = SecuritySettings(sandbox_policy=SandboxPolicy(mode="readonly"))
+
+        builder._prepare_skills()
+
+        call = mock_resolver.get_or_create_backend.call_args
+        assert call.kwargs.get("runtime_name") == "local_local-skill"
+        assert call.kwargs.get("runtime_cls_name") == "local"
+        params = call.kwargs.get("construct_params") or {}
+        assert "sandbox_policy" not in params
+
     # ----------------------------------------------------------------
     # P2. _prepare_state_schema 用户自定义 schema 分支
     # ----------------------------------------------------------------
@@ -1602,7 +1781,7 @@ class TestReActAgentBuilder:
         llm = MagicMock()
         llm.model_name = "gpt-4o"
 
-        builder = ReActAgentBuilder().set_llm(llm)
+        builder = _builder_with_security().set_llm(llm)
         graph, cfg = builder.build()
 
         # graph 应是 compiled state graph
@@ -1618,7 +1797,7 @@ class TestReActAgentBuilder:
         llm = MagicMock()
         llm.model_name = "gpt-4o"
         cb = [MagicMock()]
-        builder = ReActAgentBuilder().set_llm(llm).set_callbacks(cb)
+        builder = _builder_with_security().set_llm(llm).set_callbacks(cb)
         graph, cfg = builder.build()
         assert "callbacks" in cfg
         assert cfg["callbacks"] == cb
@@ -1627,7 +1806,7 @@ class TestReActAgentBuilder:
         """无工具时图应为 START -> model -> END（无 tools 节点）"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
-        builder = ReActAgentBuilder().set_llm(llm).set_enable_ask_user_question_tool(False)
+        builder = _builder_with_security().set_llm(llm).set_enable_ask_user_question_tool(False)
         graph, cfg = builder.build()
         # The compiled graph should not have a 'tools' node
         node_names = set(graph.nodes.keys())
@@ -1638,7 +1817,7 @@ class TestReActAgentBuilder:
         """有工具时图应包含 tools 节点形成 ReAct 循环"""
         llm = MagicMock()
         llm.model_name = "gpt-4o"
-        builder = ReActAgentBuilder().set_llm(llm).set_tools([calculator])
+        builder = _builder_with_security().set_llm(llm).set_tools([calculator])
         graph, cfg = builder.build()
         node_names = set(graph.nodes.keys())
         assert "model" in node_names
@@ -1662,7 +1841,7 @@ class TestReActAgentBuilder:
                 return_value=(MagicMock(), {}),
             ),
         ):
-            ReActAgentBuilder().set_llm(llm).build()
+            _builder_with_security().set_llm(llm).build()
 
         assert captured["non_thinking_llm"] is llm
 

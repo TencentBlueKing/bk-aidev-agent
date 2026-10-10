@@ -61,6 +61,7 @@ from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_u
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.read_image import make_read_image_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
+from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
 from aidev_agent.core.tools.runtime_tools.e2b_backend import E2BSandboxBackend
 from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
 from aidev_agent.core.tools.runtime_tools.paas_backend import PaasSandboxBackend
@@ -72,7 +73,8 @@ from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools, merge_ta
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
-from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings
+from aidev_agent.packages.security.command import CommandRiskAssessor
+from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings, SecuritySettings
 
 if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
@@ -216,6 +218,7 @@ class ReActAgentBuilder:
         self._enable_query_clarification: Optional[bool] = None
         self._langchain_middleware: Sequence[AgentMiddleware] = ()
         self._tool_node_options: ToolNodeSettings | None = None
+        self._security_settings: SecuritySettings | None = None
         self._resource_manager = None
 
     # ====================================================================================================
@@ -463,7 +466,9 @@ class ReActAgentBuilder:
     def enable_runtime_local(self, enable: bool = True) -> "ReActAgentBuilder":
         """启用/禁用本地运行时类型（local）。
 
-        - enable=True：注册 runtime type `local` -> `FilesystemBackend`，并注册参数提取函数
+        - enable=True：注册 runtime type `local` -> `FilesystemBackend`（纯同进程），
+          并注册参数提取函数。内核沙箱子后端由 ``_prepare_skills`` 按安全配置
+          另行注册为 `bubblewrap` 类型。
         - enable=False：移除 runtime type `local`
 
         Raises:
@@ -579,6 +584,8 @@ class ReActAgentBuilder:
         """将 BkAi 平台通用配置（AgentExecutorKwargs）映射到 builder 内部状态。"""
         if options.resource_manager is not None:
             self._resource_manager = options.resource_manager
+        if options.security_settings is not None:
+            self._security_settings = options.security_settings
         if options.llm is not None:
             self._llm = options.llm
         if options.non_thinking_llm is not None:
@@ -742,6 +749,17 @@ class ReActAgentBuilder:
                 "请同时调用 set_enable_runtime_tool(True) 和 enable_runtime_paas(True)"
             )
 
+        # 安全配置校验：唯一来源是 set_bkai_options 注入的 security_settings（由
+        # AgentExecutorKwargs 承载，生产链路上由 ChatCompletionAgent 从
+        # AgentConfig.security_settings 透传）。不做任何回落——取不到即抛错，避免
+        # 「平台下发失效 / 未注入」被静默降级成「安全能力按默认开关运行」。
+        if self._security_settings is None:
+            raise ValueError(
+                "ReActAgentBuilder 构建失败：缺少 security_settings，"
+                "请通过 set_bkai_options(AgentExecutorKwargs(security_settings=...)) 注入。"
+                "安全配置不回落默认值，未注入即视为构建错误。"
+            )
+
     def _prepare_agent_knowledge_node(
         self, *, knowledge_llm, knowledge_query_options: KnowledgeSettings | None, chat_history
     ):
@@ -807,6 +825,15 @@ class ReActAgentBuilder:
             )
             node_options_kwargs["enable_query_clarification"] = knowledge_query_options.enable_query_clarification
 
+        # 安全配置拆入：从 _prepare_agent_options 校验过的 SecuritySettings 注入模型节点开关
+        security_settings = self._security_settings
+        assert security_settings is not None  # _prepare_agent_options 已校验非空
+        node_options_kwargs.update(
+            {
+                "enable_security_guidance": security_settings.enable_model_security_guidance,
+                "enable_prompt_injection_guard": security_settings.enable_prompt_injection_guard,
+            }
+        )
         node_options = ModelNodeSettings(**node_options_kwargs)
 
         if self._enable_skills and self._skill_registry is not None:
@@ -858,10 +885,13 @@ class ReActAgentBuilder:
 
         # 加载 Runtime 工具 (ls/read_file/write_file/edit_file/glob/grep/execute)
         if self._enable_runtime_tool and self._runtime_backend_resolver is not None:
+            # review 预分流：注入命令风险评估器（fast_llm 优先，non_thinking/主 llm 兜底）
+            risk_assessor = CommandRiskAssessor(self._fast_llm or self._non_thinking_llm or self._llm)
             tools.extend(
                 get_client_tools_with_runtime(
                     self._runtime_backend_resolver,
                     enable_security=self._enable_security_runtime,
+                    risk_assessor=risk_assessor,
                 )
             )
             # 仅在配置了视觉模型时注册图片识别工具，避免模型调用必然失败的工具
@@ -925,6 +955,28 @@ class ReActAgentBuilder:
             # 实例化独立 backend 所需构造参数
             extractor = self._runtime_param_with_skill.get(skill_runtime)
             params = extractor(skill, self._executor_info or {}) if extractor is not None else {}
+            # local runtime：平台下发 sandbox_policy 时启用内核级文件隔离，改注册/构造
+            # BubblewrapFilesystemBackend（类型名 `bubblewrap`）；否则保持纯同进程
+            # FilesystemBackend。
+            effective_runtime = skill_runtime
+            if skill_runtime == "local":
+                ss = self._security_settings
+                assert ss is not None  # _prepare_agent_options 已校验非空
+                if ss.sandbox_policy is not None:
+                    if not resolver.have_runtime_cls("bubblewrap"):
+                        resolver.register_runtime_cls("bubblewrap", BubblewrapFilesystemBackend)
+                    self._runtime_param_with_skill.setdefault("bubblewrap", _extract_local_params)
+                    bwrap_params = {"sandbox_policy": ss.sandbox_policy}
+                    # fail-open：bwrap 不可用（未安装 / user namespace 被禁）时降级回
+                    # 同进程 FilesystemBackend，避免功能因缺二进制而整体失效。
+                    if BubblewrapFilesystemBackend(**bwrap_params).is_available():
+                        params.update(bwrap_params)
+                        effective_runtime = "bubblewrap"
+                    else:
+                        logger.warning(
+                            "bwrap 不可用，local skill '%s' 降级为同进程 FilesystemBackend（文件隔离未生效）",
+                            skill_name,
+                        )
             if skill_runtime == "paas_sandbox" and self._resource_manager is not None:
                 client = self._resource_manager.get_paas_sbx_client(self._executor_info or {})
                 params["client"] = client
@@ -935,14 +987,14 @@ class ReActAgentBuilder:
                 f"has_access_token={bool((self._executor_info or {}).get('access_token'))}, "
                 f"runtime_cls_name={skill_runtime}"
             )
-            # 所有 runtime（含 local）统一走 get_or_create_backend：
+            # 所有 runtime（含 local / bubblewrap）统一走 get_or_create_backend：
             # runtime_name = {runtime}_{skill}（模型可见路由名，注册 _backends 供 target_runtime 解析）；
             # runtime_id 由 resolver 内部 compose_runtime_id 幂等推导（{agent_code}:{session_code}:{runtime}_{skill}），
             # resolver 内部按 runtime_cls_name 从 _backend_cls 查类构造实例。
-            runtime_name = f"{skill_runtime}_{skill_name}"
+            runtime_name = f"{effective_runtime}_{skill_name}"
             resolver.get_or_create_backend(
                 runtime_name=runtime_name,
-                runtime_cls_name=skill_runtime,  # resolver 内部按名查 _backend_cls
+                runtime_cls_name=effective_runtime,  # resolver 内部按名查 _backend_cls
                 construct_params=params,
             )
 
@@ -1023,6 +1075,26 @@ class ReActAgentBuilder:
             if m.__class__.awrap_tool_call is not AgentMiddleware.awrap_tool_call
         ]
         if tools:
+            # 安全配置拆入：SecuritySettings 是安全配置的权威来源，其映射字段
+            # （use_tool_redaction / use_tool_untrusted_sanitize / use_result_limit）
+            # **无条件覆盖** node_options 中的同名值 —— 即便调用方经 ``set_tool_node_options``
+            # 显式传入 ToolNodeSettings，安全开关也不得被遮蔽（与 ModelNode 的做法一致）。
+            # node_options 的**非安全字段**（use_timer / result_limit_thrd /
+            # use_json_repair_on_error）不受影响：缺省时取 ToolNodeSettings 默认，
+            # 显式传入时保留调用方值。
+            # graph 装配层负责把 SecuritySettings 转换成 ToolNodeSettings 的具体字段，
+            # ToolNode / ModelNode 不直接持有 SecuritySettings 对象。
+            #
+            # 但结果脱敏（redaction wrapper）需要脱敏配置本体（已知敏感值 + 掩码阈值
+            # 共 16 个字段）；node 在 wrapper 构建边界取 ``security_settings.redaction``
+            # 投影为小配置，故这里仍注入**总配置**（T-06-24）。
+            security_settings = self._security_settings
+            assert security_settings is not None  # _prepare_agent_options 已校验非空
+            if node_options is None:
+                node_options = ToolNodeSettings()
+            node_options.use_tool_redaction = security_settings.enable_tool_redaction
+            node_options.use_tool_untrusted_sanitize = security_settings.enable_tool_untrusted_sanitize
+            node_options.use_result_limit = security_settings.enable_tool_result_limit
             return build_tool_node(
                 tools=tools,
                 name=name,
@@ -1030,6 +1102,7 @@ class ReActAgentBuilder:
                 wrappers=middleware_w_wrap_tool_call,
                 async_wrappers=middleware_w_awrap_tool_call,
                 node_options=node_options,
+                security_settings=security_settings,
             )
         return None
 

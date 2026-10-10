@@ -8,20 +8,29 @@ from typing import AsyncGenerator, List
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.runnables.schema import StreamEvent
+from langchain_core.tools import tool
+from langgraph.errors import GraphBubbleUp, GraphInterrupt
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from typing_extensions import Annotated, TypedDict
+
 from aidev_agent.core.nodes.tool import ToolNodeSettings, build_tool_node
 from aidev_agent.core.nodes.tool.approval_wrapper import (
     TOOL_APPROVAL_STATE_KEY,
     ItsmApprovalStrategy,
     is_approval_configured,
 )
+from aidev_agent.core.nodes.tool.node import (
+    _chain_async_tool_call_wrappers,
+    _chain_tool_call_wrappers,
+    default_tool_call_handler,
+)
+from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
 from aidev_agent.enums import ExecutorIdentity
 from aidev_agent.packages.interrupt_manager.approval import ApprovalHandler, ApprovalIdentityError, ApprovalTarget
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.runnables.schema import StreamEvent
-from langchain_core.tools import tool
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from typing_extensions import Annotated, TypedDict
+from aidev_agent.pydantic_models import SecurityRedactionSettings, SecuritySettings
 
 # ============================================================================
 # 测试状态定义
@@ -68,6 +77,20 @@ def slow_tool(duration_ms: int = 100) -> str:
 def long_text_tool(length: int = 2000) -> str:
     """Return a long text."""
     return "x" * length
+
+
+@tool
+def secret_echo_tool(secret: str) -> str:
+    """Return a credential-bearing string."""
+    return f"token is {secret}"
+
+
+_SECRET = "phase-seven-known-value"
+_DEFAULT_SECRET = "sk-" + "a" * 36
+# 无厂商前缀、低熵的已知值仅在子配置实际透传时命中。
+_SECURITY = SecuritySettings(redaction=SecurityRedactionSettings(known_sensitive_values=_SECRET))
+# security_settings=None ⇒ node 层**不构造**脱敏 wrapper（配置缺失不回落），故不脱敏。
+_REDACTION_CASES = [(_SECURITY, _SECRET, True), (None, _DEFAULT_SECRET, False), (None, _SECRET, False)]
 
 
 # ============================================================================
@@ -221,7 +244,7 @@ class TestBuildToolNode:
         assert "description" not in tool_msg.additional_kwargs
 
     def test_result_limit_wrapper_truncates_long_result(self):
-        """测试2++: 开启 result_limit_wrapper 后超长结果应设置 status=error"""
+        """测试2++: 开启 result_limit_wrapper 后超长字符串结果替换为拒绝消息"""
         tool_node = build_tool_node(
             tools=[long_text_tool],
             node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
@@ -249,7 +272,8 @@ class TestBuildToolNode:
         assert len(tool_messages) == 1
 
         tool_msg = tool_messages[0]
-        assert "本次工具调用返回结果超长" in tool_msg.content
+        # 超长内容整段替换为拒绝消息
+        assert tool_msg.content == "本次工具调用返回结果超长，请重新调整调用参数"
         assert tool_msg.tool_call_id == "call_1"
         assert tool_msg.name == "long_text_tool"
         assert getattr(tool_msg, "status", None) == "error"
@@ -873,7 +897,7 @@ class TestBuildToolNodeAsync:
         assert "description" not in tool_msg.additional_kwargs
 
     async def test_result_limit_wrapper_truncates_long_result_async(self):
-        """测试2++: 开启 result_limit_wrapper 后超长结果应设置 status=error（异步）"""
+        """测试2++: 开启 result_limit_wrapper 后超长字符串结果替换为拒绝消息（异步）"""
         tool_node = build_tool_node(
             tools=[long_text_tool],
             node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
@@ -901,7 +925,8 @@ class TestBuildToolNodeAsync:
         assert len(tool_messages) == 1
 
         tool_msg = tool_messages[0]
-        assert "本次工具调用返回结果超长" in tool_msg.content
+        # 超长内容整段替换为拒绝消息
+        assert tool_msg.content == "本次工具调用返回结果超长，请重新调整调用参数"
         assert tool_msg.tool_call_id == "call_1"
         assert tool_msg.name == "long_text_tool"
         assert getattr(tool_msg, "status", None) == "error"
@@ -1341,7 +1366,6 @@ class TestDefaultToolCallHandler:
 
     def test_empty_exception_message_with_args(self):
         """测试空异常消息时回退到 args"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         # 创建一个异常，str(error) 为空但有 args
         class EmptyStrException(Exception):
@@ -1354,7 +1378,6 @@ class TestDefaultToolCallHandler:
 
     def test_empty_exception_message_with_multiple_args(self):
         """测试空异常消息时回退到多个 args"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         class EmptyStrException(Exception):
             def __str__(self):
@@ -1366,7 +1389,6 @@ class TestDefaultToolCallHandler:
 
     def test_exception_without_args(self):
         """测试无 args 异常返回通用错误消息"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         class EmptyException(Exception):
             def __str__(self):
@@ -1383,8 +1405,6 @@ class TestDefaultToolCallHandler:
         捕获中间件链异常并调用 default_tool_call_handler，如果 GraphBubbleUp 被转为
         字符串而非抛出，interrupt() 会被吞掉，图不会暂停。
         """
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
-        from langgraph.errors import GraphBubbleUp
 
         error = GraphBubbleUp("interrupt value")
         with pytest.raises(GraphBubbleUp):
@@ -1392,8 +1412,6 @@ class TestDefaultToolCallHandler:
 
     def test_graph_interrupt_subclass_is_reraised(self):
         """GraphInterrupt（GraphBubbleUp 子类）也必须重新抛出。"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
-        from langgraph.errors import GraphInterrupt
 
         error = GraphInterrupt("interrupt payload")
         with pytest.raises(GraphInterrupt):
@@ -1401,7 +1419,6 @@ class TestDefaultToolCallHandler:
 
     def test_non_bubbleup_exception_returns_string(self):
         """普通异常仍返回字符串，不受 GraphBubbleUp 判断影响。"""
-        from aidev_agent.core.nodes.tool.node import default_tool_call_handler
 
         error = ValueError("something went wrong")
         result = default_tool_call_handler(error)
@@ -1413,14 +1430,12 @@ class TestWrapperChaining:
 
     def test_empty_wrapper_list_returns_none(self):
         """测试空 wrapper 列表返回 None"""
-        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
 
         result = _chain_tool_call_wrappers([])
         assert result is None
 
     def test_single_wrapper_returns_original(self):
         """测试单个 wrapper 直接返回原 wrapper"""
-        from aidev_agent.core.nodes.tool.node import _chain_tool_call_wrappers
 
         def my_wrapper(request, execute):
             return execute(request)
@@ -1430,20 +1445,79 @@ class TestWrapperChaining:
 
     def test_empty_async_wrapper_list_returns_none(self):
         """测试空异步 wrapper 列表返回 None"""
-        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
 
         result = _chain_async_tool_call_wrappers([])
         assert result is None
 
     def test_single_async_wrapper_returns_original(self):
         """测试单个异步 wrapper 直接返回原 wrapper"""
-        from aidev_agent.core.nodes.tool.node import _chain_async_tool_call_wrappers
 
         async def my_async_wrapper(request, execute):
             return await execute(request)
 
         result = _chain_async_tool_call_wrappers([my_async_wrapper])
         assert result is my_async_wrapper
+
+
+class TestToolNodeRedactionAssembly:
+    """嵌套总配置 → 小配置 → 工具结果的真实 StateGraph 装配回归（D-05 / D-11）。"""
+
+    @staticmethod
+    def _state(secret=_SECRET):
+        return {
+            "messages": [
+                HumanMessage(content="go"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "secret_echo_tool",
+                            "args": {"secret": secret},
+                            "id": "call_1",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            ]
+        }
+
+    @staticmethod
+    def _build(security_settings):
+        return build_tool_node(
+            tools=[secret_echo_tool],
+            node_options=ToolNodeSettings(use_timer=True),
+            security_settings=security_settings,
+        )
+
+    @pytest.mark.parametrize("security_settings, secret, redacted", _REDACTION_CASES)
+    def test_sync_node_redacts_tool_result(self, security_settings, secret, redacted):
+        """同步图：非默认已知值必须靠子配置透传；security_settings=None 时不挂 wrapper（不脱敏）。"""
+        result = run_tool_node_in_graph(self._build(security_settings), self._state(secret))
+        tool_msg = next(m for m in result["messages"] if isinstance(m, ToolMessage))
+        assert (secret not in tool_msg.content) is redacted
+        assert ("[REDACTED:" in tool_msg.content) is redacted
+        assert "duration" in tool_msg.additional_kwargs
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("security_settings, secret, redacted", _REDACTION_CASES)
+    async def test_async_node_redacts_tool_result(self, security_settings, secret, redacted):
+        """异步图：同上，覆盖 async redaction wrapper 装配路径。"""
+        result = await arun_tool_node_in_graph(self._build(security_settings), self._state(secret))
+        tool_msg = next(m for m in result["messages"] if isinstance(m, ToolMessage))
+        assert (secret not in tool_msg.content) is redacted
+        assert ("[REDACTED:" in tool_msg.content) is redacted
+
+    def test_non_redaction_node_options_unaffected(self):
+        """node_options 非脱敏行为不变：显式关闭 timer 时不注入 duration 元数据。"""
+        node = build_tool_node(
+            tools=[secret_echo_tool],
+            node_options=ToolNodeSettings(use_timer=False),
+            security_settings=_SECURITY,
+        )
+        result = run_tool_node_in_graph(node, self._state())
+        tool_msg = next(m for m in result["messages"] if isinstance(m, ToolMessage))
+        assert "duration" not in tool_msg.additional_kwargs
+        assert _SECRET not in tool_msg.content
 
 
 class TestResultLimitBoundary:
@@ -1480,7 +1554,7 @@ class TestResultLimitBoundary:
         assert tool_messages[0].content == "x" * 10
 
     def test_result_limit_one_over_threshold(self):
-        """测试长度超过阈值 1 时应被替换"""
+        """测试长度超过阈值 1 时替换为拒绝消息"""
         tool_node = build_tool_node(
             tools=[long_text_tool],
             node_options=ToolNodeSettings(use_result_limit=True, result_limit_thrd=10),
@@ -1506,8 +1580,9 @@ class TestResultLimitBoundary:
         result = run_tool_node_in_graph(tool_node, state)
         tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
         assert len(tool_messages) == 1
-        # 长度超过阈值，应被替换
+        # 长度超过阈值，整段替换为拒绝消息
         assert tool_messages[0].content == "本次工具调用返回结果超长，请重新调整调用参数"
+        assert tool_messages[0].content != "x" * 11
 
     @pytest.mark.parametrize(
         "length,should_truncate",
@@ -1545,7 +1620,9 @@ class TestResultLimitBoundary:
         tool_messages = [msg for msg in result["messages"] if isinstance(msg, ToolMessage)]
 
         if should_truncate:
+            # 超阈值：整段替换为拒绝消息
             assert tool_messages[0].content == "本次工具调用返回结果超长，请重新调整调用参数"
+            assert tool_messages[0].content != "x" * length
         else:
             assert tool_messages[0].content == "x" * length
 
@@ -1555,9 +1632,6 @@ class TestToolMsgContentLen:
 
     def test_content_none_via_getattr(self):
         """测试 getattr 获取 content 为 None 的情况"""
-        from unittest.mock import MagicMock
-
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
 
         # 使用 MagicMock 模拟一个 content 为 None 的消息对象
         msg = MagicMock()
@@ -1567,7 +1641,6 @@ class TestToolMsgContentLen:
 
     def test_content_string(self):
         """测试 content 为字符串的情况"""
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
 
         msg = ToolMessage(content="hello", tool_call_id="test")
         result = _tool_msg_content_len(msg)
@@ -1575,7 +1648,6 @@ class TestToolMsgContentLen:
 
     def test_content_non_string(self):
         """测试 content 为非字符串的情况"""
-        from aidev_agent.core.nodes.tool.result_limit_wrapper import _tool_msg_content_len
 
         msg = ToolMessage(content=12345, tool_call_id="test")
         result = _tool_msg_content_len(msg)
