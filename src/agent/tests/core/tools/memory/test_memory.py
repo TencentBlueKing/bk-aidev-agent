@@ -6,7 +6,9 @@ from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import AgentExecutorKwargs
+from bkapi_client_core.client import BaseClient
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from requests import Request
 
 
 @pytest.fixture
@@ -132,14 +134,75 @@ class Manager(BaseResourceManager):
         return self.client
 
 
-def test_resource_manager_does_not_allow_header_identity_override():
+def test_resource_manager_does_not_allow_header_identity_override(monkeypatch):
     manager = Manager(app_code="app", app_secret="secret")
     manager.client = MagicMock()
+    monkeypatch.setattr(manager, "resolve_access_token", lambda name: "alice-token")
     manager.client.api.memory_tool.return_value = {"data": {"hits": []}}
     assert manager.memory_tool({"name": "memory_search"}, username="alice", headers={"X-BKAIDEV-USER": "bob"}) == {
         "hits": []
     }
-    assert manager.client.api.memory_tool.call_args.kwargs["headers"]["X-BKAIDEV-USER"] == "alice"
+    assert manager.client.api.memory_tool.call_args.kwargs["headers"] == {}
+    manager.client.update_bkapi_authorization.assert_called_once_with(bk_username="alice", access_token="alice-token")
+
+
+@pytest.mark.parametrize("method", ["memory_schemas", "memory_tool", "complete_memory_round"])
+def test_memory_credentials_follow_each_call_user(monkeypatch, method):
+    manager = Manager(app_code="app", app_secret="secret", username="old-user")
+    manager.client = MagicMock()
+    monkeypatch.setattr(manager, "resolve_access_token", lambda name: f"{name}-token")
+    args = [] if method == "memory_schemas" else [{}]
+    for username in ["alice", "bob"]:
+        getattr(manager, method)(*args, username=username)
+        manager.client.update_bkapi_authorization.assert_called_with(
+            bk_username=username, access_token=f"{username}-token"
+        )
+    assert manager.username == "old-user"
+
+
+@pytest.mark.parametrize("username", [None, "", "   "])
+@pytest.mark.parametrize("method", ["memory_schemas", "memory_tool", "complete_memory_round"])
+def test_memory_requires_user_before_creating_client(monkeypatch, method, username):
+    manager = Manager(app_code="app", app_secret="secret")
+    get_client = MagicMock()
+    monkeypatch.setattr(manager, "get_client", get_client)
+    args = [] if method == "memory_schemas" else [{}]
+    with pytest.raises(ValueError, match="username"):
+        getattr(manager, method)(*args, username=username)
+    get_client.assert_not_called()
+
+
+@pytest.mark.parametrize("bound_user", ["", "bob"])
+def test_memory_does_not_reuse_another_users_access_token(bound_user):
+    manager = Manager(app_code="app", app_secret="secret", username=bound_user, access_token="other-token")
+    with pytest.raises(ValueError, match="bound"):
+        manager.memory_schemas(username="alice")
+
+
+def test_memory_rejects_authorization_header_override():
+    manager = Manager(app_code="app", app_secret="secret")
+    with pytest.raises(ValueError, match="authorization"):
+        manager.memory_schemas(username="alice", headers={"x-bkapi-authorization": "foreign"})
+
+
+def test_memory_clears_previous_client_token_when_current_user_has_none(monkeypatch):
+    manager = Manager(app_code="app", app_secret="secret")
+    manager.client = BaseClient(endpoint="https://example.com/")
+    manager.client.update_bkapi_authorization(bk_app_code="app", bk_username="bob", access_token="bob-token")
+    monkeypatch.setattr(manager, "resolve_access_token", lambda name: "")
+    client = manager._memory_client("alice")
+    prepared = Request("GET", "https://example.com/").prepare()
+    client.session.auth(prepared)
+    authorization = json.loads(prepared.headers["X-Bkapi-Authorization"])
+    assert authorization == {"bk_app_code": "app", "bk_username": "alice"}
+
+
+@pytest.mark.parametrize("username", [None, "", "   "])
+def test_runtime_rejects_empty_host_user(runtime, username):
+    runtime.context_provider = lambda config: {"username": username, "session_id": "s", "session_date": "2026-10-09"}
+    with pytest.raises(ValueError, match="username"):
+        runtime.make_tools()
+    runtime.manager.memory_schemas.assert_not_called()
 
 
 def test_graph_routes_successful_answer_through_memory(runtime):

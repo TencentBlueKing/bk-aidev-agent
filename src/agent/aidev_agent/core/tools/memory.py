@@ -36,8 +36,13 @@ class PersonalMemoryRuntime:
 
     def context(self, config: RunnableConfig) -> tuple[str, dict]:
         context = copy.deepcopy(self.context_provider(config))
-        username = context.pop("username")
-        if not username or not context.get("session_id") or not context.get("session_date"):
+        username = context.pop("username", None)
+        if (
+            not isinstance(username, str)
+            or not username.strip()
+            or not context.get("session_id")
+            or not context.get("session_date")
+        ):
             raise ValueError("Personal memory requires authenticated username and host session metadata")
         context.setdefault("messages", [])
         return username, context
