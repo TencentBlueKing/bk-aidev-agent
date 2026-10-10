@@ -45,10 +45,12 @@ FLOW_TASK_RUNNING_STATE = "RUNNING"
 FLOW_TASK_FINISHED_STATES = frozenset({FLOW_TASK_FINISHED_STATE})
 FLOW_TASK_FAILED_STATES = frozenset({FLOW_TASK_FAILED_STATE, FLOW_TASK_REVOKED_STATE})
 FLOW_TASK_END_STATES = FLOW_TASK_FINISHED_STATES | FLOW_TASK_FAILED_STATES
-# revoke 接口异步生效时，最多等待一小段时间读取 BKFlow 终态
-# 最多轮询 REVOKE_STATUS_MAX_ATTEMPTS 次，每次 sleep = clamp(poll_interval, [0.01s, 0.2s])
+# revoke 接口异步生效时，在时间预算内读取 BKFlow 终态；预算需小于 CANCEL_DRAIN_TIMEOUT（3s），为收尾事件留余量
+REVOKE_STATUS_QUERY_BUDGET = 2.0
+# 撤销后单次查询的超时上限（秒），实际超时取 min(本值, 剩余预算)
+REVOKE_STATUS_CALL_TIMEOUT = 1.0
+# 两次查询之间的等待 = clamp(poll_interval, [0.01s, 0.2s])
 REVOKE_STATUS_POLL_INTERVAL_MAX = 0.2
-REVOKE_STATUS_MAX_ATTEMPTS = 10
 
 
 class FlowAgentCompletionAgent(BaseModel):
@@ -519,41 +521,52 @@ class FlowAgentCompletionAgent(BaseModel):
         task_id: int,
         fallback: dict | None,
     ) -> tuple[dict, bool]:
-        """在 revoke 后有界查询任务终态，避免读取到异步操作前的旧状态。"""
+        """在 revoke 后按时间预算查询任务终态，避免读取到异步操作前的旧状态。
+
+        预算由单调时钟计算，单次查询超时不超过剩余预算，保证撤销收尾耗时有上限。
+        """
         latest_task_info = fallback
         sleep_interval = min(max(self.poll_interval, 0.01), REVOKE_STATUS_POLL_INTERVAL_MAX)
-        for attempt in range(REVOKE_STATUS_MAX_ATTEMPTS):
+        deadline = time.monotonic() + REVOKE_STATUS_QUERY_BUDGET
+        attempt = 0
+        while True:
+            attempt += 1
             try:
-                task_info = self._query_task_info(client, task_id)
+                task_info = self._query_task_info(
+                    client,
+                    task_id,
+                    timeout=min(REVOKE_STATUS_CALL_TIMEOUT, deadline - time.monotonic()),
+                )
                 if isinstance(task_info, dict):
                     latest_task_info = task_info
                     if self._get_task_state(task_info) in FLOW_TASK_END_STATES:
                         return task_info, True
             except Exception as exc:
-                if attempt + 1 == REVOKE_STATUS_MAX_ATTEMPTS:
+                if deadline - time.monotonic() <= sleep_interval:
                     logger.exception(
                         "[FLOW_AGENT] Final query after revoke failed: task_id=%s, attempt=%d",
                         task_id,
-                        attempt + 1,
+                        attempt,
                     )
                 else:
                     logger.warning(
-                        "[FLOW_AGENT] Query task after revoke failed: task_id=%s, attempt=%d/%d, error=%s",
+                        "[FLOW_AGENT] Query task after revoke failed: task_id=%s, attempt=%d, error=%s",
                         task_id,
-                        attempt + 1,
-                        REVOKE_STATUS_MAX_ATTEMPTS,
+                        attempt,
                         exc,
                     )
 
-            if attempt + 1 < REVOKE_STATUS_MAX_ATTEMPTS:
-                # 取消分支中取消标记必然存在，可中断等待会立即返回，无法给异步 revoke 留出生效时间。
-                time.sleep(sleep_interval)
+            # 剩余预算不足以再等待一个间隔时直接结束，避免白等一次 sleep
+            if deadline - time.monotonic() <= sleep_interval:
+                break
+            # 取消分支中取消标记必然存在，可中断等待会立即返回，无法给异步 revoke 留出生效时间。
+            time.sleep(sleep_interval)
 
         return latest_task_info or {}, False
 
-    def _query_task_info(self, client: ResourceManagerProtocol, task_id: int) -> dict:
+    def _query_task_info(self, client: ResourceManagerProtocol, task_id: int, **kwargs: Any) -> dict:
         """查询任务快照；BKFlow 返回 REVOKED 时统一归一化节点状态。"""
-        task_info = client.get_flow_agent_task_info(task_id)
+        task_info = client.get_flow_agent_task_info(task_id, **kwargs)
         if self._get_task_state(task_info) == FLOW_TASK_REVOKED_STATE:
             return self._build_revoke_info(task_id, task_info)
         return task_info

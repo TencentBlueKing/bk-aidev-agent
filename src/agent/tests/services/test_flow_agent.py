@@ -14,6 +14,7 @@ from ag_ui.core import EventType
 
 from aidev_agent.core.ag_ui.types import CustomMessageType
 from aidev_agent.services.agent import FlowAgentCompletionAgent
+from aidev_agent.services.agent.flow import REVOKE_STATUS_CALL_TIMEOUT, REVOKE_STATUS_QUERY_BUDGET
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 
 
@@ -38,6 +39,21 @@ def _find_events_by_type(events: list[dict], event_type) -> list[dict]:
 
 def _find_custom_events(events: list[dict], name: str) -> list[dict]:
     return [e for e in events if e.get("type") == EventType.CUSTOM and e.get("name") == name]
+
+
+class _FakeClock:
+    """伪造单调时钟：sleep 推进时间，用于验证撤销查询的时间预算。"""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 class MockResourceManager:
@@ -380,11 +396,14 @@ class TestFlowAgentStop:
             task_info_sequence=[{"task_state": "RUNNING"}],
             error_on_call={attempt: RuntimeError("bkflow unavailable") for attempt in range(10)},
         )
-        agent = FlowAgentCompletionAgent(poll_interval=0.01, session_code="revoke-log-session")
+        agent = FlowAgentCompletionAgent(poll_interval=0.125, session_code="revoke-log-session")
+        clock = _FakeClock()
 
         with (
             patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False),
-            patch("aidev_agent.services.agent.flow.time.sleep"),
+            patch("aidev_agent.services.agent.flow.REVOKE_STATUS_QUERY_BUDGET", 1.0),
+            patch("aidev_agent.services.agent.flow.time.monotonic", clock.monotonic),
+            patch("aidev_agent.services.agent.flow.time.sleep", clock.sleep),
             patch("aidev_agent.services.agent.flow.logger.warning") as warning,
             patch("aidev_agent.services.agent.flow.logger.exception") as exception,
         ):
@@ -392,21 +411,44 @@ class TestFlowAgentStop:
 
         assert task_info == {}
         assert is_end_state is False
-        assert warning.call_count == 9
+        # 预算 1.0s、间隔 0.125s：共查询 8 次，前 7 次 warning，最后一次记录 exception 栈
+        assert warning.call_count == 7
         assert exception.call_count == 1
 
     def test_revoke_query_waits_even_when_cancel_signal_exists(self):
-        """进入取消分支后仍按固定间隔等待平台异步 revoke 生效。"""
+        """进入取消分支后仍按固定间隔等待平台异步 revoke 生效，且总等待不超过查询预算。"""
         client = MockResourceManager(task_info_sequence=[{"task_state": "RUNNING"}] * 10)
         agent = FlowAgentCompletionAgent(poll_interval=0.2, session_code="revoke-wait-session")
+        clock = _FakeClock()
 
         with (
             patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=True),
-            patch("aidev_agent.services.agent.flow.time.sleep") as sleep,
+            patch("aidev_agent.services.agent.flow.time.monotonic", clock.monotonic),
+            patch("aidev_agent.services.agent.flow.time.sleep", clock.sleep),
         ):
             agent._get_task_info_after_revoke(client, 3005, None)
 
-        assert [item.args for item in sleep.call_args_list] == [(0.2,)] * 9
+        assert clock.sleeps and set(clock.sleeps) == {0.2}
+        assert clock.now <= REVOKE_STATUS_QUERY_BUDGET
+
+    def test_revoke_query_call_timeout_is_capped_by_remaining_budget(self):
+        """撤销后的单次查询超时取 min(单次上限, 剩余预算)，整体耗时不超过预算。"""
+        client = MagicMock()
+        client.get_flow_agent_task_info.return_value = {"task_state": "RUNNING"}
+        agent = FlowAgentCompletionAgent(poll_interval=0.2, session_code="revoke-timeout-session")
+        clock = _FakeClock()
+
+        with (
+            patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=True),
+            patch("aidev_agent.services.agent.flow.time.monotonic", clock.monotonic),
+            patch("aidev_agent.services.agent.flow.time.sleep", clock.sleep),
+        ):
+            agent._get_task_info_after_revoke(client, 3006, None)
+
+        timeouts = [call.kwargs["timeout"] for call in client.get_flow_agent_task_info.call_args_list]
+        assert timeouts[0] == REVOKE_STATUS_CALL_TIMEOUT
+        assert timeouts[-1] < REVOKE_STATUS_CALL_TIMEOUT
+        assert clock.now <= REVOKE_STATUS_QUERY_BUDGET
 
     @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
     def test_poll_revoke_normalizes_running_nodes(self, mock_cancelled):
