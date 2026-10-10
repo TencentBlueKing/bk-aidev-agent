@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from aidev_agent.core.tools.memory import PersonalMemoryRuntime
+from aidev_agent.core.tools.memory import PersonalMemoryRuntime, message_timestamp
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
@@ -28,7 +28,11 @@ def completed_history(history, session_id: str) -> list[dict]:
             continue
         identity = json.dumps([session_id, index, data["role"], text], ensure_ascii=False)
         message_id = str(data.get("id") or "host-" + hashlib.sha256(identity.encode()).hexdigest())
-        snapshot.append({"message_id": message_id, "role": data["role"], "text": text, "complete": True})
+        item = {"message_id": message_id, "role": data["role"], "text": text, "complete": True}
+        stamp = message_timestamp(data.get("created_at")) or message_timestamp(data.get("timestamp"))
+        if stamp is not None:
+            item["timestamp"] = stamp
+        snapshot.append(item)
     return snapshot
 
 
@@ -58,7 +62,17 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
             if isinstance(message, AIMessage) and message.tool_calls:
                 continue
             if (role, message.content) not in known:
-                snapshot.append({"message_id": message.id, "role": role, "text": message.content, "complete": True})
+                metadata = message.response_metadata
+                stamp = message_timestamp(metadata.get("created_at")) or message_timestamp(metadata.get("timestamp"))
+                snapshot.append(
+                    {
+                        "message_id": message.id,
+                        "role": role,
+                        "text": message.content,
+                        "complete": True,
+                        "timestamp": stamp or datetime.now(timezone.utc).isoformat(),
+                    }
+                )
         context = {
             "username": username,
             "session_id": session_id,
@@ -83,12 +97,8 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
 def session_date(history) -> str:
     for record in history or []:
         data = record.model_dump() if hasattr(record, "model_dump") else record
-        timestamp = data.get("created_at") if isinstance(data, dict) else None
-        if isinstance(timestamp, datetime):
-            return timestamp.date().isoformat()
-        if isinstance(timestamp, str):
-            try:
-                return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).date().isoformat()
-            except ValueError:
-                continue
+        if isinstance(data, dict):
+            stamp = message_timestamp(data.get("created_at")) or message_timestamp(data.get("timestamp"))
+            if stamp is not None:
+                return datetime.fromisoformat(stamp).date().isoformat()
     return datetime.now(timezone.utc).date().isoformat()
