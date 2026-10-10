@@ -47,7 +47,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.4.0"
+version = "2.4.0.post1"
 source = { editable = "." }
 dependencies = [
     { name = "ag-ui-protocol" },
