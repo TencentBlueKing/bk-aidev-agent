@@ -63,6 +63,7 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
 )
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
+from aidev_agent.services.agent.memory import automatic_personal_memory
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -1553,6 +1554,13 @@ class ChatCompletionAgent(BaseModel):
             self.knowledge_query_options.knowledge_items = self.knowledges
         logger.info(f"callbacks: {self.callbacks}")
         return self.agent_cls.get_agent_executor(
+            personal_memory_runtime=automatic_personal_memory(
+                self.resource_manager,
+                (self.executor_info or {}).get("executor") or getattr(self.resource_manager, "username", ""),
+                self.thread_id,
+                self.chat_history,
+                messages,
+            ),
             llm=self.chat_model,
             non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
             fast_llm=self.chat_model_fast,
