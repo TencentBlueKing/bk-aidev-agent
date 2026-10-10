@@ -6,6 +6,12 @@
 
 每次调用的宿主负责提供认证用户、会话 ID、会话日期和已完成的 user/assistant 消息快照。不得从模型工具参数解析身份。消息的 `message_id` 和最终回答的 AIMessage.id 必须稳定，以便失败重试和续流去重。`complete=False` 的消息不参与写入和抽取。
 
+SDK 调用 `/openapi/aidev/resource/v1/memory/` 应用入口，沿用应用凭证，同时将每次调用的 username 写入网关认证字段 `bk_username`，按该用户解析 access_token。username 不保证自动存在：只配置应用凭证的宿主必须补齐真实认证用户，空值或纯空白在调用前被拒绝。网关与平台还会核对用户认证状态；`X-BKAIDEV-USER` 不能指定记忆归属，也不能用自定义认证头覆盖 ResourceManager 凭证。
+
+显式提供 access_token 时，ResourceManager 的 username 必须与该次调用用户一致。共享图的动态用户不能复用固定用户的 token，应使用可按用户解析凭证的 ResourceManager 或按请求创建绑定用户的实例。
+
+平台同时提供 `/openapi/aidev/user_mode/resource/memory/` 用户入口。两入口共用 `(tenant_id, username)` 归属；同租户同用户跨智能体和空间共享个人记忆，其他用户或租户保持隔离。
+
 ```python
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.services.common_agent.agent import CommonQAAgent
