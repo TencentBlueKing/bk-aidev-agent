@@ -8,6 +8,7 @@
 - 边界情况：空检查点、id=None 的消息
 """
 
+import inspect
 import os
 import subprocess
 from unittest.mock import MagicMock
@@ -806,3 +807,76 @@ class TestMessagesProcessingLocation:
         own_path = os.path.relpath(__file__)
         real_refs = [line for line in result.stdout.splitlines() if line and not line.startswith(own_path + ":")]
         assert not real_refs, f"全局仍有 _preprocessed_stream_data 实际引用:\n{chr(10).join(real_refs)}"
+
+
+class TestStreamDurabilityExit:
+    """AG-UI 路径 checkpoint 只在每轮结束时写一次（durability="exit"）。"""
+
+    def test_get_stream_kwargs_defaults_durability_exit(self):
+        """get_stream_kwargs 默认透传 durability='exit'（langgraph 支持时）。"""
+        mock_graph = MagicMock()
+        mock_graph.astream_events = lambda **kwargs: None
+        agent = LangGraphAgent.__new__(LangGraphAgent)
+        agent.graph = mock_graph
+
+        kwargs = agent.get_stream_kwargs(input={"messages": []}, config={"configurable": {"thread_id": "t"}})
+        assert kwargs.get("durability") == "exit"
+
+    def test_get_stream_kwargs_skips_durability_when_unsupported(self):
+        """旧版 langgraph 无 durability/kwargs 能力时不应注入，避免 TypeError。"""
+
+        def _legacy_astream_events(input, config=None, version="v2"):
+            return None
+
+        mock_graph = MagicMock()
+        mock_graph.astream_events = _legacy_astream_events
+        assert "durability" not in inspect.signature(mock_graph.astream_events).parameters
+
+        agent = LangGraphAgent.__new__(LangGraphAgent)
+        agent.graph = mock_graph
+        kwargs = agent.get_stream_kwargs(input={"messages": []}, config={"configurable": {"thread_id": "t"}})
+        assert "durability" not in kwargs
+
+    def test_agent_py_astream_events_call_passes_durability_exit(self):
+        """源码断言：AG-UI 唯一启动点显式传 durability='exit'。"""
+        source = _read_agent_py()
+        assert 'durability="exit"' in source, "AG-UI astream_events 启动点应显式 durability='exit'"
+
+    @pytest.mark.asyncio
+    async def test_durability_exit_writes_checkpoint_once_per_turn(self):
+        """e2e：多超步图在 durability='exit' 下每轮仅写一次 checkpoint，默认 async 写多次。"""
+
+        class _CountingSaver(MemorySaver):
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                self.puts = 0
+
+            async def aput(self, *a, **k):
+                self.puts += 1
+                return await super().aput(*a, **k)
+
+        class _State(TypedDict):
+            x: int
+
+        builder = StateGraph(_State)
+        builder.add_node("a", lambda s: {"x": s["x"] + 1})
+        builder.add_node("b", lambda s: {"x": s["x"] + 1})
+        builder.add_edge(START, "a")
+        builder.add_edge("a", "b")
+        builder.add_edge("b", END)
+
+        saver = _CountingSaver()
+        graph = builder.compile(checkpointer=saver)
+
+        async for _ in graph.astream_events(
+            {"x": 0}, config={"configurable": {"thread_id": "durability-exit"}}, version="v2", durability="exit"
+        ):
+            pass
+        assert saver.puts == 1, f"durability='exit' 应每轮仅写一次，实际 {saver.puts}"
+
+        saver.puts = 0
+        async for _ in graph.astream_events(
+            {"x": 0}, config={"configurable": {"thread_id": "durability-async"}}, version="v2"
+        ):
+            pass
+        assert saver.puts > 1, "默认 async durability 应多次写 checkpoint（对照组）"
