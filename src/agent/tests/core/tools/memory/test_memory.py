@@ -2,13 +2,14 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.api.bk_aidev import Client
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import AgentExecutorKwargs
 from bkapi_client_core.client import BaseClient
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from requests import Request
+from requests import Request, Response
 
 
 @pytest.fixture
@@ -230,3 +231,26 @@ def test_graph_routes_successful_answer_through_memory(runtime):
 def test_standard_agent_options_enable_runtime(runtime):
     builder = ReActAgentBuilder().set_bkai_options(AgentExecutorKwargs(personal_memory_runtime=runtime))
     assert builder._personal_memory is runtime
+
+
+@pytest.mark.parametrize(
+    "method,action,http_method",
+    [
+        ("memory_schemas", "schemas", "GET"),
+        ("memory_tool", "tool", "POST"),
+        ("complete_memory_round", "complete_round", "POST"),
+    ],
+)
+def test_sdk_memory_calls_agent_runtime_routes(monkeypatch, method, action, http_method):
+    manager = Manager(app_code="app", app_secret="secret")
+    manager.client = Client(endpoint="https://example.com/")
+    response = Response()
+    response.status_code = 200
+    response._content = b'{"result": true, "data": {"ok": true}}'
+    handle = MagicMock(return_value=response)
+    monkeypatch.setattr(manager.client.session, "handle", handle)
+    monkeypatch.setattr(manager, "resolve_access_token", lambda name: "alice-token")
+    args = [] if method == "memory_schemas" else [{"context": {"session_id": "s"}}]
+    assert getattr(manager, method)(*args, username="alice") == {"ok": True}
+    assert handle.call_args.kwargs["url"] == f"https://example.com/openapi/aidev/agents/v1/memory/{action}/"
+    assert handle.call_args.kwargs["method"] == http_method
