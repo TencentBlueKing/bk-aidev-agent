@@ -10,9 +10,10 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
 from ag_ui.core import EventType
-
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import FlowAgentCompletionAgent
 from aidev_agent.services.agent.flow import REVOKE_STATUS_CALL_TIMEOUT, REVOKE_STATUS_QUERY_BUDGET
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
@@ -111,19 +112,22 @@ class MockResourceManager:
 
 
 class TestFlowAgentCompletion:
+    @pytest.mark.parametrize("producer_only", [False, True])
     @patch.object(GeneratorStreamingHelper, "is_cancelled", return_value=False)
-    def test_background_execute_updates_session_after_flow_completion(self, mock_cancelled):
+    def test_background_execute_updates_session_after_flow_completion(self, mock_cancelled, producer_only):
         event_handler = MagicMock()
         agent = FlowAgentCompletionAgent(
             resource_manager=MockResourceManager(),
             flow_start_params={"session_code": "flow-session"},
             poll_interval=0.01,
             poll_timeout=10.0,
-            session_code="flow-session",
+            session_code=f"flow-session-{producer_only}",
             event_handler=event_handler,
         )
 
-        list(agent.execute(MagicMock(background_only=True)))
+        chunks = list(agent.execute(ExecuteKwargs(background_only=True, producer_only=producer_only, turn_id="turn")))
+        if producer_only:
+            assert chunks == []
 
         event_handler.set_streaming_finished.assert_called_once_with()
 

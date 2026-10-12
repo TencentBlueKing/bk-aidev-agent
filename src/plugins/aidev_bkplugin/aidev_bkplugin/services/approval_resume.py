@@ -159,6 +159,7 @@ def _resume_approval(
                 "resume": resume_items,
                 "caller_trace_context": trace_headers(),
                 "background_only": True,
+                "producer_only": True,
             },
             username,
         )

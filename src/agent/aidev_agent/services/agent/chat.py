@@ -1313,7 +1313,9 @@ class ChatCompletionAgent(BaseModel):
         # 5. body 构造（合并后的 state 直接放进 body["state"]）
         body = {
             "thread_id": self.thread_id,
-            "run_id": messages[-1].id or uuid.uuid4().hex,
+            "run_id": (execute_kwargs.turn_id if execute_kwargs.producer_only else "")
+            or messages[-1].id
+            or uuid.uuid4().hex,
             "state": preprocessed["state"],
             "messages": agui_messages,
             "stream_input": preprocessed["stream_input"],  # 11.9: stream_input 通过 input 传递
@@ -1363,6 +1365,7 @@ class ChatCompletionAgent(BaseModel):
             agent_input,
             queue_thread_id=self.thread_id,
             background_only=execute_kwargs.background_only,
+            producer_only=execute_kwargs.producer_only,
             agent_e=agent_e,
             cfg=merged_cfg,
             resume=bool(execute_kwargs.resume),
@@ -1376,6 +1379,7 @@ class ChatCompletionAgent(BaseModel):
         agent_input: AgentInput,
         queue_thread_id: str | None = None,
         background_only: bool = False,
+        producer_only: bool = False,
         agent_e: Runnable | None = None,
         cfg: RunnableConfig | None = None,
         resume: bool = False,
@@ -1432,6 +1436,7 @@ class ChatCompletionAgent(BaseModel):
                 expected_run_id=run_id,
                 cancel_event=cancel_event,
                 attach_only=attach_only,
+                producer_only=producer_only,
             )
 
         return stream()

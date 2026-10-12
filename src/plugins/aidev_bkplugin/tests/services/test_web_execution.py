@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from aidev_agent.pydantic_models import ExecuteKwargs
+from aidev_agent.services.messages_handler import InMemoryQueueMessageHandler
+from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_bkplugin.services import plugin_resource_manager as resource_mod
 from aidev_bkplugin.services import web_execution as mod
 from celery import Celery
@@ -178,14 +180,21 @@ def test_real_celery_runs_agent_and_drains_stream(celery_execution, stream):
     payload["execute"]["stream"] = stream
     executing_threads = []
     consumed = []
+    helper = GeneratorStreamingHelper(thread_id="worker-inline", defer_cleanup_on_complete=True)
+    helper.message_handler = InMemoryQueueMessageHandler()
+    helper._schedule_session_cleanup = MagicMock()
+    helper.message_handler.acquire_consumer = MagicMock()
 
     def chunks():
-        consumed.append("drained")
+        consumed.append(threading.get_ident())
         yield "answer"
 
     def execute(*args, **kwargs):
         executing_threads.append(threading.get_ident())
-        return chunks() if stream else {"answer": "hello"}
+        if stream:
+            return helper.stream(chunks(), producer_only=args[1].producer_only)
+        assert not args[1].producer_only
+        return {"answer": "hello"}
 
     executor.execute_with_save.side_effect = execute
     with start_worker(
@@ -194,7 +203,8 @@ def test_real_celery_runs_agent_and_drains_stream(celery_execution, stream):
         task = app.tasks["aidev_bkplugin.run_web_agent"].delay(payload)
         assert task.get(timeout=10) == (None if stream else {"answer": "hello"})
     assert executing_threads and executing_threads[0] != threading.get_ident()
-    assert consumed == (["drained"] if stream else [])
+    assert consumed == (executing_threads if stream else [])
+    helper.message_handler.acquire_consumer.assert_not_called()
 
 
 def test_custom_resource_manager_round_trip(monkeypatch):

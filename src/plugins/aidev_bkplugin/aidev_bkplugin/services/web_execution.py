@@ -80,6 +80,7 @@ def run_web_agent_task(payload: dict):
             agent = _build_agent(payload, manager)
             execute_kwargs = ExecuteKwargs.model_validate(payload["execute"])
             execute_kwargs.background_only = True
+            execute_kwargs.producer_only = execute_kwargs.stream
             if not execute_kwargs.input and payload["flow"] is None and not agent.chat_history:
                 raise ValueError("The chat history cannot be empty. Please provide input.")
             handler = getattr(agent, "event_handler", None)
@@ -92,7 +93,7 @@ def run_web_agent_task(payload: dict):
                 if execute_kwargs.legacy_streaming:
                     result = GeneratorStreamingHelper(
                         thread_id=payload["session_code"], defer_cleanup_on_complete=True
-                    ).stream(result, expected_run_id=execute_kwargs.turn_id)
+                    ).stream(result, expected_run_id=execute_kwargs.turn_id, producer_only=True)
                 for _ in result:
                     pass
                 return None

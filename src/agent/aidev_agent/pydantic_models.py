@@ -38,6 +38,11 @@ class ExecuteKwargs(BaseModel):
     # 执行配置
     legacy_streaming: bool = Field(default=False, description="是否使用 legacy streaming protocol")
     persist_input: bool = Field(default=False, description="当为 True 时，后端自动创建 session 并写入 session_content")
+    producer_only: bool = Field(
+        default=False,
+        exclude=True,
+        description="由 worker 显式启用：在当前执行单元同步生产事件，不创建 producer 线程或消费事件",
+    )
     background_only: bool = Field(
         default=False,
         description=(

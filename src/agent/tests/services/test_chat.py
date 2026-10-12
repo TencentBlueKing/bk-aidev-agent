@@ -813,7 +813,8 @@ class TestOnComplete:
         agent._on_complete()
         mock_handler.set_streaming_finished.assert_called_once()
 
-    def test_background_stream_sets_finished_after_producer_commit(self):
+    @pytest.mark.parametrize("producer_only", [False, True])
+    def test_background_stream_sets_finished_after_producer_commit(self, producer_only):
         """后台流由 producer 在 EOD 提交后写会话终态。"""
         mock_handler = MagicMock(spec=BaseSessionWriter)
         agent = ChatCompletionAgent(
@@ -823,7 +824,18 @@ class TestOnComplete:
             event_handler=mock_handler,
         )
 
-        list(agent.execute(ExecuteKwargs(stream=True, background_only=True)))
+        chunks = list(
+            agent.execute(
+                ExecuteKwargs(stream=True, background_only=True, producer_only=producer_only, turn_id="worker-turn")
+            )
+        )
+        if producer_only:
+            assert chunks == []
+            assert any(
+                getattr(call.args[0], "run_id", None) == "worker-turn"
+                for call in mock_handler.call_args_list
+                if call.args
+            )
 
         mock_handler.set_streaming_finished.assert_called_once()
 

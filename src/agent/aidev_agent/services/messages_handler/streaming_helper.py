@@ -223,7 +223,7 @@ class GeneratorStreamingHelper:
         """判断流式侧是否已注册，此时调用 cancel 可投递到活跃流。
 
         - 进程内：``stream()`` 开头已写入 ``_cancel_events``
-        - 跨进程：存在活跃消费者（``stream()`` 在注册 cancel 后 ``acquire_consumer``）
+        - 跨进程：存在活跃消费者或 producer（worker 的 producer-only 模式不注册消费者）
         """
         with cls._cancel_lock:
             if any(
@@ -234,7 +234,9 @@ class GeneratorStreamingHelper:
         if message_handler is None:
             message_handler = message_handler_factory.get()
         try:
-            return bool(message_handler.has_active_consumer(thread_id))
+            return bool(
+                message_handler.has_active_consumer(thread_id) or message_handler.has_active_producer(thread_id)
+            )
         except Exception:
             logger.exception("Error checking stream registration for thread_id=%s", thread_id)
             return False
@@ -631,6 +633,7 @@ class GeneratorStreamingHelper:
         event_handler: Callable[[Any], None] | None = None,
         expected_run_id: str | None = None,
         attach_only: bool = False,
+        producer_only: bool = False,
     ) -> tuple[threading.Thread | None, bool, bool]:
         """根据队列状态决定启动生产者还是恢复旧消息。"""
         producer_thread: threading.Thread | None = None
@@ -682,6 +685,17 @@ class GeneratorStreamingHelper:
             except Exception:
                 self.message_handler.release_producer(self.thread_id)
                 raise
+
+            if producer_only:
+                self._run_producer(
+                    generator=generator,
+                    cancel_event=cancel_event,
+                    on_complete=on_complete,
+                    event_handler=event_handler,
+                    expected_run_id=expected_run_id,
+                    release_producer=True,
+                )
+                return None, False, False
 
             # OTel 的当前 Span 存在 contextvars 中，而新线程不会自动继承它。
             producer_context = copy_context()
@@ -1052,6 +1066,7 @@ class GeneratorStreamingHelper:
         expected_run_id: str | None = None,
         cancel_event: threading.Event | None = None,
         attach_only: bool = False,
+        producer_only: bool = False,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -1065,6 +1080,7 @@ class GeneratorStreamingHelper:
             event_handler: AG-UI 事件处理器，用于同步记录受控错误和结束状态。
             expected_run_id: 正常 AG-UI 流的 run_id；提供时保证 EOD 前至少输出一次 RUN_FINISHED。
             attach_only: 仅接管/回放已有流，不允许创建新的生产者。
+            producer_only: 在调用方执行单元内同步生产，不启动 producer 线程或注册消费者。
 
         Yields:
             生成器产生的数据
@@ -1097,6 +1113,22 @@ class GeneratorStreamingHelper:
         completion_callback = _on_complete_once if on_complete is not None else None
 
         try:
+            if producer_only:
+                should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
+                if should_consume_stopped or has_pending or attach_only:
+                    return
+                self._start_or_resume_stream(
+                    generator=generator,
+                    cancel_event=cancel_event,
+                    has_pending=False,
+                    on_complete=completion_callback,
+                    event_handler=event_handler,
+                    expected_run_id=expected_run_id,
+                    producer_only=True,
+                )
+                if self._producer_completion_error is not None:
+                    raise self._producer_completion_error
+                return
             consumer_id = self.message_handler.acquire_consumer(self.thread_id)
             should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
             if should_consume_stopped:
@@ -1540,7 +1572,7 @@ class GeneratorStreamingHelper:
                         logger.exception(f"Error releasing producer for thread_id={self.thread_id}: {e}")
 
     def _run_producer(self, **kwargs: Any) -> None:
-        """线程入口：记录 producer 终结异常，由消费线程统一向调用方传播。"""
+        """Producer 执行入口：记录终结异常，由 stream() 向调用方传播。"""
         try:
             self._producer(**kwargs)
         except Exception as exc:

@@ -45,8 +45,10 @@ python -m cookiecutter ${GIT_ROOT} --directory template/builtin --no-input
 
 Web 聊天通过 `aidev_bkplugin.run_web_agent.delay()` 投递到 `BKAI_AGENT_TASK`
 （默认 `bkai_agent_task`）。Web 准备会话并读取 SSE，worker 构建和执行智能体。
-普通聊天、Flow 轮询和审批续流复用 SDK 原有执行与流式线程机制；无需修改 SDK，
-不新增任务模型或数据库迁移。
+普通聊天、Flow 轮询和审批续流在 worker 中显式启用 SDK 的 `producer_only` 模式：
+stream handler 在当前 Celery 任务内同步运行 producer，不再创建模型执行线程或注册消费者。
+普通 SDK 调用保持原线程模式；心跳、传输和清理辅助线程仍保留。不新增任务模型或数据库迁移。
+升级时须同时更新 SDK 和插件。
 
 Web 和 worker 须配置同一个可共享的 Celery result backend，用于返回非流式结果和
 传播启动失败。任务显式开启结果保存，并沿用 Celery 的结果过期配置。流式事件仍走

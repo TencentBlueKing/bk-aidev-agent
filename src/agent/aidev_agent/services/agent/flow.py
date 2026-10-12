@@ -146,13 +146,15 @@ class FlowAgentCompletionAgent(BaseModel):
             defer_cleanup_on_complete=background_only,
         )
         attach_only = getattr(execute_kwargs, "stream_mode", "start") == "attach"
-        run_id = None if attach_only else str(uuid.uuid4())
+        producer_only = bool(getattr(execute_kwargs, "producer_only", False))
+        run_id = None if attach_only else (getattr(execute_kwargs, "turn_id", "") or str(uuid.uuid4()))
         return helper.stream(
             self._run_flow(run_id),
             on_complete=self._on_complete,
             event_handler=self.event_handler,
             expected_run_id=run_id,
             attach_only=attach_only,
+            producer_only=producer_only,
         )
 
     def _on_complete(self) -> None:
