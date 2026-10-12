@@ -29,3 +29,16 @@ def test_polling_does_not_duplicate_explicit_cancellation(monkeypatch, status):
     assert kwargs.caller_order_type is None
     assert kwargs.executor == "user"
     assert kwargs.caller_executor == "user"
+
+
+def test_approval_wait_releases_worker_slot(monkeypatch):
+    handler = MagicMock()
+    handler.check_resume.return_value = False
+    monkeypatch.setattr(mod, "ApprovalStateHandler", MagicMock(return_value=handler))
+    retry = MagicMock(side_effect=RuntimeError("retry-scheduled"))
+    monkeypatch.setattr(mod._approval_resume_worker, "retry", retry)
+    with pytest.raises(RuntimeError, match="retry-scheduled"):
+        mod._approval_resume_worker("session", "user", "graph", [])
+    retry.assert_called_once_with(countdown=5, max_retries=None)
+    handler.fetch_approve_result.assert_not_called()
+    assert mod._approval_resume_worker.max_retries is None

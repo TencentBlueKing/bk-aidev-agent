@@ -124,6 +124,32 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
+        session_code = self.prepare_session_with_chat_history(thread_id, chat_history, channel_type=channel_type)
+        try:
+            agent = self._build_session_agent_for_thread(
+                session_code,
+                version=version,
+                channel_type=channel_type,
+            )
+        except Exception:
+            # Agent 构建失败，尝试标记 session 为 FAILED
+            try:
+                self.session_manager.update_session_status(session_code, SessionsStatus.FAILED.value)
+            except Exception:
+                logger.exception(
+                    "Failed to mark session as FAILED after agent build error: session_code=%s", session_code
+                )
+            raise
+        return agent, session_code
+
+    def prepare_session_with_chat_history(
+        self,
+        thread_id: str,
+        chat_history: list[ChatPrompt],
+        *,
+        channel_type: str | None = None,
+    ) -> str:
+        """Persist HTTP input without constructing models or tools in the Web process."""
         session_code = self.session_manager.get_or_create_by_thread_id(
             thread_id,
             channel_type=channel_type or ChannelType.POPUP.value,
@@ -143,22 +169,7 @@ class AgentBuilder:
             ) or self.turn_id
         else:
             self.session_manager.save_chat_history(session_code, chat_history)
-        try:
-            agent = self._build_session_agent_for_thread(
-                session_code,
-                version=version,
-                channel_type=channel_type,
-            )
-        except Exception:
-            # Agent 构建失败，尝试标记 session 为 FAILED
-            try:
-                self.session_manager.update_session_status(session_code, SessionsStatus.FAILED.value)
-            except Exception:
-                logger.exception(
-                    "Failed to mark session as FAILED after agent build error: session_code=%s", session_code
-                )
-            raise
-        return agent, session_code
+        return session_code
 
     def _build_session_agent_for_thread(
         self,

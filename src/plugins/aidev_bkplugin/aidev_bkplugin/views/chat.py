@@ -4,27 +4,29 @@ import uuid
 from typing import Optional
 
 from aidev_agent.config import settings as agent_settings
-from aidev_agent.enums import AgentBuildType, AgentType, ChannelType, PromptRole
+from aidev_agent.enums import AgentType, ChannelType, PromptRole
 from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
-from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
+from django.db import transaction
 from django.http.response import StreamingHttpResponse
+from django.utils.decorators import method_decorator
 from rest_framework.views import Response
 
 from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from aidev_bkplugin.services.agent_builder import AgentBuilder
-from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.chat_tracing import chat_request_span
+from aidev_bkplugin.services.web_execution import dispatch_web_agent
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
+@method_decorator(transaction.non_atomic_requests, name="dispatch")
 class ChatCompletionViewSet(PluginViewSet):
     # 使用自定义内容协商，忽略 Accept 头限制，支持流式响应
     content_negotiation_class = IgnoreClientContentNegotiation
@@ -165,41 +167,17 @@ class ChatCompletionViewSet(PluginViewSet):
                         model,
                     )
 
-            agent_instance = AgentBuilder(
-                username=request.user.username,
-                turn_id=turn_id,
+            result = dispatch_web_agent(
+                session_code=session_code,
+                username=username,
+                execute_kwargs=execute_kwargs,
                 resource_manager=rm,
-                agent_code=agent_code,
-                model=model,
-            ).by_session_code(
-                session_code,
-                version=execute_kwargs.version,
                 channel_type=self.channel_type,
+                model=model,
             )
-            if not _input and not agent_instance.chat_history:
-                raise ClientBlueException(message="The chat history cannot be empty. Please provide 'input' parameter.")
-            # 执行 agent
             if execute_kwargs.stream:
-                manager = SessionManager(username=username, resource_manager=rm, agent_code=agent_code)
-                stream_out = AgentExecutor(manager).execute_with_save(
-                    agent_instance,
-                    execute_kwargs,
-                    session_code,
-                    turn_id=turn_id,
-                )
-                handler = getattr(agent_instance, "event_handler", None)
-                if handler and hasattr(handler, "set_streaming_started"):
-                    handler.set_streaming_started()
-                return self.streaming_response(stream_out, session_code=session_code)
-            else:
-                manager = SessionManager(username=username, resource_manager=rm, agent_code=agent_code)
-                result = AgentExecutor(manager).execute_with_save(
-                    agent_instance,
-                    execute_kwargs,
-                    session_code,
-                    turn_id=turn_id,
-                )
-                return Response(result)
+                return self.streaming_response(result, session_code=session_code)
+            return Response(result)
         except Exception as err:
             logger.exception(f"ChatCompletionViewSet create error: {err}")
             message = getattr(err, "message", str(err))
@@ -244,10 +222,9 @@ class ChatCompletionViewSet(PluginViewSet):
             agent_code=agent_code,
             model=model,
         )
-        agent_instance, session_code = builder.by_thread_id_with_chat_history(
+        session_code = builder.prepare_session_with_chat_history(
             thread_id=thread_id,
             chat_history=chat_history,
-            version=execute_kwargs.version,
             channel_type=channel_type,
         )
         # 模型热更新持久化：model 非空时写回 session.resources.model（写回失败不阻塞主流程）
@@ -268,11 +245,13 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs.session_code = session_code
         if hasattr(execute_kwargs, "turn_id"):
             execute_kwargs.turn_id = turn_id
-        result = AgentExecutor(builder.session_manager).execute_with_save(
-            agent_instance,
-            execute_kwargs,
-            session_code,
-            turn_id=turn_id,
+        result = dispatch_web_agent(
+            session_code=session_code,
+            username=username,
+            execute_kwargs=execute_kwargs,
+            resource_manager=resource_manager,
+            channel_type=channel_type,
+            model=model,
         )
         if execute_kwargs.stream:
             return self.streaming_response(result, session_code=session_code)
@@ -428,66 +407,21 @@ class ChatCompletionViewSet(PluginViewSet):
         if channel_type:
             flow_start_params.setdefault("channel_type", channel_type)
 
-        # 构建 event_handler（如果有 session_code）
-        event_handler = None
-        if session_code:
-            event_handler = AGUISessionWriter(
-                session_code=session_code,
-                client=AgentHelper.get_client(resource_manager=resource_manager),
-                username=username,
-                turn_id=turn_id,
-                task_id=str(task_id) if task_id else "",
-            )
-
-        # FlowAgent 不需要工厂 SESSION 路径的会话上下文清洗（_get_agent_config /
-        # _check_agent_switch / get_chat_session_context 等），统一走 DIRECT；
-        # session_code 通过工厂 __init__ 透传到 factory.session_code，再由
-        # FlowAgentCompletionAgent.build 取用。
-        agent_instance = AgentInstanceFactory.build_agent(
-            agent_type=AgentType.FLOW,
-            build_type=AgentBuildType.DIRECT,
-            session_code=session_code or None,
-            session_context_data=[],
-            event_handler=event_handler,
+        execute_kwargs = data["execute_kwargs"].model_copy(update={"stream": True, "turn_id": turn_id})
+        generator = dispatch_web_agent(
+            session_code=session_code,
             username=username,
-            # 通过 **extra 透传给 FlowAgentCompletionAgent.build(ctx)，供 flow start / poll 调用。
-            # 必须复用注入的 rm：另建 PluginResourceManager 会丢掉子类自定义的凭证与 agent_code，
-            # 使 Flow 路径退回主智能体配置。Flow 用到的接口均已在 ResourceManagerProtocol 声明。
-            flow_resource_manager=resource_manager,
-            task_id=task_id,
-            flow_start_params=flow_start_params,
-            poll_interval=poll_interval,
-            poll_timeout=poll_timeout,
-            resume_from_node=resume_action or None,
+            execute_kwargs=execute_kwargs,
+            resource_manager=resource_manager,
+            channel_type=channel_type,
+            flow={
+                "task_id": task_id,
+                "flow_start_params": flow_start_params,
+                "poll_interval": poll_interval,
+                "poll_timeout": poll_timeout,
+                "resume_from_node": resume_action or None,
+            },
         )
-
-        try:
-            generator = agent_instance.execute()
-        except Exception as err:
-            logger.exception(f"[FLOW_AGENT] execute error: session_code={session_code}, error={err}")
-            message = getattr(err, "message", str(err))
-            if session_code:
-                error_message_id = str(uuid.uuid4())
-                AGUISessionWriter(
-                    session_code=session_code,
-                    client=AgentHelper.get_client(resource_manager=resource_manager),
-                    username=username,
-                    turn_id=turn_id,
-                )._create_session_content(
-                    message_id=error_message_id,
-                    role=PromptRole.ASSISTANT.value,
-                    content=message,
-                    status="error",
-                    builtin_property={
-                        "message_id": error_message_id,
-                        "error": True,
-                    },
-                )
-            raise ClientBlueException(message=message)
-
-        logger.info(f"[FLOW_AGENT] Streaming started: session_code={session_code}, task_id={task_id}")
-        if event_handler and hasattr(event_handler, "set_streaming_started"):
-            event_handler.set_streaming_started()
         return self.streaming_response(generator, session_code=session_code)
 
     def _wrap_streaming_with_status(self, generator, event_handler, session_code: str = "", username: str = ""):

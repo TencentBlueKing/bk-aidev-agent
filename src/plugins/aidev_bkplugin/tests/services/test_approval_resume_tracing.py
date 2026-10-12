@@ -6,6 +6,7 @@ import pytest
 from aidev_agent.services.agent.approval import ApprovalStateHandler
 from aidev_agent.utils import tracing
 from aidev_bkplugin.services import approval_resume
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -47,7 +48,15 @@ def test_polling_restores_callback_parent_through_lazy_drain(resume_case, monkey
     resumed = next(s for s in exporter.get_finished_spans() if s.name == "bkplugin.approval.resume")
     assert resumed.context.trace_id != worker.get_span_context().trace_id
     assert (resumed.parent.span_id if resumed.parent else None) == (int("2" * 16, 16) if valid else None)
-    assert seen == [{"traceparent": f"00-{resumed.context.trace_id:032x}-{resumed.context.span_id:016x}-01"}] * 2
+    assert (
+        seen
+        == [
+            {
+                "traceparent": f"00-{resumed.context.trace_id:032x}-{resumed.context.span_id:016x}-{int(resumed.context.trace_flags):02x}"
+            }
+        ]
+        * 2
+    )
 
 
 @pytest.mark.parametrize("nested", [True, False])
@@ -62,8 +71,6 @@ def test_approval_reader_keeps_callback_context_from_same_record(monkeypatch, ne
 
 
 def test_approval_resume_span_uses_application_service_name(resume_case, monkeypatch):
-    from opentelemetry.sdk.resources import Resource
-
     exporter, _ = resume_case
     module_exporter = InMemorySpanExporter()
     module_provider = TracerProvider(resource=Resource.create({"service.name": "ai-skill-stag-default"}))

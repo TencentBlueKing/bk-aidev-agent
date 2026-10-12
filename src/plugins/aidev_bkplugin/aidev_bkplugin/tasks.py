@@ -11,7 +11,9 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentType
 from celery import shared_task
 
+from .services.approval_resume import _approval_resume_worker  # noqa: F401 - Celery autodiscovery
 from .services.metric_runtime import RetryableMetricPushError, get_metric_service
+from .services.web_execution import run_web_agent_task  # noqa: F401 - Celery autodiscovery
 
 logger = logging.getLogger(__name__)
 

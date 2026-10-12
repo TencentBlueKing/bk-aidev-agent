@@ -83,3 +83,16 @@ class EventDelivery(models.Model):
             models.UniqueConstraint(fields=["subscription", "event_id"], name="unique_event_delivery"),
         ]
         indexes = [models.Index(fields=["status", "available_at"], name="event_delivery_ready")]
+
+
+class WebAgentTask(models.Model):
+    """One current execution per session; no prompts or credentials are stored here."""
+
+    key = models.CharField(max_length=64, primary_key=True)
+    task_id = models.CharField(max_length=32)
+    request_key = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, default="queued")
+    result = models.JSONField(null=True)
+    error = models.CharField(max_length=255, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

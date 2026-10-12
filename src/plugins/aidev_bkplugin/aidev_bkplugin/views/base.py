@@ -21,39 +21,8 @@ from aidev_bkplugin.packages.drf.authentication import custom_authentication_cla
 from aidev_bkplugin.packages.drf.decorators import login_exempt
 from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.permissions import AgentPluginPermission
-from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_helpers import AgentHelper
-
-
-class PluginResourceManager(LLMOverrideResourceManager):
-    """带用户态认证注入的资源管理器。
-
-    传入 ``username``，基类 ``get_client()`` 自动通过 bkoauth 取 ``access_token`` 注入到 client header。
-    view 层经 ``PluginViewSet.get_resource_manager()`` 按请求构造，并向下注入给
-    ``SessionManager`` / ``AgentBuilder`` / ``AGUISessionWriter``，取代历史上的
-    ``resource_manager()`` 全局单例。
-
-    继承 ``LLMOverrideResourceManager`` 以携带 ``model`` 覆盖能力：view 层构造时 ``model`` 为空，
-    由 ``AgentBuilder`` 在装配 agent 时按请求补上，使模型热更新与用户态认证共存于同一个 rm。
-    """
-
-    def __init__(self, username: str, model: str = "", *, app_code: str = "", app_secret: str = ""):
-        super().__init__(username=username, model=model, app_code=app_code, app_secret=app_secret)
-        self._cached_client = None
-
-    def get_client(self, **kwargs: Any):
-        """按实例缓存 ``client``。
-
-        基类每次 ``get_client()`` 都会 ``resolve_access_token``，即一次 bkoauth ``AccessToken``
-        表查询（token 临期还会同步发请求续期）。本类是请求级对象，同一实例上的 client 可安全复用，
-        避免 ``SessionManager`` 等多次取 client 时反复查库。
-        带 ``kwargs`` 的调用参数各异，不参与缓存。
-        """
-        if kwargs:
-            return super().get_client(**kwargs)
-        if self._cached_client is None:
-            self._cached_client = super().get_client()
-        return self._cached_client
+from aidev_bkplugin.services.plugin_resource_manager import PluginResourceManager
 
 
 class IgnoreClientContentNegotiation(DefaultContentNegotiation):

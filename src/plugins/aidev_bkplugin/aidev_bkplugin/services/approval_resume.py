@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """审批完成后台自动续流。
 
-当 Agent 因工具审批中断时，启动后台工作线程轮询审批结果，
+当 Agent 因工具审批中断时，启动Celery 任务轮询审批结果，
 收到 ITSM 回调前持续轮询（不设超时），审批完成后自动续流，无需前端在线。
 
 设计思路：
@@ -10,12 +10,13 @@
 - 如果前端同时续流，ConsumerPreemptedError 会让后台线程优雅退出
 """
 
-import threading
-import time
 from logging import getLogger
 
+from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.agent.approval import ApprovalStateHandler
+from aidev_agent.services.messages_handler.producer_execution import worker_producer
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span, trace_headers
+from celery import shared_task
 
 from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor, build_execute_kwargs
@@ -33,26 +34,27 @@ def start_approval_resume_worker(
     graph_thread_id: str,
     interrupts: list[dict] | None = None,
 ):
-    """启动后台续流工作线程。
+    """启动后台续流 Celery 任务。
 
     在 BaseSessionWriter.handle_run_finished 检测到 interrupt 时调用。
     """
-    thread = threading.Thread(
-        target=_approval_resume_worker,
-        args=(session_code, username, graph_thread_id, interrupts or []),
-        daemon=True,
-        name=f"approval-resume-{session_code[:12]}",
-    )
-    thread.start()
+    _approval_resume_worker.delay(session_code, username, graph_thread_id, interrupts or [])
     logger.info(
-        "[ApprovalResume] 后台续流线程已启动: session_code=%s, graph_thread_id=%s",
+        "[ApprovalResume] 后台续流任务已投递: session_code=%s, graph_thread_id=%s",
         session_code,
         graph_thread_id,
     )
 
 
-def _approval_resume_worker(session_code: str, username: str, graph_thread_id: str, interrupts: list[dict]):
-    """后台续流工作线程：轮询审批结果，完成后续流。"""
+@shared_task(
+    name="aidev_bkplugin.resume_approval",
+    bind=True,
+    queue=agent_settings.BKAI_AGENT_TASK,
+    ignore_result=True,
+    max_retries=None,
+)
+def _approval_resume_worker(self, session_code: str, username: str, graph_thread_id: str, interrupts: list[dict]):
+    """后台续流 Celery 任务：轮询审批结果，完成后续流。"""
     logger.info(
         "[ApprovalResume] 开始轮询审批结果: session_code=%s, username=%s",
         session_code,
@@ -65,17 +67,9 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
     # 否则 resume 的 terminal_interrupt_ids 判定用的是回调前的陈旧记录，
     # 已批中断不被排除而被重推（UAT：重推未 enrich 的北京审批卡）。
     handler = ApprovalStateHandler(username=username)
-    poll_count = 0
-    while True:
-        poll_count += 1
-        if handler.check_resume(session_code):
-            logger.info(
-                "[ApprovalResume] 审批已回调，准备续流: session_code=%s (第 %d 次轮询)",
-                session_code,
-                poll_count,
-            )
-            break
-        time.sleep(_POLL_INTERVAL)
+    if not handler.check_resume(session_code):
+        # Release the worker slot while waiting for the external approval.
+        raise self.retry(countdown=_POLL_INTERVAL, max_retries=None)
 
     # 2. 从 interrupt 记录的 property 获取审批结果
     approve_info = handler.fetch_approve_result(session_code)
@@ -96,6 +90,7 @@ def _approval_resume_worker(session_code: str, username: str, graph_thread_id: s
     with (
         propagated_trace_context(approve_info.get("approval_trace_context")),
         recording_span("bkplugin.approval.resume", record_exception=False, use_global_tracer=True),
+        worker_producer(session_code, lambda: None),
     ):
         _resume_approval(session_code, username, graph_thread_id, interrupts, approve_info)
 
