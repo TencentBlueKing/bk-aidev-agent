@@ -11,6 +11,7 @@ from logging import getLogger
 from typing import Any
 
 from aidev_agent.api.bk_aidev import Client
+from aidev_agent.core.ag_ui.event_builders import _resolve_function_type
 from aidev_agent.core.ag_ui.types import RunFinishedOutcomeType
 from aidev_agent.enums import ActivityType, PromptRole, SessionsStatus
 from aidev_agent.packages.interrupt_manager import (
@@ -430,14 +431,21 @@ class AGUISessionWriter(BaseSessionWriter):
         merged_tool_calls = list(existing_tool_calls)
         # D-07: 补 type 键，对齐 immediate 形态（event_builders.py:127-135
         # ExtendToolCall.model_dump() 含 id/type/function 三键）。
+        function: dict[str, Any] = {
+            "name": name,
+            "arguments": json.dumps(tool_args, ensure_ascii=False) if tool_args else "{}",
+        }
+        # function_type 经 _resolve_function_type 判定（按工具名反查 _tools_mapping）；
+        # 取不到时不写该键，保持非 skill 工具的 tool_call 形态逐字不变。
+        resolved_function_type = _resolve_function_type(name, self._tools_mapping.get(name))
+        if resolved_function_type:
+            function["function_type"] = resolved_function_type
+
         merged_tool_calls.append(
             {
                 "id": tool_call_id,
                 "type": "function",
-                "function": {
-                    "name": name,
-                    "arguments": json.dumps(tool_args, ensure_ascii=False) if tool_args else "{}",
-                },
+                "function": function,
             }
         )
         logger.info(

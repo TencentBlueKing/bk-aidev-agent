@@ -419,6 +419,10 @@ class TestCommonAgentChatStreaming:
         tool_call_start_events = [r for r in results if r.get("type") == EventType.TOOL_CALL_START]
         assert len(tool_call_start_events) > 0, "应该有工具调用开始事件"
         assert tool_call_start_events[0]["mcpName"] == "time-server"
+        # MCP 路径不经 function_type 区分（仍靠 mcpName 兜底），不得被 skill 标记污染。
+        # 非 skill 工具该键为 None，EventEncoder 序列化时剔除（缺键），前端
+        # ``l?.function_type == null`` 判空回落 —— 若写成空串则会吞掉 mcpName 分支。
+        assert "functionType" not in tool_call_start_events[0]
 
         # 验证2：MCP工具名称正确
         tool_names = [e.get("toolCallName") for e in tool_call_start_events]
@@ -438,6 +442,48 @@ class TestCommonAgentChatStreaming:
         assert "Asia/Shanghai" in tool_result_text and "时间" in tool_result_text, (
             f"工具结果应该包含时间信息，实际: {tool_result_text[:100]}"
         )
+
+    def test_skill_tool_calling_emits_function_type(self):
+        """case 3b: skill 工具调用 → TOOL_CALL_START 携带 functionType="skill"。
+
+        前端据 toolCall.function.functionType 区分「读取 Skill」/「调用工具」，
+        普通工具不带该键（函数返回空串，不写入事件）。
+        """
+        from langchain_core.tools import StructuredTool
+
+        def load_skill(skill_name: str = "") -> str:
+            """加载技能说明"""
+            return f"已加载技能: {skill_name}"
+
+        skill_tool = StructuredTool.from_function(
+            func=load_skill,
+            name="activate_skill",
+            description="Activate a skill by name",
+            metadata={"function_type": "skill"},
+        )
+
+        llm = MockChatModel(
+            mock_responses=[
+                MockResponse(
+                    content="",
+                    tool_calls=[{"name": "activate_skill", "args": {"skill_name": "pdf-create"}, "id": "call_sk_1"}],
+                ),
+                MockResponse(content="已为你加载 pdf-create 技能。"),
+            ],
+            stream_chunk_size=2,
+            loop=False,
+        )
+        agent = ChatCompletionAgent(
+            chat_model=llm,
+            checkpointer=MemorySaver(),
+            chat_history=[ChatPrompt(id="1", role="user", content="帮我加载 pdf 技能")],
+            tools=[skill_tool],
+        )
+
+        results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+        tool_call_start_events = [r for r in results if r.get("type") == EventType.TOOL_CALL_START]
+        assert len(tool_call_start_events) > 0, "应该有工具调用开始事件"
+        assert tool_call_start_events[0]["functionType"] == "skill"
 
     @pytest.mark.skip(reason="待修复：从 checkpoint 恢复的用例暂时跳过")
     def test_resume_from_checkpoint(self):

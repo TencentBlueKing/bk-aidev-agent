@@ -23,7 +23,13 @@ from aidev_agent.core.ag_ui.event_builders import (
 from langchain_core.messages import AIMessage, ToolMessage
 
 
-def _make_tool(*, description: str = "desc", mcp_name: str = "", approval: dict | None = None) -> MagicMock:
+def _make_tool(
+    *,
+    description: str = "desc",
+    mcp_name: str = "",
+    approval: dict | None = None,
+    function_type: str = "",
+) -> MagicMock:
     """构造 Mock Tool 对象，带 description / metadata 属性。"""
     tool = MagicMock()
     tool.description = description
@@ -32,6 +38,8 @@ def _make_tool(*, description: str = "desc", mcp_name: str = "", approval: dict 
         metadata["mcp_name"] = mcp_name
     if approval is not None:
         metadata["approval"] = approval
+    if function_type:
+        metadata["function_type"] = function_type
     tool.metadata = metadata
     return tool
 
@@ -83,17 +91,27 @@ class TestEnhanceToolCall:
         tool = _make_tool(description="my description", mcp_name="my-mcp")
         tools = {"my_tool": tool}
         result = enhance_tool_call("my_tool", tools)
-        assert result == {"description": "my description", "mcp_name": "my-mcp"}
+        assert result == {"description": "my description", "mcp_name": "my-mcp", "function_type": None}
 
     def test_tool_none_returns_empty_strings(self):
         result = enhance_tool_call("missing_tool", {})
-        assert result == {"description": "", "mcp_name": ""}
+        assert result == {"description": "", "mcp_name": "", "function_type": None}
 
     def test_tool_without_mcp_name_returns_empty_mcp_name(self):
         tool = _make_tool(description="desc")
         tools = {"my_tool": tool}
         result = enhance_tool_call("my_tool", tools)
-        assert result == {"description": "desc", "mcp_name": ""}
+        assert result == {"description": "desc", "mcp_name": "", "function_type": None}
+
+    @pytest.mark.parametrize(
+        "function_type, expected",
+        [("skill", "skill"), ("", None)],
+    )
+    def test_function_type_passthrough(self, function_type, expected):
+        """function_type 缺省为 None（前端以 == null 判空回落，空串会破坏 MCP 兜底）。"""
+        tool = _make_tool(function_type=function_type)
+        result = enhance_tool_call("my_tool", {"my_tool": tool})
+        assert result["function_type"] == expected
 
 
 class TestBuildToolResultEvent:
@@ -369,3 +387,45 @@ class TestAskUserQuestionDeferred:
         # 有 ToolMessage（已执行/已答）→ 保留（False）
         state_messages = [ToolMessage(content="answered", tool_call_id="call-auq", name="ask_user_question")]
         assert should_suppress_approval_tool_call(tool_call, state_messages, tools) is False
+
+
+class TestToolCallFunctionType:
+    """DB 落库路径与事件契约的 function_type 传递（skill 工具标记 → function 子对象）。"""
+
+    @pytest.mark.parametrize(
+        "function_type, expected",
+        [("skill", "skill"), ("", None)],
+    )
+    def test_approval_filter_writes_function_type(self, function_type, expected):
+        tool = _make_tool(function_type=function_type)
+        tool.name = "my_tool"
+        output_message = AIMessage(
+            content="",
+            id="msg-ft",
+            tool_calls=[{"name": "my_tool", "args": {}, "id": "call-ft"}],
+            additional_kwargs={},
+        )
+        immediate, _ = build_tool_calls_with_approval_filter(output_message, {"my_tool": tool})
+        assert immediate[0]["function"]["function_type"] == expected
+
+    def test_approval_filter_missing_tool_writes_none(self):
+        output_message = AIMessage(
+            content="",
+            id="msg-miss",
+            tool_calls=[{"name": "unknown", "args": {}, "id": "call-miss"}],
+            additional_kwargs={},
+        )
+        immediate, _ = build_tool_calls_with_approval_filter(output_message, {})
+        assert immediate[0]["function"]["function_type"] is None
+
+    @pytest.mark.parametrize("function_type, expected", [("skill", "skill"), (None, None)])
+    def test_tool_call_start_event_serializes_camel_case(self, function_type, expected):
+        from aidev_agent.core.ag_ui.events import ExtendToolCallStartEvent
+
+        event = ExtendToolCallStartEvent(
+            type="TOOL_CALL_START",
+            tool_call_id="call-1",
+            tool_call_name="activate_skill",
+            function_type=function_type,
+        )
+        assert event.model_dump(by_alias=True)["functionType"] == expected

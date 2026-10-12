@@ -18,6 +18,29 @@ from .types import ExtendFunctionCall, ExtendToolCall
 from .utils import TOOL_CALLING_PLACEHOLDER
 
 
+def _resolve_function_type(tool_call_name: str, _tool: Any) -> str | None:
+    """解析工具调用的 function_type（供前端区分展示样式）。
+
+    优先取工具 metadata 上的 ``function_type``；metadata 缺失时的处理见下方内建工具兜底。
+
+    Returns:
+        ``"skill"`` 等类型标识；无法判定时返回 ``None``。
+
+    注：返回 ``None`` 而非空串——前端以 ``l?.function_type == null`` 判空回落，
+    空串会被当作有效值，导致 MCP 工具失去 ``mcpName`` 兜底分支。
+    """
+    metadata = getattr(_tool, "metadata", None) if _tool is not None else None
+    function_type = metadata.get("function_type") if metadata else None
+    if function_type is not None:
+        return function_type
+    # 临时（验证用）：内建工具不在 _tool_mapping 中——该映射由 chat.py 从 self.tools 派生，
+    # 仅含平台工具 + MCP 工具；activate_skill 等内建工具由图装配期追加，故查表恒落空。
+    # 这里按工具名直接标记，待内建工具接入工具映射后删除本分支。
+    if tool_call_name == "activate_skill":
+        return "skill"
+    return None
+
+
 def is_tool_approval_required(tool_call_name: str, tools: dict[str, Any]) -> bool:
     """检查工具调用是否需要审批。
 
@@ -30,19 +53,21 @@ def is_tool_approval_required(tool_call_name: str, tools: dict[str, Any]) -> boo
 
 
 def enhance_tool_call(tool_call_name: str, tools: dict[str, Any]) -> dict[str, Any]:
-    """为工具调用注入 description 和 mcp_name。
+    """为工具调用注入 description、mcp_name 和 function_type。
 
     Args:
         tool_call_name: 工具调用名称
         tools: 工具名→工具对象映射
 
     Returns:
-        dict 含 description + mcp_name 键，供 ExtendToolCallStartEvent 或 ExtendFunctionCall 使用
+        dict 含 description + mcp_name + function_type 键，供 ExtendToolCallStartEvent 或 ExtendFunctionCall 使用。
+        function_type 缺省为 None 而非空串（判空语义见 ``_resolve_function_type``）。
     """
     _tool = tools.get(tool_call_name)
     return {
         "description": _tool.description if _tool else "",
         "mcp_name": _tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
+        "function_type": _resolve_function_type(tool_call_name, _tool),
     }
 
 
@@ -142,6 +167,7 @@ def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: di
                 arguments=json.dumps(each["args"]),
                 description=_tool.description if _tool else "",
                 mcp_name=_tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
+                function_type=_resolve_function_type(each["name"], _tool),
             ),
         ).model_dump()
 

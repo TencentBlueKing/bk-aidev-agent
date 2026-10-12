@@ -7,6 +7,7 @@
 
 import json
 
+import pytest
 from aidev_agent.core.ag_ui.types import (
     ExtendActivityMessage,
     ExtendAssistantMessage,
@@ -273,6 +274,32 @@ def test_contents_to_agui_assistant_nested_tool_calls() -> None:
     assert tc.function.name == "ask_user_question"
     assert len(tc.function.arguments) > 2
     assert "questions" in tc.function.arguments
+
+
+@pytest.mark.parametrize(
+    "fn_extra, expected",
+    [({"function_type": "skill"}, "skill"), ({}, None)],
+)
+def test_contents_to_agui_tool_call_function_type_readback(fn_extra, expected) -> None:
+    """落库 tool_call 的 function_type 回读；旧记录缺该键归一为 None（向后兼容）。"""
+    records = [
+        {
+            "id": "a-ft",
+            "role": "assistant",
+            "content": "",
+            "status": "complete",
+            "tool_calls": [
+                {
+                    "id": "call-ft",
+                    "type": "function",
+                    "function": {"name": "activate_skill", "arguments": "{}", **fn_extra},
+                }
+            ],
+        }
+    ]
+    messages = contents_to_agui_messages(records)
+
+    assert messages[0].tool_calls[0].function.function_type == expected
 
 
 def test_contents_to_agui_platform_status_domain() -> None:

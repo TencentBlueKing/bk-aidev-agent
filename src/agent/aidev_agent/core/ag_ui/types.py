@@ -115,6 +115,7 @@ MessagesInProgressRecord = dict[str, MessageInProgress | None]
 class ExtendFunctionCall(FunctionCall):
     description: str | None = None
     mcp_name: str | None = None
+    function_type: str | None = None
 
 
 class ExtendToolCall(ToolCall):

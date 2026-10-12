@@ -431,8 +431,9 @@ def _extract_agui_tool_calls(raw_tool_calls: Any) -> list[AGUIToolCall] | None:
     """把 assistant 落库 tool_calls 归一化为 AG-UI ExtendToolCall 列表。
 
     落库记录（与 ``chat_history_assembly._extract_tool_calls`` 同源）保存 OpenAI 嵌套形态：
-    ``{"id","type","function":{name,arguments,mcp_name}}``。先展开嵌套 ``function``
-    dict 再读 name/arguments/mcp_name，避免顶层缺失时 name/arguments 被静默丢弃。
+    ``{"id","type","function":{name,arguments,mcp_name,description,function_type}}``。先展开嵌套
+    ``function`` dict 再读 name/arguments/mcp_name/function_type，避免顶层缺失时
+    name/arguments 被静默丢弃。
     """
     if not isinstance(raw_tool_calls, list) or not raw_tool_calls:
         return None
@@ -452,6 +453,7 @@ def _extract_agui_tool_calls(raw_tool_calls: Any) -> list[AGUIToolCall] | None:
                     arguments=arguments,
                     description=tc.get("description") or fn.get("description"),
                     mcp_name=tc.get("mcp_name") or tc.get("mcpName") or fn.get("mcp_name") or None,
+                    function_type=tc.get("function_type") or tc.get("functionType") or fn.get("function_type") or None,
                 ),
             )
         )

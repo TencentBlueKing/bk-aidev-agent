@@ -13,6 +13,7 @@ class McpToolFetchFailedPayload(BaseModel):
 class ExtendToolCallStartEvent(ToolCallStartEvent):
     description: str | None = None
     mcp_name: str | None = Field(default=None, description="工具调用的模型名称")
+    function_type: str | None = Field(default=None, description="工具类型提示（skill 等），供前端区分展示样式")
 
 
 class ExtendToolCallResultEvent(ToolCallResultEvent):

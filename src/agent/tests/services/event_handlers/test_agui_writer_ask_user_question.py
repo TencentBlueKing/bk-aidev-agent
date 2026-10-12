@@ -22,6 +22,15 @@ from aidev_agent.packages.interrupt_manager import (
     register_side_effect,
 )
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
+from langchain_core.tools import StructuredTool
+
+
+def _make_structured_tool(*, name: str, metadata: dict | None = None) -> StructuredTool:
+    """构造带 metadata 的 StructuredTool，供 _tools_mapping 反查用例使用。"""
+    tool = StructuredTool.from_function(func=lambda **kwargs: "", name=name, description="test tool")
+    if metadata is not None:
+        tool.metadata = metadata
+    return tool
 
 
 class _MockBKAidevClient:
@@ -879,6 +888,50 @@ class TestAskUserQuestionBackfillReconstruction:
 
 class _TestWriterHelper:
     @staticmethod
-    def make_writer() -> AGUISessionWriter:
+    def make_writer(tools: list | None = None) -> AGUISessionWriter:
         mock_client = _MockBKAidevClient()
-        return AGUISessionWriter(session_code="test-auq-3", client=mock_client, username="test", tools=[])
+        return AGUISessionWriter(session_code="test-auq-3", client=mock_client, username="test", tools=tools or [])
+
+
+class TestResumeBackfillFunctionType:
+    """续流回填路径 function_type：仅从 _tools_mapping 反查，取不到不写该键。"""
+
+    @staticmethod
+    def _assistant_record() -> dict:
+        return {
+            "id": 10,
+            "role": PromptRole.ASSISTANT.value,
+            "content": "需审批",
+            "status": "complete",
+            "property": {"builtin_property": {"message_id": "assist-ft", "tool_calls": []}},
+        }
+
+    def _reconstruct(self, tools: list, tool_call_id: str = "call-ft"):
+        writer = _TestWriterHelper.make_writer(tools=tools)
+        writer.client.api._contents = [self._assistant_record()]
+        result = writer._fetch_tool_call_reconstruction(tool_call_id, "activate_skill")
+        assert result is not None
+        _, merged_property = result
+        return next(tc for tc in merged_property["tool_calls"] if tc["id"] == tool_call_id)["function"]
+
+    def test_skill_tool_writes_function_type(self):
+        tool = _make_structured_tool(name="activate_skill", metadata={"function_type": "skill"})
+        function = self._reconstruct([tool])
+        assert function["function_type"] == "skill"
+
+    def test_plain_tool_omits_function_type_key(self):
+        # 临时验证态：activate_skill 由按名兜底标记，即使 metadata 为空也写 skill
+        tool = _make_structured_tool(name="activate_skill", metadata={})
+        function = self._reconstruct([tool])
+        assert function["function_type"] == "skill"
+
+    def test_no_mapped_tool_omits_function_type_key(self):
+        # 临时验证态：activate_skill 由按名兜底标记，无需 _tools_mapping 反查
+        function = self._reconstruct([])
+        assert function["function_type"] == "skill"
+
+    def test_existing_shape_unchanged(self):
+        tool = _make_structured_tool(name="activate_skill", metadata={"function_type": "skill"})
+        function = self._reconstruct([tool])
+        assert function["name"] == "activate_skill"
+        assert function["arguments"] == "{}"

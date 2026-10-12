@@ -164,4 +164,6 @@ class SkillRegistry:
             name="activate_skill",
             description="Activate a skill by name and return its full SKILL.md instructions (YAML frontmatter removed).",
             func=activate_skill,
+            # function_type 供 AG-UI 事件构造层透传给前端 functionType，用于区分展示样式
+            metadata={"function_type": "skill"},
         )
