@@ -1,12 +1,8 @@
-"""Celery owns Web agent execution; HTTP only waits or reads shared events."""
+"""Dispatch Web execution to Celery and replay the existing shared event stream."""
 
-import hashlib
 import json
 import logging
 import time
-import uuid
-from contextlib import nullcontext
-from functools import partial
 
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentBuildType, AgentType, SessionsStatus
@@ -18,16 +14,13 @@ from aidev_agent.services.messages_handler import (
     RetryableHeartbeatTimeoutError,
     StreamCancelledError,
 )
-from aidev_agent.services.messages_handler.in_memory import InMemoryQueueMessageHandler
-from aidev_agent.services.messages_handler.producer_execution import worker_producer
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from aidev_agent.utils.tracing import propagated_trace_context, trace_headers
 from celery import shared_task
+from celery.backends.base import DisabledBackend
 from django.conf import settings
-from django.db import close_old_connections, transaction
-from django.utils import timezone
+from django.db import close_old_connections
 
-from aidev_bkplugin.models import WebAgentTask
 from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
@@ -39,16 +32,7 @@ from aidev_bkplugin.services.plugin_resource_manager import (
 )
 
 logger = logging.getLogger(__name__)
-_ACTIVE = ("queued", "running", "streaming")
 _HEARTBEAT = 'data: {"type":"RAW","event":{"type":"heartbeat"}}\n\n'
-
-
-def _digest(value) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
-
-
-def _update_task(key: str, task_id: str, **values) -> None:
-    WebAgentTask.objects.filter(key=key, task_id=task_id).update(updated_at=timezone.now(), **values)
 
 
 def _build_agent(payload: dict, manager: PluginResourceManager):
@@ -80,18 +64,13 @@ def _build_agent(payload: dict, manager: PluginResourceManager):
     ).by_session_code(session_code, version=payload["execute"].get("version"), channel_type=payload["channel_type"])
 
 
-@shared_task(name="aidev_bkplugin.run_web_agent", queue=agent_settings.BKAI_AGENT_TASK, ignore_result=True)
-def run_web_agent_task(key: str, task_id: str, payload: dict) -> None:
-    """CAS prevents duplicate deliveries from executing tools twice; never auto-retry."""
+@shared_task(name="aidev_bkplugin.run_web_agent", queue=agent_settings.BKAI_AGENT_TASK, ignore_result=False)
+def run_web_agent_task(payload: dict):
+    """Reuse SDK execution inside the worker; do not retry side-effecting tools."""
     close_old_connections()
-    claimed = WebAgentTask.objects.filter(key=key, task_id=task_id, status="queued").update(
-        status="running", updated_at=timezone.now()
-    )
-    if not claimed:
-        return
     session_manager = None
     try:
-        if time.time() - payload["queued_at"] > float(getattr(settings, "AIDEV_WEB_TASK_WAIT_TIMEOUT", 300)):
+        if time.time() - payload["queued_at"] > _wait_timeout():
             raise TimeoutError("Web agent task expired before worker execution")
         with propagated_trace_context(payload["trace"]):
             manager = decode_task_resource_manager(payload["resource"])
@@ -104,33 +83,31 @@ def run_web_agent_task(key: str, task_id: str, payload: dict) -> None:
             if not execute_kwargs.input and payload["flow"] is None and not agent.chat_history:
                 raise ValueError("The chat history cannot be empty. Please provide input.")
             handler = getattr(agent, "event_handler", None)
-            if handler and hasattr(handler, "set_streaming_started"):
+            if execute_kwargs.stream and handler and hasattr(handler, "set_streaming_started"):
                 handler.set_streaming_started()
-            started = partial(_update_task, key, task_id, status="streaming")
-            # No producer thread escapes the Celery execution slot. The existing
-            # heartbeat/transport helpers remain independent of model execution.
-            with worker_producer(payload["session_code"], started) if execute_kwargs.stream else nullcontext():
-                result = AgentExecutor(session_manager).execute_with_save(
-                    agent, execute_kwargs, payload["session_code"], turn_id=execute_kwargs.turn_id
-                )
-                if execute_kwargs.stream:
-                    if execute_kwargs.legacy_streaming:
-                        result = GeneratorStreamingHelper(
-                            thread_id=payload["session_code"],
-                            defer_cleanup_on_complete=True,
-                        ).stream(result, expected_run_id=execute_kwargs.turn_id)
-                    for _ in result:
-                        pass
-                    result = None
-            _update_task(key, task_id, status="finished", result=result)
+            result = AgentExecutor(session_manager).execute_with_save(
+                agent, execute_kwargs, payload["session_code"], turn_id=execute_kwargs.turn_id
+            )
+            if execute_kwargs.stream:
+                if execute_kwargs.legacy_streaming:
+                    result = GeneratorStreamingHelper(
+                        thread_id=payload["session_code"], defer_cleanup_on_complete=True
+                    ).stream(result, expected_run_id=execute_kwargs.turn_id)
+                for _ in result:
+                    pass
+                return None
+            return result
     except Exception:
-        logger.exception("Web agent worker failed: task_id=%s", task_id)
-        _update_task(key, task_id, status="failed", error="Agent worker failed; check worker logs with the task ID.")
+        logger.exception("Web agent worker failed: session_code=%s", payload["session_code"])
         if session_manager is not None:
             session_manager.update_session_status(payload["session_code"], SessionsStatus.FAILED.value)
         raise
     finally:
         close_old_connections()
+
+
+def _wait_timeout() -> float:
+    return float(getattr(settings, "AIDEV_WEB_TASK_WAIT_TIMEOUT", 300))
 
 
 def dispatch_web_agent(
@@ -143,87 +120,50 @@ def dispatch_web_agent(
     model: str = "",
     flow: dict | None = None,
 ):
-    resource_context = encode_task_resource_manager(resource_manager)
-    helper = GeneratorStreamingHelper(thread_id=session_code)
-    if isinstance(helper.message_handler, InMemoryQueueMessageHandler):
-        raise ValueError("Web Celery execution requires a shared Redis or RabbitMQ message handler")
-    key = _digest([resource_manager.get_agent_code(), session_code])
+    helper = GeneratorStreamingHelper(thread_id=session_code, defer_cleanup_on_complete=True)
+    if execute_kwargs.stream and not helper.message_handler.supports_replay_from_start():
+        raise ValueError("Web Celery streaming requires a shared Redis or RabbitMQ replay backend")
     if execute_kwargs.stream_mode == "attach":
-        current = WebAgentTask.objects.filter(key=key, status__in=_ACTIVE).first()
-        if current is not None:
-            return _stream_task(key, current.task_id, helper)
-        return helper.stream(iter(()), attach_only=True)
-    execute = execute_kwargs.model_dump(mode="json")
+        return helper.stream(iter(()), attach_only=True, expected_run_id=execute_kwargs.turn_id)
+    if isinstance(run_web_agent_task.backend, DisabledBackend):
+        raise ValueError("Web Celery execution requires a configured Celery result backend")
     payload = {
         "session_code": session_code,
         "username": username,
-        "execute": execute,
+        "execute": execute_kwargs.model_dump(mode="json"),
         "agent_code": resource_manager.get_agent_code(),
         "channel_type": channel_type,
         "model": model,
         "flow": flow,
         "trace": trace_headers(),
         "queued_at": time.time(),
-        "resource": resource_context,
+        "resource": encode_task_resource_manager(resource_manager),
     }
-    key = _digest([payload["agent_code"], session_code])
-    request_key = _digest([username, execute, model, flow, channel_type])
-    # Materialize the queue payload before committing a queued state.
     json.dumps(payload)
-    with transaction.atomic():
-        task, created = WebAgentTask.objects.get_or_create(
-            key=key, defaults={"task_id": uuid.uuid4().hex, "request_key": request_key}
-        )
-        task = WebAgentTask.objects.select_for_update().get(key=key)
-        if not created and task.status in _ACTIVE and task.request_key != request_key:
-            raise ValueError("An agent task is already queued or running for this session")
-        publish = created or task.request_key != request_key
-        if publish and not created:
-            task.task_id, task.request_key = uuid.uuid4().hex, request_key
-            task.status, task.result, task.error = "queued", None, ""
-            task.save()
-        if publish:
-            transaction.on_commit(partial(_publish, key, task.task_id, payload))
+    task = run_web_agent_task.delay(payload)
     if execute_kwargs.stream:
-        return _stream_task(key, task.task_id, helper)
-    for _ in _wait_task(key, task.task_id, streaming=False):
-        pass
-    return WebAgentTask.objects.get(key=key, task_id=task.task_id).result
+        return _stream_task(task, helper, execute_kwargs.turn_id)
+    return task.get(timeout=_wait_timeout())
 
 
-def _publish(key: str, task_id: str, payload: dict) -> None:
+def _stream_task(task, helper: GeneratorStreamingHelper, turn_id: str):
+    deadline = time.monotonic() + _wait_timeout()
+    handler = helper.message_handler
     try:
-        run_web_agent_task.delay(key, task_id, payload)
-    except Exception:
-        _update_task(key, task_id, status="failed", error="Could not submit agent task to Celery.")
-        raise
-
-
-def _wait_task(key: str, task_id: str, *, streaming: bool):
-    deadline = time.monotonic() + float(getattr(settings, "AIDEV_WEB_TASK_WAIT_TIMEOUT", 300))
-    while True:
-        task = WebAgentTask.objects.get(key=key)
-        if task.task_id != task_id:
-            raise RuntimeError("The session has moved to another execution")
-        if task.status == "failed":
-            raise RuntimeError(f"{task.error} Task: {task_id}")
-        if task.status == "finished" or (streaming and task.status == "streaming"):
-            return
-        if time.monotonic() >= deadline:
-            WebAgentTask.objects.filter(key=key, task_id=task_id, status="queued").update(
-                status="failed", error="Timed out waiting for a Celery worker", updated_at=timezone.now()
-            )
-            raise TimeoutError("Timed out waiting for the agent worker; reconnect to check the current execution")
-        yield _HEARTBEAT
-        time.sleep(1)
-
-
-def _stream_task(key: str, task_id: str, helper: GeneratorStreamingHelper):
-    try:
-        yield from _wait_task(key, task_id, streaming=True)
-        yield from helper.stream(iter(()), attach_only=True)
+        # Wait for this turn's first event, not a cached event from the previous turn.
+        while not (
+            handler.has_pending_messages(helper.thread_id) and handler.replay_belongs_to_run(helper.thread_id, turn_id)
+        ):
+            if task.ready():
+                task.get()  # Propagate worker failures before a producer has started.
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for the agent worker")
+            yield _HEARTBEAT
+            time.sleep(1)
+        yield from helper.stream(iter(()), attach_only=True, expected_run_id=turn_id)
     except (ConsumerPreemptedError, RetryableHeartbeatTimeoutError, StreamCancelledError):
         raise
-    except Exception as exc:
-        logger.exception("Web agent stream failed: task_id=%s", task_id)
-        yield from helper._emit_terminal_error_events(str(exc))
+    except Exception:
+        logger.exception("Web agent stream failed: task_id=%s", task.id)
+        yield from helper._emit_terminal_error_events("Agent worker failed; check worker logs with the task ID.")

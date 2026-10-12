@@ -11,9 +11,7 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
-from django.db import transaction
 from django.http.response import StreamingHttpResponse
-from django.utils.decorators import method_decorator
 from rest_framework.views import Response
 
 from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
@@ -26,7 +24,6 @@ from aidev_bkplugin.services.web_execution import dispatch_web_agent
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
-@method_decorator(transaction.non_atomic_requests, name="dispatch")
 class ChatCompletionViewSet(PluginViewSet):
     # 使用自定义内容协商，忽略 Accept 头限制，支持流式响应
     content_negotiation_class = IgnoreClientContentNegotiation

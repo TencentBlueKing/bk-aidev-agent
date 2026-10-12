@@ -31,7 +31,6 @@ from .constants import (
     TimeoutConfig,
 )
 from .factory import message_handler_factory
-from .producer_execution import get_producer_started
 
 logger = getLogger(__name__)
 
@@ -684,23 +683,6 @@ class GeneratorStreamingHelper:
                 self.message_handler.release_producer(self.thread_id)
                 raise
 
-            started = get_producer_started(self.thread_id)
-            if started is not None:
-                try:
-                    started()
-                except Exception:
-                    self.message_handler.release_producer(self.thread_id)
-                    raise
-                self._run_producer(
-                    generator=generator,
-                    cancel_event=cancel_event,
-                    on_complete=on_complete,
-                    event_handler=event_handler,
-                    expected_run_id=expected_run_id,
-                    release_producer=True,
-                )
-                return None, False, False
-
             # OTel 的当前 Span 存在 contextvars 中，而新线程不会自动继承它。
             producer_context = copy_context()
             producer_thread = threading.Thread(
@@ -1115,24 +1097,6 @@ class GeneratorStreamingHelper:
         completion_callback = _on_complete_once if on_complete is not None else None
 
         try:
-            started = get_producer_started(self.thread_id)
-            if started is not None:
-                should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
-                if should_consume_stopped or has_pending or attach_only:
-                    started()
-                    return
-                self._start_or_resume_stream(
-                    generator=generator,
-                    cancel_event=cancel_event,
-                    has_pending=False,
-                    on_complete=completion_callback,
-                    event_handler=event_handler,
-                    expected_run_id=expected_run_id,
-                )
-                if self._producer_completion_error is not None:
-                    raise self._producer_completion_error
-                return
-
             consumer_id = self.message_handler.acquire_consumer(self.thread_id)
             should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
             if should_consume_stopped:

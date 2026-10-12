@@ -7,14 +7,13 @@
 设计思路：
 - 利用 LangGraph 的 interrupt/resume 机制，后台续流复用 AgentBuilder + execute 基础设施
 - 使用 stream=True，事件经由 AGUISessionWriter 写入 DB，与前端续流行为一致
-- 如果前端同时续流，ConsumerPreemptedError 会让后台线程优雅退出
+- 如果前端同时续流，ConsumerPreemptedError 会让后台消费优雅退出
 """
 
 from logging import getLogger
 
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.agent.approval import ApprovalStateHandler
-from aidev_agent.services.messages_handler.producer_execution import worker_producer
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span, trace_headers
 from celery import shared_task
 
@@ -90,7 +89,6 @@ def _approval_resume_worker(self, session_code: str, username: str, graph_thread
     with (
         propagated_trace_context(approve_info.get("approval_trace_context")),
         recording_span("bkplugin.approval.resume", record_exception=False, use_global_tracer=True),
-        worker_producer(session_code, lambda: None),
     ):
         _resume_approval(session_code, username, graph_thread_id, interrupts, approve_info)
 
