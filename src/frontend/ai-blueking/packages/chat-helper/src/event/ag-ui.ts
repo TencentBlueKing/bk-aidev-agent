@@ -637,6 +637,7 @@ export class AGUIProtocol implements ISSEProtocol {
             name: event.toolCallName,
             arguments: '',
             description: event.description,
+            function_type: event.function_type,
           },
         },
       ],

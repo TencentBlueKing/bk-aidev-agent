@@ -23,7 +23,13 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type IMessageApi, type IMessageArtifact, type MessageRole, type MessageStatus } from '../message/type';
+import {
+  type FunctionCallType,
+  type IMessageApi,
+  type IMessageArtifact,
+  type MessageRole,
+  type MessageStatus,
+} from '../message/type';
 import type { JSONSchema4 } from 'json-schema';
 
 export enum CustomEventName {
@@ -509,6 +515,7 @@ export interface IToolCallResultEvent extends IBaseEvent {
 
 export interface IToolCallStartEvent extends IBaseEvent {
   description?: string;
+  function_type?: FunctionCallType;
   mcpName?: string;
   parentMessageId?: string;
   toolCallId: string;

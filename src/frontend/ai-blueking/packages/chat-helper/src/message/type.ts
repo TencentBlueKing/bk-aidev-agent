@@ -74,6 +74,13 @@ export enum MessageType {
   Text = 'text',
 }
 
+export enum FunctionCallType {
+  Function = 'function',
+  Mcp = 'mcp',
+  Skill = 'skill',
+  Subagent = 'subagent',
+}
+
 export enum UserOperation {
   FlowNodeRetry = 'flow_node_retry',
   FlowNodeSkip = 'flow_node_skip',
@@ -252,6 +259,7 @@ export interface IFlowAgentTaskNodeInfo {
 export interface IFunctionCall {
   arguments: string;
   description?: string;
+  function_type?: FunctionCallType;
   mcpName?: string;
   name: string;
 }
@@ -259,6 +267,7 @@ export interface IFunctionCall {
 export interface IFunctionCallApi {
   arguments: string;
   description?: string;
+  function_type?: FunctionCallType;
   mcp_name?: string;
   name: string;
 }
