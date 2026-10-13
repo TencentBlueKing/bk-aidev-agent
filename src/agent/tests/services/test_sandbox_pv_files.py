@@ -25,6 +25,7 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileServerError,
     SandboxPvFileService,
     encode_paas_query_params,
+    fill_markdown_pv_image_urls,
     fill_user_image_urls,
     normalize_session_pv_path,
     validate_session_upload_files,
@@ -927,6 +928,45 @@ class TestVolumeIdCache:
         service.get_download_url(session_code="s1", path="files/a.png")
 
         assert resource_manager.retrieve_chat_session.call_count == 2
+
+
+class TestFillMarkdownPvImageUrls:
+    @pytest.mark.parametrize(
+        "text, expected_path",
+        [
+            ("![图](/app/.storage/session/0700_line.png)", "0700_line.png"),
+            ("![图]($STORAGE_PATH/session/sub/a.png)", "sub/a.png"),
+            ("![图](${STORAGE_PATH}/session/b.png)", "b.png"),
+        ],
+    )
+    def test_rewrites_pv_image_destination(self, text, expected_path):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x.png"}
+
+        result = fill_markdown_pv_image_urls(file_service, text, session_code="s1")
+
+        assert result == "![图](https://cdn/x.png)"
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path=expected_path, expires_in=3600)
+
+    def test_keeps_original_text_when_signing_fails_or_not_image(self):
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileServerError("gone")
+        text = "[文件](/app/.storage/session/a.pdf) 路径 /app/.storage/session/b.png ![x](/app/.storage/session/c.png)"
+
+        assert fill_markdown_pv_image_urls(file_service, text, session_code="s1") == text
+        file_service.get_download_url.assert_called_once()
+
+    def test_reuses_url_cache_keyed_by_session_and_path(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x.png"}
+        cache: dict = {}
+        text = "![a](/app/.storage/session/x.png)"
+
+        fill_markdown_pv_image_urls(file_service, text, url_cache=cache, session_code="s1")
+        fill_markdown_pv_image_urls(file_service, text, url_cache=cache, session_code="s1")
+
+        file_service.get_download_url.assert_called_once()
+        assert cache == {("s1", "x.png"): "https://cdn/x.png"}
 
 
 class TestFillUserImageUrls:
