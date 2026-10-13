@@ -7,6 +7,7 @@ import pytest
 from aidev_agent.core.graphs.react.graph import DefaultState
 from aidev_agent.core.nodes.model.basic_middleware import get_context_type_from_state
 from aidev_agent.enums import Decision
+from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
 from langgraph.checkpoint.memory import InMemorySaver
@@ -120,10 +121,10 @@ def test_retrieve_keeps_raw_input_until_request_boundary(legacy_input):
 @pytest.mark.parametrize("legacy_input", [False, True])
 @pytest.mark.parametrize("supports_multimodal", [False, True])
 def test_retrieve_applies_capability_at_real_request_boundary(mocker, legacy_input, supports_multimodal):
-    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
-    request = manager.return_value.knowledge_query
+    manager = mocker.Mock()
+    request = manager.knowledge_query
     request.return_value = {"documents": [], "decision": "GENERAL_QA"}
-    rag = KnowledgeRag(llm=MagicMock())
+    rag = KnowledgeRag(llm=MagicMock(), kb_retriever=BkRetriever(resource_manager=manager))
     options = KnowledgeSettings(supports_multimodal_query=supports_multimodal)
     content = [{"type": "text", "text": "query"}, {"type": "image_url", "image_url": "https://example.com/a.png"}]
 
@@ -149,6 +150,25 @@ def test_retrieve_normalizes_non_list_input_before_api_call(query, expected):
 
     api_client.query_knowledge.assert_called_once()
     assert api_client.query_knowledge.call_args.args[0] == expected
+
+
+def test_retrieve_without_scoped_retriever_fails_before_any_request(mocker):
+    global_manager = mocker.patch("aidev_agent.packages.resource_manager.registry.resource_manager")
+    with pytest.raises(ValueError, match="explicitly scoped retriever"):
+        KnowledgeRag(llm=MagicMock()).retrieve("query", KnowledgeSettings())
+    global_manager.assert_not_called()
+
+
+@pytest.mark.parametrize("field", ["knowledge_bases", "knowledge_items"])
+@pytest.mark.parametrize("override", [[], [{"id": 23}]])
+def test_single_query_resource_override_does_not_mutate_settings(field, override):
+    api_client = MagicMock()
+    api_client.query_knowledge.return_value = {"documents": []}
+    options = KnowledgeSettings(**{field: [{"id": 17}]})
+    KnowledgeRag(llm=MagicMock(), kb_retriever=api_client).retrieve("q", options, **{field: override})
+    sent = api_client.query_knowledge.call_args.args[1]
+    assert getattr(sent, field) == override
+    assert getattr(options, field) == [{"id": 17}]
 
 
 def test_retrieve_maps_api_relevance_groups_without_rescoring():

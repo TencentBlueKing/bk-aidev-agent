@@ -915,6 +915,7 @@ class ReActAgentBuilder:
             knowledge_tool = make_knowledge_retrieval_tool(
                 llm=self._knowledge_llm,
                 knowledge_query_options=self._knowledge_query_options,
+                chat_history=self._chat_history,
                 kb_retriever=BkRetriever(resource_manager=self._resource_manager),
             )
             if knowledge_tool:

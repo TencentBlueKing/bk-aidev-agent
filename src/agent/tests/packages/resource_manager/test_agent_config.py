@@ -161,14 +161,14 @@ def test_platform_multimodal_capability_reaches_request(mocker, capability):
         raw["knowledgebase_settings"]["supports_multimodal_query"] = capability
     config = _StubResourceManager(raw_factory=lambda *_: raw).get_agent_config("a")
     options = KnowledgeSettings.model_validate(config.knowledge_query_options_data)
-    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
-    manager.return_value.knowledge_query.return_value = {"documents": []}
+    manager = mocker.Mock()
+    manager.knowledge_query.return_value = {"documents": []}
     content = [{"type": "text", "text": "query"}]
 
-    BkRetriever().query_knowledge(content, options)
+    BkRetriever(resource_manager=manager).query_knowledge(content, options)
 
     assert options.supports_multimodal_query is (capability is True)
-    assert manager.return_value.knowledge_query.call_args.args[0]["query"] == (content if capability else "query")
+    assert manager.knowledge_query.call_args.args[0]["query"] == (content if capability else "query")
 
 
 @pytest.mark.parametrize("version", ["v2", None])

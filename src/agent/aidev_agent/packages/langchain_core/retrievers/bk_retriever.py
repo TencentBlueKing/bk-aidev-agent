@@ -4,7 +4,7 @@ from typing import Any, Callable
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
-from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol, resource_manager
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
 from aidev_agent.pydantic_models import KnowledgeSettings
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,9 @@ class BkRetriever:
 
     @property
     def _query_instance(self) -> Callable:
-        manager = self._resource_manager if self._resource_manager is not None else resource_manager()
-        return manager.knowledge_query
+        if self._resource_manager is None:
+            raise ValueError("Knowledge retrieval requires an explicit resource manager")
+        return self._resource_manager.knowledge_query
 
     def query_knowledge(
         self,
@@ -70,6 +71,7 @@ class BkRetriever:
                 "use_independent_query_in_scores": knowledge_query_options.use_independent_query_in_scores,
             },
             "with_scalar_data": knowledge_query_options.with_scalar_data,
+            "with_rrf": knowledge_query_options.with_rrf,
             "use_rerank": True,
             "rrf_weights": knowledge_query_options.rrf_weights,
             "knowledge_resource_fine_grained_score_type": (
@@ -105,7 +107,9 @@ class BkRetriever:
                 role = "assistant"
             else:
                 continue
-            serialized_messages.append({"role": role, "content": str(message.content)})
+            content = normalize_query_for_search(message.content).strip()
+            if content:
+                serialized_messages.append({"role": role, "content": content})
         return serialized_messages
 
     @staticmethod

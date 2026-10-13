@@ -81,12 +81,12 @@ class BaseKnowledgeNode:
         Args:
             llm: 语言模型
             knowledge_query_options: 知识库检索配置
-            kb_retriever: 可选的知识库检索器，如不提供则创建默认实例
+            kb_retriever: 绑定当前资源上下文的检索器，执行查询时必须提供
         """
         self.llm = llm
         self.knowledge_query_options = knowledge_query_options
         self.chat_history = chat_history
-        self.kb_retriever = kb_retriever or BkRetriever()
+        self.kb_retriever = kb_retriever
         self.retriever = KnowledgeRag(llm, self.kb_retriever)
 
     def get_query_input(self, state: KnowledgeInputState) -> Any:

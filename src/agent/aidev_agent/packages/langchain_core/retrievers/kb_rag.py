@@ -50,7 +50,7 @@ class KnowledgeRag:
 
     def __init__(self, llm=None, kb_retriever: BkRetriever | None = None) -> None:
         self.llm = llm or ChatModel.get_setup_instance(model="hunyuan-turbo")
-        self.kb_retriever = kb_retriever or BkRetriever()
+        self.kb_retriever = kb_retriever
 
     def retrieve(
         self, query: Any, knowledge_query_options: KnowledgeSettings, chat_history: Optional[list] = None, **kwargs
@@ -58,10 +58,17 @@ class KnowledgeRag:
         """Submit one API request and map the final knowledge result to Agent state."""
 
         dispatch_rag_event_chunk("开始召回知识")
+        kb_retriever = kwargs.get("kb_retriever", self.kb_retriever)
+        if kb_retriever is None:
+            raise ValueError("Knowledge retrieval requires an explicitly scoped retriever")
         llm = kwargs.get("llm", self.llm)
         llm_code = getattr(llm, "model_name", None) or getattr(llm, "model", None)
         raw_input = kwargs.get("input", query)
-        response = kwargs.get("kb_retriever", self.kb_retriever).query_knowledge(
+        if "knowledge_bases" in kwargs or "knowledge_items" in kwargs:
+            knowledge_query_options = knowledge_query_options.model_copy(
+                update={key: kwargs[key] for key in ("knowledge_bases", "knowledge_items") if key in kwargs}
+            )
+        response = kb_retriever.query_knowledge(
             raw_input if isinstance(raw_input, list) else normalize_query_for_search(raw_input),
             knowledge_query_options,
             chat_history,

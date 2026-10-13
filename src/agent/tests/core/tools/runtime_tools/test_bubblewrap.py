@@ -21,10 +21,11 @@ from __future__ import annotations
 from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
 
 
-def test_prefix_readonly_bind_and_no_network():
+def test_prefix_readonly_bind_and_no_network(tmp_path):
     """只读工作区挂载 + 默认关网 + 进程隔离。"""
+    workspace = str(tmp_path.resolve())
     sb = BubblewrapFilesystemBackend(
-        root_dir="/tmp/ws",
+        root_dir=workspace,
         bwrap_readonly_paths="/usr",
         bwrap_allow_network=False,
         bwrap_path="bwrap",
@@ -33,20 +34,21 @@ def test_prefix_readonly_bind_and_no_network():
     # 显式 --unshare-user：容器/受限环境下靠 user namespace 获得 mount 权限
     assert prefix[:3] == ["bwrap", "--unshare-user", "--ro-bind"]
     # 只读系统目录
-    assert "--ro-bind" in prefix and "/tmp/ws" in prefix
+    assert "--ro-bind" in prefix and workspace in prefix
     assert "--bind" not in prefix
     # 关网 + 进程共存亡
     assert "--unshare-net" in prefix
     assert "--unshare-pid" not in prefix  # 受限容器与 --proc 挂载冲突，已去除
     assert "--die-with-parent" in prefix
-    assert "--chdir" in prefix and "/tmp/ws" in prefix
+    assert "--chdir" in prefix and workspace in prefix
 
 
-def test_prefix_writable_uses_bind():
+def test_prefix_writable_uses_bind(tmp_path):
     """可写工作区用 --bind。"""
-    sb = BubblewrapFilesystemBackend(root_dir="/tmp/ws", bwrap_readonly_paths="", bwrap_allow_network=False)
+    workspace = str(tmp_path.resolve())
+    sb = BubblewrapFilesystemBackend(root_dir=workspace, bwrap_readonly_paths="", bwrap_allow_network=False)
     prefix = sb._prefix(writable=True)
-    assert ["--bind", "/tmp/ws", "/tmp/ws"] in _windows(prefix)
+    assert ["--bind", workspace, workspace] in _windows(prefix)
 
 
 def test_prefix_allow_network_omits_unshare_net():

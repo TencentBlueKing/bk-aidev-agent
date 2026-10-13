@@ -46,9 +46,9 @@ def test_query_uses_target_platform_capability(content, text, capability):
 
 
 def test_capability_does_not_hide_platform_errors(mocker):
-    retriever = BkRetriever()
-    manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
-    request = manager.return_value.knowledge_query
+    manager = mocker.Mock()
+    retriever = BkRetriever(resource_manager=manager)
+    request = manager.knowledge_query
     request.side_effect = RuntimeError("platform failure")
     with pytest.raises(RuntimeError, match="platform failure"):
         retriever.query_knowledge([{"type": "text", "text": "query"}], KnowledgeSettings())
@@ -172,27 +172,39 @@ def test_history_excludes_non_dialogue_messages():
 
 def test_transport_and_valid_document_validation(mocker):
     transport = mocker.Mock(return_value={"documents": [{"metadata": {"__score__": 0.8}}]})
-    mocker.patch(
-        "aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager"
-    ).return_value.knowledge_query = transport
-    result = BkRetriever().query_knowledge("q", KnowledgeSettings())
+    manager = mocker.Mock(knowledge_query=transport)
+    result = BkRetriever(resource_manager=manager).query_knowledge("q", KnowledgeSettings())
     assert result["documents"][0]["metadata"]["__score__"] == 0.8
     transport.assert_called_once()
 
 
-@pytest.mark.parametrize("use_global", [False, True])
-def test_query_uses_explicit_manager_or_compatible_global_default(mocker, use_global):
+def test_query_uses_explicit_falsey_manager(mocker):
     manager = mocker.MagicMock()
     manager.__bool__.return_value = False
     manager.knowledge_query.return_value = {"documents": []}
-    global_manager = mocker.patch(
-        "aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager",
-        return_value=manager,
-    )
-    retriever = BkRetriever(resource_manager=None if use_global else manager)
+    retriever = BkRetriever(resource_manager=manager)
     assert retriever.query_knowledge("q", KnowledgeSettings()) == {"documents": []}
     manager.knowledge_query.assert_called_once()
-    assert global_manager.call_count == int(use_global)
+
+
+def test_missing_manager_does_not_fall_back_to_global_context(mocker):
+    global_manager = mocker.patch("aidev_agent.packages.resource_manager.registry.resource_manager")
+    with pytest.raises(ValueError, match="explicit resource manager"):
+        BkRetriever().query_knowledge("q", KnowledgeSettings())
+    global_manager.assert_not_called()
+
+
+@pytest.mark.parametrize("content", ["", "   ", [{"type": "image_url", "image_url": "image"}]])
+def test_empty_history_messages_are_not_sent(content):
+    history = [HumanMessage(content="previous"), AIMessage(content=content)]
+    assert BkRetriever._serialize_chat_history(history) == [{"role": "user", "content": "previous"}]
+
+
+@pytest.mark.parametrize("with_rrf", [False, True])
+def test_rrf_switch_is_transmitted(with_rrf):
+    retriever = CapturingBkRetriever()
+    retriever.query_knowledge("q", KnowledgeSettings(with_rrf=with_rrf))
+    assert retriever.query_payload["with_rrf"] is with_rrf
 
 
 @pytest.mark.parametrize(

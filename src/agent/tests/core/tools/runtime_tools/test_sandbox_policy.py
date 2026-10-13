@@ -75,13 +75,14 @@ def test_prefix_skips_missing_readonly_dir():
     assert "/definitely/missing/dir" not in backend._prefix(writable=False)
 
 
-def test_backend_accepts_policy():
+def test_backend_accepts_policy(tmp_path):
     """backend 接受 sandbox_policy 参数，_prefix 按该策略组装。"""
+    workspace = str(tmp_path.resolve())
     policy = SandboxPolicy(readonly_paths=[], allow_network=False)
-    sb = BubblewrapFilesystemBackend(root_dir="/tmp/ws", sandbox_policy=policy, bwrap_path="bwrap")
+    sb = BubblewrapFilesystemBackend(root_dir=workspace, sandbox_policy=policy, bwrap_path="bwrap")
     prefix = sb._prefix(writable=True)
     assert prefix[:2] == ["bwrap", "--unshare-user"]
-    assert ["--bind", "/tmp/ws", "/tmp/ws"] in _windows(prefix)
+    assert ["--bind", workspace, workspace] in _windows(prefix)
     # model_copy 隔离：传入的 policy 不被后端内部降级污染
     assert sb._policy is not policy
 

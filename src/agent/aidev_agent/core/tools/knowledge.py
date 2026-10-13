@@ -100,7 +100,7 @@ def make_knowledge_retrieval_tool(
             包含检索决策、知识内容和引用文档的结构化结果
         """
         # 初始化知识库检索器
-        retriever = KnowledgeRag(llm, kb_retriever or BkRetriever())
+        retriever = KnowledgeRag(llm, kb_retriever)
 
         # 流处理：仅在存在回调时派发自定义事件
         dispatch_config = config if config and config.get("callbacks") else None

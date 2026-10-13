@@ -225,7 +225,9 @@ class TestParallelInterruptWithToolNode:
         # 首异常语义丢弃（非合并）。保留的是首个发起者的 value。
         assert len(intrs) == 1, "并发 interrupt 仅首个被收集，其余被丢弃"
         val = intrs[0].value
-        assert val["action"] == "A", "保留的是首个发起 interrupt 的工具的 value"
+        assert val in ({"need": "approval", "action": "A"}, {"need": "approval", "action": "B"}), (
+            "保留某个实际发起 interrupt 的工具的完整 value；并发调度不保证列表中 A 先执行"
+        )
 
     async def test_b_interrupt_id_not_deterministic(self):
         """3b: interrupt id 在不同 thread 间不同（非确定性）。"""

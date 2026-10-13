@@ -13,6 +13,7 @@ from aidev_agent.core.nodes.knowledge import (
     make_knowledge_node,
 )
 from aidev_agent.enums import Decision
+from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.pydantic_models import AgentOptions, KnowledgebaseSettings, KnowledgeSettings
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
@@ -100,7 +101,9 @@ class TestAgentKnowledgeNodeInGraph:
 
     def test_returns_agent_knowledge_node(self, mock_llm, mock_knowledge_settings):
         """测试 make_knowledge_node 返回 AgentKnowledgeNode 实例"""
-        node = make_knowledge_node(llm=mock_llm, knowledge_query_options=mock_knowledge_settings)
+        node = make_knowledge_node(
+            llm=mock_llm, knowledge_query_options=mock_knowledge_settings, kb_retriever=MagicMock()
+        )
 
         assert isinstance(node, AgentKnowledgeNode)
         assert node.llm is mock_llm
@@ -421,11 +424,16 @@ class TestAidevKnowledgeNode:
 def test_node_preserves_content_through_api_request(mocker, state_key, node_class, content, text, supports_multimodal):
     mocker.patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
     mocker.patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
-    resource_manager = mocker.patch("aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager")
-    api_client = resource_manager.return_value.knowledge_query
+    resource_manager = mocker.Mock()
+    api_client = resource_manager.knowledge_query
     api_client.return_value = {"documents": [], "decision": "GENERAL_QA"}
     options = KnowledgeSettings(supports_multimodal_query=supports_multimodal)
-    node = node_class(llm=MagicMock(), knowledge_query_options=options, chat_history=[])
+    node = node_class(
+        llm=MagicMock(),
+        knowledge_query_options=options,
+        chat_history=[],
+        kb_retriever=BkRetriever(resource_manager=resource_manager),
+    )
     state = {state_key: [HumanMessage(content=content)] if state_key == "messages" else content}
 
     node(state, {}, store=InMemoryStore())

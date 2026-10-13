@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings
+from langchain_core.messages import AIMessage, HumanMessage
 
 
 class TestKnowledgeResourceManager:
@@ -13,7 +14,7 @@ class TestKnowledgeResourceManager:
         mocker.patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
         mocker.patch("aidev_agent.packages.langchain_core.retrievers.kb_rag.dispatch_rag_event_chunk")
         self.default_manager = mocker.patch(
-            "aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager",
+            "aidev_agent.packages.resource_manager.registry.resource_manager",
             side_effect=AssertionError("Knowledge retrieval must use the current resource manager"),
         )
 
@@ -62,4 +63,34 @@ class TestKnowledgeResourceManager:
         with pytest.raises(RuntimeError, match="query failed"):
             retrieve()
         manager.knowledge_query.assert_called_once()
+        self.default_manager.assert_not_called()
+
+    @pytest.mark.parametrize("mode", ["node", "tool"])
+    def test_builder_keeps_history_in_both_retrieval_paths(self, mode):
+        manager = self._make_manager("scope-a")
+        history = [HumanMessage(content="previous"), AIMessage(content="answer"), AIMessage(content="")]
+        options = KnowledgeSettings(knowledge_bases=[{"id": 17}], enable_knowledge_node=True)
+        builder = (
+            ReActAgentBuilder()
+            .set_knowledge_llm(object())
+            .set_bkai_options(
+                AgentExecutorKwargs(resource_manager=manager, knowledge_query_options=options, chat_history=history)
+            )
+        )
+        if mode == "node":
+            node = builder._prepare_agent_knowledge_node(
+                knowledge_llm=object(), knowledge_query_options=options, chat_history=history
+            )
+            node({"query": "question"}, {}, store=None)
+        else:
+            tool = next(
+                tool
+                for tool in builder._prepare_agent_tools(langchain_middleware=())
+                if tool.name == "knowledge_retrieval"
+            )
+            tool.invoke({"query": "question"})
+        assert manager.knowledge_query.call_args.args[0]["chat_history"] == [
+            {"role": "user", "content": "previous"},
+            {"role": "assistant", "content": "answer"},
+        ]
         self.default_manager.assert_not_called()
