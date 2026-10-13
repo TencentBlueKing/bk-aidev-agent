@@ -5,7 +5,6 @@ import json
 
 import pytest
 import websocket
-
 from aidev_agent.packages.craw.openclaw_ws import OpenClawWSError, OpenClawWSSession, _is_loopback_url
 
 
