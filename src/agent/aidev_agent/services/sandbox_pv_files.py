@@ -442,6 +442,56 @@ def fill_user_image_urls(
             clear_image_content_url(item)
 
 
+_PV_IMAGE_PATH_PREFIXES = (f"{TEMP_UPLOAD_VOLUME_MOUNT_PATH}/", f"{SESSION_VOLUME_PATH}/", "${STORAGE_PATH}/session/")
+# 只匹配 Markdown 图片语法 ``![alt](会话 PV 路径)``，正文里的普通路径不改写。
+_MARKDOWN_PV_IMAGE_RE = re.compile(
+    r"(!\[[^\]\n]*\]\()(?:" + "|".join(re.escape(prefix) for prefix in _PV_IMAGE_PATH_PREFIXES) + r")([^)\s]+)\)"
+)
+
+
+def fill_markdown_pv_image_urls(
+    file_service: "SandboxPvFileService | None",
+    text: str,
+    *,
+    url_cache: dict[tuple[str, str], str] | None = None,
+    session_code: str = "",
+) -> str:
+    """把 Markdown 图片中的会话 PV 路径替换为签发的 download_url，只供快照副本使用。
+
+    download_url 有时效，只写进快照副本；账本与 DB 仍保存 PV 路径。签发失败或路径非法时保留原文，
+    不让单张图片失败影响整段消息。缓存 key 与 ``fill_user_image_urls`` 共用 ``(session_code, path)``。
+    """
+    if file_service is None or not session_code or "![" not in text:
+        return text
+    cache = url_cache if url_cache is not None else {}
+    failed: set[str] = set()
+
+    def _sign(match: re.Match[str]) -> str:
+        try:
+            path = normalize_session_pv_path(match.group(2), required=True)
+        except SandboxFileInvalidArgumentError:
+            return match.group(0)
+        url = cache.get((session_code, path))
+        if not url and path not in failed:
+            try:
+                url_data = file_service.get_download_url(
+                    session_code=session_code,
+                    path=path,
+                    expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+                )
+            except SandboxFileError:
+                logger.exception("签发 Markdown 图片 URL 失败: session=%s path=%s", session_code, path)
+                url_data = {}
+            url = url_data.get("download_url") or ""
+            if url:
+                cache[(session_code, path)] = url
+            else:
+                failed.add(path)
+        return f"{match.group(1)}{url})" if url else match.group(0)
+
+    return _MARKDOWN_PV_IMAGE_RE.sub(_sign, text)
+
+
 class SandboxPvFileService:
     """会话沙箱 PV 文件业务层。
 

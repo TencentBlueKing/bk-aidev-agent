@@ -73,6 +73,7 @@ from aidev_agent.services.sandbox_pv_files import (
     SESSION_VOLUME_PATH,
     SandboxFileInvalidArgumentError,
     SandboxPvFileService,
+    fill_markdown_pv_image_urls,
     fill_user_image_urls,
     image_mime_type,
     normalize_session_pv_path,
@@ -82,6 +83,7 @@ from aidev_agent.utils.async_utils import async_to_sync_generator
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.migrations import (
     migration_chat_model_non_thinking_from_non_thinking_llm_v1,
+    migration_chat_session_context_from_chat_session_contents_v1,
     migration_knowledge_query_options_from_agent_options_v1,
     migration_model_context_options_from_agent_options_v1,
     normalize_doc_schema_payload,
@@ -1172,8 +1174,10 @@ class ChatCompletionAgent(BaseModel):
             async_finalizer=self._aclose_chat_models,
         )
 
-    def _build_snapshot_agui_messages(self) -> list[dict]:
-        """构建首帧 MESSAGES_SNAPSHOT 的消息列表（前端历史接口原始返回形态）。
+    def _build_snapshot_agui_messages(self, chat_history: list[ChatPrompt] | None = None) -> list[dict]:
+        """构建 MESSAGES_SNAPSHOT 的消息列表（首帧与尾帧共用的唯一构造入口，前端历史接口原始返回形态）。
+
+        ``chat_history`` 缺省取内存账本（首帧）；尾帧传入从 DB 重组的历史，其余规则完全一致。
 
         数据源为 lossless chat_history 账本（由 build_chat_history 无损承接 session_context_data 而来，
         与前端历史消息接口同源，含 system 展示类记录）；resume 命中的 interrupt 记录已被
@@ -1184,10 +1188,11 @@ class ChatCompletionAgent(BaseModel):
         builtin_property/extra 保留、字段名保持后端原样）；仅将旧顶层 docSchema 归一到
         property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
         status 映射 / multimodal 重排。
-        用户图片 download_url 只在快照副本上重签，不写回账本，避免执行过程中前端覆盖历史后看到过期图。
+        用户图片 download_url 与 Markdown 图片中的会话 PV 路径只在快照副本上重签，不写回账本，
+        避免执行过程中前端覆盖历史后看到过期图。
         """
         base = []
-        for record in self.chat_history or []:
+        for record in (self.chat_history if chat_history is None else chat_history) or []:
             payload = _to_ledger_dict(record)
             # ChatPrompt 经 model_dump 已是全新嵌套结构，重签直接改它不会污染账本；
             # 其余形态与账本共享引用，才需要深拷贝，避免把整段历史（含大 tool 输出）无谓复制一遍。
@@ -1205,7 +1210,27 @@ class ChatCompletionAgent(BaseModel):
                     url_cache=self.image_url_cache,
                     session_code=self.thread_id,
                 )
+                if isinstance(payload.get("content"), str):
+                    payload["content"] = fill_markdown_pv_image_urls(
+                        file_service,
+                        payload["content"],
+                        url_cache=self.image_url_cache,
+                        session_code=self.thread_id,
+                    )
         return base
+
+    def _build_run_end_snapshot_agui_messages(self) -> list[dict] | None:
+        """构建尾帧 MESSAGES_SNAPSHOT：按 DB 当前态重组历史后走同一构造入口，形态与首帧一致。
+
+        本轮 assistant / tool 记录只经 writer 落库，未并入内存账本，因此与 factory 相同地重读会话内容
+        （同一换源与迁移），保证尾帧包含本轮产物且 id 与库一致。读不到记录时返回 None，不下发空快照。
+        """
+        raw_records = self.resource_manager.get_chat_session_contents(self.thread_id) or []
+        session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)
+        if not session_context_data:
+            return None
+        # 与 ChatAgentBuilder.build_chat_history 同一转换（无过滤）
+        return self._build_snapshot_agui_messages([ChatPrompt.model_validate(each) for each in session_context_data])
 
     def _pv_file_service(self) -> SandboxPvFileService | None:
         """会话 PV 文件服务；缺 resource_manager / thread_id 时签不出 URL，不构造。
@@ -1351,6 +1376,12 @@ class ChatCompletionAgent(BaseModel):
             approval_interrupts=approval_interrupts,
             ask_user_question_interrupts=ask_user_question_interrupts,
             run_end_extras_hook=build_artifacts_generated_hook(self.resource_manager, self.executor_info),
+            # 尾帧：仅成功出口在 RUN_FINISHED 前补发，与首帧同一构造入口（见 _build_run_end_snapshot_agui_messages）
+            run_end_snapshot_builder=(
+                self._build_run_end_snapshot_agui_messages
+                if self.resource_manager is not None and self.thread_id
+                else None
+            ),
             # D-11 装配收编：复用 execute() 入口惰性构造的 processor 注入 AidevAGUIAgent
             # （不再现造；ItsmTicketCreator 由 dispatch_interrupts 内部按 ctx 现构造，
             # RM 在 core/ag_ui 层持有合法，供流结束 processor 的 ApprovalHandler.prepare
