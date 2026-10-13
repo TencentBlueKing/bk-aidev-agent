@@ -62,13 +62,13 @@ class ManagedApp:
             env.update(
                 {
                     "MYSQL_HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
-                    "MYSQL_PORT": os.getenv("MYSQL_PORT", "13306"),
+                    "MYSQL_PORT": self.config.mysql_port,
                     "MYSQL_NAME": os.getenv("MYSQL_NAME", "aidev_agent_e2e"),
                     "MYSQL_USER": os.getenv("MYSQL_USER", "aidev"),
                     "MYSQL_PASSWORD": os.getenv("MYSQL_PASSWORD", "aidev-e2e"),
                     "BK_PLUGIN_DEV_USE_MYSQL": "1",
                     "BK_PLUGIN_RUNTIME_DB_HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
-                    "BK_PLUGIN_RUNTIME_DB_PORT": os.getenv("MYSQL_PORT", "13306"),
+                    "BK_PLUGIN_RUNTIME_DB_PORT": self.config.mysql_port,
                     "BK_PLUGIN_RUNTIME_DB_USER": os.getenv("MYSQL_USER", "aidev"),
                     "BK_PLUGIN_RUNTIME_DB_PWD": os.getenv("MYSQL_PASSWORD", "aidev-e2e"),
                 }

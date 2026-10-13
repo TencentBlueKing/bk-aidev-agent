@@ -13,7 +13,7 @@ e2e-setup:
 	$(E2E_MAKE) setup $(if $(env_file),ENV_FILE="$(env_file)",)
 
 e2e-up:
-	$(E2E_MAKE) up DB=$(if $(db),$(db),sqlite)
+	$(E2E_MAKE) up DB=$(if $(db),$(db),sqlite) $(if $(env_file),ENV_FILE="$(env_file)",)
 
 e2e-down:
 	$(E2E_MAKE) down

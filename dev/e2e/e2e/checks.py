@@ -51,6 +51,28 @@ def run_finished(events: list[dict], *, outcome: str | None = None) -> dict | No
     return candidates[-1] if candidates else None
 
 
+def validate_resumed_run(events: list[dict]) -> dict:
+    """Historical terminals are optional; the current run must finish after its answer."""
+    started = next((i for i, event in enumerate(events) if event.get("type") == "RUN_STARTED"), -1)
+    if started < 0:
+        raise AssertionError("resumed run did not expose RUN_STARTED")
+    terminal = next((i for i in range(started + 1, len(events)) if events[i].get("type") == "RUN_FINISHED"), -1)
+    answered = any(event.get("type") == "TEXT_MESSAGE_CONTENT" for event in events[started + 1 : terminal])
+    if terminal < 0 or not answered or (events[terminal].get("outcome") or {}).get("type") != "success":
+        raise AssertionError("resumed run ended before its assistant answer and successful terminal")
+    return events[terminal]
+
+
+def wait_for_stop_generation(mock_url: str, timeout: float = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = request("GET", mock_url + "/e2e/stop-generation", timeout=2)
+        if result.status == 200 and result.body.get("started"):
+            return
+        time.sleep(0.05)
+    raise AssertionError("stop scenario never reached the model; the request may have been rejected")
+
+
 class Checks:
     def __init__(self, config: Config, identity: Identity, report: RunReport):
         self.config = config
@@ -119,6 +141,7 @@ class Checks:
             detail.update({"auth_mode": self.identity.mode, "username": resolved})
 
     def api(self):
+        self.database()
         headers = self.identity.headers
         root = self.config.mock_url + "/openapi/aidev/resource/v1/chat/session/"
         session_code = ""
@@ -796,38 +819,14 @@ class Checks:
             resumed_text = assistant_text(resumed_events)
             if "已收到你的选择：生产环境" not in resumed_text:
                 raise AssertionError(f"resume did not continue to the assistant answer: {resumed_text}")
-            success_terminals = [
-                event
-                for event in resumed_events
-                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
-            ]
-            if not success_terminals:
-                raise AssertionError("resumed run did not expose its own successful terminal")
-            replay_terminal_index = next(
-                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_FINISHED"), -1
-            )
-            run_started_index = next(
-                (index for index, event in enumerate(resumed_events) if event.get("type") == "RUN_STARTED"), -1
-            )
-            assistant_index = next(
-                (index for index, event in enumerate(resumed_events) if event.get("type") == "TEXT_MESSAGE_CONTENT"),
-                -1,
-            )
-            current_terminal_index = max(
-                index
-                for index, event in enumerate(resumed_events)
-                if event.get("type") == "RUN_FINISHED" and (event.get("outcome") or {}).get("type") == "success"
-            )
-            if not replay_terminal_index < run_started_index < assistant_index < current_terminal_index:
-                raise AssertionError("old question-card terminal prematurely ended the resumed run")
+            success_terminal = validate_resumed_run(resumed_events)
             detail.update(
                 {
                     "session_code": session_code,
                     "interrupt": interrupt,
                     "submitted_answers": answers,
                     "resumed_event_types": [event.get("type") for event in resumed_events],
-                    "replayed_card_terminal": resumed_events[replay_terminal_index],
-                    "success_terminal": success_terminals[-1],
+                    "success_terminal": success_terminal,
                 }
             )
             record_conversation(
@@ -842,14 +841,18 @@ class Checks:
                 ],
             )
 
-    def message(self):
-        database_name = "真实 SQLite 应用数据库" if self.config.database == "sqlite" else "真实 MySQL 5.7 应用数据库"
+    def database(self):
+        database_name = (
+            "真实 SQLite 应用数据库"
+            if self.config.database == "sqlite"
+            else f"真实 MySQL {self.config.mysql_version} 应用数据库"
+        )
         database_coverage = (
             "SQLite 文件完整性和 Django migration 落库"
             if self.config.database == "sqlite"
-            else "MySQL 5.7 版本和应用库连接"
+            else f"MySQL {self.config.mysql_version} 版本和应用库连接"
         )
-        with self.case("message", "message.database", database_name, database_coverage) as detail:
+        with self.case("api", "api.database", database_name, database_coverage) as detail:
             if self.config.database == "sqlite":
                 path = self.config.root / "dev/e2e/.runtime/agent.sqlite3"
                 if not path.is_file():
@@ -881,14 +884,15 @@ connection = pymysql.connect(
     database=os.environ['MYSQL_NAME'],
 )
 with connection.cursor() as cursor:
-    cursor.execute('SELECT VERSION(), DATABASE()')
-    version, database = cursor.fetchone()
+    cursor.execute('SELECT VERSION(), DATABASE(), @@sql_mode')
+    version, database, sql_mode = cursor.fetchone()
 connection.close()
-print(json.dumps({'version': version, 'database': database}))
+print(json.dumps({'version': version, 'database': database, 'sql_mode': sql_mode}))
 """
+                environment = ManagedApp(self.config, self.identity).environment()
                 checked = subprocess.run(
                     [str(python), "-c", script],
-                    env=os.environ.copy(),
+                    env=environment,
                     capture_output=True,
                     text=True,
                     timeout=15,
@@ -897,10 +901,15 @@ print(json.dumps({'version': version, 'database': database}))
                 if checked.returncode:
                     raise AssertionError(f"MySQL check failed: {checked.stderr[-500:]}")
                 mysql = json.loads(checked.stdout.splitlines()[-1])
-                if not mysql["version"].startswith("5.7.") or mysql["database"] != os.getenv("MYSQL_NAME"):
+                if (
+                    not mysql["version"].startswith(self.config.mysql_version + ".")
+                    or mysql["database"] != environment["MYSQL_NAME"]
+                ):
                     raise AssertionError(f"unexpected MySQL baseline: {mysql}")
                 detail.update({"backend": "mysql", **mysql})
 
+    def message(self):
+        self.database()
         with self.case("message", "message.redis", "Redis 可用性", "真实 Redis 连接和 PING/PONG 往返") as detail:
             parsed = urllib.parse.urlparse(os.getenv("MESSAGE_REDIS_URL", "redis://127.0.0.1:16379/0"))
             with socket.create_connection((parsed.hostname or "127.0.0.1", parsed.port or 6379), timeout=5) as stream:
@@ -1383,26 +1392,36 @@ print(json.dumps(json.loads(payload)))
                 "企微 /stop 指令",
                 "生成中通过独立长连接消息发送 /stop，写入跨进程取消信号并收敛原流终态",
             ) as detail:
-                prompt = "[E2E_SLOW_STREAM] 企业微信停止生成测试"
-                time.sleep(1)
+                prompt = "[E2E_STOP_BARRIER] [E2E_SLOW_STREAM] 企业微信停止生成测试"
+                # Use an independent conversation; a previous terminal may still be draining.
+                stop_user = "e2e-stop-user"
+                self.require(request("POST", self.config.mock_url + "/e2e/stop-generation", json_body={}))
                 stream_ws_call, stream_started = start_ws_exchange("aibot_msg_callback")
-                stream_req_id, stream_callback = ws_mock.send_text(prompt)
-                time.sleep(1.5)
-                initial_replies = ws_mock.replies(stream_req_id)
-                stop_ws_call, stop_started = start_ws_exchange("aibot_msg_callback")
-                stop_req_id, stop_callback = ws_mock.send_text("/stop")
-                stop_replies = ws_mock.wait_replies(stop_req_id, until_finish=True, timeout=15)
-                stop_content = (stop_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
-                if "已停止" not in stop_content:
-                    raise AssertionError(f"unexpected /stop response: {stop_content!r}")
+                stream_req_id, stream_callback = ws_mock.send_text(prompt, userid=stop_user)
+                stop_ws_call = None
+                try:
+                    wait_for_stop_generation(self.config.mock_url)
+                    initial_replies = ws_mock.replies(stream_req_id)
+                    if any((reply.get("body", {}).get("stream") or {}).get("finish") for reply in initial_replies):
+                        raise AssertionError("slow request finished or was rejected before /stop")
+                    stop_ws_call, stop_started = start_ws_exchange("aibot_msg_callback")
+                    stop_req_id, stop_callback = ws_mock.send_text("/stop", userid=stop_user)
+                    stop_replies = ws_mock.wait_replies(stop_req_id, until_finish=True, timeout=15)
+                    stop_content = (stop_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
+                    if "已停止" not in stop_content:
+                        raise AssertionError(f"unexpected /stop response: {stop_content!r}")
+                finally:
+                    self.require(request("DELETE", self.config.mock_url + "/e2e/stop-generation"))
+                    finish_ws_exchange(stream_ws_call, stream_callback, ws_mock.replies(stream_req_id), stream_started)
+                    if stop_ws_call is not None:
+                        finish_ws_exchange(stop_ws_call, stop_callback, ws_mock.replies(stop_req_id), stop_started)
                 stream_replies = ws_mock.wait_replies(stream_req_id, until_finish=True, timeout=45)
+                finish_ws_exchange(stream_ws_call, stream_callback, stream_replies, stream_started)
                 final_stream_content = (stream_replies[-1].get("body", {}).get("stream") or {}).get("content", "")
                 if "停止" not in final_stream_content and "取消" not in final_stream_content:
                     raise AssertionError(f"original stream did not end as cancelled: {final_stream_content!r}")
                 if "分段响应" in final_stream_content:
                     raise AssertionError("/stop returned success but the slow generation still completed")
-                finish_ws_exchange(stream_ws_call, stream_callback, stream_replies, stream_started)
-                finish_ws_exchange(stop_ws_call, stop_callback, stop_replies, stop_started)
                 self.report.conversations.append(
                     {
                         "module": "wxbot",

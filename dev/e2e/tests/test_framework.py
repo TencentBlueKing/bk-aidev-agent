@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from e2e.checks import assistant_text, parse_sse_events, run_finished
+from e2e.app import ManagedApp
+from e2e.checks import (
+    Checks,
+    assistant_text,
+    parse_sse_events,
+    run_finished,
+    validate_resumed_run,
+    wait_for_stop_generation,
+)
 from e2e.config import (
     DEFAULT_MODULES,
     SUPPORTED_MODULES,
@@ -16,6 +26,7 @@ from e2e.config import (
     load_env_file,
 )
 from e2e.http import request
+from e2e.mock_remote import RemoteMock
 from e2e.report import CaseResult, RunReport, redact, write_report
 from e2e.trace import ApiTraceRecorder
 
@@ -48,7 +59,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(Config.from_env("api").database, "sqlite")
             with (
                 patch.dict(os.environ, {"E2E_ENV_FILE": str(env_file), "E2E_DB": "postgres"}, clear=True),
-                self.assertRaisesRegex(ValueError, "E2E_DB must be sqlite or mysql"),
+                self.assertRaisesRegex(ValueError, "E2E_DB must be sqlite, mysql or mysql80"),
             ):
                 Config.from_env("api")
 
@@ -242,3 +253,93 @@ class ConversationProtocolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MysqlConfigTests(unittest.TestCase):
+    def test_mysql_versions_select_their_own_ports(self):
+        for backend, version, port in (("mysql", "5.7", "13306"), ("mysql80", "8.0", "13307")):
+            with (
+                self.subTest(backend=backend),
+                patch.dict(os.environ, {"E2E_ENV_FILE": "/nonexistent-e2e-env", "E2E_DB": backend}, clear=True),
+            ):
+                config = Config.from_env("api")
+                env = ManagedApp(config, Identity("alice", "username")).environment()
+                self.assertEqual((config.database, config.mysql_version), ("mysql", version))
+                self.assertEqual(env["MYSQL_PORT"], port)
+                self.assertEqual(env["BK_PLUGIN_RUNTIME_DB_PORT"], port)
+
+    def test_explicit_mysql_port_is_used_by_both_clients(self):
+        with patch.dict(
+            os.environ, {"E2E_ENV_FILE": "/nonexistent-e2e-env", "E2E_DB": "mysql80", "MYSQL_PORT": "13318"}, clear=True
+        ):
+            config = Config.from_env("api")
+            env = ManagedApp(config, Identity("alice", "username")).environment()
+        self.assertEqual(env["MYSQL_PORT"], "13318")
+        self.assertEqual(env["BK_PLUGIN_RUNTIME_DB_PORT"], "13318")
+
+
+class ResumeOrderTests(unittest.TestCase):
+    def test_success_with_or_without_historical_terminal(self):
+        current = [
+            {"type": "RUN_STARTED"},
+            {"type": "TEXT_MESSAGE_CONTENT", "delta": "answer"},
+            {"type": "RUN_FINISHED", "outcome": {"type": "success"}},
+        ]
+        for history in ([], [{"type": "RUN_FINISHED", "outcome": {"type": "interrupt"}}]):
+            with self.subTest(history=history):
+                self.assertEqual(validate_resumed_run(history + current), current[-1])
+
+    def test_premature_or_missing_terminal_still_fails(self):
+        started = {"type": "RUN_STARTED"}
+        answer = {"type": "TEXT_MESSAGE_CONTENT"}
+        interrupted = {"type": "RUN_FINISHED", "outcome": {"type": "interrupt"}}
+        success = {"type": "RUN_FINISHED", "outcome": {"type": "success"}}
+        for events in (
+            [started, interrupted, answer, success],
+            [started, success],
+            [started, answer],
+            [answer, success],
+        ):
+            with self.subTest(events=events), self.assertRaises(AssertionError):
+                validate_resumed_run(events)
+
+
+class StopBarrierTests(unittest.TestCase):
+    def test_model_cannot_finish_before_stop_releases_it(self):
+        remote = RemoteMock("127.0.0.1", 0, "alice")
+        url = f"http://127.0.0.1:{remote.server.server_port}"
+        remote.start()
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                request("POST", url + "/e2e/stop-generation", json_body={})
+                future = pool.submit(
+                    request,
+                    "POST",
+                    url + "/v1/chat/completions",
+                    json_body={"messages": [{"role": "user", "content": "[E2E_STOP_BARRIER]"}]},
+                )
+                try:
+                    wait_for_stop_generation(url, timeout=2)
+                    self.assertFalse(future.done())
+                finally:
+                    request("DELETE", url + "/e2e/stop-generation")
+                self.assertEqual(future.result(timeout=2).status, 200)
+        finally:
+            remote.close()
+
+
+class MysqlVersionTests(unittest.TestCase):
+    def test_wrong_server_version_is_not_reported_as_passed(self):
+        for actual, expected in (("8.0.46", "passed"), ("5.7.44", "failed")):
+            with (
+                self.subTest(actual=actual),
+                patch.dict(os.environ, {"E2E_ENV_FILE": "/nonexistent-e2e-env", "E2E_DB": "mysql80"}, clear=True),
+            ):
+                config = Config.from_env("api")
+                report = RunReport("2026-10-13", ["api"])
+                completed = MagicMock(
+                    returncode=0, stdout=json.dumps({"version": actual, "database": "aidev_agent_e2e"})
+                )
+                with patch("e2e.checks.subprocess.run", return_value=completed):
+                    Checks(config, Identity("alice", "username"), report).database()
+                self.assertEqual(report.cases[0].status, expected)

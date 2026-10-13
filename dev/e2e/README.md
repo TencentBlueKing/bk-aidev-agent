@@ -1,6 +1,6 @@
 # bk-aidev-agent 本地 E2E
 
-这套环境只 mock 智能体以外的远端服务（登录、AIDev Session/Agent 配置、LLM）。Django 应用、SQLite、Redis、RabbitMQ 和消息往返都真实运行；SQLite 是默认且隔离的本地数据库，MySQL 5.7 保留为可选兼容性基线。指标启用时复用 `dev/otel`，链路为 Agent → OTel Collector → Prometheus → Grafana。
+这套环境只 mock 智能体以外的远端服务（登录、AIDev Session/Agent 配置、LLM）。Django 应用、SQLite、Redis、RabbitMQ 和消息往返都真实运行；SQLite 是默认且隔离的本地数据库，MySQL 5.7 和 8.0 均为可选兼容性基线。指标启用时复用 `dev/otel`，链路为 Agent → OTel Collector → Prometheus → Grafana。
 
 ## 快速开始
 
@@ -22,6 +22,15 @@ make e2e-up db=mysql
 make e2e db=mysql
 make e2e-down
 ```
+
+MySQL 8.0 使用独立端口（13307）和数据卷，禁止与 5.7 共用数据目录：
+
+```bash
+make e2e-up db=mysql80
+make e2e db=mysql80
+```
+
+`db=mysql` 继续使用 5.7（13306）。已有 `.env` 若配置了 `MYSQL_PORT`，切换版本时请删除该覆盖或改为目标端口；API 测试会核对实际 MySQL 主次版本，连错版本将失败。自备数据库通过 `MYSQL_HOST/PORT/NAME/USER/PASSWORD` 配置，需为专用测试库并使用 `utf8mb4`。测试会执行迁移和写入场景。
 
 `.env` 同时配置了 access token 和 username 时，测试先向本地登录 mock 校验 access token，再使用其解析出的 username 调用本地应用；不会把 token 写入日志、JSON 或 HTML。两者都没配置时本次执行失败，但仍生成报告。
 
@@ -72,3 +81,5 @@ HTML 报告会把每条企微输入、流式响应帧和完整 WebSocket 请求/
 Grafana 仪表盘地址为 <http://127.0.0.1:3000/d/aidev-agent-metrics>，Prometheus 为 <http://127.0.0.1:9090>。指标模块会检查本地 `.env` 对平台指标配置的优先级、10 秒最小周期、direct BKM 周期快照、Prometheus 查询，以及 Grafana 中预置的智能体仪表盘。
 
 默认 E2E 配置会让平台 mock 下发 1 秒周期、Celery 推送和一组不可达的 BKM 连接参数，同时在本地 `.env` 配置 10 秒周期、direct 推送和本地 BKM mock。测试必须观测到连续两次本地直推且间隔不低于 9 秒，才能判定本地优先级和 direct 链路正常；所有 token 仍会在报告中遮蔽。
+
+答题恢复检查同时接受有、无历史卡片终态的响应，验证当前运行开始后有回答并成功结束。企微 `/stop` 使用独立测试用户，等待模型请求到达本地 mock 后才发送停止；模型响应在停止回执前保持阻塞，失败时也保存 WebSocket 帧并释放阻塞。

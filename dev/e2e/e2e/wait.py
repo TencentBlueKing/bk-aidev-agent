@@ -6,6 +6,8 @@ import time
 import urllib.error
 import urllib.request
 
+from .config import Config
+
 
 def main() -> None:
     targets = [
@@ -13,8 +15,9 @@ def main() -> None:
         ("RabbitMQ AMQP", "127.0.0.1", 25672),
         ("RabbitMQ management", "127.0.0.1", 15673),
     ]
-    if os.getenv("E2E_DB", "sqlite").strip().lower() == "mysql":
-        targets.insert(0, ("MySQL", "127.0.0.1", 13306))
+    config = Config.from_env()
+    if config.database == "mysql":
+        targets.insert(0, ("MySQL", os.getenv("MYSQL_HOST", "127.0.0.1"), int(config.mysql_port)))
     deadline = time.monotonic() + 120
     pending = list(targets)
     while pending and time.monotonic() < deadline:

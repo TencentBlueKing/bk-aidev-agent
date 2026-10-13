@@ -24,6 +24,8 @@ class MockState:
     contents: dict[int, dict] = field(default_factory=dict)
     requests: list[dict] = field(default_factory=list)
     bkm_pushes: list[dict] = field(default_factory=list)
+    stop_generation_started: threading.Event = field(default_factory=threading.Event)
+    stop_generation_release: threading.Event = field(default_factory=threading.Event)
     next_content_id: int = 1
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -104,6 +106,13 @@ class RemoteMock:
                 )
                 self._record(body)
 
+                if path == "/e2e/stop-generation":
+                    if self.command == "POST":
+                        state.stop_generation_started.clear()
+                        state.stop_generation_release.clear()
+                    elif self.command == "DELETE":
+                        state.stop_generation_release.set()
+                    return self._send({"started": state.stop_generation_started.is_set()})
                 if path == "/healthz":
                     return self._send({"status": "ok"})
                 if path == "/v2/push/" and self.command == "POST":
@@ -284,6 +293,10 @@ class RemoteMock:
             def _chat(self, body):
                 messages = body.get("messages") or []
                 prompt_text = json.dumps(messages, ensure_ascii=False)
+                if "[E2E_STOP_BARRIER]" in prompt_text:
+                    state.stop_generation_started.set()
+                    if not state.stop_generation_release.wait(timeout=60):
+                        return self._send({"error": "stop scenario did not release the model"}, 504)
                 has_tool_answer = any(
                     message.get("role") == "tool" for message in messages if isinstance(message, dict)
                 )
@@ -423,6 +436,7 @@ class RemoteMock:
         self.thread.start()
 
     def close(self):
+        self.state.stop_generation_release.set()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=5)
@@ -454,6 +468,7 @@ def agent_config() -> dict:
         "prompt_setting": {
             "llm_code": "mock-model",
             "non_thinking_llm": "mock-model",
+            "support_upload": {"vision": True},
             "content": [{"role": "system", "content": "Answer only with deterministic local test data."}],
         },
         "knowledgebase_settings": {"knowledgebases": []},

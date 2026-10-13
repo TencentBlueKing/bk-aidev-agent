@@ -56,6 +56,11 @@ class Config:
     headless: bool
     observability: bool
     env_file: Path
+    mysql_version: str = "5.7"
+
+    @property
+    def mysql_port(self) -> str:
+        return os.getenv("MYSQL_PORT") or ("13307" if self.mysql_version == "8.0" else "13306")
 
     @classmethod
     def from_env(cls, modules: str = "") -> "Config":
@@ -71,15 +76,16 @@ class Config:
         if unknown:
             raise ValueError(f"unsupported E2E modules: {', '.join(unknown)}")
         database = os.getenv("E2E_DB", "sqlite").strip().lower()
-        if database not in {"sqlite", "mysql"}:
-            raise ValueError("E2E_DB must be sqlite or mysql")
+        if database not in {"sqlite", "mysql", "mysql80"}:
+            raise ValueError("E2E_DB must be sqlite, mysql or mysql80")
         report_dir = Path(os.getenv("E2E_REPORT_DIR", root / "dev/e2e/reports")).expanduser()
         if not report_dir.is_absolute():
             report_dir = root / report_dir
         config = cls(
             root=root,
             modules=selected,
-            database=database,
+            database="mysql" if database == "mysql80" else database,
+            mysql_version="8.0" if database == "mysql80" else "5.7",
             app_url=os.getenv("E2E_APP_URL", "http://127.0.0.1:18000").rstrip("/"),
             mock_url=os.getenv("E2E_MOCK_URL", "http://127.0.0.1:18080").rstrip("/"),
             report_dir=report_dir,

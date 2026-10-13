@@ -19,6 +19,7 @@ help:
 	@echo "  make setup              Install template runtime and link local SDK/plugin sources"
 	@echo "  make up                 Start real Redis, RabbitMQ and local observability (SQLite by default)"
 	@echo "  make up DB=mysql        Also start the optional real MySQL 5.7 profile"
+	@echo "  make up DB=mysql80      Start MySQL 8.0 on a separate port and volume"
 	@echo "  make run                Run the complete API/AI/metrics/WeCom suite; write one HTML report"
 	@echo "  make api                Run one module (also: ai-blueking/metrics/wxbot)"
 	@echo "  make run HEADLESS=false Run headed/browser-friendly mode"
@@ -31,11 +32,11 @@ setup:
 	cd "$(TEMPLATE_DIR)" && uv sync --frozen --inexact --no-dev
 
 deps-up:
-	$(COMPOSE) $(if $(filter mysql,$(DB)),--profile mysql,) up -d
-	E2E_DB="$(DB)" PYTHONPATH="$(E2E_DIR)" $(PYTHON) -m e2e.wait
+	$(COMPOSE) $(if $(filter mysql mysql80,$(DB)),--profile $(DB),) up -d
+	E2E_DB="$(DB)" E2E_ENV_FILE="$(ENV_FILE)" PYTHONPATH="$(E2E_DIR)" $(PYTHON) -m e2e.wait
 
 deps-down:
-	$(COMPOSE) --profile mysql down
+	$(COMPOSE) --profile mysql --profile mysql80 down
 
 observability-up:
 	$(MAKE) -C "$(ROOT_DIR)/dev/otel" up
