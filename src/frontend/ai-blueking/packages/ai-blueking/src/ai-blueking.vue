@@ -140,13 +140,11 @@
             </template>
             <template
               v-if="$slots.message"
-              #message="{ message, messageToolsStatus, onInterruptResume }"
+              #message="slotProps"
             >
               <slot
-                :message="message"
-                :message-tools-status="messageToolsStatus"
                 name="message"
-                :on-interrupt-resume="onInterruptResume"
+                v-bind="slotProps"
               />
             </template>
           </ChatBot>
@@ -195,8 +193,9 @@
   import { DraggableContainer } from './containers';
   import NimbusButton from './views/nimbus.vue';
 
+  import type { ChatMessageSlotProps } from './components/types';
   import type { AIBluekingEmits, AIBluekingExpose, AIBluekingProps, ISession } from './types';
-  import type { Message, MessageToolsStatus, OnInterruptResume } from '@blueking/chat-x';
+  import type { Message } from '@blueking/chat-x';
 
   // 根节点为 teleport，无法自动继承 class 等透传属性，改为手动合并到内层容器
   defineOptions({ inheritAttrs: false });
@@ -208,11 +207,7 @@
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
     headerActions?: () => unknown;
     headerLeft?: () => unknown;
-    message?: (props: {
-      message: Message;
-      messageToolsStatus?: MessageToolsStatus;
-      onInterruptResume?: OnInterruptResume;
-    }) => unknown;
+    message?: (props: ChatMessageSlotProps) => unknown;
     welcome?: (props: { openingRemark?: string; welcomeTitle?: string }) => unknown;
   }>();
 

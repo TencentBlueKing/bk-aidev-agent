@@ -1209,7 +1209,8 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | 插槽名           | 参数                                                                                                        | 说明                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | answeredQuestion | `{ item, index, status }`                                                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
-| default          | `{ message: Message, messageToolsStatus?: MessageToolsStatus, onInterruptResume?: OnInterruptResume }`     | 自定义单条消息渲染。终态折叠时只传入当前可见消息；消息分组外层容器与 `#group` 未覆盖时的过程状态栏、工具栏仍由容器管理 |
+| codeHeader       | `{ language: string; token: Token[] }`                                                                      | 代码块头部，透传给默认 MessageRender                                                      |
+| default          | `MessageSlotProps`：`{ message, messageTools, messageToolsStatus, tippyOptions, onAction, onInputConfirm, onShortcutConfirm, onInterruptResume }` | 自定义单条消息渲染；字段与 MessageRender props 对齐，可 `<MessageRender v-bind="slotProps" />`，回调已绑定当前消息。终态折叠时只传入当前可见消息；消息分组外层容器与 `#group` 未覆盖时的过程状态栏、工具栏仍由容器管理 |
 | group            | `{ group: MessageGroup }`                                                                                   | 自定义单个消息组内容，替换默认 Checkbox、过程状态栏、消息列表与 `MessageTools`；外层组容器仍由组件管理 |
 
 ## 类型定义

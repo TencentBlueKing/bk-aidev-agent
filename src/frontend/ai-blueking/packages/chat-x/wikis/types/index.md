@@ -21,6 +21,7 @@
 | `src/types/input-menu.ts` | `IInputMenuItem` 等 | 本页引入示例 + [ChatInput](/components/input/chat-input) |
 | `src/types/input.ts` | `TagSchema` / `UploadFile` | 本页引入示例 |
 | `src/types/tool.ts` | `IToolBtn` | 本页引入示例 |
+| `src/types/message-slot.ts` | `MessageSlotProps`：MessageContainer `#default` / ChatContainer `#message` 作用域，字段与 MessageRender props 对齐 | [MessageContainer](/components/setup/message-container)、[ChatContainer](/components/setup/chat-container) |
 | `src/types/custom.ts` | `CustomTab` | [自定义侧栏](/ai/custom-side-tab) |
 | `src/types/shortcut.ts` | `Shortcut` | 本页引入示例 |
 | `src/types/image.ts` | 预览项类型 | [ImagePreview](/components/medias/image-preview) |
@@ -60,6 +61,9 @@ import type {
 
   // 工具按钮
   IToolBtn,
+
+  // 单条消息插槽作用域
+  MessageSlotProps,
 
   // 输入相关
   TagSchema,

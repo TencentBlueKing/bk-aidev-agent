@@ -91,7 +91,7 @@ vi.mock('../message-render/message-render.vue', () => ({
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
     },
-    setup(props) {
+    setup(props, { slots }) {
       return () =>
         h(
           'div',
@@ -103,7 +103,7 @@ vi.mock('../message-render/message-render.vue', () => ({
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
             'data-user-tools-json': JSON.stringify(props.messageTools ?? []),
           },
-          props.message?.content,
+          [props.message?.content, slots.codeHeader?.({ language: 'ts', token: [] })],
         );
     },
   }),
@@ -763,6 +763,98 @@ describe('MessageContainer', () => {
       expect(customGroups[0].text()).toBe(MessageRole.User);
       expect(customGroups[1].attributes('data-messages-count')).toBe('1');
       expect(customGroups[1].text()).toBe(MessageRole.Assistant);
+    });
+
+    it('default slot 应带上用户消息工具回调，调用时触发对应 prop', async () => {
+      const onUserAction = vi.fn();
+      const onUserInputConfirm = vi.fn();
+      const onUserShortcutConfirm = vi.fn();
+      const onInterruptResume = vi.fn();
+      const userMessageTools = [{ id: 'edit', name: '编辑' }];
+      const tippyOptions = { placement: 'top' as const };
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1)];
+      const docSchema = { type: 'doc', content: [] };
+      const formModel = { field: 'value' };
+      const tool = { id: 'edit' };
+      const message = messages[0];
+      const messageGroups = [
+        {
+          uid: 'group-1',
+          messages: [message],
+          type: MessageRole.User,
+          isHover: false,
+          checked: false,
+        },
+      ];
+
+      type CapturedSlot = {
+        message?: Message;
+        messageTools?: Array<{ id?: string; name?: string }>;
+        messageToolsStatus?: MessageToolsStatus;
+        onAction?: (nextTool: { id: string }) => unknown;
+        onInputConfirm?: (content: string, schema: { content: unknown[]; type: string }) => unknown;
+        onInterruptResume?: typeof onInterruptResume;
+        onShortcutConfirm?: (model: Record<string, unknown>) => unknown;
+        tippyOptions?: { placement?: string };
+      };
+      let captured: CapturedSlot = {};
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups,
+          messageToolsStatus: MessageToolsStatus.Disabled,
+          messageToolsTippyOptions: tippyOptions,
+          onInterruptResume,
+          onUserAction,
+          onUserInputConfirm,
+          onUserShortcutConfirm,
+          userMessageTools,
+        },
+        slots: {
+          default: (slotProps: CapturedSlot) => {
+            captured = slotProps;
+            return h('div', { class: 'custom-message' }, 'Custom');
+          },
+        },
+      });
+
+      await nextTick();
+
+      expect(captured.message).toMatchObject({ id: '1', content: 'Hello' });
+      expect(captured.messageTools).toEqual(userMessageTools);
+      expect(captured.messageToolsStatus).toBe(MessageToolsStatus.Disabled);
+      expect(captured.tippyOptions).toEqual(tippyOptions);
+      expect(captured.onInterruptResume).toBe(onInterruptResume);
+      expect(captured.onAction).toEqual(expect.any(Function));
+      expect(captured.onInputConfirm).toEqual(expect.any(Function));
+      expect(captured.onShortcutConfirm).toEqual(expect.any(Function));
+
+      await captured.onAction?.(tool);
+      expect(onUserAction).toHaveBeenCalledWith(tool, messages[0]);
+
+      await captured.onInputConfirm?.('edited', docSchema);
+      expect(onUserInputConfirm).toHaveBeenCalledWith(messages[0], 'edited', docSchema);
+
+      await captured.onShortcutConfirm?.(formModel);
+      expect(onUserShortcutConfirm).toHaveBeenCalledWith(messages[0], formModel);
+    });
+
+    it('未自定义消息时，codeHeader 插槽应透传到默认 MessageRender', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hi', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+        slots: {
+          codeHeader: ({ language }: { language: string }) => h('span', { class: 'custom-code-header' }, language),
+        },
+      });
+
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-render').exists()).toBe(true);
+      expect(wrapper.find('.custom-code-header').text()).toBe('ts');
     });
   });
 

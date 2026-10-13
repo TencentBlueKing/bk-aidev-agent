@@ -486,6 +486,7 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       selectedUserMessages: Array,
       onAgentAction: Function,
       onAgentFeedback: Function,
+      onInterruptResume: Function,
       onUserAction: Function,
       onUserInputConfirm: Function,
       onUserShortcutConfirm: Function,
@@ -495,18 +496,58 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
     setup(props, { slots }) {
-      return () =>
-        h(
-          'div',
-          { class: 'mock-message-container', 'data-render-mode': props.renderMode },
-          (
-            props.messageGroups as Array<{
-              messages: Array<{ id?: string }>;
-              type: string;
-              uid: string;
-            }>
-          )?.map(group => slots.group?.({ group }) ?? h('div', { class: 'default-group-fallback' })),
+      type LooseMessage = { content?: unknown; id?: string };
+      type LooseHandler = (...args: never[]) => unknown;
+      const callHandler = (handler: unknown, args: unknown[]): unknown => {
+        if (typeof handler !== 'function') return undefined;
+        return (handler as LooseHandler)(...(args as never[]));
+      };
+
+      return () => {
+        const groups =
+          (props.messageGroups as Array<{
+            messages?: LooseMessage[];
+            type: string;
+            uid: string;
+          }>) ?? [];
+        const groupNodes = groups.map(
+          group => slots.group?.({ group }) ?? h('div', { class: 'default-group-fallback' }),
         );
+        const messageNodes = groups.flatMap(group =>
+          (group.messages ?? []).map(message => {
+            const slotProps = {
+              message,
+              messageTools: props.userMessageTools,
+              messageToolsStatus: props.messageToolsStatus,
+              onAction: (tool: { id?: string }) => callHandler(props.onUserAction, [tool, message]),
+              onInputConfirm: (content: unknown, docSchema: unknown) =>
+                callHandler(props.onUserInputConfirm, [message, content, docSchema]),
+              onInterruptResume: props.onInterruptResume,
+              onShortcutConfirm: (formModel: Record<string, unknown>) =>
+                callHandler(props.onUserShortcutConfirm, [message, formModel]),
+              tippyOptions: props.messageToolsTippyOptions,
+            };
+            if (slots.default) {
+              return slots.default(slotProps);
+            }
+            return h(
+              'div',
+              { class: 'mock-default-message', 'data-message-id': message.id ?? '' },
+              typeof message.content === 'string' ? message.content : '',
+            );
+          }),
+        );
+
+        return h(
+          'div',
+          {
+            class: 'mock-message-container',
+            'data-has-default-slot': slots.default ? 'true' : 'false',
+            'data-render-mode': props.renderMode,
+          },
+          [slots.codeHeader?.({ language: 'text', token: [] }), ...groupNodes, ...messageNodes],
+        );
+      };
     },
   }),
 }));
@@ -811,6 +852,97 @@ describe('ChatContainer', () => {
       expect(customGroups[0].attributes('data-type')).toBe(MessageRole.User);
       expect(customGroups[1].attributes('data-uid')).toBe('group-assistant-2');
       expect(customGroups[1].attributes('data-type')).toBe(MessageRole.Assistant);
+    });
+
+    it('不传 #message 时消息仍走 MessageContainer 默认渲染', () => {
+      const messages = [createUserMessage('1', 'Hello')];
+      mockMessageGroupsRef.value = [{ messages, type: MessageRole.User, uid: 'group-user-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+      });
+
+      expect(wrapper.find('.mock-message-container').attributes('data-has-default-slot')).toBe('false');
+      expect(wrapper.find('.mock-default-message').exists()).toBe(true);
+      expect(wrapper.find('.mock-default-message').text()).toBe('Hello');
+    });
+
+    it('#message 作用域应包含工具回调，且调用会触发对应 prop', async () => {
+      const messages = [createUserMessage('1', 'Hello')];
+      const onUserAction = vi.fn();
+      const onUserInputConfirm = vi.fn();
+      const onUserShortcutConfirm = vi.fn();
+      const onInterruptResume = vi.fn();
+      const userMessageTools = [{ id: 'edit', name: '编辑' }];
+      const commonTippyOptions = { placement: 'top' as const };
+      const tool = { id: 'edit' };
+      const docSchema = { type: 'doc', content: [] };
+      const formModel = { keyword: 'slow' };
+      mockMessageGroupsRef.value = [{ messages, type: MessageRole.User, uid: 'group-user-1' }];
+
+      type CapturedSlot = {
+        message?: { content?: string; id?: string };
+        messageTools?: Array<{ id?: string; name?: string }>;
+        messageToolsStatus?: string;
+        onAction?: (nextTool: { id: string }) => unknown;
+        onInputConfirm?: (content: string, schema: { content: unknown[]; type: string }) => unknown;
+        onInterruptResume?: typeof onInterruptResume;
+        onShortcutConfirm?: (model: Record<string, unknown>) => unknown;
+        tippyOptions?: { placement?: string };
+      };
+      let captured: CapturedSlot = {};
+
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          commonTippyOptions,
+          messages,
+          onInterruptResume,
+          onUserAction,
+          onUserInputConfirm,
+          onUserShortcutConfirm,
+          userMessageTools,
+        },
+        slots: {
+          message: (slotProps: CapturedSlot) => {
+            captured = slotProps;
+            return h('div', { class: 'custom-message' }, slotProps.message?.content ?? '');
+          },
+        },
+      });
+
+      expect(wrapper.find('.custom-message').text()).toBe('Hello');
+      expect(wrapper.find('.mock-default-message').exists()).toBe(false);
+      expect(captured.message).toMatchObject({ id: '1', content: 'Hello' });
+      expect(captured.messageTools).toEqual(userMessageTools);
+      expect(captured.tippyOptions).toEqual(commonTippyOptions);
+      expect(captured.onInterruptResume).toBe(onInterruptResume);
+      expect(captured.onAction).toEqual(expect.any(Function));
+      expect(captured.onInputConfirm).toEqual(expect.any(Function));
+      expect(captured.onShortcutConfirm).toEqual(expect.any(Function));
+
+      await captured.onAction?.(tool);
+      expect(onUserAction).toHaveBeenCalledWith(tool, messages[0]);
+
+      await captured.onInputConfirm?.('edited', docSchema);
+      expect(onUserInputConfirm).toHaveBeenCalledWith(messages[0], 'edited', docSchema);
+
+      await captured.onShortcutConfirm?.(formModel);
+      expect(onUserShortcutConfirm).toHaveBeenCalledWith(messages[0], formModel);
+    });
+
+    it('codeHeader 插槽应透传到 MessageContainer', () => {
+      const messages = [createUserMessage('1', 'Hello')];
+      mockMessageGroupsRef.value = [{ messages, type: MessageRole.User, uid: 'group-user-1' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+        slots: {
+          codeHeader: ({ language }: { language: string }) => h('span', { class: 'custom-code-header' }, language),
+        },
+      });
+
+      expect(wrapper.find('.custom-code-header').text()).toBe('text');
     });
   });
 

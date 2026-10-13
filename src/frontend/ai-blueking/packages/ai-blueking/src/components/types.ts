@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import type { ComputedRef, MaybeRefOrGetter, Ref } from 'vue';
+import type { ComputedRef, MaybeRefOrGetter, Ref, VNode } from 'vue';
 
 import type { ModelSelectionManager } from '../manager/business/model-selection-manager';
 import type {
@@ -22,7 +22,7 @@ import type {
 } from '../types';
 import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
 import type { RenderMode, TagSchema } from '@blueking/chat-x';
-import type { AiSizeMode, IModelOption, IToolBtn, Message } from '@blueking/chat-x';
+import type { AiSizeMode, IModelOption, IToolBtn, Message, MessageSlotProps } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
 /**
@@ -284,3 +284,8 @@ export type { IRequestOptions } from '../types';
 export type MessageToolsTippyOptions = Partial<
   Omit<TippyOptions, 'content' | 'getReferenceClientRect' | 'triggerTarget'>
 >;
+
+/** ChatBot / AIBlueking `#message` 插槽：chat-x 作用域再加一份已绑定当前消息的默认渲染 */
+export type ChatMessageSlotProps = MessageSlotProps & {
+  renderDefault: () => VNode;
+};

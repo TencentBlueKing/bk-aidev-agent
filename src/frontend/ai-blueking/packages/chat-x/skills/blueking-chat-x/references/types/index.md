@@ -52,6 +52,9 @@ import type {
   // 工具按钮
   IToolBtn,
 
+  // 单条消息插槽作用域
+  MessageSlotProps,
+
   // 输入相关
   TagSchema,
   MentionState,

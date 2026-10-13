@@ -177,10 +177,22 @@
                 v-bind="{ group }"
               />
             </template>
-            <template #default="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }">
+            <template
+              v-if="$slots.message"
+              #default="slotProps"
+            >
               <slot
                 name="message"
-                v-bind="{ message, messageToolsStatus, onInterruptResume: slotOnInterruptResume }"
+                v-bind="slotProps"
+              />
+            </template>
+            <template
+              v-if="$slots.codeHeader"
+              #codeHeader="slotProps"
+            >
+              <slot
+                name="codeHeader"
+                v-bind="slotProps"
               />
             </template>
           </MessageContainer>
@@ -322,6 +334,7 @@
     CustomTab,
     IInputMenuItem,
     IToolBtn,
+    MessageSlotProps,
     Shortcut,
     TagSchema,
   } from '../../types';
@@ -380,11 +393,7 @@
     }) => null | undefined | VNode;
     group: (props: { group: MessageGroup }) => unknown;
     interruptQuestion: UserQuestionCardSlots['question'];
-    message: (props: {
-      message: Message;
-      messageToolsStatus: MessageContainerProps['messageToolsStatus'];
-      onInterruptResume?: MessageContainerProps['onInterruptResume'];
-    }) => null | undefined | VNode;
+    message: (props: MessageSlotProps) => null | undefined | VNode;
     welcome: (props: {
       openingRemark: ChatContainerProps['openingRemark'];
       welcomeTitle: ChatContainerProps['welcomeTitle'];

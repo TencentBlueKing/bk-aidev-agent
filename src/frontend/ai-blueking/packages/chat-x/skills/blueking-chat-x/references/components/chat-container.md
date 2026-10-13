@@ -783,11 +783,11 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 
 | 插槽名            | 参数                                                                                         | 说明                                                                                                     |
 | ----------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域（定义于类型；透传链路同 MessageRender）                                         |
+| codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域，经 MessageContainer 透传给默认 MessageRender                                   |
 | default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`                                                  |
 | group             | `{ group: MessageGroup }`                                                                    | 自定义单个消息组，透传至 MessageContainer `#group`；替换默认 Checkbox、消息列表与工具栏                  |
 | interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                           | 自定义 UserQuestion 单题渲染，透传至 UserQuestionCard `#question`                                        |
-| message           | `{ message, messageToolsStatus, onInterruptResume }`                                         | 自定义单条消息；自定义中断消息时需继续透传 `onInterruptResume`                                           |
+| message           | `MessageSlotProps`（同 MessageContainer `#default`）                                          | 自定义单条消息，会接管全部角色；不需要自定义的消息用 `<MessageRender v-bind="slotProps" />` 保持默认渲染与工具栏回调 |
 | welcome           | `{ openingRemark?: string; welcomeTitle?: string }`                                          | 无消息时自定义欢迎页；传入则整块替换默认 Banner、标题与开场白                                            |
 
 ### Expose

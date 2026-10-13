@@ -50,29 +50,24 @@
               >
                 <slot
                   name="default"
-                  v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
+                  v-bind="resolveMessageSlotProps(message)"
                 >
-                  <MessageRender
-                    :message="message"
-                    :message-tools="userMessageTools"
-                    :message-tools-status="messageToolsStatus"
-                    :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
-                    :on-input-confirm="
-                      (content: UserMessage['content'], docSchema: TagSchema) =>
-                        handleUserInputConfirm(message, content, docSchema)
-                    "
-                    :on-interrupt-resume="props.onInterruptResume"
-                    :on-shortcut-confirm="
-                      (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
-                    "
-                    :tippy-options="messageToolsTippyOptions"
-                  >
+                  <MessageRender v-bind="resolveMessageSlotProps(message)">
                     <template
                       v-if="$slots.answeredQuestion"
                       #answeredQuestion="slotProps"
                     >
                       <slot
                         name="answeredQuestion"
+                        v-bind="slotProps"
+                      />
+                    </template>
+                    <template
+                      v-if="$slots.codeHeader"
+                      #codeHeader="slotProps"
+                    >
+                      <slot
+                        name="codeHeader"
                         v-bind="slotProps"
                       />
                     </template>
@@ -137,7 +132,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, onMounted, useTemplateRef } from 'vue';
+  import { type VNode, computed, onMounted, useTemplateRef } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
@@ -146,6 +141,7 @@
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
+  import { type Token } from '../../../markdown-it';
   import { MessageToolsStatus } from '../../../types/tool';
   import { mergeToolsById } from '../../../utils';
   import ScrollBtn from '../../ai-buttons/scroll-btn/scroll-btn.vue';
@@ -156,7 +152,7 @@
   import MessageRender from '../message-render/message-render.vue';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
-  import type { IToolBtn, TagSchema } from '../../../types';
+  import type { IToolBtn, MessageSlotProps, TagSchema } from '../../../types';
   import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
 
   export type MessageContainerEmits = {
@@ -225,12 +221,10 @@
   defineSlots<{
     // 中断消息「已回答内容」回显的自定义 slot，透传给内部 MessageRender
     answeredQuestion: UserQuestionAnsweredCardSlots['answer'];
+    // 代码块头部，透传给默认 MessageRender
+    codeHeader: (props: { language: string; token: Token[] }) => null | undefined | VNode;
     // 自定义单条消息渲染（默认回退到内部 MessageRender）
-    default: (props: {
-      message: Message;
-      messageToolsStatus?: MessageToolsStatus;
-      onInterruptResume?: OnInterruptResume;
-    }) => unknown;
+    default: (props: MessageSlotProps) => unknown;
     group: (props: { group: MessageGroup }) => unknown;
   }>();
 
@@ -360,6 +354,19 @@
   const handleUserShortcutConfirm = async (message: Message, formModel: Record<string, unknown>) => {
     props.onUserShortcutConfirm?.(message, formModel);
   };
+
+  /** 默认插槽与内部 MessageRender 共用同一份作用域，回调已绑定当前 message */
+  const resolveMessageSlotProps = (message: Message): MessageSlotProps => ({
+    message,
+    messageTools: props.userMessageTools,
+    messageToolsStatus: props.messageToolsStatus,
+    onAction: (tool: IToolBtn) => handleUserAction(tool, message),
+    onInputConfirm: (content: UserMessage['content'], docSchema: TagSchema) =>
+      handleUserInputConfirm(message, content, docSchema),
+    onInterruptResume: props.onInterruptResume,
+    onShortcutConfirm: (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel),
+    tippyOptions: props.messageToolsTippyOptions,
+  });
 </script>
 <style lang="scss">
   .ai-message-container {

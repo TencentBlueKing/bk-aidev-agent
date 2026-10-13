@@ -29,5 +29,6 @@ export * from './editor';
 export * from './image';
 export * from './input';
 export * from './input-menu';
+export * from './message-slot';
 export * from './shortcut';
 export * from './tool';

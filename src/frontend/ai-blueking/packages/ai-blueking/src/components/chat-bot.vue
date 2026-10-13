@@ -66,44 +66,25 @@
           v-bind="slotProps"
         />
       </template>
-      <template #message="{ message, messageToolsStatus, onInterruptResume }">
+      <template #message="slotProps">
         <!-- 消费方提供了 #message slot 时，优先使用消费方的渲染 -->
         <slot
           v-if="slots.message"
-          :message="message"
-          :message-tools-status="messageToolsStatus"
           name="message"
-          :on-interrupt-resume="onInterruptResume"
+          v-bind="withRenderDefault(slotProps)"
         />
-        <!-- 否则使用默认的 MessageRender -->
-        <MessageRender
+        <!-- 否则使用默认的 MessageRender（与 renderDefault 同一份渲染函数） -->
+        <component
           v-else
-          :message="message"
-          :message-tools="effectiveUserMessageTools"
-          :message-tools-status="messageToolsStatus"
-          :on-action="tool => handleUserAction(tool, message)"
-          :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
-          :on-interrupt-resume="onInterruptResume"
-          :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
-          :tippy-options="effectiveTippyOptions"
-        >
-          <template
-            v-if="$slots.codeHeader"
-            #codeHeader="slotProps"
-          >
-            <slot
-              name="codeHeader"
-              v-bind="slotProps"
-            />
-          </template>
-        </MessageRender>
+          :is="renderDefaultMessage(slotProps)"
+        />
       </template>
     </ChatContainer>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, ref, useSlots, watch } from 'vue';
+  import { type VNode, computed, h, ref, useSlots, watch } from 'vue';
 
   import { ChatContainer, ChatInput, MessageRender } from '@blueking/chat-x';
   import { RenderMode } from '@blueking/chat-x';
@@ -121,16 +102,9 @@
 
   import type { IShortcut } from '../manager/business/types';
   import type { IChatHelper, IRequestOptions } from '../types';
-  import type { ChatBotEmits, ChatBotExpose, ChatBotProps, MessageToolsTippyOptions } from './types';
+  import type { ChatBotEmits, ChatBotExpose, ChatBotProps, ChatMessageSlotProps, MessageToolsTippyOptions } from './types';
   import type { ILlmItem, ISupportUpload } from '@blueking/chat-helper';
-  import type {
-    CustomBkFlowTab,
-    IModelOption,
-    Message,
-    MessageToolsStatus,
-    OnInterruptResume,
-    Shortcut,
-  } from '@blueking/chat-x';
+  import type { CustomBkFlowTab, IModelOption, IToolBtn, MessageSlotProps, Shortcut, TagSchema, UserMessage } from '@blueking/chat-x';
 
   const props = withDefaults(defineProps<ChatBotProps>(), {
     chatHelper: undefined,
@@ -177,11 +151,7 @@
   });
   defineSlots<{
     codeHeader?: (props: { language: string; token: unknown[] }) => unknown;
-    message?: (props: {
-      message: Message;
-      messageToolsStatus?: MessageToolsStatus;
-      onInterruptResume?: OnInterruptResume;
-    }) => unknown;
+    message?: (props: ChatMessageSlotProps) => unknown;
     welcome?: (props: { openingRemark?: string; welcomeTitle?: string }) => unknown;
   }>();
 
@@ -321,6 +291,38 @@
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
     reportError,
     stopGeneration,
+  });
+
+  /**
+   * 默认消息渲染。模板回退和 `#message` 作用域的 renderDefault 共用这一份，
+   * 工具回调绑定的是 ChatBot 自己的 effectiveUserMessageTools / handleUserAction 等。
+   */
+  const renderDefaultMessage = (slotProps: MessageSlotProps): VNode => {
+    const { message, messageToolsStatus, onInterruptResume } = slotProps;
+    return h(
+      MessageRender,
+      {
+        message,
+        messageTools: effectiveUserMessageTools.value,
+        messageToolsStatus,
+        onAction: (tool: IToolBtn) => handleUserAction(tool, message),
+        onInputConfirm: (content: UserMessage['content'], docSchema: TagSchema) =>
+          handleUserInputConfirm(message, content, docSchema),
+        onInterruptResume,
+        onShortcutConfirm: (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel),
+        tippyOptions: effectiveTippyOptions.value,
+      },
+      slots.codeHeader
+        ? {
+            codeHeader: (codeSlotProps: { language: string; token: unknown[] }) => slots.codeHeader?.(codeSlotProps),
+          }
+        : undefined,
+    );
+  };
+
+  const withRenderDefault = (slotProps: MessageSlotProps): ChatMessageSlotProps => ({
+    ...slotProps,
+    renderDefault: () => renderDefaultMessage(slotProps),
   });
 
   // 初始化期间（含 URL 变化重新初始化），委托 ChatContainer 内置 loading
