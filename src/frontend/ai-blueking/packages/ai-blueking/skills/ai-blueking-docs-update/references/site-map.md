@@ -86,7 +86,36 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 
 ## 示例 `/demos/`
 
-`demos/full-panel.md`、`basic-usage.md`、`atomic-assembly.md` — 可运行示例，大改交互时同步。
+侧栏与总览页 `demos/index.md`（`<DemoGallery />`）都由 **`docs/.vitepress/demos-catalog.ts`** 生成：新增示例页只在目录里登记（`group` / `modes` / `recipes` / `status`），`status: 'planned'` 的条目不出现在侧栏与总览。
+
+| 分组 | 页面 | 内容 |
+| --- | --- | --- |
+| 示例 | `demos/index.md` | 总览画廊：按集成形态选 + 筛选 + 分组卡片 |
+| 集成形态 | `demos/full-panel.md` | AIBlueking 浮窗：配置台（props 实时重挂载 + 生成模板）、面板初始位置与尺寸 |
+| 集成形态 | `demos/basic-usage.md` | ChatBot 嵌入：最小嵌入（`whenReady`）、业务 Header + 会话列表（`EmbeddedWorkbench.vue`） |
+| 集成形态 | `demos/atomic-assembly.md` | 原子组件组装（`AtomicAssemblyDemo.vue`）；接口清单 / 工具栏回调 / AG-UI 事件表在指南 `atomic-composition.md` |
+| 业务联动 | `demos/programmatic-control.md` | 打开与就绪、带上下文提问、快捷指令三种触发 + 单次请求注入；同组配方嵌入 `guide/advanced-usage/programmatic-control.md` |
+| 业务联动 | `demos/request-options.md` | 按租户切换 Header / 参数（computed requestOptions）、消息上下文 context |
+| 业务联动 | `demos/session-events.md` | 首条消息后自动命名（@rename）、新建 / 改名 / 切换会话 |
+| 业务联动 | `demos/error-handling.md` | 故障注入观察 @sdk-error（Mock 头 `x-mock-fault`）、切换智能体 url（Mock 档案 `~data/`） |
+
+| 界面与渲染 | `demos/header-slots.md` | `#headerLeft` / `#headerActions` / `showHistoryIcon` 配置台（浮窗配置含插槽）、renderMode 三种模式 |
+| 界面与渲染 | `demos/custom-message.md` | `#message` + `parseCustomBlocks` 渲染图表 / 表单 / iframe（`CustomMessageRenderer.vue`）、`#codeHeader` 插入编辑器（`CodeToEditor.vue`）；iframe 静态页 `public/demo-assets/mini-dashboard.html` |
+
+| 界面与渲染 | `demos/side-render.md` | 流程智能体执行情况 / 节点详情 / 重试跳过、`getSideRenderComponent` / `getSideTabRenderComponent` / `onCustomTabChange`；Mock 档案 `~flow/`（`src/mock-flow.ts`），页面含真实 SSE 事件序列 |
+
+目录中已无 planned 条目；新增示例页时先在 `demos-catalog.ts` 登记。
+
+**2.4.x 已知行为（文档已用 `::: warning 2.4.x 实际行为` 标注，修复后需同步删除）**：`updatePosition` / `updateSize` / `updatePositionAndSize` 不生效；`show(…, { isTemporary })` 不生效；`requestOptions.context` 只解析值形态；`@sdk-error` 的 `code` 恒为 -1（HTTP 状态在 `data.response.status`）；RUN_ERROR 不经过 `@sdk-error`；`updateSessionName` 不触发 `@rename`。
+
+`#message` 作用域已在组件源码补齐 `MessageSlotProps`（含用户消息工具回调）以及 ChatBot / AIBlueking 的 `renderDefault`。主站演示跑的是 npm 已发布版本，**等包含该修复的 @blueking/ai-blueking / chat-x 发版并升级 `web/package.json` 后**，再把下列 warning 改成新作用域（含 `renderDefault()` 示例）并删掉：`docs/demos/custom-message.md`、`docs/guide/core-features/custom-message-rendering.md`，以及 `docs/api/ai-blueking/chatbot.md`、`docs/api/ai-blueking/aiblueking.md` 里的 message 插槽表。
+
+| 路径 | 职责 |
+| --- | --- |
+| `docs/.vitepress/demos-catalog.ts` | 示例目录（侧栏 + 总览的唯一来源） |
+| `docs/.vitepress/theme/demo-kit/` | 配方基础设施：`DemoRecipe`、`DemoStage`、`DemoInspector`、`DemoEnvBar`、`DemoGallery`、`DemoRuntimeHost`（Layout 中唯一的浮窗 `AIBlueking`）、`use-demo-runtime.ts`、`use-embedded-instance.ts` |
+| `docs/.vitepress/theme/recipes/<topic>/` | 配方组件 `Recipe*.vue` + `snippets/*.ts`（既执行也展示的代码）；整页组件型配方直接展示 `.vue` 全文 |
+| `src/frontend/web/src/mock-*.ts` | 文档站 Mock 唯一实现（Koa `createMockAguiRouter` / connect `createMockAguiNodeMiddleware`），按 `x-mock-client` 隔离访客；路径前缀 `~<profile>/` 切换智能体档案；请求头 `x-mock-fault` 注入故障 |
 
 ## 配置入口
 

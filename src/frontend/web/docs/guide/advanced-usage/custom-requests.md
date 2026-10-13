@@ -140,6 +140,10 @@ const requestOptions: IRequestOptions = {
 
 `requestOptions.context` 用于向消息注入业务上下文（如当前页面信息、用户选择、表单数据等），数据会自动合并到消息的 `property.extra.context` 中，后端可通过该字段获取上下文进行处理。
 
+::: warning 2.4.x 实际行为
+类型上 `context` 允许函数 / ref，但目前**只有值形态（对象或数组）会生效**，函数形态会被静默忽略。需要动态上下文时，把整个 `requestOptions` 写成 `computed`，让 `context` 字段本身是普通对象，示例见 [请求参数与上下文 · 消息上下文](/demos/request-options)。
+:::
+
 ### 支持的格式
 
 | 格式 | 说明 |

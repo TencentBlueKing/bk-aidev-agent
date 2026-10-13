@@ -29,7 +29,7 @@
 | height          | `string \| number`   | -       | 容器高度                                       |
 | maxWidth        | `string \| number`   | -       | 最大宽度                                       |
 | extCls          | `string`             | -       | 额外 CSS 类名                                  |
-| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；`headers` / `data` / `context` 支持对象、函数、ref、computed） |
+| requestOptions  | `MaybeRefOrGetter<IRequestOptions>` | - | 请求配置（仅独立模式；`headers` / `data` 支持对象、函数、ref、computed；**2.4.x 的 `context` 只解析值形态**，函数形态被忽略，动态上下文请把整个 requestOptions 写成 computed） |
 | messageToolsTippyOptions | `MessageToolsTippyOptions` | `appendTo` 默认挂 ChatBot 根节点 | MessageTools tippy 弹窗配置（控制弹窗挂载位置和层级）。未传 `appendTo` 时浮层挂到 `.ai-chatbot` 根节点，避免挂 `body` 时被外层弹窗/抽屉遮挡；传入 `appendTo` 则以外部为准 |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden: true` 隐藏） |
 | updateTools | `IToolBtn[]` | - | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上 |
@@ -102,7 +102,7 @@
 | 插槽名     | 参数                                     | 说明                                                  |
 | ---------- | ---------------------------------------- | ----------------------------------------------------- |
 | welcome    | `({ openingRemark?, welcomeTitle? })`    | 自定义空会话欢迎区（透传 ChatContainer `#welcome`）   |
-| codeHeader | `({ language: string, token: Token[] })` | 自定义 markdown 代码块头部区域，常用于插入/应用等动作 |
+| codeHeader | `({ language: string, token: Token[] })` | 自定义 markdown 代码块头部区域，常用于插入/应用等动作；`token` 是数组，代码原文为 `token.find(t => t.type === 'fence')?.content` |
 | message    | `({ message, messageToolsStatus, onInterruptResume })` | 自定义单条消息渲染（覆盖默认 `MessageRender`）。作用域含**第三个** prop `onInterruptResume`（类型 `OnInterruptResume`，来自 chat-x） |
 
 ```vue
@@ -145,16 +145,13 @@
 />
 ```
 
-> **⚠️ `#message` 插槽与 HITL（关键）**：`#message` 作用域现在提供**三个** prop —— `message`、`messageToolsStatus`、以及新增的 `onInterruptResume`（`OnInterruptResume`）。任何自定义 `#message` 实现**必须**把 `:on-interrupt-resume="onInterruptResume"` 透传给内部的 `MessageRender`（或等价渲染），否则 HITL 的工具审批（tool-approval）、用户追问（user-question）、Flow 节点重试/跳过（flow-node retry-skip）等中断恢复动作将失效。完整中断/恢复机制见 [`hitl.md`](hitl.md)。
+> **⚠️ `#message` 插槽（关键）**：作用域是 `MessageSlotProps`（`message`、`messageToolsStatus`、`onInterruptResume`、`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`），外加 `renderDefault: () => VNode`。自定义渲染请 `<MessageRender v-bind="slotProps" />`（先去掉 `renderDefault`），或对不需要自定义的消息调用 `renderDefault()`。只传 `message` / `messageToolsStatus` 时，用户消息工具栏和 HITL 恢复都会失效。完整中断/恢复机制见 [`hitl.md`](hitl.md)。
 >
 > ```vue
 > <ChatBot :url="apiUrl">
->   <template #message="{ message, messageToolsStatus, onInterruptResume }">
->     <MessageRender
->       :message="message"
->       :message-tools-status="messageToolsStatus"
->       :on-interrupt-resume="onInterruptResume"
->     />
+>   <template #message="slotProps">
+>     <MyCard v-if="slotProps.message.role === 'assistant'" />
+>     <component :is="slotProps.renderDefault()" v-else />
 >   </template>
 > </ChatBot>
 > ```
@@ -349,7 +346,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 
 | 方法/属性 | 类型 | 说明 |
 |-----------|------|------|
-| show | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 显示面板，可选指定会话；`isTemporary` 创建临时会话 |
+| show | `(sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>` | 显示面板，可选指定会话；**2.4.x 中 `isTemporary` 不生效**，临时会话用 `await show()` 后 `addNewSession({ isTemporary: true })` |
 | handleShow | `(sessionCode?: string) => Promise<void>` | 显示面板（等同用户操作路径） |
 | hide | `() => void` | 隐藏面板 |
 | handleClose | `() => void` | 关闭面板（等同用户点击关闭按钮） |
@@ -368,6 +365,8 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | updatePosition | `(x, y) => void` | 更新位置 |
 | updateSize | `(w, h) => void` | 更新尺寸 |
 | updatePositionAndSize | `(x, y, w, h) => void` | 更新位置和尺寸 |
+
+> **2.4.x 已知问题**：`updatePosition` / `updateSize` / `updatePositionAndSize` 调用后面板不移动、不改尺寸；需要控制位置尺寸时改用挂载时的 `defaultLeft` / `defaultTop` / `defaultWidth` / `defaultHeight`。
 
 ### AIBlueking Emits
 
@@ -419,4 +418,4 @@ interface SdkErrorPayload {
 - **Expose 缺口**：`updateAgentInfo`（AIBlueking / ChatBot）与 `selectedLlmCode`（ChatBot）未进 Vue2 `exposeKeys`。刷新 agentInfo 请用 `getChatHelper()?.agent.getAgentInfo()`。
 - **`ChatBotV2` 未注册的 props**：`asideCollapsed`、`enableModelSelect`、`models`、`renderMode`、`errorToast`、`skills`。因此 Vue2 嵌入模式无法 `v-model:asideCollapsed`，也无法走组件内模型选择。
 - **`AIBluekingV2` 未注册的 props**：`enableModelSelect`、`models`、`renderMode`、`errorToast`、`ignoreErrors`。
-- **插槽注册**：`AIBluekingV2` 为 `['codeHeader', 'headerActions', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 为 `['codeHeader', 'message', 'welcome']`。HITL 场景下 `#message` 仍须透传 `onInterruptResume`。
+- **插槽注册**：`AIBluekingV2` 为 `['codeHeader', 'headerActions', 'headerLeft', 'message', 'welcome']`；`ChatBotV2` 为 `['codeHeader', 'message', 'welcome']`。`#message` 会接管全部消息；作用域是完整的 `MessageSlotProps` 加 `renderDefault`。用户消息工具栏回调已在作用域内（`onAction` / `onInputConfirm` / `onShortcutConfirm` / `messageTools` / `tippyOptions`），不需要自定义的消息调用 `renderDefault()`。AI 消息工具栏仍在插槽外。

@@ -3,7 +3,7 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、消息折叠（enableMessageCollapse）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
 metadata:
   author: blueking
-  version: '5.46'
+  version: '5.49'
   packages:
     ai-blueking: 3.1.0-beta.1
     chat-x: 3.1.0-beta.1
@@ -147,34 +147,36 @@ metadata:
 
 ### `#message` 插槽透传 (CRITICAL)
 
-自定义 `ChatContainer` / `ChatBot` / `AIBlueking` 的 `#message` 插槽时，**必须透传用户消息工具回调 _和_ `onInterruptResume`**，否则：
+`MessageContainer` 默认插槽，以及 `ChatContainer` / `ChatBot` / `AIBlueking` 的 `#message`，共用 `@blueking/chat-x` 导出的 `MessageSlotProps`。字段与 `MessageRender` 的 props 对齐，宿主可以直接 `<MessageRender v-bind="slotProps" />`：
 
-- 缺用户消息工具回调 → 用户消息的删除/编辑/复制/引用全部失效（AI 消息不受影响）
-- 缺 `onInterruptResume` → HITL 中断卡片能渲染，但**审批取消 / 用户提问作答 / 流程节点重试跳过全部失效**（详见 [HITL](references/hitl.md)）
+- 原有：`message`、`messageToolsStatus`、`onInterruptResume`
+- 新增（回调已绑定当前 message）：`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`
 
-原理：AI 消息的 `MessageTools` 在 `MessageContainer` 内部渲染（不经过 `#message` 插槽），但用户消息的工具回调通过 `MessageRender` → `UserMessage` 的 `onAction` prop 传递、中断恢复通过 `onInterruptResume` 传递，二者都走 `#message` 插槽。
+`ChatBot` / `AIBlueking` 再加 `renderDefault: () => VNode`。只自定义部分角色时，其余消息调用它，就会走默认渲染（含用户消息工具栏和 `#codeHeader`）。
 
-> **v2.2 变更**：`#message` 插槽作用域现在提供**第三个参数 `onInterruptResume`**（除既有的 `message`、`messageToolsStatus`）。
+未传 `#message` 时，`ChatContainer` 不再占住 `MessageContainer` 的默认插槽，消息仍由内部 `MessageRender` 渲染。直接使用 `ChatContainer` 时，`#codeHeader` 会透传到这份默认渲染。
+
+AI 消息工具栏仍在 `MessageContainer` 内部，不经过 `#message`。漏传 `onInterruptResume` 时，HITL 卡片能画出来，但审批取消 / 提问作答 / 节点重试跳过会失效（详见 [HITL](references/hitl.md)）。
 
 ```vue
-<!-- ❌ 错误：用户消息工具 + HITL 恢复动作全部失效 -->
-<template #message="{ message, messageToolsStatus }">
-  <MessageRender :message="message" :message-tools-status="messageToolsStatus" />
+<!-- ❌ 只绑 message：用户消息工具和 HITL 恢复都会丢 -->
+<template #message="{ message }">
+  <MessageRender :message="message" />
 </template>
 
-<!-- ✅ 正确：必须透传回调 + onInterruptResume -->
-<template #message="{ message, messageToolsStatus, onInterruptResume }">
-  <MessageRender
-    :message="message"
-    :message-tools-status="messageToolsStatus"
-    :on-interrupt-resume="onInterruptResume"
-    :on-action="tool => handleUserAction(tool, message)"
-    :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
-    :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
-    :tippy-options="messageToolsTippyOptions"
-  />
+<!-- ✅ ChatContainer / MessageContainer：整份作用域交给 MessageRender -->
+<template #message="slotProps">
+  <MessageRender v-bind="slotProps" />
+</template>
+
+<!-- ✅ ChatBot / AIBlueking：只换 assistant，其余走默认渲染 -->
+<template #message="{ message, renderDefault }">
+  <MyCard v-if="message.role === 'assistant'" :message="message" />
+  <component :is="renderDefault()" v-else />
 </template>
 ```
+
+`renderDefault` 不是 `MessageRender` 的 prop。在 `ChatBot` / `AIBlueking` 上把整个 slotProps `v-bind` 给 `MessageRender` 之前，先去掉 `renderDefault`，或直接调用 `renderDefault()`。
 
 ### `requestOptions` 响应式
 
@@ -253,6 +255,8 @@ const handleNewChatCreated = (session) => {
 - `chat` — 流式对话（SSE onError、ChatBot 内部错误）
 - `session` — 会话操作（切换 / 删除 / 重命名等）
 - `share` — 分享确认失败
+
+> **2.4.x 实测**：`code` 恒为 `-1`，HTTP 状态码要读 `(payload.data as { response?: { status?: number } })?.response?.status`；初始化阶段的 agent/info 失败与 401 都以 `apiName: 'init'` 上报；流中途的 AG-UI `RUN_ERROR` 由协议层渲染成一条失败的助手消息，**不**触发 `@sdk-error`。
 
 ```vue
 <!-- ChatBot 独立模式 -->

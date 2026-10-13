@@ -235,6 +235,7 @@ aiBluekingRef.value.updateSessionName(code, name);
 aiBluekingRef.value.updatePosition(x, y);
 aiBluekingRef.value.updateSize(w, h);
 aiBluekingRef.value.updatePositionAndSize(x, y, w, h);
+// 注意：2.4.x 中以上三个方法调用后面板不会移动 / 改尺寸，请改用 defaultLeft / defaultTop / defaultWidth / defaultHeight
 
 // 输入控制
 aiBluekingRef.value.setCiteText(text);        // 设置引用文本
@@ -651,21 +652,21 @@ const handleHistoryClick = (event: Event) => {
 ```vue
 <template>
   <MessageContainer :messages="messages">
-    <template #default="{ message }">
+    <template #default="slotProps">
       <ChartMessage
-        v-if="message.role === 'chart'"
-        :data="message.content"
+        v-if="slotProps.message.role === 'chart'"
+        :data="slotProps.message.content"
       />
       <MessageRender
         v-else
-        :message="message"
+        v-bind="slotProps"
       />
     </template>
   </MessageContainer>
 </template>
 ```
 
-> **HITL 提示**：通过 ChatBot/AIBlueking 的 `#message` 插槽自定义消息渲染时，作用域包含第三个 prop `onInterruptResume`，必须透传给 `MessageRender`（`:on-interrupt-resume="onInterruptResume"`），否则工具审批 / 用户追问 / Flow 节点重试跳过等中断恢复动作会失效。完整的中断/恢复（interrupt/resume）机制见 [`hitl.md`](hitl.md)。
+> **HITL 提示**：ChatBot / AIBlueking 的 `#message` 作用域是完整的 `MessageSlotProps` 加 `renderDefault`。自定义渲染时把作用域 `v-bind` 给 `MessageRender`，或对非自定义消息调用 `renderDefault()`，否则工具审批 / 用户追问 / Flow 节点重试跳过以及用户消息工具栏会失效。完整机制见 [`hitl.md`](hitl.md)。
 
 ---
 

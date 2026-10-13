@@ -1,9 +1,9 @@
 ---
 name: ai-blueking-docs-update
-description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、headerLeft、headerActions、消息工具栏、嵌入模式 Header、asideCollapsed、消息时间、timezone、MessageTime、消息折叠、enableMessageCollapse、过程状态栏、stream_mode、续流、attach、文件上传、pv_files、enableChatSession、enablePopup。
+description: 更新 AI 小鲸 VitePress 主站文档（src/frontend/web/docs）。在发布新功能、修改 chat-x/ai-blueking 行为、补充 changelog、撰写 LLM/系统提示词说明、同步 API 与指南交叉链接时使用。触发词：文档更新、changelog、主站文档、VitePress、蓝鲸行内富文本、模型选择、提示词文档、web/docs、欢迎插槽、headerLeft、headerActions、消息工具栏、嵌入模式 Header、asideCollapsed、消息时间、timezone、MessageTime、消息折叠、enableMessageCollapse、过程状态栏、stream_mode、续流、attach、文件上传、pv_files、enableChatSession、enablePopup、交互式示例、配方、demo-kit、Mock。
 metadata:
   author: blueking
-  version: '1.22'
+  version: '1.27'
 compatibility: 需能读写仓库内 src/frontend/web/docs；本地预览需 Node 20+ 与 pnpm。
 ---
 
@@ -64,6 +64,19 @@ pnpm build  # 生产构建
 - **系统提示词**（AIDev Agent 指令）：写清语法、禁止项（如 HTML）、完整可复制模板
 - **前端 `prompts` prop**：仅用户提问模板，在 `prompts.md` 中说明与系统提示词的分工
 - 参考范例：[LLM 提示词文档模式](references/llm-prompt-patterns.md)；已落地示例见 `src/frontend/web/docs/guide/core-features/markdown-inline-style.md`
+
+### 交互式配方（demo-kit）
+
+需要可操作示例时（迁移 playground 内容、补充 API 用法），写「场景配方」而不是静态代码块：
+
+0. **登记目录**：新页面先在 `docs/.vitepress/demos-catalog.ts` 加条目（上线前 `status: 'planned'`），侧栏与总览自动生成，不要手改 `config.js` 的 `/demos/` 侧栏。
+1. **片段**：`theme/recipes/<topic>/snippets/<name>.ts`，导出接收 `AIBluekingExpose` 的普通函数；只用 `@blueking/ai-blueking` 已发布的公开 API，不写任何演示打点。每步以 `// ①` 注释开头、空行结束（检查器据此高亮）。
+2. **组件**：`Recipe<Name>.vue` = `DemoRecipe`（`id` / `kicker` / `title` / `when` / `source`(`?raw`) / `file`，可选 `lang="vue"`、`changed-lines`）+ `DemoStage`（bkui 组件拼的模拟业务页）；按钮调用 `runtime.run(id, '①', ai => snippet(ai, ...))`，结果用 `resultFeedback` 写入 `DemoFeedback`。
+   - 浮窗配置可带插槽：`floating-config` 的 `slots: { headerLeft: scope => h(...) }`，随 `key` 重新挂载；插槽内容在面板中渲染，样式需非 scoped。
+   - **实例类型** `instance`：`floating`（默认，共用页面右侧浮窗；需要不同 props 时传 `floating-config`，运行时按 `key` 重新挂载，动态配置用 `runtime.updateFloatingConfig`）、`embedded`（舞台内 `<ChatBot>`，用 `useEmbeddedInstance(id)`，监听器用 `v-bind="listeners"` 绑定）、`none`（不用小鲸实例，如原子组装；事件用 `runtime.logEvent`）。
+3. **注册**：`theme/index.js` 的 `RECIPES` 表（`defineAsyncComponent` 按需加载）；页面中用 `<ClientOnly>` 包裹，页首放一次 `<DemoEnvBar />`；画廊页 frontmatter `aside: false`。
+4. **Mock**：新接口加在 `src/mock-handlers.ts` 的 `ROUTES`，固定数据放 `mock-fixtures.ts`，并补 `mock-handlers.test.ts`。
+5. **验证**：`pnpm test`；`pnpm dev` 下逐步操作，确认事件 / 请求页签内容与代码一致、Mock 无 `[mock-agui] unhandled` 日志；`pnpm build` 通过。
 
 ### 破坏性变更
 

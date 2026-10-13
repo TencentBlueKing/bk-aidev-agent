@@ -245,7 +245,9 @@ import type {
 
 ## 参考示例
 
-仓库内 Playground（`packages/ai-blueking/playground`）提供完整示例：
+[示例 · 侧栏 Tab 自定义](/demos/side-render) 连接文档站内置的巡检流程 Mock，可直接体验执行情况、节点详情、重试 / 跳过，以及本页的三个自定义 Props；页面还列出了流程智能体的 SSE 事件序列（`flow_agent_*` 的 `value` 为任务数组、状态为 BKFlow 大写）。
+
+仓库内 Playground（`packages/ai-blueking/playground`）也提供完整示例（其中 SSE 示例将 `value` 简写为对象，实际协议为数组）：
 
 - 页面：`views/SideRenderView.vue`（路由 `/examples/side-render`）
 - 组件：`components/side-render/CustomTabContent.vue`、`FlowAgentSideRenderDemo.vue`

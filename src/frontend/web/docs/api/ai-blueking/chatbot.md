@@ -162,7 +162,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | --- | --- | --- |
 | `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatContainer） |
 | `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
-| `codeHeader` | `{ language, token }` | 自定义代码块头部 |
+| `codeHeader` | `{ language, token }` | 自定义代码块头部；`token` 为该代码块的 markdown-it `Token[]`，代码原文取 `type === 'fence'` 项的 `content`。示例见 [消息自定义渲染](/demos/custom-message) |
 
 ## Expose 方法
 

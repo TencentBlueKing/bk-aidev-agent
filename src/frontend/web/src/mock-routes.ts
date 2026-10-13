@@ -1,7 +1,8 @@
 import type { Context } from 'koa';
 import Router from '@koa/router';
 
-import { dispatchMockAguiRequest } from './mock-handlers';
+import { MOCK_FAULT_HEADER, dispatchMockAguiRequest } from './mock-handlers';
+import { MOCK_CLIENT_HEADER, resolveMockClientId } from './mock-store';
 
 /**
  * 创建 Mock AG-UI API Koa 路由（薄适配层）。
@@ -9,10 +10,16 @@ import { dispatchMockAguiRequest } from './mock-handlers';
 export function createMockAguiRouter(): Router.Middleware {
   const router = new Router();
 
-  const handle = async (ctx: Context) => {
-    const body = ((ctx.request as { body?: Record<string, unknown> }).body) || {};
-    const relativePath = ctx.path || '/';
-    const dispatched = await dispatchMockAguiRequest(ctx.method, relativePath, body, ctx.res);
+  router.all('/(.*)', async (ctx: Context) => {
+    const body = (ctx.request as { body?: Record<string, unknown> }).body || {};
+    const query = Object.fromEntries(
+      Object.entries(ctx.query).map(([key, value]) => [key, Array.isArray(value) ? value[0] ?? '' : value ?? '']),
+    );
+    const dispatched = await dispatchMockAguiRequest(ctx.method, ctx.path || '/', body, ctx.res, {
+      query,
+      clientId: resolveMockClientId(ctx.get(MOCK_CLIENT_HEADER)),
+      fault: ctx.get(MOCK_FAULT_HEADER) || undefined,
+    });
 
     if (!dispatched.handled) {
       ctx.status = 404;
@@ -23,15 +30,12 @@ export function createMockAguiRouter(): Router.Middleware {
     if (dispatched.json) {
       ctx.status = dispatched.json.status;
       ctx.body = dispatched.json.json;
+      return;
     }
-  };
 
-  router.post('/session_content/', handle);
-  router.post('/session_content/batch_delete/', handle);
-  router.post('/session_content/stop/', handle);
-  router.get('/session_feedback/reasons/', handle);
-  router.post('/session_feedback/', handle);
-  router.post('/chat_completion/', handle);
+    // SSE 已直接写入 ctx.res
+    ctx.respond = false;
+  });
 
   return router.routes();
 }

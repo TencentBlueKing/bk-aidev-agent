@@ -106,6 +106,10 @@ export default {
 
 :::
 
+::: tip 可交互示例
+[示例 · ChatBot 页面嵌入](/demos/basic-usage) 提供最小嵌入与「业务 Header + 会话列表」两个可操作配方。
+:::
+
 ## Props 参考
 
 | 属性 | 类型 | 默认值 | 说明 |
@@ -122,7 +126,7 @@ export default {
 | `height` | `string \| number` | `'100%'` | 组件高度 |
 | `maxWidth` | `string \| number` | — | 组件最大宽度 |
 | `extCls` | `string` | — | 自定义外层 CSS 类名 |
-| `requestOptions` | `RequestOptions` | — | 请求配置，支持自定义 headers、超时等 |
+| `requestOptions` | `RequestOptions` | — | 请求配置，支持自定义 headers、超时等。`headers` 推荐写成函数（如 `() => ({ Authorization: 'Bearer ' + getToken() })`），每次请求取最新 token |
 | `asideCollapsed` | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后严格受控，须配合 `v-model:asideCollapsed`。侧栏固定从右侧展开，**已移除 `placement`** |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（**≥ v2.2.3**，如 `Asia/Shanghai`）；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 | `enableMessageCollapse` | `boolean` | `true` | 是否折叠每轮过程消息并展示过程状态栏。置 `false` 时完整展示并隐藏状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
@@ -137,7 +141,8 @@ export default {
 | `receive-end` | — | AI 响应接收完成时触发 |
 | `stop` | — | 用户手动停止生成时触发 |
 | `error` | `(error: Error)` | 发生错误时触发 |
-| `session-switched` | `(sessionCode: string)` | 会话切换完成时触发 |
+| `session-switched` | `(session: ISession \| null)` | 会话切换完成时触发 |
+| `rename` | `(newName: string, sessionCode: string)` | 会话名称变更（手动改名，或首条消息后自动命名成功） |
 | `shortcut-click` | `(shortcut: Shortcut)` | 用户点击快捷指令时触发 |
 | `agent-info-loaded` | `(agentInfo: AgentInfo)` | Agent 信息加载完成时触发 |
 | `feedback` | `(type: 'like' \| 'unlike', messageId: string)` | 用户对消息进行反馈时触发 |
@@ -152,6 +157,8 @@ export default {
 
 | 方法 / 属性 | 类型 | 说明 |
 |-------------|------|------|
+| `whenReady()` | `() => Promise<void>` | （≥ v2.1.4-beta.13）等待初始化完成（含智能体信息与会话列表）；`url` 变更会 reject 进行中的调用 |
+| `isReady` | `boolean` | （≥ v2.1.4-beta.13）是否已完成初始化（响应式） |
 | `sendMessage(text)` | `(text: string) => Promise<void>` | 以编程方式发送消息 |
 | `stopGeneration()` | `() => void` | 停止当前正在生成的响应 |
 | `switchSession(code)` | `(code: string) => Promise<void>` | 切换到指定会话 |

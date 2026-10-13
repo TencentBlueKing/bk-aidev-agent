@@ -1,13 +1,10 @@
-import { createRequire } from "node:module"
 import { defineConfig } from "vitepress"
-import express from "express"
-import container from "markdown-it-container"
+import { createMockAguiNodeMiddleware } from "../../src/mock-node-adapter.ts"
+import { buildDemosSidebar } from "./demos-catalog.ts"
 import { resolveDevRuntimeGlobalsScript } from "./utils/dev-runtime-globals.js"
 import { aiBluekingVersion as version } from "./utils/resolve-changelog-version.js"
 
 const base = process.env.VITEPRESS_BASE || '/__DOCS_BASE__/'
-const require = createRequire(import.meta.url)
-const { createMockAguiRouter } = require("./mock-agui-routes.cjs")
 
 export default defineConfig({
   title: "AI 小鲸",
@@ -22,7 +19,7 @@ export default defineConfig({
     nav: [
       { text: "指南", link: "/guide/introductions", activeMatch: "/guide/" },
       { text: "API 文档", link: "/api/overview", activeMatch: "/api/" },
-      { text: "示例", link: "/demos/full-panel", activeMatch: "/demos/" },
+      { text: "示例", link: "/demos/", activeMatch: "/demos/" },
       { text: "更新日志", link: "/changelog" },
       { text: "常见问题", link: "/faq" },
       {
@@ -124,16 +121,7 @@ export default defineConfig({
           ],
         },
       ],
-      "/demos/": [
-        {
-          text: "示例",
-          items: [
-            { text: "AIBlueking 浮窗模式", link: "/demos/full-panel" },
-            { text: "ChatBot 页面嵌入", link: "/demos/basic-usage" },
-            { text: "原子组件组装", link: "/demos/atomic-assembly" },
-          ],
-        },
-      ],
+      "/demos/": buildDemosSidebar(),
     },
 
     socialLinks: [{ icon: "github", link: "https://github.com/TencentBlueKing/bk-aidev-agent" }],
@@ -144,23 +132,6 @@ export default defineConfig({
     },
     search: {
       provider: "local",
-    },
-  },
-  markdown: {
-    config(md) {
-      md.use(container, "demo", {
-        validate(params) {
-          return params.trim().match(/^demo\s*(.*)$/)
-        },
-        render(tokens, idx) {
-          const m = tokens[idx].info.trim().match(/^demo\s*(.*)$/)
-          if (tokens[idx].nesting === 1) {
-            const description = m && m.length > 1 ? m[1] : ""
-            return `<DemoContainer description="${md.utils.escapeHtml(description)}">`
-          }
-          return "</DemoContainer>"
-        },
-      })
     },
   },
   vite: {
@@ -179,10 +150,7 @@ export default defineConfig({
       {
         name: "mock-agui-api",
         configureServer(server) {
-          const mount = express.Router()
-          mount.use(express.json())
-          mount.use(createMockAguiRouter())
-          server.middlewares.use("/mock-agui/api", mount)
+          server.middlewares.use("/mock-agui/api", createMockAguiNodeMiddleware())
         },
       },
     ],

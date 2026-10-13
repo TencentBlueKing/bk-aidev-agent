@@ -1,14 +1,5 @@
 <template>
   <div class="atomic-assembly-demo">
-    <p class="atomic-assembly-demo__hint">
-      本示例演示<strong>原子层 + AG-UI</strong>的最小闭环：<code>useChatHelper</code> 将 <code>urlPrefix</code> 指向可访问的网关后，
-      <code>agent.chat</code> 会写入用户消息并拉取 <code>chat_completion</code> 的
-      SSE；与是否使用「小鲸」完整初始化（智能体信息、会话列表等）无关，便于在任意后台形态下二次开发。 工具栏已接 <code>onAgentAction</code> /
-      <code>onUserAction</code> /
-      <code>onAgentFeedback</code>：<strong>引用</strong>、<strong>重新生成</strong>、<strong>成对删除</strong>、<strong>反馈</strong>；
-      <strong>分享</strong>仅演示进入多选模式，业务侧再调 <code>message.shareMessages</code>，详见同页文档。
-      若接口报错，请检查网关地址、路径及是否已实现文档所列 REST/SSE。
-    </p>
     <div class="atomic-assembly-demo__chat">
       <MessageContainer
         v-model:selected-user-messages="selectedUserMessages"
@@ -43,13 +34,16 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
   import { Message as BkMessage } from "bkui-vue"
   import { ChatInput, MessageContainer, MessageRole, MessageStatus, MessageToolsStatus } from "@blueking/chat-x"
   import { AGUIProtocol, useChatHelper } from "@blueking/chat-helper"
   import type { TagSchema } from "@blueking/chat-x"
   import type { UserMessage, Message, IToolBtn } from "@blueking/chat-x"
   import type { IMessage } from "@blueking/chat-helper"
+
+  /** 关键动作的文字记录，供外层展示时间线（可删除） */
+  const emit = defineEmits<{ trace: [text: string] }>()
 
   /** 会话标识，对应后端的 session code */
   const DEMO_SESSION_CODE = "atomic-stream-demo"
@@ -124,6 +118,8 @@
 
   const messageToolsStatus = computed<MessageToolsStatus | undefined>(() => (agent.isChatting.value ? MessageToolsStatus.Disabled : undefined))
 
+  watch(agent.isChatting, (chatting) => emit("trace", chatting ? "流式开始（agent.isChatting = true）" : "流式结束"))
+
   const focusInput = () => {
     chatInputRef.value?.focus?.()
   }
@@ -134,10 +130,12 @@
     userInput.value = ""
     const cite = citeContent.value.trim()
     citeContent.value = ""
+    emit("trace", `agent.chat(${JSON.stringify(text.slice(0, 20))}${cite ? ", { extra: { cite } }" : ""})`)
     await agent.chat(text, DEMO_SESSION_CODE, undefined, undefined, cite ? { extra: { cite } } : undefined)
   }
 
   const handleStop = async () => {
+    emit("trace", "agent.abortChat()")
     agent.abortChat()
   }
 
@@ -166,6 +164,7 @@
 
   const handleAgentAction = async (tool: IToolBtn, aiGroup: Message[]): Promise<string[] | void> => {
     const list = message.list.value as Message[]
+    emit("trace", `onAgentAction：${tool.id}`)
 
     if (tool.id === "cite") {
       const text = aiGroup
@@ -233,6 +232,7 @@
       return
     }
     const rate = tool.id === "like" ? 5 : 0
+    emit("trace", `session.postSessionFeedback({ rate: ${rate} })`)
     try {
       await session.postSessionFeedback({
         sessionCode: DEMO_SESSION_CODE,
@@ -249,6 +249,7 @@
   }
 
   const handleUserAction = async (tool: IToolBtn, msg: Message): Promise<void> => {
+    emit("trace", `onUserAction：${tool.id}`)
     if (tool.id === "delete") {
       try {
         await handleDeleteUserRound(msg)
@@ -277,18 +278,6 @@
 </script>
 
 <style scoped>
-  .atomic-assembly-demo {
-    min-height: 420px;
-  }
-  .atomic-assembly-demo__hint {
-    margin: 0 0 12px;
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--vp-c-text-2);
-  }
-  .atomic-assembly-demo__hint code {
-    font-size: 12px;
-  }
   .atomic-assembly-demo__chat {
     display: flex;
     flex-direction: column;

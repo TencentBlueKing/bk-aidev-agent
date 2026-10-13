@@ -132,6 +132,24 @@ function resolveSafePath(staticDir: string, reqPath: string): string | null {
   return fullPath;
 }
 
+/**
+ * 无后缀地址对应的页面文件：`/guide/foo` → `/guide/foo.html` 或 `/guide/foo/index.html`，`/demos/` → `/demos/index.html`
+ * @returns 相对静态目录的页面路径；页面不存在或越出静态目录时返回 null
+ */
+export function resolvePageHtml(staticDir: string, reqPath: string): string | null {
+  const trimmed = reqPath.replace(/\/+$/, '');
+  if (!trimmed) {
+    return null;
+  }
+  const candidates = reqPath.endsWith('/') ? [`${trimmed}/index.html`] : [`${trimmed}.html`, `${trimmed}/index.html`];
+  return (
+    candidates.find(candidate => {
+      const fullPath = resolveSafePath(staticDir, candidate);
+      return fullPath !== null && fs.existsSync(fullPath);
+    }) ?? null
+  );
+}
+
 export class DocsAssetService {
   readonly staticDir: string;
   readonly basePath: string;
@@ -165,6 +183,11 @@ export class DocsAssetService {
 
     if (isStaticFile(reqPath)) {
       return this.serveBinary(reqPath);
+    }
+
+    const pagePath = resolvePageHtml(this.staticDir, reqPath);
+    if (pagePath) {
+      return this.serveReplaceable(pagePath, '.html');
     }
 
     return this.serveSpaFallback();

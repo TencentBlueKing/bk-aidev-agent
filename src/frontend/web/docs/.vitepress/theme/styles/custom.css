@@ -78,53 +78,6 @@ body {
   font-weight: 600;
 }
 
-/* 与 VitePress code-group 同系的演示 + 源码 Tab（DemoCodeGroup） */
-.demo-code-group-root {
-  margin: 24px 0;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-/*
- * 运行时 Shiki（defaultColor: false）与 vp-code.css 一致。
- * 主题已在 transformer 中为 pre 追加 vp-code；此处作兜底，避免样式加载顺序导致无色。
- */
-.dark .demo-code-group-root .shiki span {
-  color: var(--shiki-dark, inherit);
-}
-
-html:not(.dark) .demo-code-group-root .shiki span {
-  color: var(--shiki-light, inherit);
-}
-
-/* 示例容器样式 */
-.demo-container {
-  margin: 24px 0;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: var(--vp-border-radius);
-  overflow: hidden;
-}
-
-.demo-container .demo-header {
-  padding: 12px 16px;
-  background: var(--vp-c-bg-soft);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.demo-container .demo-content {
-  padding: 20px;
-  background: var(--vp-c-bg-soft);
-}
-
-.demo-container .demo-footer {
-  border-top: 1px solid var(--vp-c-divider);
-  padding: 12px 16px;
-  background: var(--vp-c-bg-alt);
-}
-
 /* 响应式调整 */
 @media (max-width: 768px) {
   .VPFeatures .VPFeature {

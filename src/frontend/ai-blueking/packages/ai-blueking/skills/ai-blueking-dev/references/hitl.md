@@ -268,29 +268,22 @@ type UserQuestionResume = BaseResume<InterruptReason.UserQuestion, {
 
 #### 关键陷阱：`#message` 插槽必须透传 `onInterruptResume`
 
-自定义 `#message` 插槽后，插槽作用域**新增了第三个参数 `onInterruptResume`**（除既有的 `message`、`messageToolsStatus`）。必须把它透传给 `MessageRender`，否则中断卡片渲染出来但**所有恢复动作失效**（审批无法取消、提问无法作答、节点无法重试/跳过）。
+自定义 `#message` 后，作用域里的 `onInterruptResume` 必须进到 `MessageRender`（整份 `v-bind`，或 `renderDefault()`），否则中断卡片能画出来，但**所有恢复动作失效**（审批无法取消、提问无法作答、节点无法重试/跳过）。
 
 ```vue
 <!-- ❌ 错误：HITL 恢复动作全部失效 -->
-<template #message="{ message, messageToolsStatus }">
-  <MessageRender :message="message" :message-tools-status="messageToolsStatus" />
+<template #message="{ message }">
+  <MessageRender :message="message" />
 </template>
 
-<!-- ✅ 正确：透传 onInterruptResume（连同用户消息工具回调一并透传） -->
-<template #message="{ message, messageToolsStatus, onInterruptResume }">
-  <MessageRender
-    :message="message"
-    :message-tools-status="messageToolsStatus"
-    :on-interrupt-resume="onInterruptResume"
-    :on-action="tool => handleUserAction(tool, message)"
-    :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
-    :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
-    :tippy-options="messageToolsTippyOptions"
-  />
+<!-- ✅ 正确：作用域已包含 onInterruptResume 和用户消息工具回调 -->
+<template #message="{ message, renderDefault }">
+  <MyCard v-if="message.role === 'assistant'" :message="message" />
+  <component :is="renderDefault()" v-else />
 </template>
 ```
 
-> 这是既有「[`#message` 插槽透传](../SKILL.md)」陷阱的延伸——用户消息工具回调 + `onInterruptResume` 都走 `#message` 插槽，缺一不可。
+> 这是既有「[`#message` 插槽透传](../SKILL.md)」陷阱的延伸。`MessageSlotProps` 里用户消息工具回调和 `onInterruptResume` 都有，缺一不可。
 
 ### 4.2 原子组件模式（chat-x + chat-helper 自行组装）
 

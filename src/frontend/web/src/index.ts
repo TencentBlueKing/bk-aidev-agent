@@ -13,6 +13,7 @@ export type {
 export { createDocsMiddleware, warmCache as warmDocsCache } from './middleware';
 export type { DocsMiddlewareOptions } from './middleware';
 export { createMockAguiRouter } from './mock-routes';
+export { createMockAguiNodeMiddleware } from './mock-node-adapter';
 export {
   dispatchMockAguiRequest,
   handleMockChatCompletion,
@@ -22,4 +23,6 @@ export {
   mockSessionFeedback,
   mockSessionFeedbackReasons,
 } from './mock-handlers';
-export type { MockJsonResult } from './mock-handlers';
+export { MOCK_FAULT_HEADER } from './mock-handlers';
+export type { MockFault, MockJsonResult, MockRequestContext } from './mock-handlers';
+export { MOCK_CLIENT_HEADER } from './mock-store';

@@ -21,15 +21,17 @@
   ],
   "scripts": {
     "dev": "VITEPRESS_BASE=/ vitepress dev docs --host",
-    "build": "VITEPRESS_BASE=/ vitepress build docs",
+    "build": "VITEPRESS_BASE=/ vitepress build docs && pnpm build:mock",
+    "build:mock": "esbuild src/mock-node-adapter.ts --bundle --platform=node --format=cjs --outfile=dist-server/mock-node.cjs",
     "build:npm": "node scripts/build-npm.mjs",
     "build:all": "pnpm build:npm",
-    "preview": "VITEPRESS_BASE=/ vitepress build docs && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
+    "preview": "pnpm build && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
     "preview:npm": "pnpm build:npm && PORT=4173 DOCS_BASE=/ node --env-file=docs/.env ./server.cjs",
     "preview:no-mock": "VITEPRESS_BASE=/ vitepress preview docs",
     "server": "node ./server.cjs",
     "start": "node ./server.cjs",
-    "prepublishOnly": "pnpm build:npm"
+    "prepublishOnly": "pnpm build:npm",
+    "test": "node --import tsx --test src/*.test.ts docs/.vitepress/*.test.ts docs/.vitepress/utils/*.test.js docs/.vitepress/theme/demo-kit/*.test.ts docs/.vitepress/theme/recipes/*/*.test.ts"
   },
   "peerDependencies": {
     "@koa/router": ">=10.0.0",
@@ -56,7 +58,6 @@
     "koa-mount": "^4.2.0",
     "koa-send": "^5.0.0",
     "less": "^4.2.0",
-    "markdown-it-container": "^3.0.0",
     "monaco-editor-vue3": "^0.1.6",
     "shiki": "^2.5.0",
     "vitepress": "^1.6.3"

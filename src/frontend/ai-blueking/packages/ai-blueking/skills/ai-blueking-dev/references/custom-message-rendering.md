@@ -104,7 +104,7 @@ const blocks = computed(() => parseCustomBlocks(props.message.content || ''));
 </template>
 ```
 
-> **HITL 注意**：`#message` 插槽作用域含 `message`、`messageToolsStatus`、`onInterruptResume` 三个参数。自定义渲染器只要还会渲染非 Assistant 消息（中断消息 `MessageRole.Interrupt` 即属此类），就必须把 `onInterruptResume` 透传给内部 `MessageRender`。详见 [HITL 人机协同](hitl.md)。
+> **HITL 注意**：`#message` 作用域是 `MessageSlotProps`（含 `onInterruptResume` 和用户消息工具回调）；`ChatBot` / `AIBlueking` 另有 `renderDefault()`。非 Assistant 消息（含 `MessageRole.Interrupt` 和用户消息）优先 `renderDefault()`，或把去掉 `renderDefault` 后的作用域 `v-bind` 给 `MessageRender`。详见 [HITL 人机协同](hitl.md)。
 
 ---
 

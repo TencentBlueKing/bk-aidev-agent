@@ -38,12 +38,12 @@ const vitePressCompatibleTransformers = [
 ]
 
 /**
- * 运行时高亮 Vue SFC：主题与 VitePress 默认 markdown 一致（github-light / github-dark）。
+ * 运行时高亮源码：主题与 VitePress 默认 markdown 一致（github-light / github-dark）。
  */
-export async function highlightVueSfc(code: string): Promise<string> {
+export async function highlightCode(code: string, lang: "vue" | "typescript"): Promise<string> {
   const highlighter = await getHighlighter()
   return highlighter.codeToHtml(code.trimEnd() ? code : " ", {
-    lang: "vue",
+    lang,
     themes: {
       light: "github-light",
       dark: "github-dark",
@@ -51,4 +51,9 @@ export async function highlightVueSfc(code: string): Promise<string> {
     defaultColor: false,
     transformers: vitePressCompatibleTransformers,
   })
+}
+
+/** 运行时高亮 Vue SFC */
+export function highlightVueSfc(code: string): Promise<string> {
+  return highlightCode(code, "vue")
 }

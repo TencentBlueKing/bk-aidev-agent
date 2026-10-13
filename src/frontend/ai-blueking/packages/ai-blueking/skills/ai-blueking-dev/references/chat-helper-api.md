@@ -910,6 +910,9 @@ enum CustomEventName {
 }
 ```
 
+> **流程智能体协议（真实采集）**：所有 `flow_agent_*` 事件的 `value` 都是任务数组（`[{ task_id, ... }]`，`task_id` 为数字）；节点 / 任务状态为 BKFlow 大写（`RUNNING` / `FINISHED` / `FAILED` / `PENDING` / `SKIPPED` / `REVOKED` …，chat-helper 的 `FlowNodeState` 小写枚举不被 UI 使用）；`flow_agent_result` 携带 `statistics: { total, state_counts }`。重试 / 跳过走 `POST user_operation/`（`flow_node_retry` / `flow_node_skip`，`payload: { node_id, task_id }`）后新开流，续流以 `flow_agent_restart` 开始；`retryFlowAgentTaskNode` / `skipFlowAgentTaskNode` / `getFlowAgentTaskInfo` 当前 UI 不调用。playground `SideRenderView.vue` 中把 `value` 写成对象的示例与解析器不符。
+
+
 | name 分组 | 驱动的消息 | 说明 |
 |-----------|-----------|------|
 | `FlowAgentStart/Update/Result/End` | `MessageRole.Activity`（`ActivityType.FlowAgent`） | 流程编排任务的开始/节点更新/结果/结束 |

@@ -117,7 +117,17 @@ npm uninstall ai-blueking-docs
 
 ### `createMockAguiRouter()`
 
-创建 Mock AG-UI API Koa 路由。提供 REST + SSE 流式对话模拟，用于文档中的在线 Demo。
+创建 Mock AG-UI API Koa 路由。提供 REST + SSE 流式对话模拟，用于文档中的在线 Demo（智能体信息、模型、会话、消息、快捷指令、停止生成等，足以驱动完整的 `AIBlueking`）。
+
+### `createMockAguiNodeMiddleware()`
+
+与上面相同的 Mock，connect 风格中间件，适用于 Express / Vite dev server：
+
+```js
+app.use('/docs/mock-agui/api', createMockAguiNodeMiddleware());
+```
+
+两者共用 `dispatchMockAguiRequest` 一份实现。Mock 状态保存在进程内存中，按请求头 `x-mock-client`（文档站 Demo 自动为每个标签页生成）隔离访客，并对访客数、会话数、消息数设上限。
 
 ### `warmCache(staticDir: string)`
 
@@ -162,6 +172,8 @@ pnpm build:npm
 | **HTML 中的路径** | `/assets/style.css` | `__DOCS_BASE__/assets/style.css` |
 | **运行时** | 路径已确定，无需替换 | 中间件将 `__DOCS_BASE__/` 替换为实际挂载路径（如 `/docs/`） |
 | **命令** | `pnpm build` / `pnpm preview` | `pnpm build:npm` |
+
+> `server.cjs` 与 npm 包的 Koa 中间件都会把无后缀地址映射到页面文件：`/guide/introductions` → `guide/introductions.html`，`/demos/` → `demos/index.html`；找不到对应页面时才回退到首页。
 
 **为什么要区分？** VitePress 构建时必须确定 base 路径（用于路由和资源引用）。独立部署时 base 固定为 `/`；npm 包需要支持任意路由挂载，所以构建时使用占位符，运行时由中间件替换。
 

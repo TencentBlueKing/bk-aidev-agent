@@ -145,4 +145,4 @@ const requestOptions = {
 - [**ChatBot 页面嵌入模式**](/guide/integration-modes/chatbot-embedded) — 嵌入式聊天，适合页面主内容区
 - [**Standalone 非 Vue 宿主**](/guide/integration-modes/standalone-bundle) — React / 纯 HTML 等无 Vue 场景（v2.1.4-beta.8+）
 - [**API 文档**](/api/overview) — 查阅完整的组件 Props、Events、Slots 参考
-- [**示例**](/demos/full-panel) — 浏览更多交互示例与最佳实践
+- [**示例**](/demos/) — 浏览更多交互示例与最佳实践

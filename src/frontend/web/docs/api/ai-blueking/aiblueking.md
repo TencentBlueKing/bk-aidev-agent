@@ -211,6 +211,11 @@ function openAI() {
 | `handleShow` | `(sessionCode?: string) => Promise<void>` | 显示面板（内部方法，等同于 `show`） |
 | `handleClose` | `() => void` | 关闭面板（内部方法，等同于 `hide`） |
 
+::: warning 2.4.x 实际行为
+`show(sessionCode, { isTemporary: true })` 的 `isTemporary` 目前**不会生效**，不会创建临时会话。需要临时会话时，先 `await show()`，再调用 `addNewSession({ name: '临时会话', isTemporary: true })`。
+:::
+
+
 ### 消息操作
 
 | 方法 | 类型 | 说明 |
@@ -243,6 +248,11 @@ function openAI() {
 | `updateSize` | `(w: number, h: number) => void` | 更新面板尺寸 |
 | `updatePositionAndSize` | `(x: number, y: number, w: number, h: number) => void` | 同时更新位置和尺寸 |
 
+::: warning 2.4.x 实际行为
+`updatePosition` / `updateSize` / `updatePositionAndSize` 目前调用后面板**不会移动或改变尺寸**（组件内部状态未同步到拖拽容器）。如需控制位置与尺寸，请在挂载时通过 `default-left` / `default-top` / `default-width` / `default-height` 指定，示例见 [AIBlueking 浮窗 · 面板位置与尺寸](/demos/full-panel)。
+:::
+
+
 ### Agent 信息（≥ v2.1.4-beta.14）
 
 | 方法 | 类型 | 说明 |
@@ -267,7 +277,7 @@ function openAI() {
 | --- | --- | --- |
 | `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatBot） |
 | `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
-| `codeHeader` | `{ language, token }` | 自定义代码块头部 |
+| `codeHeader` | `{ language, token }` | 自定义代码块头部；`token` 为该代码块的 markdown-it `Token[]`，代码原文取 `type === 'fence'` 项的 `content`。示例见 [消息自定义渲染](/demos/custom-message) |
 | `headerLeft` | — | Header 标题区与右侧工具栏之间 |
 | `headerActions` | — | Header 右侧工具栏自定义图标（历史/转人工之后、压缩/关闭之前）；与 `showHistoryIcon` 独立 |
 

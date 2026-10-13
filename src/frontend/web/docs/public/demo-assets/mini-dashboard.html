@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>主机实时监控（文档示例）</title>
+<style>
+  body { margin: 0; padding: 12px; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 12px; color: #313238; background: #f5f7fa; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .card { padding: 10px; background: #fff; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+  .label { color: #979ba5; }
+  .value { margin-top: 4px; font-size: 20px; font-weight: 600; }
+  .bad { color: #ea3636; }
+  .ok { color: #2dcb56; }
+  .bar { height: 6px; margin-top: 8px; background: #f0f1f5; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #3a84ff; }
+  .tip { margin-top: 10px; color: #979ba5; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="card"><div class="label">10.0.0.12 · CPU</div><div class="value bad" id="cpu">97%</div><div class="bar"><i id="cpu-bar" style="width: 97%"></i></div></div>
+    <div class="card"><div class="label">10.0.0.12 · 内存</div><div class="value">71%</div><div class="bar"><i style="width: 71%"></i></div></div>
+    <div class="card"><div class="label">告警队列</div><div class="value ok">正常</div><div class="bar"><i style="width: 12%"></i></div></div>
+  </div>
+  <div class="tip">文档站静态示例页面：真实场景中替换为业务仪表盘地址。</div>
+  <script>
+    const cpu = document.getElementById('cpu');
+    const bar = document.getElementById('cpu-bar');
+    setInterval(() => {
+      const v = 90 + Math.round(Math.random() * 9);
+      cpu.textContent = v + '%';
+      bar.style.width = v + '%';
+    }, 1500);
+  </script>
+</body>
+</html>

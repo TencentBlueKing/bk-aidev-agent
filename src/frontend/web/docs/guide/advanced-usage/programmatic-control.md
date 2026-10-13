@@ -2,6 +2,10 @@
 
 AI 小鲸 v2.0 通过 Vue 的模板引用（template ref）机制，暴露了丰富的编程式 API，允许你从外部代码精确控制聊天组件的行为。
 
+::: tip 可交互示例
+本页「AIBlueking 模板引用」一节嵌入了可直接操作的场景配方（可查看实际执行的代码、事件与请求）。集中浏览请访问 [示例 · 编程式控制](/demos/programmatic-control)。
+:::
+
 ::: info 非 Vue 宿主
 若页面**没有 Vue 运行时**（React、纯 HTML 等），请使用 **v2.1.4-beta.8+** 的 [Standalone 子入口](/guide/integration-modes/standalone-bundle)：通过 `mountAIBlueking` / `mountChatBot` 返回的 `expose` 调用与下文 ref API 相同的方法（如 `show`、`sendMessage`）。
 :::
@@ -192,6 +196,11 @@ await aiBluekingRef.value?.show('session-code-123');
 不需要额外监听 `sessions-loaded` 等内部事件来判断「能否读 session」。对集成方而言，`await show()` 即表示可安全访问 `getChatHelper()?.session`。
 :::
 
+<ClientOnly>
+  <DemoEnvBar />
+  <RecipeOpenAndReady />
+</ClientOnly>
+
 #### hide - 隐藏窗口
 
 ```typescript
@@ -205,6 +214,20 @@ aiBluekingRef.value?.hide();
 // 发送消息（如果窗口未显示会自动显示）
 aiBluekingRef.value?.sendMessage('你好');
 ```
+
+结合 `setCiteText`、`stopGeneration` 的完整场景：
+
+<ClientOnly>
+  <RecipeAlertDiagnosis />
+</ClientOnly>
+
+#### selectShortcut / sendShortcut - 触发快捷指令
+
+`selectShortcut(cmd)` 打开快捷指令表单（`cmd.components[].default` 可预填）；`sendShortcut(cmd, selectedText)` 跳过表单直接发送。旧版 `window.aiBlueking.handleShortcutClick` 已废弃，分别对应这两个方法。
+
+<ClientOnly>
+  <RecipeSqlShortcut />
+</ClientOnly>
 
 #### addNewSession - 新建会话
 

@@ -14,7 +14,7 @@ hero:
       link: /guide/quick-start
     - theme: alt
       text: 立即体验
-      link: /demos/full-panel
+      link: /demos/
     - theme: alt
       text: v1.x 迁移指南
       link: /guide/migration-2.0

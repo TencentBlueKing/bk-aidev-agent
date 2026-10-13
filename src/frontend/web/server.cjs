@@ -102,12 +102,30 @@ if (!fs.existsSync(indexPath)) {
 }
 
 // Mock AG-UI（可选）
+/**
+ * Mock 唯一实现在 src/mock-handlers.ts：
+ * - pnpm build 会额外产出 dist-server/mock-node.cjs（build:mock）
+ * - pnpm build:npm 的 dist/index.cjs 同样导出 createMockAguiNodeMiddleware
+ */
+function loadMockMiddlewareFactory() {
+  const candidates = ['./dist-server/mock-node.cjs', './dist/index.cjs'];
+  for (const candidate of candidates) {
+    try {
+      const mod = require(candidate);
+      if (typeof mod.createMockAguiNodeMiddleware === 'function') {
+        return mod.createMockAguiNodeMiddleware;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error('未找到 Mock 构建产物，请先执行 pnpm build（含 build:mock）或 pnpm build:npm');
+}
+
 if (process.env.MOCK_AGUI !== '0') {
   try {
-    const { createMockAguiRouter } = require('./docs/.vitepress/mock-agui-routes.cjs');
-    const mockAgui = express.Router();
-    mockAgui.use(createMockAguiRouter());
-    app.use('/mock-agui/api', mockAgui);
+    const createMockAguiNodeMiddleware = loadMockMiddlewareFactory();
+    app.use('/mock-agui/api', express.json(), createMockAguiNodeMiddleware());
     console.log('[ai-blueking-docs] Mock AG-UI: /mock-agui/api');
   } catch (err) {
     console.warn('[ai-blueking-docs] Mock AG-UI 未启用:', err.message);
@@ -144,6 +162,27 @@ function sendReplaceableFile(req, res, filePath, contentType) {
     res.setHeader('Expires', '0');
     res.send(body);
   });
+}
+
+/**
+ * 无后缀地址对应的页面文件：`/guide/foo` → `guide/foo.html` 或 `guide/foo/index.html`，`/demos/` → `demos/index.html`。
+ * 与 npm 包 src/docs-asset-service.ts 的 resolvePageHtml 保持一致。
+ * @returns 页面绝对路径；不存在或越出静态目录时返回 null
+ */
+function resolvePageHtml(reqPath) {
+  const trimmed = reqPath.replace(/\/+$/, '');
+  if (!trimmed) {
+    return null;
+  }
+  const root = path.resolve(staticDir);
+  const candidates = reqPath.endsWith('/') ? [`${trimmed}/index.html`] : [`${trimmed}.html`, `${trimmed}/index.html`];
+  for (const candidate of candidates) {
+    const filePath = path.join(root, candidate);
+    if (filePath.startsWith(root + path.sep) && fs.existsSync(filePath)) {
+      return filePath;
+    }
+  }
+  return null;
 }
 
 // 需替换 __DOCS_BASE__ 的可读文件
@@ -203,7 +242,7 @@ app.use(spaRateLimiter, (req, res, next) => {
   if (req.path.match(/\.[a-z0-9]+$/i)) {
     return next();
   }
-  sendReplaceableFile(req, res, indexPath, 'text/html; charset=utf-8');
+  sendReplaceableFile(req, res, resolvePageHtml(req.path) ?? indexPath, 'text/html; charset=utf-8');
 });
 
 app.use((err, req, res, next) => {

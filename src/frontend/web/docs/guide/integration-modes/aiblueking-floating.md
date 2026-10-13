@@ -76,6 +76,10 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 当用户在页面中选中文本时，自动弹出快捷操作菜单，支持将选中文本作为上下文发送给 AI。由 `enablePopup` 与 info `conversationSettings.enableWordSelectionPopup` 联动控制；任一为 `false` 则不显示。shortcut 为空时弹窗回退内置「问问小鲸」。
 
+::: tip 可交互示例
+在 [示例 · AIBlueking 浮窗](/demos/full-panel) 的配置台里切换这些 props，可以直接看到效果和等价的模板代码。
+:::
+
 ## AIBlueking 独有 Props
 
 除了继承 `ChatBot` 的所有 Props 外，`AIBlueking` 还提供以下额外属性：
@@ -86,6 +90,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `draggable` | `boolean` | `true` | 是否启用面板拖拽 |
 | `hideHeader` | `boolean` | `false` | 是否隐藏顶部 Header 区域 |
 | `hideNimbus` | `boolean` | `false` | 是否隐藏 Nimbus 浮球入口 |
+| `nimbusSize` | `'small' \| 'normal' \| 'large'` | `'normal'` | Nimbus 浮球尺寸 |
 | `teleportTo` | `string` | `'body'` | 面板挂载的目标 DOM 节点选择器 |
 | `defaultHeight` | `number` | `600` | 面板默认高度（px） |
 | `defaultWidth` | `number` | `400` | 面板默认宽度（px） |
@@ -109,6 +114,11 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `hide()` | `() => void` | 收起面板 |
 | `handleShow(sessionCode?)` | `(sessionCode?: string) => Promise<void>` | 展开面板（内部方法） |
 | `handleClose()` | `() => void` | 收起面板（内部方法） |
+
+::: warning 2.4.x 实际行为
+`show(sessionCode, { isTemporary: true })` 的 `isTemporary` 目前**不会生效**，不会创建临时会话。需要临时会话时，先 `await show()`，再调用 `addNewSession({ name: '临时会话', isTemporary: true })`。
+:::
+
 
 ### 消息操作
 
@@ -141,6 +151,11 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `updatePosition(x, y)` | `(x: number, y: number) => void` | 更新面板位置 |
 | `updateSize(w, h)` | `(w: number, h: number) => void` | 更新面板尺寸 |
 | `updatePositionAndSize(x, y, w, h)` | `(x: number, y: number, w: number, h: number) => void` | 同时更新位置和尺寸 |
+
+::: warning 2.4.x 实际行为
+`updatePosition` / `updateSize` / `updatePositionAndSize` 目前调用后面板**不会移动或改变尺寸**（组件内部状态未同步到拖拽容器）。如需控制位置与尺寸，请在挂载时通过 `default-left` / `default-top` / `default-width` / `default-height` 指定，示例见 [AIBlueking 浮窗 · 面板位置与尺寸](/demos/full-panel)。
+:::
+
 
 ### 其他
 
