@@ -449,6 +449,14 @@ _MARKDOWN_PV_IMAGE_RE = re.compile(
 )
 
 
+def has_markdown_pv_image(text: str) -> bool:
+    """文本是否含可签发的 Markdown 会话 PV 图片语法；调用方据此决定要不要构建签发服务。
+
+    判定规则与 ``fill_markdown_pv_image_urls`` 一致（仅图片后缀），纯外链或非图片 PV 文件不付出构建成本。
+    """
+    return any(image_mime_type({}, match.group(2)) is not None for match in _MARKDOWN_PV_IMAGE_RE.finditer(text))
+
+
 def fill_markdown_pv_image_urls(
     file_service: "SandboxPvFileService | None",
     text: str,
@@ -471,6 +479,9 @@ def fill_markdown_pv_image_urls(
             path = normalize_session_pv_path(match.group(2), required=True)
         except SandboxFileInvalidArgumentError:
             return match.group(0)
+        # 只签发图片后缀：分享页匿名读取时，图片语法里引用的任意 PV 文件都不应拿到下载链接
+        if image_mime_type({}, path) is None:
+            return match.group(0)
         url = cache.get((session_code, path))
         if not url and path not in failed:
             try:
@@ -479,7 +490,7 @@ def fill_markdown_pv_image_urls(
                     path=path,
                     expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
                 )
-            except SandboxFileError:
+            except Exception:  # 单张签发失败（含网络、解析异常）只降级为原文，不打断历史、分享页或 SSE 首帧
                 logger.exception("签发 Markdown 图片 URL 失败: session=%s path=%s", session_code, path)
                 url_data = {}
             url = url_data.get("download_url") or ""
