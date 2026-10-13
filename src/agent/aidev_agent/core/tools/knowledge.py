@@ -49,6 +49,8 @@ def make_knowledge_retrieval_tool(
     llm: BaseChatModel,
     knowledge_query_options: KnowledgeSettings,
     chat_history: Optional[list] = None,
+    *,
+    kb_retriever: BkRetriever | None = None,
 ) -> Optional[StructuredTool]:
     """构建知识库检索工具。
 
@@ -59,6 +61,7 @@ def make_knowledge_retrieval_tool(
         llm: 语言模型，用于知识库检索中的相关性判断和内容处理
         knowledge_query_options: 知识库检索配置
         chat_history: 聊天历史记录
+        kb_retriever: 绑定当前资源上下文的检索器
 
     Returns:
         StructuredTool 实例，如果未配置知识库则返回 None
@@ -97,8 +100,7 @@ def make_knowledge_retrieval_tool(
             包含检索决策、知识内容和引用文档的结构化结果
         """
         # 初始化知识库检索器
-        kb_retriever = BkRetriever()
-        retriever = KnowledgeRag(llm, kb_retriever)
+        retriever = KnowledgeRag(llm, kb_retriever or BkRetriever())
 
         # 流处理：仅在存在回调时派发自定义事件
         dispatch_config = config if config and config.get("callbacks") else None

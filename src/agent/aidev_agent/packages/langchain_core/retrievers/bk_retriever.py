@@ -4,7 +4,7 @@ from typing import Any, Callable
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
-from aidev_agent.packages.resource_manager.registry import resource_manager
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol, resource_manager
 from aidev_agent.pydantic_models import KnowledgeSettings
 
 logger = logging.getLogger(__name__)
@@ -13,9 +13,13 @@ logger = logging.getLogger(__name__)
 class BkRetriever:
     """Build and submit the SDK knowledge-query request to the WEB API."""
 
+    def __init__(self, resource_manager: ResourceManagerProtocol | None = None) -> None:
+        self._resource_manager = resource_manager
+
     @property
     def _query_instance(self) -> Callable:
-        return resource_manager().knowledge_query
+        manager = self._resource_manager if self._resource_manager is not None else resource_manager()
+        return manager.knowledge_query
 
     def query_knowledge(
         self,

@@ -180,6 +180,21 @@ def test_transport_and_valid_document_validation(mocker):
     transport.assert_called_once()
 
 
+@pytest.mark.parametrize("use_global", [False, True])
+def test_query_uses_explicit_manager_or_compatible_global_default(mocker, use_global):
+    manager = mocker.MagicMock()
+    manager.__bool__.return_value = False
+    manager.knowledge_query.return_value = {"documents": []}
+    global_manager = mocker.patch(
+        "aidev_agent.packages.langchain_core.retrievers.bk_retriever.resource_manager",
+        return_value=manager,
+    )
+    retriever = BkRetriever(resource_manager=None if use_global else manager)
+    assert retriever.query_knowledge("q", KnowledgeSettings()) == {"documents": []}
+    manager.knowledge_query.assert_called_once()
+    assert global_manager.call_count == int(use_global)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

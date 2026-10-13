@@ -72,6 +72,7 @@ from aidev_agent.core.tools.skill.types import SkillOptions, SkillProviderBacken
 from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools, merge_task_list
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
+from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.security.command import CommandRiskAssessor
 from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings, SecuritySettings
@@ -775,6 +776,7 @@ class ReActAgentBuilder:
                 llm=knowledge_llm,
                 knowledge_query_options=knowledge_query_options,
                 chat_history=chat_history,
+                kb_retriever=BkRetriever(resource_manager=self._resource_manager),
             )
         return None
 
@@ -913,6 +915,7 @@ class ReActAgentBuilder:
             knowledge_tool = make_knowledge_retrieval_tool(
                 llm=self._knowledge_llm,
                 knowledge_query_options=self._knowledge_query_options,
+                kb_retriever=BkRetriever(resource_manager=self._resource_manager),
             )
             if knowledge_tool:
                 tools.append(knowledge_tool)
