@@ -613,7 +613,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 生成中与底部「停止生成」使用同一判断：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`。分享态即使容器仍在生成，也按终态展示。更早的助手组在生成中仍按各自终态折叠。
 
-耗时只在终态、且能同时取到两端时显示，格式为 `，耗时：2m2s`：
+耗时只在终态、且能同时取到两端时显示，格式为 `，耗时 2m2s`：
 
 - 起点：紧邻的上一组若是用户消息，取其第一条 `createdAt`
 - 终点：本组内最晚的 `createdAt`
@@ -669,7 +669,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 </script>
 ```
 
-下面示例终态可折叠，默认只留下最后一条，状态栏为「已完成，耗时：2m2s」。点击状态栏可看到前面的 reasoning。
+下面示例终态可折叠，默认只留下最后一条，状态栏为「已完成，耗时 2m2s」。点击状态栏可看到前面的 reasoning。
 
 <div class="demo">
   <div style="height: 280px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
@@ -687,7 +687,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 ## 推理过程消息
 
-`role: 'reasoning'` 消息会被归入当前 AI 消息组，消息自身带有折叠/展开和思考耗时（`duration`）。整组还会套上[过程状态栏](#助手过程状态栏)：下面的示例终态默认只渲染最后一条 assistant，点击「已完成，耗时：2m2s」后才能看到 reasoning。
+`role: 'reasoning'` 消息会被归入当前 AI 消息组，消息自身带有折叠/展开和思考耗时（`duration`）。整组还会套上[过程状态栏](#助手过程状态栏)：下面的示例终态默认只渲染最后一条 assistant，点击「已完成，耗时 2m2s」后才能看到 reasoning。
 
 ```vue
 <script setup lang="ts">

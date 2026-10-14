@@ -1696,7 +1696,7 @@ describe('MessageContainer', () => {
       });
       await nextTick();
 
-      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：8s');
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 8s');
       expect(wrapper.find('.ai-message-process-header .ai-chevron-right-icon').exists()).toBe(false);
     });
 
@@ -1730,7 +1730,7 @@ describe('MessageContainer', () => {
           .map(node => node.text());
 
       expect(assistantTexts()).toEqual(['最终回答']);
-      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：2m2s');
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 2m2s');
 
       await wrapper.find('.ai-message-process-header').trigger('click');
       expect(assistantTexts()).toEqual(['过程一', '过程二', '最终回答']);
@@ -1783,7 +1783,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const headers = wrapper.findAll('.ai-message-process-header-text').map(node => node.text());
-      expect(headers).toEqual(['已完成，耗时：4s', '处理中']);
+      expect(headers).toEqual(['已完成，耗时 4s', '处理中']);
       expect(wrapper.findAll('.mock-message-render').map(node => node.text())).not.toContain('历史过程');
     });
 
