@@ -2,6 +2,7 @@
   <div
     ref="panelRef"
     class="ai-model-selector-panel"
+    @scroll.passive="hideDescriptionTip"
   >
     <div class="ai-model-selector-panel-search">
       <BkInput
@@ -18,7 +19,10 @@
         </template>
       </BkInput>
     </div>
-    <div class="ai-model-selector-panel-list">
+    <div
+      class="ai-model-selector-panel-list"
+      @scroll.passive="hideDescriptionTip"
+    >
       <div
         v-for="(model, index) in models"
         :key="model.id"
@@ -28,8 +32,9 @@
           'is-active': index === activeIndex,
           'is-disabled': model.disabled,
         }"
-        :title="model.description"
         @click="handleSelect(model)"
+        @mouseenter="handleOptionEnter($event, model)"
+        @mouseleave="handleOptionLeave"
       >
         <ResourceIcon
           v-if="model.icon"
@@ -40,7 +45,7 @@
         />
         <span
           class="ai-model-selector-panel-option-name"
-          :title="model.llm_name"
+          :title="optionNameTitle(model)"
         >
           {{ model.llm_name }}
         </span>
@@ -74,17 +79,23 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, shallowRef, useTemplateRef, watch } from 'vue';
+  import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue';
 
   import { Input as BkInput, Exception } from 'bkui-vue';
+  import tippy from 'tippy.js';
 
   import { useMenuKeydown } from '../../../composables/use-menu-keydown';
   import { SearchIcon } from '../../../icons';
-  import { ResourceIcon } from '../../resource-icon';
   import { t } from '../../../lang/lang';
+  import { ResourceIcon } from '../../resource-icon';
   import { resolveModelCapabilities } from './capabilities';
+  import { createModelDescriptionTippy, MODEL_DESCRIPTION_TIP_DELAY_MS } from './create-model-description-tippy';
 
+  import type { AITippyProps } from '../../../types';
   import type { IModelCapability, IModelOption } from './types';
+  import type { Instance } from 'tippy.js';
+
+  import 'tippy.js/dist/tippy.css';
 
   const props = defineProps<{
     /** 待展示的模型列表（已按关键字过滤） */
@@ -93,6 +104,8 @@
     searchPlaceholder?: string;
     /** 当前选中模型的 llm_name */
     selectedName?: string;
+    /** 外层 common tippy 配置，描述气泡复用其中的 appendTo / placement / zIndex */
+    tippyOptions?: AITippyProps;
   }>();
 
   /** 预计算每个模型的能力标签，避免模板内重复派生（键为 llm_name） */
@@ -110,6 +123,89 @@
   const panelRef = useTemplateRef<HTMLElement>('panelRef');
   const searchInputRef = useTemplateRef<HTMLInputElement>('searchInputRef');
 
+  // 整表共用一个 tip：移入后延迟创建，离开 / 滚动 / 列表替换 / 卸载时销毁
+  let descriptionTip: Instance | undefined;
+  let tipAnchor: HTMLElement | undefined;
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let showToken = 0;
+
+  const readDescription = (model: IModelOption) => model.description?.trim() || undefined;
+
+  /** 有描述时不再挂名称 title，避免和描述 tip 叠成两个气泡 */
+  const optionNameTitle = (model: IModelOption) => (readDescription(model) ? undefined : model.llm_name);
+
+  const getReferenceClientRect = Object.assign(
+    () => (tipAnchor?.isConnected ? tipAnchor.getBoundingClientRect() : new DOMRect()),
+    { contextElement: document.body },
+  );
+
+  /** 描述气泡和 common tippy 挂到同一层，裁切边界才跟得上全屏容器 */
+  const resolveTipContextElement = (appendTo: AITippyProps['appendTo']) => {
+    if (appendTo instanceof HTMLElement) {
+      return appendTo;
+    }
+    if (typeof appendTo === 'function') {
+      const target = appendTo(document.body);
+      if (target instanceof HTMLElement) {
+        return target;
+      }
+    }
+    return document.body;
+  };
+
+  const clearShowTimer = () => {
+    if (showTimer === undefined) {
+      return;
+    }
+    clearTimeout(showTimer);
+    showTimer = undefined;
+  };
+
+  const hideDescriptionTip = () => {
+    showToken += 1;
+    clearShowTimer();
+    tipAnchor = undefined;
+    const instance = descriptionTip;
+    descriptionTip = undefined;
+    instance?.destroy();
+  };
+
+  const handleOptionEnter = (event: MouseEvent, model: IModelOption) => {
+    const description = readDescription(model);
+    if (!description) {
+      hideDescriptionTip();
+      return;
+    }
+    const anchor = event.currentTarget;
+    if (!(anchor instanceof HTMLElement)) {
+      return;
+    }
+    clearShowTimer();
+    tipAnchor = anchor;
+    const token = showToken;
+    showTimer = setTimeout(() => {
+      showTimer = undefined;
+      if (token !== showToken || tipAnchor !== anchor || !anchor.isConnected) {
+        return;
+      }
+      if (!descriptionTip) {
+        getReferenceClientRect.contextElement = resolveTipContextElement(props.tippyOptions?.appendTo);
+        descriptionTip = tippy(document.createElement('div'), {
+          ...createModelDescriptionTippy(getReferenceClientRect, props.tippyOptions),
+          onShow: () => Boolean(tipAnchor?.isConnected),
+        });
+      }
+      descriptionTip.setContent(description);
+      descriptionTip.show();
+    }, MODEL_DESCRIPTION_TIP_DELAY_MS);
+  };
+
+  const handleOptionLeave = () => {
+    hideDescriptionTip();
+  };
+
+  onBeforeUnmount(hideDescriptionTip);
+
   // 键盘导航复用通用 composable，items 需为 shallowRef，故本地同步一份并在列表变化时重置高亮
   const navItems = shallowRef<IModelOption[]>(props.models);
   const { activeIndex } = useMenuKeydown<IModelOption>({
@@ -123,6 +219,7 @@
     models => {
       navItems.value = models;
       activeIndex.value = 0;
+      hideDescriptionTip();
     },
   );
 
@@ -142,6 +239,7 @@
 
   defineExpose({
     focusSearch,
+    hideDescriptionTip,
   });
 </script>
 

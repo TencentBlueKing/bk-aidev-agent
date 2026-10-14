@@ -23,33 +23,34 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { resolve } from 'path';
+import { resolve } from 'node:path';
+import { defineConfig, loadEnv, mergeConfig } from 'vite';
 
-import { defineConfig, mergeConfig } from 'vite';
-
+import { createDevApiProxy } from './dev-api-proxy';
 import { createCommonConfig } from './vite.utils';
 
-export default defineConfig(
-  mergeConfig(
-    createCommonConfig(),
-    {
-      root: 'playground',
-      envDir: '..',
-      resolve: {
-        alias: [
-          // 开发模式下让 playground 直接引用 ai-blueking JS 源码，支持断点调试
-          // 仅精确匹配主入口，CSS 等子路径仍走 dist
-          {
-            find: /^@blueking\/ai-blueking$/,
-            replacement: resolve(__dirname, '../src/vue3.ts'),
-          },
-        ],
-      },
-      server: {
-        host: '0.0.0.0',
-        port: 8001,
-        allowedHosts: true,
-      },
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, resolve(__dirname, '..'), '');
+  const proxy = createDevApiProxy(env.API_PROXY_TARGET);
+
+  return mergeConfig(createCommonConfig(), {
+    root: 'playground',
+    envDir: '..',
+    resolve: {
+      alias: [
+        // 开发模式下让 playground 直接引用 ai-blueking JS 源码，支持断点调试
+        // 仅精确匹配主入口，CSS 等子路径仍走 dist
+        {
+          find: /^@blueking\/ai-blueking$/,
+          replacement: resolve(__dirname, '../src/vue3.ts'),
+        },
+      ],
     },
-  ),
-);
+    server: {
+      host: '0.0.0.0',
+      port: 8001,
+      allowedHosts: true,
+      ...(proxy ? { proxy } : {}),
+    },
+  });
+});

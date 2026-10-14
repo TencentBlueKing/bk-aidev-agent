@@ -38,7 +38,7 @@ import type { Component } from 'vue';
 export interface IModelOption {
   /** 基础模型标识，如 deepseek */
   base_model?: string;
-  /** 模型描述，作为选项 hover 的 title 提示 */
+  /** 模型描述。去空白后非空时，选项 hover 展示 tip；否则名称保留原生 title 以提示全名 */
   description?: string;
   /** 是否禁用（前端扩展字段，后端无此字段时默认不禁用） */
   disabled?: boolean;
