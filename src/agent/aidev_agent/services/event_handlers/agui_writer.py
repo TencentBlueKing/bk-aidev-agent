@@ -21,6 +21,7 @@ from aidev_agent.packages.interrupt_manager import (
     register_side_effect,
 )
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
+from aidev_agent.utils.datetimes import created_at_to_ms
 
 logger = getLogger(__name__)
 
@@ -108,6 +109,8 @@ class AGUISessionWriter(BaseSessionWriter):
         # 缓存 session_property，避免 update_flow_agent_info 每次都额外 GET
         self._cached_session_property: dict | None = None
         self._has_run_error = False
+        # 本轮最后一条 assistant 的入库毫秒，供 RUN_FINISHED 对齐；None 时保留墙钟时间
+        self._last_assistant_created_at_ms: int | None = None
 
     def handle_flow_agent_result(self, event) -> None:
         # retry/skip resume：一轮对话一个 task_id，先绑定已有 activity 再走基类 update
@@ -196,6 +199,9 @@ class AGUISessionWriter(BaseSessionWriter):
         前置派发的会话回写事件负责，与 approval 路径一致。
         """
         super().handle_run_finished(event)
+        # 对齐本轮最后一条 assistant 入库毫秒；续流回放不打戳，保持无 timestamp
+        if self._last_assistant_created_at_ms is not None and not getattr(event, "resume_replay", False):
+            event.timestamp = self._last_assistant_created_at_ms
 
         outcome = getattr(event, "outcome", None)
         # 兼容 outcome 为 dict 或对象的情况
@@ -512,6 +518,8 @@ class AGUISessionWriter(BaseSessionWriter):
         logger.info("开始创建会话内容: session_code=%s, payload=%s, headers=%s", self.session_code, payload, headers)
         result = self.client.api.create_chat_session_content(json=payload, headers=headers)
         data = result.get("data", {})
+        if isinstance(data, dict) and payload.get("role") == PromptRole.ASSISTANT.value:
+            self._last_assistant_created_at_ms = created_at_to_ms(data.get("created_at"))
         content_id = data.get("id") if isinstance(data, dict) else None
         if content_id is not None:
             logger.info("创建会话内容成功: content_id=%s", content_id)
