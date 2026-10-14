@@ -202,6 +202,7 @@
     MOCK_FLOW_AGENT_TERMINATED_MESSAGES,
     MOCK_INFO_MESSAGES,
     MOCK_MENU_SOURCES,
+    MOCK_MESSAGE_PROCESS_MESSAGES,
     MOCK_MESSAGES,
     MOCK_MODELS,
     MOCK_TOOLCALL_STATUS_MESSAGES,
@@ -227,13 +228,14 @@
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
   };
-  // Info 分隔提示 + ToolCall 各状态 + 含 toolCalls 的会话 mock + flow_agent 执行情况 + 待回答 UserQuestion
+  // Info 分隔提示 + ToolCall 各状态 + flow_agent + 助手过程状态栏（已完成 / 生成中 / 失败）
   const messages = deepRef<Message[]>([
     ...MOCK_INFO_MESSAGES,
     ...MOCK_TOOLCALL_STATUS_MESSAGES,
     ...(MOCK_MESSAGES as Message[]),
     ...MOCK_FLOW_AGENT_MESSAGES,
     ...MOCK_FLOW_AGENT_TERMINATED_MESSAGES,
+    ...MOCK_MESSAGE_PROCESS_MESSAGES,
     // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
   ]);
 

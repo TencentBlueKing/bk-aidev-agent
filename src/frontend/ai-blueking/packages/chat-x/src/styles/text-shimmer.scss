@@ -1,0 +1,23 @@
+// 进行中态的文字 loading：渐变光带循环扫过。
+// 工具调用「正在调用」与过程状态栏「处理中」共用，保证两处动效一致。
+@keyframes ai-text-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@mixin text-shimmer {
+  background: linear-gradient(90deg, #979ba5 0%, #e0e2e9 50%, #979ba5 100%);
+  background-clip: text;
+  background-size: 200% 100%;
+  animation: ai-text-shimmer 1.8s linear infinite;
+  -webkit-text-fill-color: transparent;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}

@@ -133,15 +133,7 @@
   });
 </script>
 <style lang="scss">
-  @keyframes ai-toolcall-shimmer {
-    from {
-      background-position: 100% 0;
-    }
-
-    to {
-      background-position: -100% 0;
-    }
-  }
+  @use '../../../styles/text-shimmer.scss' as shimmer;
 
   .ai-toolcall-render {
     display: flex;
@@ -186,15 +178,7 @@
 
       // 进行中态的文字 loading：渐变光带循环扫过
       .toolcall-header-title.is-loading {
-        background: linear-gradient(90deg, #979ba5 0%, #e0e2e9 50%, #979ba5 100%);
-        background-clip: text;
-        background-size: 200% 100%;
-        animation: ai-toolcall-shimmer 1.8s linear infinite;
-        -webkit-text-fill-color: transparent;
-
-        @media (prefers-reduced-motion: reduce) {
-          animation: none;
-        }
+        @include shimmer.text-shimmer;
       }
 
       // 仅状态词着色，括号与耗时保持弱显示
