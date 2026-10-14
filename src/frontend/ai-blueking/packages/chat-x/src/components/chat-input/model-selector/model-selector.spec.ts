@@ -29,6 +29,7 @@ import { defineComponent, h } from 'vue';
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import ModelSelectorPanel from './model-selector-panel.vue';
 import ModelSelector from './model-selector.vue';
 
 import type { IModelOption } from './types';
@@ -206,9 +207,33 @@ describe('ModelSelector', () => {
       await wrapper.findComponent({ name: 'Tippy' }).vm.$emit('show');
       expect(wrapper.emitted('show')).toBeFalsy();
     });
+
+    it('下拉收起时应关闭模型描述 tip', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: mockModels },
+      });
+      const exposed = wrapper.findComponent(ModelSelectorPanel).vm.$.exposed as {
+        hideDescriptionTip: () => void;
+      };
+      const hideDescriptionTip = vi.spyOn(exposed, 'hideDescriptionTip');
+      await wrapper.findComponent({ name: 'Tippy' }).vm.$emit('hidden');
+      expect(hideDescriptionTip).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Props 测试', () => {
+    it('tippyOptions 应传给模型面板，供描述气泡复用', () => {
+      const tippyOptions = { appendTo: document.body, placement: 'bottom' as const, zIndex: 8 };
+      wrapper = mount(ModelSelector, {
+        props: {
+          models: mockModels,
+          tippyOptions,
+        },
+      });
+
+      expect(wrapper.findComponent(ModelSelectorPanel).props('tippyOptions')).toEqual(tippyOptions);
+    });
+
     it('disabled 为 true 时 trigger 应有禁用样式', () => {
       wrapper = mount(ModelSelector, {
         props: {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-14 20:31:00
+
+模型选项的描述改为 hover 气泡，并跟上外层 tippy 的挂载点、位置和层级。
+
+### Added
+
+- `ModelSelector`：`description` 去掉首尾空白后若仍有内容，选项 hover 约 300ms 后用 `ai-chat-box` 气泡展示纯文本。同一列表同时只保留一个气泡；鼠标离开、列表滚动、搜索替换列表或下拉收起时关闭。禁用项只要有描述，悬停同样展示。
+
+### Changed
+
+- 有描述时不再用原生 `title` 展示描述，名称上的 `title` 也会去掉。无描述或仅空白时，名称仍用原生 `title` 提示全名。
+- 描述气泡复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。未传时分别是 `document.body`、`auto`、`EDITOR_MENU_Z_INDEX`（10001）。经 `ChatContainer` 使用时，这三项来自 `commonTippyOptions`（全屏会把 `appendTo` 改到全屏容器）。下拉本身仍整包接收 `tippyOptions`。
+
 ## 2026-10-14 12:06:15
 
 助手回复增加过程状态栏。生成中显示「处理中」，终态显示已完成、失败、已停止或已禁用；多条消息时默认折叠，只留下最后一条。

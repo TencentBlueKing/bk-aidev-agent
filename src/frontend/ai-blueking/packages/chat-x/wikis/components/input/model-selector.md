@@ -3,9 +3,10 @@ name: ModelSelector 模型选择器
 slug: model-selector
 kind: component
 domain: input
-description: 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签与键盘导航。
+description: 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签、键盘导航，以及有描述时的 hover 气泡。
 aiSummary: >
   聊天输入区的模型下拉选择器，支持搜索过滤、能力标签与键盘导航。
+  模型 description 去空白后非空时，在选项 hover 时用气泡展示。
   源码位置：src/components/chat-input/model-selector/model-selector.vue。
 relatedComponents:
   - slug: chat-input
@@ -37,7 +38,7 @@ sinceVersion: 1.0.0
 
 - **源码位置**：`src/components/chat-input/model-selector/model-selector.vue`
 - **能力域**：输入交互
-- **能力说明**：基于 Tippy 下拉的模型选择器，包含触发器、搜索面板与能力标签展示；数据过滤逻辑由 `useModelSelector` composable 承担。
+- **能力说明**：基于 Tippy 下拉的模型选择器，包含触发器、搜索面板、能力标签，以及有描述时的 hover 气泡；数据过滤逻辑由 `useModelSelector` composable 承担。
 
 > **能力域**：输入交互
 
@@ -50,12 +51,12 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 ├── ModelSelectorTrigger（触发器：图标 + 名称 + 箭头）
 └── ModelSelectorPanel（下拉面板）
     ├── 搜索框（展开后自动聚焦）
-    └── 模型列表（支持键盘导航、选中态、禁用态、能力标签）
+    └── 模型列表（支持键盘导航、选中态、禁用态、能力标签；有描述时 hover 气泡）
 ```
 
 ## 基础用法
 
-选中值为模型的 `llm_name`；能力标签由组件依据 `property`（`support_thinking` / `support_thinking_quick` / `support_vision`）自动派生，无需调用方传入。
+选中值为模型的 `llm_name`；能力标签由组件依据 `property`（`support_thinking` / `support_thinking_quick` / `support_vision`）自动派生，无需调用方传入。示例里带了 `description` 的模型，悬停该选项约 300ms 后会看到描述气泡。
 
 ```vue
 <template>
@@ -114,7 +115,7 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 | models            | `IModelOption[]`                                                           | `[]`             | 可选模型列表                           |
 | placeholder       | `string`                                                                   | `选择模型`       | trigger 无选中时的占位文案             |
 | searchPlaceholder | `string`                                                                   | `搜索模型关键字` | 搜索框占位文案                         |
-| tippyOptions      | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | —                | 透传给 Tippy 的额外配置                |
+| tippyOptions      | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | —                | 传给下拉 Tippy 的额外配置。描述气泡只复用其中的 `appendTo`、`placement`、`zIndex` |
 
 ### v-model
 
@@ -159,7 +160,7 @@ interface IModelProperty {
 // 模型选项，贴合后端模型接口结构
 interface IModelOption {
   base_model?: string;
-  description?: string; // 选项 hover 的 title 提示
+  description?: string; // 去空白后非空时，选项 hover 展示气泡；否则名称用原生 title 提示全名
   disabled?: boolean; // 前端扩展字段，禁用项不可选中
   icon?: Component | string; // 图标 URL 或 Vue 组件，由 ResourceIcon 渲染
   id: number;
@@ -178,9 +179,10 @@ interface IModelOption {
 
 1. `models` 为空或 `disabled` 为 `true` 时，下拉不会展开。
 2. 选中值为模型的 `llm_name`；能力标签由组件依据 `property` 的 `support_thinking` / `support_thinking_quick` / `support_vision` 派生，文案走内置 i18n。
-3. `description` 会作为选项 hover 的 `title` 提示展示。
-4. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
-5. 图标由 [ResourceIcon](/components/helper/resource-icon) 渲染（`type="model"`）：支持图片 URL 或 Vue 组件，URL 加载失败自动回退到内置兜底图标；未提供 `icon` 时不渲染图标位。
+3. `description` 去掉首尾空白后若仍有内容，鼠标停在选项上约 300ms 后，用 `ai-chat-box` 气泡展示这段纯文本（不解析 HTML）。同一列表同时只有一个气泡；鼠标离开、列表滚动、搜索替换列表、下拉收起时关闭。仅空白或未传时不展示气泡，名称用原生 `title` 显示全名；有描述时名称不再挂 `title`。禁用项只要有描述，悬停同样展示。
+4. 描述气泡默认 `appendTo` 为 `document.body`、`placement` 为 `auto`、`zIndex` 为 `EDITOR_MENU_Z_INDEX`（10001）。`tippyOptions` 的这三项会覆盖默认值，并与下拉共用；经 `ChatContainer` 使用时它们来自 `commonTippyOptions`（全屏会把 `appendTo` 改到全屏容器）。`trigger`、主题等其余字段只作用于下拉。
+5. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
+6. 图标由 [ResourceIcon](/components/helper/resource-icon) 渲染（`type="model"`）：支持图片 URL 或 Vue 组件，URL 加载失败自动回退到内置兜底图标；未提供 `icon` 时不渲染图标位。
 
 ## 关联组件
 
