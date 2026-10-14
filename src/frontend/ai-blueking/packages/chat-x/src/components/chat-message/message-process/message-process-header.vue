@@ -7,7 +7,7 @@
     <span
       class="ai-message-process-header-text"
       :class="{ 'is-loading': loading }"
-      >{{ label }}<template v-if="elapsedText">，{{ t('耗时') }}：{{ elapsedText }}</template></span
+      >{{ label }}<template v-if="elapsedText">，{{ t('耗时') }} {{ elapsedText }}</template></span
     >
     <ChevronRightIcon
       v-if="collapsible"

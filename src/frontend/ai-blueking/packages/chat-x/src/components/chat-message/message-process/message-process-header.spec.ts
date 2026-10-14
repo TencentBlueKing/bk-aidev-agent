@@ -22,7 +22,7 @@ describe('MessageProcessHeader', () => {
       },
     });
 
-    expect(textOf(wrapper)).toBe('已完成，耗时：2m2s');
+    expect(textOf(wrapper)).toBe('已完成，耗时 2m2s');
     wrapper.unmount();
   });
 

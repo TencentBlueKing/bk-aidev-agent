@@ -78,7 +78,7 @@ describe('MessageProcessList', () => {
     );
 
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答']);
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('失败，耗时：2m2s');
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('失败，耗时 2m2s');
 
     await wrapper.find('.ai-message-process-header').trigger('click');
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['过程一', '过程二', '最终回答']);
@@ -122,7 +122,7 @@ describe('MessageProcessList', () => {
     await wrapper.setProps({ generating: false });
 
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['正在输出']);
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：5s');
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 5s');
     wrapper.unmount();
   });
 
@@ -131,7 +131,7 @@ describe('MessageProcessList', () => {
       requestCreatedAt: new Date(START).toISOString(),
     });
 
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：1m5s');
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 1m5s');
     expect(wrapper.find('.ai-chevron-right-icon').exists()).toBe(false);
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['只有回答']);
 
@@ -145,7 +145,7 @@ describe('MessageProcessList', () => {
       requestCreatedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：1s');
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 1s');
     wrapper.unmount();
   });
 
@@ -153,7 +153,7 @@ describe('MessageProcessList', () => {
     const wrapper = mountList([createMessage('1', '回答', MessageStatus.Complete, START + 300)], {
       requestCreatedAt: START,
     });
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：<1s');
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 <1s');
 
     await wrapper.setProps({ messages: [createMessage('1', '回答', MessageStatus.Complete, START)] });
     expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成');
