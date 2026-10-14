@@ -813,6 +813,9 @@ const mockCreatedAt = (dayOffset: number, hours: number, minutes: number, yearOf
   return date.toISOString();
 };
 
+/** 相对当前时间的 createdAt。耗时只在终态用最早和最晚时间相减，生成中不展示 */
+const mockCreatedAtAgo = (offsetMs: number) => new Date(Date.now() - offsetMs).toISOString();
+
 // 已上传文件样例：可在 @ / + 中引用，也可点击附件在侧栏预览与下载。
 const MOCK_UPLOADED_FILES = [
   new File(['# 上传文件接入说明\n\n上传响应的 `path` 会保存为 `outputId`。\n\n- 在 @ 或 + 中引用文件\n- 点击附件或标签打开侧栏\n- 在侧栏下载原文件\n'], '上传文件接入说明.md', { type: 'text/markdown' }),
@@ -1328,6 +1331,154 @@ export const MOCK_TOOLCALL_STATUS_MESSAGES = [
   ...MOCK_TOOLCALL_STATE_MESSAGES,
   ...MOCK_TOOLCALL_TYPE_MESSAGES,
   ...MOCK_TOOLCALL_OVERFLOW_MESSAGES,
+] as Message[];
+
+/**
+ * 助手过程状态栏：每轮助手回复都显示；终态且至少两条时才可折叠、显示箭头和耗时。
+ * 已完成默认只留最后一条；生成中展示全部、不展示耗时；失败同样折叠。
+ */
+export const MOCK_MESSAGE_PROCESS_MESSAGES = [
+  {
+    id: 'mock-process-done-user',
+    role: MessageRole.User,
+    content: '解释下这几个的功能',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-done-user',
+    createdAt: mockCreatedAtAgo(130_000),
+  },
+  {
+    id: 'mock-process-done-intro',
+    role: MessageRole.Assistant,
+    content:
+      '我会按这三个 skill 的实际工作边界来解释：一个写产品手册，一个把内容注入 iWiki，一个覆盖乐享知识库。这里只说明功能，不会修改任何文件。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-done-intro',
+    createdAt: mockCreatedAtAgo(122_000),
+  },
+  {
+    id: 'mock-process-done-skill',
+    role: MessageRole.Assistant,
+    content: '基于 AIDEV 产品知识手册模板，为新产品产出完整手册并发布到 iWiki。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-done-skill',
+    createdAt: mockCreatedAtAgo(60_000),
+    toolCalls: [
+      {
+        id: 'mock-process-tc-ba1',
+        type: 'function',
+        function: {
+          name: 'knowlege-ba1',
+          function_type: 'skill',
+          description: '产品手册端到端生成流水线。',
+          arguments: '{"template": "aidev"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-process-tc-ba1',
+          status: MessageStatus.Success,
+          content: '{"published": true}',
+          duration: 62_000,
+        },
+      },
+    ],
+  },
+  {
+    id: 'mock-process-done-final',
+    role: MessageRole.Assistant,
+    content:
+      '这三个是你手动挂载到当前会话的 skill，各自定位如下：\n\n1. **knowlege-ba1** — 产品手册「端到端」生成流水线\n2. **knowlege-ba2** — 内容「注入」iWiki 的底层工具\n3. **knowlege-ba3** — 乐享知识库全功能 Skill',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-done-final',
+    createdAt: mockCreatedAtAgo(0),
+  },
+  {
+    id: 'mock-process-running-user',
+    role: MessageRole.User,
+    content: '继续看 knowlege-ba2 怎么把内容写进 iWiki',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-running-user',
+    createdAt: mockCreatedAtAgo(80_000),
+  },
+  {
+    id: 'mock-process-running-intro',
+    role: MessageRole.Assistant,
+    content: '我先核对 iWiki 编辑器的注入限制，再说明为什么不能用 insertHTML。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-running-intro',
+    createdAt: mockCreatedAtAgo(75_000),
+  },
+  {
+    id: 'mock-process-running-skill',
+    role: MessageRole.Assistant,
+    content: '',
+    name: 'react_agent',
+    status: MessageStatus.Streaming,
+    messageId: 'mock-process-running-skill',
+    createdAt: mockCreatedAtAgo(20_000),
+    toolCalls: [
+      {
+        id: 'mock-process-tc-ba2',
+        type: 'function',
+        function: {
+          name: 'knowlege-ba2',
+          function_type: 'skill',
+          description: '把 Markdown / HTML 注入 iWiki 编辑页。',
+          arguments: '{"target": "iwiki.woa.com"}',
+        },
+      },
+    ],
+  },
+  {
+    id: 'mock-process-error-user',
+    role: MessageRole.User,
+    content: '再试一次写入，如果失败就停下来',
+    name: 'user',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-error-user',
+    createdAt: mockCreatedAtAgo(12_000),
+  },
+  {
+    id: 'mock-process-error-intro',
+    role: MessageRole.Assistant,
+    content: '正在重试写入 iWiki。',
+    name: 'react_agent',
+    status: MessageStatus.Complete,
+    messageId: 'mock-process-error-intro',
+    createdAt: mockCreatedAtAgo(8_000),
+  },
+  {
+    id: 'mock-process-error-final',
+    role: MessageRole.Assistant,
+    content: '写入失败：iWiki 编辑页没有返回可粘贴的选区。',
+    name: 'react_agent',
+    status: MessageStatus.Error,
+    messageId: 'mock-process-error-final',
+    createdAt: mockCreatedAtAgo(3_000),
+    toolCalls: [
+      {
+        id: 'mock-process-tc-ba2-error',
+        type: 'function',
+        function: {
+          name: 'knowlege-ba2',
+          function_type: 'skill',
+          description: '把 Markdown / HTML 注入 iWiki 编辑页。',
+          arguments: '{"target": "iwiki.woa.com"}',
+        },
+        toolMessage: {
+          toolCallId: 'mock-process-tc-ba2-error',
+          status: MessageStatus.Error,
+          error: '编辑页未就绪',
+          content: '编辑页未就绪',
+          duration: 5_000,
+        },
+      },
+    ],
+  },
 ] as Message[];
 
 /**

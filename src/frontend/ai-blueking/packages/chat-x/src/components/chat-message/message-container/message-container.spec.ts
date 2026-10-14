@@ -176,6 +176,12 @@ vi.mock('../../../icons', () => ({
       return () => h('span', { class: 'mock-close-circle-icon' });
     },
   }),
+  ChevronRightIcon: defineComponent({
+    name: 'ChevronRightIcon',
+    setup() {
+      return () => h('span', { class: 'ai-chevron-right-icon' });
+    },
+  }),
 }));
 
 // Helper function to create test messages
@@ -366,13 +372,19 @@ describe('MessageContainer', () => {
     });
 
     it('每条消息都应该被带 data-message-id 的容器包裹', async () => {
+      // 生成中不折叠，两条消息都会留在 DOM 里
       const messages: Message[] = [
         createAssistantMessage('1', 'Message 1', 1),
         createAssistantMessage('2', 'Message 2', 2),
       ];
 
       wrapper = mount(MessageContainer, {
-        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          messageStatus: MessageStatus.Streaming,
+        },
       });
 
       await nextTick();
@@ -1653,6 +1665,147 @@ describe('MessageContainer', () => {
 
       const render = wrapper.find('.mock-message-render');
       expect(JSON.parse(render.attributes('data-user-tools-json') ?? '[]')).toEqual(hiddenTools);
+    });
+  });
+
+  describe('助手过程折叠', () => {
+    const createProcessMessage = (id: string, content: string, status: MessageStatus, createdAt: string) =>
+      ({ ...createAssistantMessage(id, content, Number(id)), status, createdAt }) as Message;
+
+    it('单条助手消息应该显示状态栏但不显示箭头；前面没有用户提问时不显示耗时', async () => {
+      const messages = [createAssistantMessage('1', '只有回答', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成');
+      expect(wrapper.find('.ai-message-process-header .ai-chevron-right-icon').exists()).toBe(false);
+      expect(wrapper.findAll('.mock-message-render')).toHaveLength(1);
+    });
+
+    it('单条助手消息应该用前一条用户提问的 createdAt 计算耗时', async () => {
+      const messages: Message[] = [
+        { ...createUserMessage('1', '提问', 1), createdAt: '2026-01-01T00:00:00.000Z' },
+        createProcessMessage('2', '回答', MessageStatus.Complete, '2026-01-01T00:00:08.000Z'),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：8s');
+      expect(wrapper.find('.ai-message-process-header .ai-chevron-right-icon').exists()).toBe(false);
+    });
+
+    it('用户消息组不应该显示状态栏', async () => {
+      const messages = [createUserMessage('1', '提问', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+    });
+
+    it('终态后应该只展示最后一条，点击状态栏可以展开再收起', async () => {
+      const messages: Message[] = [
+        { ...createUserMessage('0', '提问', 0), createdAt: '2026-01-01T00:00:00.000Z' },
+        createProcessMessage('1', '过程一', MessageStatus.Complete, '2026-01-01T00:00:30.000Z'),
+        createProcessMessage('2', '过程二', MessageStatus.Complete, '2026-01-01T00:01:00.000Z'),
+        createProcessMessage('3', '最终回答', MessageStatus.Complete, '2026-01-01T00:02:02.000Z'),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await nextTick();
+
+      const assistantTexts = () =>
+        wrapper
+          .findAll(`.mock-message-render[data-role="${MessageRole.Assistant}"]`)
+          .map(node => node.text());
+
+      expect(assistantTexts()).toEqual(['最终回答']);
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时：2m2s');
+
+      await wrapper.find('.ai-message-process-header').trigger('click');
+      expect(assistantTexts()).toEqual(['过程一', '过程二', '最终回答']);
+
+      await wrapper.find('.ai-message-process-header').trigger('click');
+      expect(assistantTexts()).toEqual(['最终回答']);
+    });
+
+    it('messageStatus 为生成中时，最后一组应该展示全部消息并显示处理中', async () => {
+      const messages = [
+        createProcessMessage('1', '过程', MessageStatus.Complete, '2026-01-01T00:00:00.000Z'),
+        createProcessMessage('2', '正在输出', MessageStatus.Complete, '2026-01-01T00:00:01.000Z'),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          messageStatus: MessageStatus.Streaming,
+        },
+      });
+      await nextTick();
+
+      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).toEqual(['过程', '正在输出']);
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('处理中');
+      expect(wrapper.find('.ai-message-process-header .ai-chevron-right-icon').exists()).toBe(false);
+
+      await wrapper.find('.ai-message-process-header').trigger('click');
+      expect(wrapper.findAll('.mock-message-render')).toHaveLength(2);
+    });
+
+    it('生成中只有最后一组显示处理中，之前的组按已完成折叠', async () => {
+      const messages: Message[] = [
+        { ...createUserMessage('1', '第一问', 1), createdAt: '2026-01-01T00:00:00.000Z' },
+        createProcessMessage('2', '历史过程', MessageStatus.Complete, '2026-01-01T00:00:02.000Z'),
+        createProcessMessage('3', '历史回答', MessageStatus.Complete, '2026-01-01T00:00:04.000Z'),
+        { ...createUserMessage('4', '第二问', 4), createdAt: '2026-01-01T00:01:00.000Z' },
+        createProcessMessage('5', '当前输出', MessageStatus.Streaming, '2026-01-01T00:01:01.000Z'),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          messageStatus: MessageStatus.Streaming,
+        },
+      });
+      await nextTick();
+
+      const headers = wrapper.findAll('.ai-message-process-header-text').map(node => node.text());
+      expect(headers).toEqual(['已完成，耗时：4s', '处理中']);
+      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).not.toContain('历史过程');
+    });
+
+    it('Share 模式下即使 messageStatus 为生成中也应该按终态展示', async () => {
+      const messages = [
+        createProcessMessage('1', '过程', MessageStatus.Complete, '2026-01-01T00:00:00.000Z'),
+        createProcessMessage('2', '回答', MessageStatus.Complete, '2026-01-01T00:00:01.000Z'),
+      ];
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups: buildGroups(messages),
+          messageStatus: MessageStatus.Streaming,
+          renderMode: RenderMode.Share,
+        },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成');
+      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).toEqual(['回答']);
     });
   });
 });
