@@ -87,3 +87,5 @@ aiSummary: >
 | [TextContent 文本内容](/components/rendering/text-content) | 内容渲染 | `src/components/chat-content/text-content/text-content.vue` | 内部 | 已覆盖 |
 | [ChatContainer 聊天容器](/components/setup/chat-container) | 对话搭建 | `src/components/chat-container/chat-container.vue` | 公开 | 已覆盖 |
 | [MessageContainer 消息列表容器](/components/setup/message-container) | 对话搭建 | `src/components/chat-message/message-container/message-container.vue` | 公开 | 已覆盖 |
+| [MessageProcessHeader 过程状态栏](/components/setup/message-container#助手过程状态栏) | 对话搭建 | `src/components/chat-message/message-process/message-process-header.vue` | 内部 | 已覆盖 |
+| [MessageProcessList 过程消息列表](/components/setup/message-container#助手过程状态栏) | 对话搭建 | `src/components/chat-message/message-process/message-process-list.vue` | 内部 | 已覆盖 |
