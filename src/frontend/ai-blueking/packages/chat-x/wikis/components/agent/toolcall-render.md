@@ -220,7 +220,7 @@ isPending = !isSuccess && !isError; // 其余（含 pending / streaming / stop /
 - **括号写法**：头部渲染用半角括号并在两侧补 `&nbsp;` 撑开间距；`overflow-tips` 气泡里的纯文本用全角括号，形如 `调用工具 search（成功，耗时：1.2s）`
 - **失败优先**：`toolMessage.error` 有值时即便 `status` 是成功态也判为失败
 
-进行中的「文字 loading」由 CSS 实现：`.toolcall-header-title.is-loading` 用 `linear-gradient` + `background-clip: text` 让一条光带以 `1.8s linear infinite` 循环扫过文字；`prefers-reduced-motion: reduce` 下自动关闭动画。
+进行中的「文字 loading」由 `src/styles/text-shimmer.scss` 的 `text-shimmer` mixin 实现，挂在 `.toolcall-header-title.is-loading` 上：`linear-gradient` + `background-clip: text`，光带以 `1.8s linear infinite` 循环扫过；`prefers-reduced-motion: reduce` 下关闭动画。助手过程状态栏的「处理中」使用同一 mixin。
 
 **三种状态对比**
 
