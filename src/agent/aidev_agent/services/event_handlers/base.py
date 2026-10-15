@@ -155,6 +155,10 @@ class BaseSessionWriter(ABC):
         self._content_ids_by_message_id: dict[str, int] = {}
         # 用于追踪本次运行是否因用户取消/暂停而结束
         self._is_cancelled: bool = False
+        # 用于追踪本次运行是否发生过 run_error（与 _is_cancelled 对等，决定 set_streaming_finished 的终态）
+        # 必须在基类初始化：AGUIPlatformWriter 会跳过 AGUISessionWriter.__init__ 直接调基类，
+        # 否则 set_streaming_finished 读 self._has_run_error 会 AttributeError。
+        self._has_run_error: bool = False
         # RUN_ERROR(cancelled) 与 RUN_FINISHED(cancelled) 可能连续到达，
         # 只允许同一 writer 补写一次“用户已取消”。
         self._cancelled_messages_written: bool = False
