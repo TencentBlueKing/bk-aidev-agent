@@ -209,6 +209,18 @@ def test_model_context_options_data_assembled():
     assert cfg.model_context_options_data["llm_code_agent_type"] == "deepseek_r1"
 
 
+@pytest.mark.parametrize("vision, expected", [(True, True), (False, False), (None, False)])
+def test_get_agent_config_support_vision_from_support_upload(vision, expected):
+    """默认模型的 support_upload.vision 写入 AgentConfig.support_vision。"""
+    raw = _build_raw()
+    if vision is None:
+        raw["prompt_setting"].pop("support_upload", None)
+    else:
+        raw["prompt_setting"]["support_upload"] = {"vision": vision}
+    cfg = _StubResourceManager(raw_factory=lambda *_: raw).get_agent_config("a")
+    assert cfg.support_vision is expected
+
+
 def test_retrieve_failure_wrapped_as_value_error():
     rm = _StubResourceManager(raise_exc=RuntimeError("boom"))
     with pytest.raises(ValueError, match="Failed to retrieve agent config"):

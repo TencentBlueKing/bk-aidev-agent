@@ -2301,7 +2301,14 @@ class ChatAgentBuilder:
         return migration_model_context_options_from_agent_options_v1(self.ctx.agent_config.agent_options)
 
     def build_support_vision(self) -> bool:
-        """从 prompt_setting.support_upload.vision 构建 support_vision"""
+        """按本轮 chat_model 的视觉能力构建 support_vision。
+
+        AgentConfig.support_vision 由装配层按当前 chat_model 写入：默认模型取
+        support_upload.vision，热切换后取该模型 property.support_vision。
+        未解析时回落 support_upload.vision，兼容手写 / 旧版 AgentConfig。
+        """
+        if self.ctx.agent_config.support_vision is not None:
+            return bool(self.ctx.agent_config.support_vision)
         support_upload = self.ctx.agent_config.model_context_options_data.get("support_upload") or {}
         return bool(support_upload.get("vision", False))
 

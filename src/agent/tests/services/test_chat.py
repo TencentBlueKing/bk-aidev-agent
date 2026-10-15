@@ -17,7 +17,8 @@ from aidev_agent.core.nodes.model.chat_history_assembly import (
     convert_chat_history_to_messages,
     inject_role_system,
 )
-from aidev_agent.enums import PromptRole
+from aidev_agent.enums import AgentBuildType, PromptRole
+from aidev_agent.enums import AgentType as AT
 from aidev_agent.packages.interrupt_manager import (
     ASK_USER_QUESTION_REASON,
     ASK_USER_QUESTION_SKIPPED_CONTENT,
@@ -39,6 +40,7 @@ from aidev_agent.pydantic_models import (
 )
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.agent.chat import ChatAgentBuilder
+from aidev_agent.services.agent.factory import AgentInstanceFactory
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
@@ -2905,6 +2907,86 @@ class TestAgentFactory2Chat:
         raw["prompt_setting"]["support_upload"] = {"vision": False}
         agent = self._build_agent(raw=raw)
         assert agent.support_vision is False
+
+    def test_support_vision_follows_hot_swapped_chat_model(self):
+        """默认模型 support_upload.vision=True，热切换到非视觉模型后按本轮 chat_model 降级。
+
+        复现：aidev-chat-auto 的 info 仍允许上传，但本轮 chat_model 为 DeepSeek-V4-Flash
+        时，binary 图片不得内联进主模型输入。
+        """
+
+        class _HotSwapRM(_FactoryStubRM):
+            def get_agent_config(self, agent_code, version=None, **kwargs):
+                config = super().get_agent_config(agent_code, version=version, **kwargs)
+                config.chat_model = "deepseek-v4-flash"
+                config.support_vision = False
+                return config
+
+        rm = _HotSwapRM(raw=_build_factory_raw())
+        with patch.object(ChatModel, "get_setup_instance", return_value=MagicMock()):
+            agent = AgentInstanceFactory.build_agent(
+                agent_code="test-agent",
+                agent_type=AT.CHAT,
+                build_type=AgentBuildType.DIRECT,
+                resource_manager=rm,
+                checkpointer=MemorySaver(),
+            )
+
+        assert agent.support_vision is False
+        agent.chat_history = [
+            ChatPrompt(
+                role=PromptRole.USER.value,
+                content=[
+                    {
+                        "type": "binary",
+                        "id": "files/image.png",
+                        "url": "https://example.test/image.png",
+                        "mime_type": "image/png",
+                    },
+                    {"type": "text", "text": "描述这张图片"},
+                ],
+            )
+        ]
+        history = agent._build_llm_history()
+        converted = convert_chat_history_to_messages(
+            history,
+            model_context_options=agent.model_context_options,
+            model_name="deepseek-v4-flash",
+            agent_info=agent.agent_info,
+            generating_keyword=agent.generating_keyword,
+            files=[],
+            support_vision=agent.support_vision,
+        )
+        human = next(message for message in converted if isinstance(message, HumanMessage))
+        assert human.content[0]["type"] == "text"
+        assert "files/image.png" in human.content[0]["text"]
+        assert not any(item.get("type") in {"binary", "image_url"} for item in human.content)
+
+    def test_build_support_vision_prefers_resolved_chat_model_flag(self):
+        """本轮 chat_model 已解析出 support_vision 时，不再读默认模型的 support_upload。"""
+        config = _build_legacy_agent_config()
+        config.model_context_options_data["support_upload"] = {"vision": True}
+        config.support_vision = False
+        ctx = AgentBuildContext(
+            agent_code="legacy-agent",
+            agent_type=AT.CHAT,
+            resource_manager=_FactoryStubRM(),
+            agent_config=config,
+        )
+        assert ChatAgentBuilder(ctx).build_support_vision() is False
+
+    def test_build_support_vision_falls_back_to_support_upload(self):
+        """未解析 support_vision 时回落 support_upload.vision，兼容手写 AgentConfig。"""
+        config = _build_legacy_agent_config()
+        config.model_context_options_data["support_upload"] = {"vision": True}
+        config.support_vision = None
+        ctx = AgentBuildContext(
+            agent_code="legacy-agent",
+            agent_type=AT.CHAT,
+            resource_manager=_FactoryStubRM(),
+            agent_config=config,
+        )
+        assert ChatAgentBuilder(ctx).build_support_vision() is True
 
     def test_knowledge_query_options_from_knowledgebase_settings(self):
         """knowledgebase_settings 相关配置 → knowledge_query_options，document_fragment_count=0 不映射 rough_recall_topk"""

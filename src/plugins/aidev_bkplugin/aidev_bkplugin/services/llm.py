@@ -62,6 +62,20 @@ class LLMService:
         return result.get("data", []) or []
 
     @staticmethod
+    def get_llm(
+        username: str = "",
+        llm_code: str = "",
+        resource_manager: AgentResourceManager = None,
+    ) -> dict[str, Any] | None:
+        """按 ``llm_code`` 取当前空间可用模型；找不到返回 None。"""
+        if not llm_code:
+            return None
+        for llm in LLMService.list_llms(username=username, resource_manager=resource_manager):
+            if llm.get("llm_code") == llm_code:
+                return llm
+        return None
+
+    @staticmethod
     def is_llm_accessible(
         username: str = "", llm_code: str = "", resource_manager: AgentResourceManager = None
     ) -> bool:
@@ -72,5 +86,4 @@ class LLMService:
         """
         if not llm_code:
             return True
-        llms = LLMService.list_llms(username=username, resource_manager=resource_manager)
-        return any(llm.get("llm_code") == llm_code for llm in llms)
+        return LLMService.get_llm(username=username, llm_code=llm_code, resource_manager=resource_manager) is not None

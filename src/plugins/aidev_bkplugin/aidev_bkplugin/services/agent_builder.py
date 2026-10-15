@@ -22,6 +22,7 @@ from django.conf import settings
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .event_resource_manager import with_database_events
+from .llm import LLMService
 
 logger = getLogger(__name__)
 
@@ -39,12 +40,35 @@ class LLMOverrideResourceManager(AgentResourceManager):
         # 避免 LLMOverrideResourceManager("alice", "gpt") 被静默解读成应用凭证。
         super().__init__(app_code=app_code, app_secret=app_secret, username=username)
         self.model = model or ""
+        # 同一 rm 实例（即一次请求）内 get_agent_config 会被多次调用，按 model 缓存视觉能力，避免重复拉模型列表
+        self._support_vision_cache: dict[str, bool] = {}
 
     def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:
         config = super().get_agent_config(agent_code, version=version, **kwargs)
         if self.model:
             config.chat_model = self.model
+            config.support_vision = self._resolve_model_support_vision()
         return config
+
+    def _resolve_model_support_vision(self) -> bool:
+        """返回热切换后 chat_model 的视觉能力；同一实例按 model 只查询一次。"""
+        if self.model not in self._support_vision_cache:
+            self._support_vision_cache[self.model] = self._fetch_model_support_vision()
+        return self._support_vision_cache[self.model]
+
+    def _fetch_model_support_vision(self) -> bool:
+        """按 chat_model 取 property.support_vision；查不到或查询失败按不支持视觉。"""
+        try:
+            llm = LLMService.get_llm(
+                username=self.username,
+                llm_code=self.model,
+                resource_manager=self,
+            )
+        except Exception:
+            logger.warning("热切换后查询模型 %s 的 support_vision 失败，按不支持视觉处理", self.model, exc_info=True)
+            return False
+        property_data = (llm or {}).get("property") or {}
+        return bool(property_data.get("support_vision", False))
 
 
 class AgentBuilder:

@@ -33,3 +33,16 @@ def test_is_llm_accessible_forwards_resource_manager_to_list_llms():
     with patch.object(LLMService, "list_llms", return_value=[{"llm_code": "qwen-plus"}]) as mock_list:
         assert LLMService.is_llm_accessible(username="alice", llm_code="qwen-plus", resource_manager=rm) is True
     mock_list.assert_called_once_with(username="alice", resource_manager=rm)
+
+
+def test_get_llm_returns_matching_item():
+    rm = MagicMock(name="request_rm")
+    item = {"llm_code": "deepseek-v4-flash", "property": {"support_vision": False}}
+    with patch.object(LLMService, "list_llms", return_value=[{"llm_code": "qwen-plus"}, item]) as mock_list:
+        assert LLMService.get_llm(username="alice", llm_code="deepseek-v4-flash", resource_manager=rm) == item
+    mock_list.assert_called_once_with(username="alice", resource_manager=rm)
+
+
+def test_get_llm_returns_none_when_missing():
+    with patch.object(LLMService, "list_llms", return_value=[{"llm_code": "qwen-plus"}]):
+        assert LLMService.get_llm(username="alice", llm_code="missing") is None

@@ -16,6 +16,9 @@ sys.modules.setdefault("bk_plugin_framework.kit.decorators", MagicMock(inject_us
 
 # 必须在模块级导入：tests/views 下的用例会用假模块永久替换 sys.modules["aidev_bkplugin.views.base"]，
 # 到测试执行期再 import 只能拿到 MagicMock。
+from aidev_agent.packages.resource_manager.agent import AgentResourceManager  # noqa: E402
+from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager  # noqa: E402
+from aidev_bkplugin.services.llm import LLMService  # noqa: E402
 from aidev_bkplugin.views.base import PluginResourceManager  # noqa: E402
 
 
@@ -112,21 +115,92 @@ def test_by_session_code_wraps_user_resource_manager_for_events():
 
 
 def test_llm_override_resource_manager_overrides_chat_model_only():
-    """model 热切换核心：LLMOverrideResourceManager 仅覆盖 chat_model，保留 non_thinking_llm。
+    """model 热切换核心：覆盖 chat_model 与本轮 support_vision，保留 non_thinking_llm。
 
     直接测 resource manager 的 get_agent_config，不走 AgentBuilder 全链路，
     避免引入 checkpointer / factory 等 builder 装配副作用。
     """
-    from aidev_agent.packages.resource_manager.agent import AgentResourceManager
-    from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
-
     config = MagicMock(name="agent_config")
     config.chat_model = "orig-chat"
     config.non_thinking_llm = "orig-nt"
-    with patch.object(AgentResourceManager, "get_agent_config", return_value=config):
+    config.support_vision = True
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", return_value=config),
+        patch.object(
+            LLMService,
+            "get_llm",
+            return_value={"llm_code": "hy3-preview", "property": {"support_vision": False}},
+        ) as mock_get_llm,
+    ):
         result = LLMOverrideResourceManager(username="alice", model="hy3-preview").get_agent_config("x")
     assert result.chat_model == "hy3-preview"
     assert result.non_thinking_llm == "orig-nt"
+    assert result.support_vision is False
+    mock_get_llm.assert_called_once()
+
+
+def test_llm_override_keeps_vision_when_swapped_model_supports_it():
+    """热切换到仍支持视觉的模型时，support_vision 保持 True。"""
+    config = MagicMock(name="agent_config")
+    config.chat_model = "orig-chat"
+    config.support_vision = False
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", return_value=config),
+        patch.object(
+            LLMService,
+            "get_llm",
+            return_value={"llm_code": "hy-vision", "property": {"support_vision": True}},
+        ),
+    ):
+        result = LLMOverrideResourceManager(username="alice", model="hy-vision").get_agent_config("x")
+    assert result.support_vision is True
+
+
+def test_llm_override_defaults_support_vision_false_when_lookup_fails():
+    """热切换后查不到模型属性时，按不支持视觉处理，避免把图内联进未知模型。"""
+    config = MagicMock(name="agent_config")
+    config.chat_model = "orig-chat"
+    config.support_vision = True
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", return_value=config),
+        patch.object(LLMService, "get_llm", return_value=None),
+    ):
+        result = LLMOverrideResourceManager(username="alice", model="unknown-model").get_agent_config("x")
+    assert result.support_vision is False
+
+
+def test_llm_override_defaults_support_vision_false_when_lookup_raises():
+    """模型列表查询抛异常时记录告警并按不支持视觉处理，不影响本轮装配。"""
+    config = MagicMock(name="agent_config")
+    config.chat_model = "orig-chat"
+    config.support_vision = True
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", return_value=config),
+        patch.object(LLMService, "get_llm", side_effect=RuntimeError("gateway down")),
+    ):
+        result = LLMOverrideResourceManager(username="alice", model="hy-vision").get_agent_config("x")
+    assert result.support_vision is False
+
+
+def test_llm_override_queries_model_list_once_per_resource_manager():
+    """同一 rm 实例（一次请求）内多次 get_agent_config 只查询一次模型列表。
+
+    factory 在一次装配中会对同一 rm 调用两次 get_agent_config，子智能体再加一次。
+    """
+    rm = LLMOverrideResourceManager(username="alice", model="hy-vision")
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", side_effect=lambda *a, **kw: MagicMock()),
+        patch.object(
+            LLMService,
+            "get_llm",
+            return_value={"llm_code": "hy-vision", "property": {"support_vision": True}},
+        ) as mock_get_llm,
+    ):
+        first = rm.get_agent_config("x")
+        second = rm.get_agent_config("y")
+    assert first.support_vision is True
+    assert second.support_vision is True
+    mock_get_llm.assert_called_once()
 
 
 def test_llm_override_resource_manager_positional_args_are_username_and_model():

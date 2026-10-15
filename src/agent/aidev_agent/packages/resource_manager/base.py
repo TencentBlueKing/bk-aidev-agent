@@ -492,10 +492,12 @@ class BaseResourceManager(abc.ABC):
         else:
             related_skills = related_skills_data
 
+        support_upload = prompt_setting.get("support_upload") or {}
         return AgentConfig(
             agent_code=agent_code,
             agent_name=res["agent_name"],
             chat_model=prompt_setting.get("llm_code", ""),
+            support_vision=bool(support_upload.get("vision", False)),
             fallback_model=prompt_setting.get("fallback_model"),
             non_thinking_llm=prompt_setting.get("non_thinking_llm") or prompt_setting.get("llm_code", ""),
             fast_llm=settings.BKAI_FAST_LLM if settings.BKAI_FAST_LLM else prompt_setting.get("fast_llm", ""),

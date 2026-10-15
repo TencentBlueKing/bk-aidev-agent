@@ -1079,6 +1079,12 @@ class AgentConfig(BaseModel):
     agent_code: str = Field(..., description="智能体代码")
     agent_name: str = Field(..., description="智能体名称")
     chat_model: str = Field(..., description="LLM模型名称")
+    # 注意：model_context_options_data["support_upload"]["vision"] 只表示默认模型的上传/展示能力，
+    # 热切换后可能与本字段不一致；判断本轮主模型视觉能力应读取本字段（经 ChatAgentBuilder.build_support_vision）。
+    support_vision: bool | None = Field(
+        default=None,
+        description="本轮主模型是否支持视觉；None 表示未解析，装配时回落 support_upload.vision",
+    )
     fallback_model: str | None = Field(default=None, description="主模型请求失败时使用的备用模型")
     non_thinking_llm: str = Field(..., description="非深度思考模型")
     fast_llm: str | None = Field(default=None, description="快速模型")
