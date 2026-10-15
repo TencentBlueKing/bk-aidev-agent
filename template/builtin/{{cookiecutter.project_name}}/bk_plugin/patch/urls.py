@@ -50,6 +50,14 @@ urlpatterns = [
     re_path(r"", include("aidev_ai_blueking.urls")),
 ]
 
+# 同一模板兼容原生 ReAct 与 Craw：未设置 BKAI_CRAW_BACKEND 时为零影响。
+try:
+    from aidev_agent.packages.craw import enable_chat_takeover
+except ImportError:
+    pass
+else:
+    enable_chat_takeover()
+
 if settings.ENVIRONMENT == "dev":
     from bk_plugin_framework.services.debug_panel.views import debug_panel
 
