@@ -576,6 +576,8 @@ class LangGraphAgent:
             return
         should_emit_messages = event["metadata"].get("emit-messages", True)
         should_emit_tool_calls = event["metadata"].get("emit-tool-calls", True)
+        if not should_emit_messages and not should_emit_tool_calls:
+            return
 
         if event["data"]["chunk"].response_metadata.get("finish_reason", None):
             return
@@ -791,6 +793,10 @@ class LangGraphAgent:
 
     async def _handle_on_chat_model_end_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
         if not self.front_end_display:
+            return
+        metadata = event.get("metadata", {})
+        if metadata.get("emit-messages") is False and metadata.get("emit-tool-calls") is False:
+            # Hidden internal models must not create persistence snapshots either.
             return
         # ChatModelEnd CustomEvent：把"模型这一轮的完整输出快照"分发给 DB 侧。
         # SSE 侧 AidevAGUIAgent.run() 通过 skip_encode_custom 跳过编码（不进入 SSE 输出）。

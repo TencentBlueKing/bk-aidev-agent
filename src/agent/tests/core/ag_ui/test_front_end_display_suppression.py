@@ -9,9 +9,10 @@
 
 import asyncio
 
+import pytest
 from aidev_agent.core.ag_ui.agent import LangGraphAgent
 from aidev_agent.core.ag_ui.types import SessionPersistenceEventNames
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 
 def _make_agent(front_end_display: bool) -> LangGraphAgent:
@@ -57,3 +58,28 @@ def test_same_event_suppressed_then_emitted_after_flag_toggle():
 
     assert _chat_model_end_events(suppressed) == []
     assert len(_chat_model_end_events(emitted)) == 1
+
+
+async def _collect_model_events(agent, event):
+    return [item async for item in agent._handle_single_event(event, {})]
+
+
+@pytest.mark.parametrize("content", ["None", "0", "1"])
+@pytest.mark.parametrize("event_type", ["on_chat_model_stream", "on_chat_model_end"])
+def test_internal_model_metadata_suppresses_stream_and_persistence(content, event_type):
+    output = AIMessageChunk(content=content, additional_kwargs={"reasoning_content": "internal reasoning"})
+    event = {
+        "event": event_type,
+        "metadata": {"emit-messages": False, "emit-tool-calls": False},
+        "data": {"chunk": output, "output": AIMessage(content=content)},
+    }
+    agent = _make_agent(front_end_display=True)
+    assert asyncio.run(_collect_model_events(agent, event)) == []
+    assert agent.active_run["has_text_output"] is False
+
+
+def test_hidden_model_does_not_hide_next_visible_model():
+    agent = _make_agent(front_end_display=True)
+    hidden = {**_end_event(), "metadata": {"emit-messages": False, "emit-tool-calls": False}}
+    assert asyncio.run(_async_collect(agent, hidden)) == []
+    assert len(_chat_model_end_events(asyncio.run(_async_collect(agent, _end_event())))) == 1
