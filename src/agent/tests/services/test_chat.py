@@ -446,10 +446,10 @@ class TestCommonAgentChatStreaming:
         )
 
     def test_skill_tool_calling_emits_function_type(self):
-        """case 3b: skill 工具调用 → TOOL_CALL_START 携带 functionType="skill"。
+        """case 3b: skill 工具调用 → TOOL_CALL_START 携带 function_type="skill"。
 
-        前端据 toolCall.function.functionType 区分「读取 Skill」/「调用工具」，
-        普通工具不带该键（函数返回空串，不写入事件）。
+        前端据 toolCall.function.function_type 区分「读取 Skill」/「调用工具」，
+        普通工具不带该键（取不到时不写入事件）。
         """
         from langchain_core.tools import StructuredTool
 
@@ -485,7 +485,7 @@ class TestCommonAgentChatStreaming:
         results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
         tool_call_start_events = [r for r in results if r.get("type") == EventType.TOOL_CALL_START]
         assert len(tool_call_start_events) > 0, "应该有工具调用开始事件"
-        assert tool_call_start_events[0]["functionType"] == "skill"
+        assert tool_call_start_events[0]["function_type"] == "skill"
 
     @pytest.mark.skip(reason="待修复：从 checkpoint 恢复的用例暂时跳过")
     def test_resume_from_checkpoint(self):

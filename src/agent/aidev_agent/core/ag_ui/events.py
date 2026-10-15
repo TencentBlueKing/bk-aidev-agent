@@ -13,7 +13,14 @@ class McpToolFetchFailedPayload(BaseModel):
 class ExtendToolCallStartEvent(ToolCallStartEvent):
     description: str | None = None
     mcp_name: str | None = Field(default=None, description="工具调用的模型名称")
-    function_type: str | None = Field(default=None, description="工具类型提示（skill 等），供前端区分展示样式")
+    # serialization_alias 覆盖 ConfiguredBaseModel 的 to_camel 别名，保证 SSE wire 上
+    # 输出 snake 的 function_type（与 DB 落库/前端快照路径的键名一致）；否则 by_alias
+    # 序列化为 functionType，前端读 e.function_type 落空，skill 工具被误显示为"调用工具"。
+    function_type: str | None = Field(
+        default=None,
+        serialization_alias="function_type",
+        description="工具类型提示（skill 等），供前端区分展示样式",
+    )
 
 
 class ExtendToolCallResultEvent(ToolCallResultEvent):
