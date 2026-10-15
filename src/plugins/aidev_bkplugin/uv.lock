@@ -16,8 +16,8 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "2.4.0"
-source = { registry = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/simple/" }
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "asgiref" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0.tar.gz", hash = "sha256:89c51a8343f0f2623ca99b77effae1295ae21d92e88d3332262886fd5db6f8ca" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/f8/dd53174e26b914a4f58ea60455f9373d8bcabe467afeb8194e3aeac9ba95/aidev_agent-3.0.0.tar.gz", hash = "sha256:b5b4b09f0c81b752473960e1d64b7ff012f1603b9bbbd955a354f718dc3bd6b0", size = 1507734, upload-time = "2026-10-15T11:46:19.564Z" }
 wheels = [
-    { url = "https://mirrors.cloud.tencent.com/repository/pypi/tencent_pypi/packages/aidev-agent/2.4.0/aidev_agent-2.4.0-py3-none-any.whl", hash = "sha256:153ee4d64a6e63300ead66c6d094769bce090b8a40f3a3a5ffbacd05fcbe4120" },
+    { url = "https://files.pythonhosted.org/packages/19/e0/daeb73afd939486d6346228602779a64fbf5b798151564716393eefadd8c/aidev_agent-3.0.0-py3-none-any.whl", hash = "sha256:371916c0e2bdc8c534535cd9ebb667590467422907e98d148683791d3236c8e7", size = 915335, upload-time = "2026-10-15T11:46:21.053Z" },
 ]
 
 [package.optional-dependencies]
@@ -71,7 +71,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "2.4.0"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -96,7 +96,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=2.4.0" },
+    { name = "aidev-agent", specifier = ">=3.0.0" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.16rc5,<4.17.0" },
     { name = "django", specifier = ">=4.2.28,<5.0" },
