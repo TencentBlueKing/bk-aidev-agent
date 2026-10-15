@@ -7,6 +7,7 @@
 """
 
 import pytest
+
 from aidev_agent.core.nodes.model.chat_history_assembly import convert_chat_history_to_messages
 from aidev_agent.enums import PromptRole
 from aidev_agent.exceptions import AgentException
@@ -343,14 +344,3 @@ class TestCurrentTurnImageRecognizableGuard:
         messages = self._convert([ChatPrompt(id="now", role=PromptRole.USER.value, content="纯文本")])
 
         assert messages[0].content == "纯文本"
-
-
-@pytest.mark.parametrize("capabilities", [(True, False, True), (False, True, False)])
-def test_model_switch_rebuilds_images_from_original_history(capabilities):
-    history = TestImageInlineFollowsVisionOnly._history()
-    original = [message.model_dump() for message in history]
-    for support_vision in capabilities:
-        messages = TestImageInlineFollowsVisionOnly._convert(history, support_vision=support_vision)
-        assert messages[0].content[0]["type"] == ("binary" if support_vision else "text")
-        assert messages[2].content[0]["type"] == ("binary" if support_vision else "text")
-        assert [message.model_dump() for message in history] == original

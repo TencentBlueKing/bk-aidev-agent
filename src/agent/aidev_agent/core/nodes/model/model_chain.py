@@ -27,12 +27,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.tools import BaseTool
-from openai import BadRequestError, RateLimitError
+from openai import RateLimitError
 from tenacity import RetryError
 
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
-from aidev_agent.utils.file_reference import image_reference_text, image_session_file_path, is_image_content_item
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_model_rate_limit, record_model_retry
@@ -113,43 +112,6 @@ def _attach_images_to_last_human_message(messages: list[BaseMessage], image_cont
         multimodal_content.extend(image_contents)
         messages[idx] = human_message.model_copy(update={"content": multimodal_content})
         return
-
-
-def _image_compatibility_messages(
-    messages: list[BaseMessage], error: BadRequestError, tools: list[BaseTool]
-) -> list[BaseMessage] | None:
-    """Recover from stale vision declarations without losing current image input.
-
-    Only retry explicit image-capability rejections. Historical images become
-    references; a current image requires an available read_image tool so the
-    retry can still answer using its pixels. The persisted history stays intact.
-    """
-    detail = str(error).lower()
-    if not any(marker in detail for marker in ("unsupported multimodal content", "is not a multimodal model")):
-        return None
-    last_user = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
-    can_read_images = any(tool.name == "read_image" for tool in tools)
-    result = []
-    changed = False
-    for message in messages:
-        if not isinstance(message, HumanMessage) or not isinstance(message.content, list):
-            result.append(message)
-            continue
-        content = []
-        for item in message.content:
-            if not isinstance(item, dict) or not (item.get("type") == "image_url" or is_image_content_item(item)):
-                content.append(item)
-                continue
-            path = image_session_file_path(item)
-            if message is last_user and (not can_read_images or not path):
-                return None
-            reference = image_reference_text(path)
-            if path and not can_read_images:
-                reference = f"历史消息包含图片（{path}），当前模型无法识别其内容。"
-            content.append({"type": "text", "text": reference})
-            changed = True
-        result.append(message.model_copy(update={"content": content}))
-    return result if changed else None
 
 
 def build_llm_with_tools(
@@ -281,13 +243,6 @@ def _build_model_chain(
             invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
             response = llm_with_tools.invoke(ctx.messages, config=ctx.config, **invoke_kwargs)
-        except BadRequestError as error:
-            compatible = _image_compatibility_messages(ctx.messages, error, tools)
-            if compatible is None:
-                raise
-            logger.warning("Model rejected images; retrying once with image references")
-            ctx.messages = compatible
-            response = llm_with_tools.invoke(compatible, config=ctx.config, **invoke_kwargs)
         except RateLimitError as error:
             if record_model_rate_limit is not None:
                 record_model_rate_limit(retry_strategy=retry_strategy, error=error)
@@ -352,13 +307,6 @@ def _build_model_chain(
             invoke_kwargs["max_tokens"] = ctx.model_chain_state.max_tokens_override
         try:
             response = await llm_with_tools.ainvoke(ctx.messages, config=ctx.config, **invoke_kwargs)
-        except BadRequestError as error:
-            compatible = _image_compatibility_messages(ctx.messages, error, tools)
-            if compatible is None:
-                raise
-            logger.warning("Model rejected images; retrying once with image references")
-            ctx.messages = compatible
-            response = await llm_with_tools.ainvoke(compatible, config=ctx.config, **invoke_kwargs)
         except RateLimitError as error:
             if record_model_rate_limit is not None:
                 record_model_rate_limit(retry_strategy=retry_strategy, error=error)
