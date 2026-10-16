@@ -71,8 +71,8 @@ ResourceManager.memory_schemas 必须传 username 与 agent_code，返回 `{enab
 
 关闭清理未完成作业，重开只处理新消息，不恢复历史作业。SDK 和平台均按新 enabled_at 过滤旧消息与无时间戳历史，防止完整会话快照补学关闭期间内容；新回答使用宿主时间戳，不能由模型编造。已保存记忆保留，短期 TTL 继续运行。平台先迁移部署、同步网关资源，再升级 SDK；旧共享数据不会自动分配给任何 Agent。
 
-## 空间灰度与 CLI
+## 空间灰度
 
 Agent 默认开启；最终 enabled 由服务端根据 Agent 所属空间的灰度和 Agent 自身开关共同决定。agent_enabled 保留配置值，rollout_enabled 表示空间灰度。两个入口和后台任务使用同一策略，撤回灰度同样清理未完成任务并使旧 epoch 失效，重新放开只接受新消息。
 
-CLI 本地执行模型和工具循环时使用用户 OAuth 的 PrivateResourceManager；CLI 只调用远端 Agent 时由远端 SDK 管理记忆，避免重复提交。身份绑定、接入代码与 HTTP 协议见 [CLI 个人记忆接入](cli-personal-memory.md)。
+通过聊天 API 调用远端 Agent 的客户端，由远端 SDK 管理记忆，无需在客户端集成记忆运行时、注册记忆工具或提交完成事件。

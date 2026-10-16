@@ -13,14 +13,12 @@
 """
 
 from .agent import AgentResourceManager
-from .private import PrivateResourceManager
 from .registry import ResourceManagerProtocol, resource_manager
 
 resource_manager.replace_defaults(AgentResourceManager())
 
 __all__ = [
     "AgentResourceManager",
-    "PrivateResourceManager",
     "ResourceManagerProtocol",
     "resource_manager",
 ]
