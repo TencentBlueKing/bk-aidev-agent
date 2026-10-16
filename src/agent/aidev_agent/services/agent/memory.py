@@ -36,7 +36,9 @@ def completed_history(history, session_id: str) -> list[dict]:
     return snapshot
 
 
-def automatic_personal_memory(manager, username: str, session_id: str, history, messages):
+def automatic_personal_memory(manager, username: str, session_id: str, history, messages, *, agent_code: str = ""):
+    if not isinstance(agent_code, str) or not agent_code.strip():
+        return None
     if not manager or not isinstance(username, str) or not username.strip() or not session_id:
         return None
     if not all(
@@ -44,10 +46,12 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
     ):
         return None
     try:
-        schemas = manager.memory_schemas(username=username, timeout=MEMORY_REQUEST_TIMEOUT)
+        schemas = manager.memory_schemas(username=username, agent_code=agent_code, timeout=MEMORY_REQUEST_TIMEOUT)
+        if not isinstance(schemas, dict) or schemas.get("enabled") is not True:
+            return None
         snapshot = completed_history(history, session_id)
         # Preserve the full host ledger; legacy hosts may omit the current user input.
-        known = {(item["role"], item["text"]) for item in snapshot}
+        known = {(item["role"], item["message_id"]) for item in snapshot}
         visible = (
             messages if not history else [message for message in messages if isinstance(message, HumanMessage)][-1:]
         )
@@ -61,7 +65,7 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
                 continue
             if isinstance(message, AIMessage) and message.tool_calls:
                 continue
-            if (role, message.content) not in known:
+            if (role, message.id) not in known:
                 metadata = message.response_metadata
                 stamp = message_timestamp(metadata.get("created_at")) or message_timestamp(metadata.get("timestamp"))
                 snapshot.append(
@@ -75,6 +79,7 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
                 )
         context = {
             "username": username,
+            "agent_code": agent_code,
             "session_id": session_id,
             "session_date": session_date(history),
             "messages": snapshot,

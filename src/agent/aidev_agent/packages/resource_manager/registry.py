@@ -69,7 +69,7 @@ class ResourceManagerProtocol(Protocol):
         """查询会话是否为续流（resume）会话（业务返回结构 = 后端 ``data`` 布尔值）"""
         ...
 
-    def memory_schemas(self, *, username: str, **kwargs) -> list[dict]:
+    def memory_schemas(self, *, username: str, agent_code: str, **kwargs) -> dict:
         """Return authoritative personal-memory tool schemas for an authenticated user."""
         ...
 
