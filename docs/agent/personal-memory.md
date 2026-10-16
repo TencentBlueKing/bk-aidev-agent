@@ -65,8 +65,14 @@ agent, config = CommonQAAgent.get_agent_executor(
 
 平台智能体配置页提供个人记忆开关，立即对该 Agent 全部用户和版本生效；不需要新增个人设置页面。标准 ChatCompletionAgent 使用构建上下文中的真实 agent_code，子 Agent 使用自身编码，不继承父 Agent 的记忆空间。手工构建运行时须在 context_provider 返回 agent_code；缺少身份时跳过自动记忆。
 
-ResourceManager.memory_schemas 必须传 username 与 agent_code，返回 `{enabled, agent_code, memory_epoch, enabled_at, schemas}`。PersonalMemoryRuntime 的 schemas 参数接受该完整发现结果，校验 Agent 一致性和启用代次。关闭时自动入口返回 None，不附加工具或提交完成快照；平台不可用时保留正常聊天。每个 Agent/用户/轮次重新构造运行时，不跨 Agent 复用。
+ResourceManager.memory_schemas 必须传 username 与 agent_code，返回 `{enabled, agent_enabled, rollout_enabled, agent_code, memory_epoch, enabled_at, schemas}`。PersonalMemoryRuntime 的 schemas 参数接受该完整发现结果，校验 Agent 一致性和启用代次。关闭时自动入口返回 None，不附加工具或提交完成快照；平台不可用时保留正常聊天。每个 Agent/用户/轮次重新构造运行时，不跨 Agent 复用。
 
 工具参数不包含 Agent 身份。运行时在 HTTP 请求顶层添加 agent_code 和 memory_epoch，context 只包含会话证据。平台始终执行隔离和代次校验，因此中途关闭后的旧运行时不能写入；旧 SDK 未提供 Agent/代次时平台拒绝请求，正常聊天继续。
 
 关闭清理未完成作业，重开只处理新消息，不恢复历史作业。SDK 和平台均按新 enabled_at 过滤旧消息与无时间戳历史，防止完整会话快照补学关闭期间内容；新回答使用宿主时间戳，不能由模型编造。已保存记忆保留，短期 TTL 继续运行。平台先迁移部署、同步网关资源，再升级 SDK；旧共享数据不会自动分配给任何 Agent。
+
+## 空间灰度与 CLI
+
+Agent 默认开启；最终 enabled 由服务端根据 Agent 所属空间的灰度和 Agent 自身开关共同决定。agent_enabled 保留配置值，rollout_enabled 表示空间灰度。两个入口和后台任务使用同一策略，撤回灰度同样清理未完成任务并使旧 epoch 失效，重新放开只接受新消息。
+
+CLI 本地执行模型和工具循环时使用用户 OAuth 的 PrivateResourceManager；CLI 只调用远端 Agent 时由远端 SDK 管理记忆，避免重复提交。身份绑定、接入代码与 HTTP 协议见 [CLI 个人记忆接入](cli-personal-memory.md)。
