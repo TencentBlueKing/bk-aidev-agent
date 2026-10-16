@@ -4,7 +4,7 @@
 
 ## 默认启用
 
-使用 ChatCompletionAgent、AgentInstanceFactory 或 SDK 生成的标准模板时，无需新增接入代码或开关。SDK 从每次请求已有的 ResourceManager、认证用户、会话 ID 和完整聊天记录构建 PersonalMemoryRuntime，自动加入三项记忆工具和回答完成回调。身份来自认证构建上下文，不能通过模型参数或 ExecuteKwargs.executor 覆盖。
+使用 ChatCompletionAgent、AgentInstanceFactory 或 SDK 生成的标准模板时，无需新增接入代码；启停由平台智能体配置页管理。SDK 从每次请求已有的 ResourceManager、认证用户、会话 ID 和完整聊天记录构建 PersonalMemoryRuntime，自动加入三项记忆工具和回答完成回调。身份来自认证构建上下文，不能通过模型参数或 ExecuteKwargs.executor 覆盖。
 
 SDK 每次请求先探测平台 schema。平台接口未部署、响应不合法或服务暂不可用时，本次聊天跳过记忆，下次请求重新探测。记忆 HTTP 请求使用 2 秒超时；工具和完成回调失败时保留原有聊天流程。缺少认证用户时跳过自动接入，不将应用身份当作个人身份。允许先发布 SDK，再发布平台服务。
 
@@ -14,7 +14,7 @@ SDK 调用 `/openapi/aidev/agents/v1/memory/` 智能体运行时入口，沿用�
 
 显式提供 access_token 时，ResourceManager 的 username 必须与该次调用用户一致。共享图的动态用户不能复用固定用户的 token，应使用可按用户解析凭证的 ResourceManager 或按请求创建绑定用户的实例。
 
-平台同时提供 `/openapi/aidev/private/v1/memory/` 用户入口，沿用用户态鉴权和个人 OAuth 支持；个人记忆不提供 app 类入口。两入口共用 `(tenant_id, username)` 归属；同租户同用户跨智能体和空间共享个人记忆，其他用户或租户保持隔离。
+平台同时提供 `/openapi/aidev/private/v1/memory/` 用户入口，沿用用户态鉴权和个人 OAuth 支持；个人记忆不提供 app 类入口。两入口共用 `(tenant_id, username, agent_code)` 归属；同一用户在同一智能体内跨会话复用，其他智能体、用户或租户保持隔离。
 
 ## 自定义图接入
 
@@ -27,6 +27,7 @@ from aidev_agent.services.common_agent.agent import CommonQAAgent
 # 以下数据来自宿主认证和会话管理，不来自模型输出。
 runtime = PersonalMemoryRuntime(
     context_provider=lambda config: {
+        "agent_code": "example-agent",
         "username": authenticated_username,
         "session_id": session_id,
         "session_date": session_date,
@@ -41,7 +42,7 @@ agent, config = CommonQAAgent.get_agent_executor(
 )
 ```
 
-也可使用 `ReActAgentBuilder.enable_personal_memory(runtime)`。运行时上下文在每次工具调用时读取。默认构建工具时会拉取一次 schema，因此 context_provider 必须在构建时能解析认证用户。共享图、动态身份的宿主可以先拉取三项 schema，通过 runtime 的 `schemas` 参数传入，随后从 RunnableConfig 解析每次调用的身份和会话。
+也可使用 `ReActAgentBuilder.enable_personal_memory(runtime)`。运行时上下文在每次工具调用时读取。默认构建工具时会拉取一次 schema，因此 context_provider 必须在构建时能解析认证用户。动态用户身份的宿主可以先拉取完整发现结果，通过 runtime 的 `schemas` 参数传入，随后从 RunnableConfig 解析每次调用的用户和会话；同一运行时的 Agent 身份固定。
 
 成功完成模型回答后，图进入 memory_complete 节点：收集完成的消息、识别本轮实际引用并调用平台 complete_round。工具调用中断、异常退出或没有最终回答时，不提交完成事件。最终回答 ID 为空也不会提交，宿主必须确保消息身份完整。
 
@@ -58,3 +59,14 @@ agent, config = CommonQAAgent.get_agent_executor(
 新增测试覆盖标准聊天入口自动接入、完整历史保留、稳定消息 ID、缺失身份跳过、平台未部署时正常回答，以及工具和完成回调故障容错。另覆盖工具参数与宿主身份分离、工具 artifact、完成回答快照、检索与引用的区别、前轮结果隔离、未完成回答过滤、非法审计输出、动态身份和图结束回调。同时回归已有 ReAct Builder 与资源管理方法。平台测试覆盖 MySQL 5.7 事务、真实 Milvus dense/BM25 与生命周期。
 
 真实线上模型、消息代理和部署环境中的定时任务尚需联调验收。
+
+
+## 智能体开关与重新开启
+
+平台智能体配置页提供个人记忆开关，立即对该 Agent 全部用户和版本生效；不需要新增个人设置页面。标准 ChatCompletionAgent 使用构建上下文中的真实 agent_code，子 Agent 使用自身编码，不继承父 Agent 的记忆空间。手工构建运行时须在 context_provider 返回 agent_code；缺少身份时跳过自动记忆。
+
+ResourceManager.memory_schemas 必须传 username 与 agent_code，返回 `{enabled, agent_code, memory_epoch, enabled_at, schemas}`。PersonalMemoryRuntime 的 schemas 参数接受该完整发现结果，校验 Agent 一致性和启用代次。关闭时自动入口返回 None，不附加工具或提交完成快照；平台不可用时保留正常聊天。每个 Agent/用户/轮次重新构造运行时，不跨 Agent 复用。
+
+工具参数不包含 Agent 身份。运行时在 HTTP 请求顶层添加 agent_code 和 memory_epoch，context 只包含会话证据。平台始终执行隔离和代次校验，因此中途关闭后的旧运行时不能写入；旧 SDK 未提供 Agent/代次时平台拒绝请求，正常聊天继续。
+
+关闭清理未完成作业，重开只处理新消息，不恢复历史作业。SDK 和平台均按新 enabled_at 过滤旧消息与无时间戳历史，防止完整会话快照补学关闭期间内容；新回答使用宿主时间戳，不能由模型编造。已保存记忆保留，短期 TTL 继续运行。平台先迁移部署、同步网关资源，再升级 SDK；旧共享数据不会自动分配给任何 Agent。

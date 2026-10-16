@@ -68,7 +68,7 @@ class PersonalMemoryRuntime:
         *,
         manager=None,
         reference_model=None,
-        schemas: list[dict] | None = None,
+        schemas: dict | None = None,
         best_effort: bool = False,
         request_timeout: float | None = None,
         merge_state_history: bool = True,
@@ -81,6 +81,7 @@ class PersonalMemoryRuntime:
         self.request_timeout = request_timeout
         self.merge_state_history = merge_state_history
         self.message_times = {}
+        self.policy = None
 
     def request_options(self) -> dict:
         return {"timeout": self.request_timeout} if self.request_timeout is not None else {}
@@ -91,6 +92,8 @@ class PersonalMemoryRuntime:
         if (
             not isinstance(username, str)
             or not username.strip()
+            or not isinstance(context.get("agent_code"), str)
+            or not context["agent_code"].strip()
             or not context.get("session_id")
             or not context.get("session_date")
         ):
@@ -99,13 +102,47 @@ class PersonalMemoryRuntime:
         return username, context
 
     def make_tools(self, config: RunnableConfig | None = None) -> list[StructuredTool]:
-        schemas = self.schemas
-        if schemas is None:
-            username, _ = self.context(config or {})
-            schemas = self.manager.memory_schemas(username=username, **self.request_options())
-        if {item["function"]["name"] for item in schemas} != TOOL_NAMES or len(schemas) != 3:
+        username, context = self.context(config or {})
+        policy = self.schemas
+        if policy is None:
+            policy = self.manager.memory_schemas(
+                username=username, agent_code=context["agent_code"], **self.request_options()
+            )
+        if not isinstance(policy, dict) or policy.get("agent_code") != context["agent_code"]:
+            raise ValueError("Platform returned a different memory agent")
+        if type(policy.get("memory_epoch")) is not int or policy["memory_epoch"] < 1:
+            raise ValueError("Platform did not return a valid memory activation")
+        self.policy = policy
+        if policy.get("enabled") is False:
+            return []
+        schemas = policy.get("schemas", [])
+        if (
+            policy.get("enabled") is not True
+            or {item["function"]["name"] for item in schemas} != TOOL_NAMES
+            or len(schemas) != 3
+        ):
             raise ValueError("Platform did not return the three personal-memory tool schemas")
         return [self.make_tool(item["function"]) for item in schemas]
+
+    def scoped_payload(self, context: dict, payload: dict, config: RunnableConfig) -> dict | None:
+        if self.policy is None:
+            self.make_tools(config)
+        if self.policy.get("enabled") is not True:
+            return None
+        context = copy.deepcopy(context)
+        agent_code = context.pop("agent_code")
+        if agent_code != self.policy["agent_code"]:
+            raise ValueError("Memory runtime cannot switch agents")
+        cutoff = self.policy.get("enabled_at")
+        if cutoff:
+            cutoff = datetime.fromisoformat(message_timestamp(cutoff))
+            context["messages"] = [
+                message
+                for message in context["messages"]
+                if message_timestamp(message.get("timestamp"))
+                and datetime.fromisoformat(message_timestamp(message["timestamp"])) >= cutoff
+            ]
+        return {**payload, "agent_code": agent_code, "memory_epoch": self.policy["memory_epoch"], "context": context}
 
     def make_tool(self, schema: dict) -> StructuredTool:
         name = schema["name"]
@@ -113,9 +150,10 @@ class PersonalMemoryRuntime:
         def invoke_memory(config: RunnableConfig, **arguments):
             try:
                 username, context = self.context(config)
-                result = self.manager.memory_tool(
-                    {"name": name, "call": arguments, "context": context}, username=username, **self.request_options()
-                )
+                payload = self.scoped_payload(context, {"name": name, "call": arguments}, config)
+                if payload is None:
+                    return "Personal memory is disabled.", {}
+                result = self.manager.memory_tool(payload, username=username, **self.request_options())
                 artifact = {"personal_memory_hits": result.get("hits", [])} if name == "memory_search" else {}
                 return json.dumps(result, ensure_ascii=False), artifact
             except Exception as error:
@@ -219,7 +257,7 @@ class PersonalMemoryRuntime:
             # Failed auditing must not falsely renew TTL or lose session extraction.
             logger.exception("Personal-memory reference audit failed")
             ids = []
-        self.manager.complete_memory_round(
-            {"round_id": answer.id, "memory_ids": ids, "context": context}, username=username, **self.request_options()
-        )
+        payload = self.scoped_payload(context, {"round_id": answer.id, "memory_ids": ids}, config)
+        if payload is not None and payload["context"]["messages"]:
+            self.manager.complete_memory_round(payload, username=username, **self.request_options())
         return {}

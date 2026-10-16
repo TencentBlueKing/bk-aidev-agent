@@ -22,19 +22,26 @@ def manager():
         }
         for name in ["memory_write", "memory_update", "memory_search"]
     ]
+    result.memory_schemas.return_value = {
+        "enabled": True,
+        "agent_code": "agent-a",
+        "memory_epoch": 1,
+        "enabled_at": None,
+        "schemas": result.memory_schemas.return_value,
+    }
     result.memory_tool.return_value = {"hits": []}
     return result
 
 
 def make_runtime(manager, history=None):
     return automatic_personal_memory(
-        manager, "alice", "session-1", history or [], [HumanMessage(content="Hi", id="u-1")]
+        manager, "alice", "session-1", history or [], [HumanMessage(content="Hi", id="u-1")], agent_code="agent-a"
     )
 
 
 @pytest.mark.parametrize("username", [None, "", "   "])
 def test_missing_user_skips_discovery(manager, username):
-    assert automatic_personal_memory(manager, username, "s", [], []) is None
+    assert automatic_personal_memory(manager, username, "s", [], [], agent_code="agent-a") is None
     manager.memory_schemas.assert_not_called()
 
 
@@ -42,7 +49,7 @@ def test_missing_user_skips_discovery(manager, username):
 def test_unavailable_platform_skips_memory(manager, error):
     manager.memory_schemas.side_effect = error
     assert make_runtime(manager) is None
-    manager.memory_schemas.assert_called_once_with(username="alice", timeout=2)
+    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", timeout=2)
 
 
 def test_invalid_schemas_skip_memory(manager):
@@ -61,6 +68,7 @@ def test_full_ledger_preserves_completed_history_and_date(manager):
         "session-1",
         history,
         [HumanMessage(content="Transformed history", id="old"), HumanMessage(content="Hi", id="u-1")],
+        agent_code="agent-a",
     )
     username, context = runtime.context({})
     assert username == "alice" and context["session_date"] == "2026-10-01"
@@ -84,7 +92,7 @@ def test_multiday_history_retains_each_message_time(manager, timestamp):
         {"id": "old", "role": "user", "content": "Hi", "created_at": "2026-10-01T08:00:00Z"},
         {"id": "new", "role": "user", "content": "Meeting tomorrow", "created_at": timestamp},
     ]
-    runtime = automatic_personal_memory(manager, "alice", "s", history, [])
+    runtime = automatic_personal_memory(manager, "alice", "s", history, [], agent_code="agent-a")
     _, context = runtime.context({})
     assert context["session_date"] == "2026-10-01"
     assert context["messages"][-1]["timestamp"] == "2026-10-09T08:00:00+00:00"
@@ -112,6 +120,7 @@ def test_callback_failure_does_not_interrupt_answer(manager):
 
 def test_standard_chat_automatically_enables_memory(manager):
     agent = ChatCompletionAgent(
+        memory_agent_code="agent-a",
         chat_model=MockChatModel(responses=["Hello"]),
         resource_manager=manager,
         executor_info={"executor": "alice"},
@@ -121,7 +130,7 @@ def test_standard_chat_automatically_enables_memory(manager):
     graph, config = agent._get_agent(messages, execute_kwargs=ExecuteKwargs(executor="other-user"))
     result = graph.invoke({"messages": messages}, config)
     assert result["messages"][-1].content == "Hello"
-    manager.memory_schemas.assert_called_once_with(username="alice", timeout=2)
+    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", timeout=2)
     manager.complete_memory_round.assert_called_once()
     assert manager.complete_memory_round.call_args.kwargs["username"] == "alice"
 
@@ -129,6 +138,7 @@ def test_standard_chat_automatically_enables_memory(manager):
 def test_standard_chat_still_answers_before_platform_deployment(manager):
     manager.memory_schemas.side_effect = ConnectionError("not deployed")
     agent = ChatCompletionAgent(
+        memory_agent_code="agent-a",
         chat_model=MockChatModel(responses=["Hello"]),
         resource_manager=manager,
         executor_info={"executor": "alice"},
@@ -138,3 +148,37 @@ def test_standard_chat_still_answers_before_platform_deployment(manager):
     graph, config = agent._get_agent(messages, execute_kwargs=ExecuteKwargs())
     assert graph.invoke({"messages": messages}, config)["messages"][-1].content == "Hello"
     manager.complete_memory_round.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [False, None])
+def test_disabled_agent_skips_tools_and_snapshot_upload(manager, enabled):
+    manager.memory_schemas.return_value["enabled"] = enabled
+    assert make_runtime(manager) is None
+    manager.memory_tool.assert_not_called()
+    manager.complete_memory_round.assert_not_called()
+
+
+@pytest.mark.parametrize("agent_code", ["", None, "   "])
+def test_missing_agent_skips_memory_discovery(manager, agent_code):
+    assert automatic_personal_memory(manager, "alice", "s", [], [], agent_code=agent_code) is None
+    manager.memory_schemas.assert_not_called()
+
+
+def test_discovery_cannot_switch_agent_identity(manager):
+    manager.memory_schemas.return_value["agent_code"] = "agent-b"
+    assert make_runtime(manager) is None
+    manager.complete_memory_round.assert_not_called()
+
+
+def test_reopened_agent_only_uploads_fresh_messages(manager):
+    manager.memory_schemas.return_value.update(memory_epoch=3, enabled_at="2026-10-09T08:00:00Z")
+    history = [
+        {"id": "old", "role": "user", "content": "Old", "created_at": "2026-10-01T08:00:00Z"},
+        {"id": "new", "role": "user", "content": "New", "created_at": "2026-10-09T08:00:00Z"},
+    ]
+    runtime = automatic_personal_memory(manager, "alice", "s", history, [], agent_code="agent-a")
+    runtime.complete({"messages": [AIMessage(content="Answer", id="a")]}, {})
+    payload = manager.complete_memory_round.call_args.args[0]
+    assert payload["agent_code"] == "agent-a" and payload["memory_epoch"] == 3
+    assert [message["message_id"] for message in payload["context"]["messages"]] == ["new", "a"]
+    assert "agent_code" not in payload["context"]
