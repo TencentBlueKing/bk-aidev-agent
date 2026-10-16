@@ -64,6 +64,7 @@ from aidev_agent.pydantic_models import (
     SecuritySettings,
 )
 from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
+from aidev_agent.services.agent.memory import automatic_personal_memory
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -216,6 +217,7 @@ class ChatCompletionAgent(BaseModel):
             "需 execute_kwargs.executor/session_code，build 期拿不到，D-11）。"
         ),
     )
+    memory_agent_code: str = Field(default="", description="当前运行智能体的记忆隔离身份")
     agent_info: dict | None = Field(default=None, description="原始配置信息，来自 AgentConfig.agent_info")
     max_spawn_depth: int = Field(default=1, description="最大 Agent 嵌套深度，来自 AgentConfig.max_spawn_depth")
     generating_keyword: str | None = Field(
@@ -259,6 +261,7 @@ class ChatCompletionAgent(BaseModel):
         # SecuritySettings()——C2 裁决：兜底只保留在最外层 Chat 入口，ReActAgentBuilder 不再回落。
         if ctx.agent_config is not None:
             self.security_settings = ctx.agent_config.security_settings
+        self.memory_agent_code = ctx.agent_code
         self.skills = builder.build_skills()
         self.tools = builder.build_tools()
         self.mcp_fetch_failures = builder.mcp_fetch_failures
@@ -1568,6 +1571,14 @@ class ChatCompletionAgent(BaseModel):
             self.knowledge_query_options.knowledge_items = self.knowledges
         logger.info(f"callbacks: {self.callbacks}")
         return self.agent_cls.get_agent_executor(
+            personal_memory_runtime=automatic_personal_memory(
+                self.resource_manager,
+                (self.executor_info or {}).get("executor") or getattr(self.resource_manager, "username", ""),
+                self.thread_id,
+                self.chat_history,
+                messages,
+                agent_code=self.memory_agent_code or (self.agent_info or {}).get("agent_code", ""),
+            ),
             llm=self.chat_model,
             non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
             fast_llm=self.chat_model_fast,
