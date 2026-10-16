@@ -276,9 +276,13 @@ class BaseResourceManager(abc.ABC):
             raise ValueError("Personal-memory authorization must come from the resource manager")
         return {key: value for key, value in (headers or {}).items() if key.lower() != "x-bkaidev-user"}
 
-    def memory_schemas(self, *, username: str, **kwargs) -> list[dict]:
+    def memory_schemas(self, *, username: str, agent_code: str, **kwargs) -> dict:
         headers = self._memory_headers(kwargs.pop("headers", None))
-        return self._memory_client(username).api.memory_schemas(headers=headers, **kwargs)["data"]
+        if not isinstance(agent_code, str) or not agent_code.strip():
+            raise ValueError("Personal memory requires an agent code")
+        return self._memory_client(username).api.memory_schemas(
+            params={"agent_code": agent_code}, headers=headers, **kwargs
+        )["data"]
 
     def memory_tool(self, payload: dict, *, username: str, **kwargs) -> dict:
         headers = self._memory_headers(kwargs.pop("headers", None))

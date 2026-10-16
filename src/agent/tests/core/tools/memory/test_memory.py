@@ -55,6 +55,7 @@ def test_completion_preserves_source_times_and_retry_timestamp(runtime):
     runtime.merge_state_history = False
     runtime.context_provider = lambda _: {
         "username": "alice",
+        "agent_code": "agent-a",
         "session_id": "s",
         "session_date": "2026-10-01",
         "messages": [
@@ -92,11 +93,24 @@ def runtime():
         }
         for name in ["memory_write", "memory_update", "memory_search"]
     ]
+    manager.memory_schemas.return_value = {
+        "enabled": True,
+        "agent_code": "agent-a",
+        "memory_epoch": 1,
+        "enabled_at": None,
+        "schemas": manager.memory_schemas.return_value,
+    }
     manager.memory_tool.return_value = {
         "hits": [{"memory_id": "used", "text": "Use Python"}, {"memory_id": "unused", "text": "Prefer tea"}]
     }
     return PersonalMemoryRuntime(
-        lambda config: {"username": "alice", "session_id": "session-1", "session_date": "2026-10-09", "messages": []},
+        lambda config: {
+            "username": "alice",
+            "agent_code": "agent-a",
+            "session_id": "session-1",
+            "session_date": "2026-10-09",
+            "messages": [],
+        },
         manager=manager,
         reference_model=MagicMock(),
     )
@@ -183,10 +197,11 @@ def test_invalid_reference_output_does_not_renew_ttl(runtime):
 def test_runtime_context_is_resolved_per_call(runtime):
     runtime.context_provider = lambda config: {
         "username": config["configurable"]["user"],
+        "agent_code": "agent-a",
         "session_id": "s",
         "session_date": "2026-10-09",
     }
-    tool = runtime.make_tool(runtime.manager.memory_schemas.return_value[2]["function"])
+    tool = runtime.make_tool(runtime.manager.memory_schemas.return_value["schemas"][2]["function"])
     tool.invoke({"query": "x"}, config={"configurable": {"user": "bob"}})
     assert runtime.manager.memory_tool.call_args.kwargs["username"] == "bob"
 
@@ -215,7 +230,9 @@ def test_memory_credentials_follow_each_call_user(monkeypatch, method):
     monkeypatch.setattr(manager, "resolve_access_token", lambda name: f"{name}-token")
     args = [] if method == "memory_schemas" else [{}]
     for username in ["alice", "bob"]:
-        getattr(manager, method)(*args, username=username)
+        getattr(manager, method)(
+            *args, username=username, **({"agent_code": "agent-a"} if method == "memory_schemas" else {})
+        )
         manager.client.update_bkapi_authorization.assert_called_with(
             bk_username=username, access_token=f"{username}-token"
         )
@@ -230,7 +247,9 @@ def test_memory_requires_user_before_creating_client(monkeypatch, method, userna
     monkeypatch.setattr(manager, "get_client", get_client)
     args = [] if method == "memory_schemas" else [{}]
     with pytest.raises(ValueError, match="username"):
-        getattr(manager, method)(*args, username=username)
+        getattr(manager, method)(
+            *args, username=username, **({"agent_code": "agent-a"} if method == "memory_schemas" else {})
+        )
     get_client.assert_not_called()
 
 
@@ -238,13 +257,13 @@ def test_memory_requires_user_before_creating_client(monkeypatch, method, userna
 def test_memory_does_not_reuse_another_users_access_token(bound_user):
     manager = Manager(app_code="app", app_secret="secret", username=bound_user, access_token="other-token")
     with pytest.raises(ValueError, match="bound"):
-        manager.memory_schemas(username="alice")
+        manager.memory_schemas(username="alice", agent_code="agent-a")
 
 
 def test_memory_rejects_authorization_header_override():
     manager = Manager(app_code="app", app_secret="secret")
     with pytest.raises(ValueError, match="authorization"):
-        manager.memory_schemas(username="alice", headers={"x-bkapi-authorization": "foreign"})
+        manager.memory_schemas(username="alice", headers={"x-bkapi-authorization": "foreign"}, agent_code="agent-a")
 
 
 def test_memory_clears_previous_client_token_when_current_user_has_none(monkeypatch):
@@ -261,7 +280,12 @@ def test_memory_clears_previous_client_token_when_current_user_has_none(monkeypa
 
 @pytest.mark.parametrize("username", [None, "", "   "])
 def test_runtime_rejects_empty_host_user(runtime, username):
-    runtime.context_provider = lambda config: {"username": username, "session_id": "s", "session_date": "2026-10-09"}
+    runtime.context_provider = lambda config: {
+        "username": username,
+        "agent_code": "agent-a",
+        "session_id": "s",
+        "session_date": "2026-10-09",
+    }
     with pytest.raises(ValueError, match="username"):
         runtime.make_tools()
     runtime.manager.memory_schemas.assert_not_called()
@@ -311,7 +335,9 @@ def test_sdk_memory_calls_agent_runtime_routes(monkeypatch, method, action, http
     handle = MagicMock(return_value=response)
     monkeypatch.setattr(manager.client.session, "handle", handle)
     monkeypatch.setattr(manager, "resolve_access_token", lambda name: "alice-token")
-    args = [] if method == "memory_schemas" else [{"context": {"session_id": "s"}}]
-    assert getattr(manager, method)(*args, username="alice") == {"ok": True}
+    args = [] if method == "memory_schemas" else [{"context": {"agent_code": "agent-a", "session_id": "s"}}]
+    assert getattr(manager, method)(
+        *args, username="alice", **({"agent_code": "agent-a"} if method == "memory_schemas" else {})
+    ) == {"ok": True}
     assert handle.call_args.kwargs["url"] == f"https://example.com/openapi/aidev/agents/v1/memory/{action}/"
     assert handle.call_args.kwargs["method"] == http_method
