@@ -69,12 +69,13 @@ from .flow_cards import (
     flow_card_task_id,
 )
 from .flow_resume import submit_flow_node_resume
+from .image_reply import prepare_long_connection_collage, render_long_connection_stream_content, upload_collage
 from .models import AgentSession
 from .once import BoundedOnceRegistry
 from .question_cards import bind_question_target, decode_question_key, question_task_id, submitted_question_card
 from .question_resume import prepare_question_submission, submit_question_resume
 from .resume_delivery import ResumeDelivery
-from .strategies import ChatAgentStrategy, WECOM_AGENT_RETRY_STRATEGY, resolve_strategy
+from .strategies import WECOM_AGENT_RETRY_STRATEGY, ChatAgentStrategy, resolve_strategy
 from .stream_registry import stream_registry
 from .tracing import (
     CLIENT,
@@ -87,6 +88,7 @@ from .tracing import (
     wxbot_span,
 )
 from .views import WxAiBotViewSet, WxBotAgentRequest
+from ..api.bkaidev import BkAiDevApi
 
 logger = getLogger(__name__)
 
@@ -1007,8 +1009,40 @@ class WxAiBotLongConnectionService:
                     if isinstance(item, Exception):
                         raise item
 
-                    content = item.content or ("回答完成" if item.finish else THINKING_MSG)
+                    raw_content = item.content or ("回答完成" if item.finish else THINKING_MSG)
+                    collage_media_id = ""
+                    if item.finish:
+                        try:
+                            prepared = await asyncio.to_thread(
+                                prepare_long_connection_collage,
+                                raw_content,
+                                request.content,
+                                BkAiDevApi().convert_knowledge_image_urls,
+                            )
+                            if prepared:
+                                collage_media_id = await upload_collage(self._client, prepared.image)
+                                content = prepared.markdown
+                            else:
+                                content = raw_content
+                        except Exception as error:
+                            logger.exception(
+                                "event=wxbot_knowledge_collage_failed stream_id=%s kind=%s",
+                                request.stream_id,
+                                type(error).__name__,
+                            )
+                            content = raw_content
+                    else:
+                        content = render_long_connection_stream_content(raw_content, finish=False)
                     send_wait = await self._send_stream_reply(frame, request.stream_id, content, item.finish)
+                    if collage_media_id:
+                        try:
+                            await self._send_collage_image(frame, collage_media_id)
+                        except Exception as error:
+                            logger.exception(
+                                "event=wxbot_knowledge_collage_send_failed stream_id=%s kind=%s",
+                                request.stream_id,
+                                type(error).__name__,
+                            )
                     if item.template_card:
                         try:
                             card_send_wait = await self._send_template_card(frame, item.template_card)
@@ -1321,6 +1355,16 @@ class WxAiBotLongConnectionService:
                 lambda: self._client.reply_stream(frame, stream_id, content, finish), span, "wxbot_stream_reply_retry"
             )
 
+    async def _send_collage_image(self, frame: dict[str, Any], media_id: str) -> None:
+        target = self._resolve_message_target(frame)
+        if not target:
+            raise ValueError("Missing original WeCom recipient")
+        body = {"msgtype": "image", "image": {"media_id": media_id}}
+        with wxbot_span("wxbot.collage.send", kind=CLIENT) as span:
+            await self._send_with_retry(
+                lambda: self._client.send_message(target, body), span, "wxbot_collage_send_retry"
+            )
+
     def _track_side_task(self, task: asyncio.Task) -> None:
         self._side_tasks.add(task)
         task.add_done_callback(self._side_tasks.discard)
@@ -1422,7 +1466,12 @@ class WxAiBotLongConnectionService:
         with wxbot_span(name, kind=CLIENT) as span:
             record_ack(span, await send())
 
-    async def _send_with_retry(self, send: Callable[[], Awaitable[Any]], span: Any, retry_event: str) -> float:
+    async def _send_with_retry(
+        self,
+        send: Callable[[], Awaitable[Any]],
+        span: Any,
+        retry_event: str,
+    ) -> float:
         """逐次 await 回执；一次发送 span 覆盖断线等待与重试，不记录消息载荷。"""
         started_at = time.monotonic()
         deadline = started_at + getattr(settings, "MAX_MESSAGE_TIME", 300)
