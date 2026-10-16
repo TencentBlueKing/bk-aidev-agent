@@ -510,6 +510,39 @@ class AGUISessionWriter(BaseSessionWriter):
                 return intr["toolArgs"], None
         return None
 
+    def _assistant_created_at_ms(self, data: dict[str, Any], headers: dict[str, str]) -> int | None:
+        """解析 assistant 入库毫秒。CREATE 回包常为无时区 ``YYYY-MM-DD HH:MM:SS``，失败则按 id 读列表接口的 ISO。"""
+        ms = created_at_to_ms(data.get("created_at"))
+        if ms is not None:
+            return ms
+        content_id = data.get("id")
+        if content_id is None:
+            return None
+        try:
+            contents = (
+                self.client.api.get_chat_session_contents(
+                    params={"session_code": self.session_code},
+                    headers=headers,
+                ).get("data")
+                or []
+            )
+        except Exception:
+            logger.exception(
+                "读取 assistant created_at 失败: session_code=%s content_id=%s",
+                self.session_code,
+                content_id,
+            )
+            return None
+        if not isinstance(contents, list):
+            return None
+        for item in contents:
+            if not isinstance(item, dict):
+                continue
+            if item.get("id") != content_id and str(item.get("id")) != str(content_id):
+                continue
+            return created_at_to_ms(item.get("created_at"))
+        return None
+
     def _do_create_content(self, payload: dict[str, Any], headers: dict[str, str]) -> int | None:
         """通过 API 创建会话内容
         Returns:
@@ -519,7 +552,7 @@ class AGUISessionWriter(BaseSessionWriter):
         result = self.client.api.create_chat_session_content(json=payload, headers=headers)
         data = result.get("data", {})
         if isinstance(data, dict) and payload.get("role") == PromptRole.ASSISTANT.value:
-            self._last_assistant_created_at_ms = created_at_to_ms(data.get("created_at"))
+            self._last_assistant_created_at_ms = self._assistant_created_at_ms(data, headers)
         content_id = data.get("id") if isinstance(data, dict) else None
         if content_id is not None:
             logger.info("创建会话内容成功: content_id=%s", content_id)
