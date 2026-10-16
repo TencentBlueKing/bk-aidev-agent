@@ -2,6 +2,7 @@
 """RUN_FINISHED.timestamp 与本轮最后一条 assistant 入库毫秒对齐。"""
 
 import json
+import time
 from unittest.mock import MagicMock
 
 from ag_ui.core import EventType, RunFinishedEvent
@@ -30,15 +31,10 @@ def test_run_finished_timestamp_equals_assistant_created_at_ms():
     client.api.get_chat_session_contents.assert_not_called()
 
 
-def test_run_finished_timestamp_falls_back_to_list_iso_when_create_created_at_naive():
-    """CREATE 回包无时区时，改用列表接口的 ISO created_at。"""
+def test_run_finished_timestamp_keeps_wall_clock_when_create_created_at_naive():
+    """CREATE 回包无时区（旧平台）时不查列表，保留墙钟时间，不阻断收尾。"""
     client = MagicMock()
-    client.api.create_chat_session_content.return_value = {
-        "data": {"id": 2, "created_at": "2026-10-16 10:39:18"}
-    }
-    client.api.get_chat_session_contents.return_value = {
-        "data": [{"id": 2, "created_at": "2026-10-16T02:39:18.517327Z"}]
-    }
+    client.api.create_chat_session_content.return_value = {"data": {"id": 2, "created_at": "2026-10-16 10:39:18"}}
     writer = AGUISessionWriter("sess", client)
     writer._write_assistant_message("m1", "hello", [])
     event = RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="t1", run_id="run-1")
@@ -47,5 +43,5 @@ def test_run_finished_timestamp_falls_back_to_list_iso_when_create_created_at_na
     writer(event)
     payload = json.loads(EventEncoder().encode(event).removeprefix("data: ").strip())
 
-    assert payload["timestamp"] == 1_792_118_358_517
-    client.api.get_chat_session_contents.assert_called_once()
+    assert abs(payload["timestamp"] - int(time.time() * 1000)) < 60_000
+    client.api.get_chat_session_contents.assert_not_called()
