@@ -362,6 +362,67 @@ def test_create_ignores_preview_url_when_download_url_missing(monkeypatch):
     assert "url" not in sent["content"][0]
 
 
+def test_content_signs_markdown_pv_image(monkeypatch):
+    api = MagicMock()
+    original = "![气温折线图](/app/.storage/session/shenzhen_7day_temp.png)"
+    api.get_chat_session_contents.return_value = {
+        "data": [{"id": 1, "role": "assistant", "content": original}]
+    }
+    file_service = MagicMock()
+    file_service.get_download_url.return_value = {"download_url": "https://bkrepo.example/temp.png"}
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    response = _view(session_mod.ChatSessionContentViewSet, api).content(
+        _request(query_params={"session_code": "s1"})
+    )
+
+    assert response.data[0]["content"] == "![气温折线图](https://bkrepo.example/temp.png)"
+    file_service.get_download_url.assert_called_once_with(
+        session_code="s1",
+        path="shenzhen_7day_temp.png",
+        expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+    )
+
+
+def test_content_skips_signing_without_images(monkeypatch):
+    api = MagicMock()
+    api.get_chat_session_contents.return_value = {"data": [{"id": 1, "role": "assistant", "content": "纯文本"}]}
+    make_service = MagicMock()
+    monkeypatch.setattr(session_mod.ChatSessionViewSet, "_make_pv_file_service", make_service)
+
+    response = _view(session_mod.ChatSessionContentViewSet, api).content(
+        _request(query_params={"session_code": "s1"})
+    )
+
+    assert response.data[0]["content"] == "纯文本"
+    make_service.assert_not_called()
+
+
+def test_content_keeps_markdown_when_sign_fails(monkeypatch):
+    api = MagicMock()
+    original = "![图](/app/.storage/session/a.png)"
+    api.get_chat_session_contents.return_value = {
+        "data": [{"id": 1, "role": "assistant", "content": original}]
+    }
+    file_service = MagicMock()
+    file_service.get_download_url.side_effect = session_mod.SandboxFileError("boom")
+    monkeypatch.setattr(
+        session_mod.ChatSessionViewSet,
+        "_make_pv_file_service",
+        lambda self, request, **kwargs: file_service,
+    )
+
+    response = _view(session_mod.ChatSessionContentViewSet, api).content(
+        _request(query_params={"session_code": "s1"})
+    )
+
+    assert response.data[0]["content"] == original
+
+
 def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
     """broker 查询异常时保持旧协议，避免平台误判为无 producer。"""
     handler = MagicMock()
