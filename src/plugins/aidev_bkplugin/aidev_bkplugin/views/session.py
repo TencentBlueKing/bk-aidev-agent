@@ -12,7 +12,6 @@ from aidev_agent.services.sandbox_pv_files import (
     fill_markdown_pv_image_urls,
     fill_user_image_urls,
     has_markdown_pv_image,
-    iter_user_image_binaries,
     iter_user_images_missing_url,
     validate_session_upload_files,
     validate_session_upload_stats,
@@ -348,53 +347,23 @@ def _copy_session_content_payload(data):
     return payload
 
 
-def _history_has_signable_image(contents) -> bool:
-    """历史记录里是否有需要签发的用户图片或 Markdown 会话 PV 图片。"""
-    for item in contents:
-        if not isinstance(item, dict):
-            continue
-        if item.get("role") == "user" and any(iter_user_image_binaries(item.get("content"))):
-            return True
-        content = item.get("content")
-        if isinstance(content, str) and has_markdown_pv_image(content):
-            return True
-    return False
-
-
-def _sign_history_image_urls(view, request, contents) -> None:
-    """历史读接口签发用户图片和 Markdown PV 图片，只改响应副本，不回写平台。"""
-    if not isinstance(contents, list) or not contents:
+def _sign_history_markdown_images(view, request, contents) -> None:
+    """历史读接口签发 Markdown 会话 PV 图片，只改响应副本。用户图片已由 OpenAPI 读路径刷新。"""
+    session_code = request.query_params.get("session_code") or ""
+    if not session_code or not isinstance(contents, list):
         return
-    query = getattr(request, "query_params", None) or {}
-    session_code = query.get("session_code") if hasattr(query, "get") else ""
-    if isinstance(session_code, (list, tuple)):
-        session_code = session_code[0] if session_code else ""
-    session_code = str(session_code or "")
-    if not session_code or not _history_has_signable_image(contents):
+    if not any(
+        isinstance(item, dict) and isinstance(item.get("content"), str) and has_markdown_pv_image(item["content"])
+        for item in contents
+    ):
         return
-    try:
-        service = ChatSessionViewSet._make_pv_file_service(view, request)
-    except Exception:
-        logger.warning("历史图片签发跳过：无法构造文件服务 session=%s", session_code, exc_info=True)
-        return
+    service = ChatSessionViewSet._make_pv_file_service(view, request)
     url_cache: dict[tuple[str, str], str] = {}
     for item in contents:
-        if not isinstance(item, dict):
-            continue
-        fill_user_image_urls(
-            service,
-            item,
-            only_missing=False,
-            url_cache=url_cache,
-            session_code=session_code,
-        )
-        content = item.get("content")
+        content = item.get("content") if isinstance(item, dict) else None
         if isinstance(content, str):
             item["content"] = fill_markdown_pv_image_urls(
-                service,
-                content,
-                url_cache=url_cache,
-                session_code=session_code,
+                service, content, url_cache=url_cache, session_code=session_code
             )
 
 
@@ -411,7 +380,7 @@ class ChatSessionContentViewSet(PluginViewSet):
     def content(self, request, **kwargs):
         result = self.client.api.get_chat_session_contents(params=request.query_params)
         data = result["data"]
-        _sign_history_image_urls(self, request, data)
+        _sign_history_markdown_images(self, request, data)
         return Response(data=data)
 
     def destroy(self, request, pk, **kwargs):
