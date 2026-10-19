@@ -478,48 +478,6 @@ def has_markdown_pv_image(text: str) -> bool:
     return any(_signable_markdown_pv_image_path(match) for match in _MARKDOWN_PV_IMAGE_RE.finditer(text))
 
 
-def _markdown_sign_failure_detail(exc: Exception) -> str:
-    """从签发异常里抽出可对照的 PaaS 原因，不带凭证。"""
-    response = getattr(exc, "response", None)
-    status = getattr(response, "status_code", None) or "-"
-    body: dict = {}
-    raw = ""
-    request_id = "-"
-    if response is not None:
-        headers = getattr(response, "headers", None) or {}
-        request_id = headers.get("X-Bkapi-Request-Id") or headers.get("X-Request-Id") or "-"
-        try:
-            parsed = response.json()
-        except Exception:
-            raw = (getattr(response, "text", "") or "").replace("\n", " ")[:300]
-        else:
-            if isinstance(parsed, dict):
-                body = parsed
-                request_id = str(body.get("request_id") or request_id)
-    code = body.get("code") or "-"
-    message = body.get("message") or body.get("detail") or "-"
-    error = f"{type(exc).__name__}: {exc}".replace("\n", " ")[:200]
-    detail = f"status={status} code={code} message={message} request_id={request_id} error={error}"
-    if raw and message == "-":
-        detail = f"{detail} body={raw}"
-    return detail
-
-
-def _executor_auth_label(file_service) -> str:
-    """只记录凭证种类和 app_code，不记录密钥、ticket、token。"""
-    info = getattr(file_service, "_executor_info", None)
-    if not isinstance(info, dict):
-        return "app_code=- auth=-"
-    present = []
-    if info.get("bk_ticket_value"):
-        present.append("bk_ticket")
-    if info.get("access_token"):
-        present.append("access_token")
-    if info.get("app_secret"):
-        present.append("app_secret")
-    return f"app_code={info.get('app_code') or '-'} auth={','.join(present) or '-'}"
-
-
 def fill_markdown_pv_image_urls(
     file_service: "SandboxPvFileService | None",
     text: str,
@@ -532,64 +490,32 @@ def fill_markdown_pv_image_urls(
     download_url 有时效，只写进快照副本；账本与 DB 仍保存 PV 路径。签发失败或路径非法时保留原文，
     不让单张图片失败影响整段消息。缓存 key 与 ``fill_user_image_urls`` 共用 ``(session_code, path)``。
     """
-    if "![" not in text:
-        return text
-    if file_service is None or not session_code:
-        logger.warning(
-            "签发 Markdown 图片跳过: session=%s reason=%s",
-            session_code or "-",
-            "未构造 PV 文件服务" if file_service is None else "缺少 session_code",
-        )
+    if file_service is None or not session_code or "![" not in text:
         return text
     cache = url_cache if url_cache is not None else {}
     failed: set[str] = set()
 
     def _sign(match: re.Match[str]) -> str:
-        target = match.group(2)
         path = _signable_markdown_pv_image_path(match)
         if not path:
-            if ".storage/session" in target:
-                logger.warning(
-                    "签发 Markdown 图片跳过: session=%s target=%s reason=不是可签发的会话 PV 图片路径",
-                    session_code,
-                    target,
-                )
             return match.group(0)
         url = cache.get((session_code, path))
-        if url:
-            return f"{match.group(1)}{url})"
-        if path in failed:
-            return match.group(0)
-        try:
-            url_data = file_service.get_download_url(
-                session_code=session_code,
-                path=path,
-                expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
-            )
-        except Exception as exc:  # 单张签发失败（含网络、解析异常）只降级为原文，不打断历史、分享页或 SSE 首帧
-            logger.error(
-                "签发 Markdown 图片 URL 失败: session=%s path=%s target=%s %s %s",
-                session_code,
-                path,
-                target,
-                _markdown_sign_failure_detail(exc),
-                _executor_auth_label(file_service),
-            )
-            failed.add(path)
-            return match.group(0)
-        url = url_data.get("download_url") if isinstance(url_data, dict) else ""
-        if not url:
-            logger.error(
-                "签发 Markdown 图片 URL 为空: session=%s path=%s target=%s %s",
-                session_code,
-                path,
-                target,
-                _executor_auth_label(file_service),
-            )
-            failed.add(path)
-            return match.group(0)
-        cache[(session_code, path)] = url
-        return f"{match.group(1)}{url})"
+        if not url and path not in failed:
+            try:
+                url_data = file_service.get_download_url(
+                    session_code=session_code,
+                    path=path,
+                    expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN,
+                )
+            except Exception:  # 单张签发失败（含网络、解析异常）只降级为原文，不打断历史、分享页或 SSE 首帧
+                logger.exception("签发 Markdown 图片 URL 失败: session=%s path=%s", session_code, path)
+                url_data = {}
+            url = url_data.get("download_url") or ""
+            if url:
+                cache[(session_code, path)] = url
+            else:
+                failed.add(path)
+        return f"{match.group(1)}{url})" if url else match.group(0)
 
     return _MARKDOWN_PV_IMAGE_RE.sub(_sign, text)
 
