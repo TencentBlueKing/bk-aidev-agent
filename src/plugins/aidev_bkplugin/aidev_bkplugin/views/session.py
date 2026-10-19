@@ -9,9 +9,7 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileNotFoundError,
     SandboxPvFileService,
     SandboxVolumeNotFoundError,
-    fill_markdown_pv_image_urls,
     fill_user_image_urls,
-    has_markdown_pv_image,
     iter_user_images_missing_url,
     validate_session_upload_files,
     validate_session_upload_stats,
@@ -26,6 +24,7 @@ from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
 from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.session_images import sign_history_markdown_images
 from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
 
@@ -347,26 +346,6 @@ def _copy_session_content_payload(data):
     return payload
 
 
-def _sign_history_markdown_images(view, request, contents) -> None:
-    """历史读接口签发 Markdown 会话 PV 图片，只改响应副本。用户图片已由 OpenAPI 读路径刷新。"""
-    session_code = request.query_params.get("session_code") or ""
-    if not session_code or not isinstance(contents, list):
-        return
-    if not any(
-        isinstance(item, dict) and isinstance(item.get("content"), str) and has_markdown_pv_image(item["content"])
-        for item in contents
-    ):
-        return
-    service = ChatSessionViewSet._make_pv_file_service(view, request)
-    url_cache: dict[tuple[str, str], str] = {}
-    for item in contents:
-        content = item.get("content") if isinstance(item, dict) else None
-        if isinstance(content, str):
-            item["content"] = fill_markdown_pv_image_urls(
-                service, content, url_cache=url_cache, session_code=session_code
-            )
-
-
 class ChatSessionContentViewSet(PluginViewSet):
     def create(self, request):
         username = request.user.username
@@ -380,7 +359,11 @@ class ChatSessionContentViewSet(PluginViewSet):
     def content(self, request, **kwargs):
         result = self.client.api.get_chat_session_contents(params=request.query_params)
         data = result["data"]
-        _sign_history_markdown_images(self, request, data)
+        sign_history_markdown_images(
+            data,
+            request.query_params.get("session_code") or "",
+            lambda: ChatSessionViewSet._make_pv_file_service(self, request),
+        )
         return Response(data=data)
 
     def destroy(self, request, pk, **kwargs):
