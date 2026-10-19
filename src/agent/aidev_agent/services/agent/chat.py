@@ -30,6 +30,7 @@ from aidev_agent.core.ag_ui.types import (
     ReasoningLangChainMessage,
     SchemaKeys,
     SessionPersistenceEventNames,
+    State,
 )
 from aidev_agent.core.ag_ui.utils import (
     TOOL_CALLING_PLACEHOLDER,
@@ -63,7 +64,7 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
     SecuritySettings,
 )
-from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook
+from aidev_agent.services.agent.artifacts import _has_session_pv, build_artifacts_generated_hook
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -1219,12 +1220,15 @@ class ChatCompletionAgent(BaseModel):
                     )
         return base
 
-    def _build_run_end_snapshot_agui_messages(self) -> list[dict] | None:
+    def _build_run_end_snapshot_agui_messages(self, state_values: State) -> list[dict] | None:
         """构建尾帧 MESSAGES_SNAPSHOT：按 DB 当前态重组历史后走同一构造入口，形态与首帧一致。
 
         本轮 assistant / tool 记录只经 writer 落库，未并入内存账本，因此与 factory 相同地重读会话内容
         （同一换源与迁移），保证尾帧包含本轮产物且 id 与库一致。读不到记录时返回 None，不下发空快照。
+        会话没有 PV 时不会产生需签发的图片，直接返回 None，省掉一次全量读取。
         """
+        if not _has_session_pv(state_values):
+            return None
         raw_records = self.resource_manager.get_chat_session_contents(self.thread_id) or []
         session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)
         if not session_context_data:

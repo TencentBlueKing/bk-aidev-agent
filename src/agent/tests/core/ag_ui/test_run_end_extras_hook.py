@@ -34,7 +34,7 @@ def _make_agent(hook=None) -> AidevAGUIAgent:
     return agent
 
 
-def _raise_build_error():
+def _raise_build_error(state_values):
     raise RuntimeError("build failed")
 
 
@@ -92,20 +92,28 @@ class TestRunEndSnapshotTail:
         async def hook(*, state_values, thread_id, active_run, dispatch_event):
             yield sentinel
 
+        captured: dict[str, Any] = {}
+
+        def builder(state_values):
+            captured["state_values"] = state_values
+            return snapshot
+
         agent = _make_agent(hook=hook)
-        agent._run_end_snapshot_builder = lambda: snapshot
-        events = [ev async for ev in agent._emit_run_end_extras({}, "sess-1", RunFinishedSuccessOutcome())]
+        agent._run_end_snapshot_builder = builder
+        state = {"k": "v"}
+        events = [ev async for ev in agent._emit_run_end_extras(state, "sess-1", RunFinishedSuccessOutcome())]
 
         assert events[0] is sentinel
         assert isinstance(events[1], RunEndMessageSnapshotEvent)
         assert events[1].messages == snapshot
+        assert captured["state_values"] is state
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "outcome, builder",
         [
-            (RunFinishedInterruptOutcome.model_construct(interrupts=[]), lambda: [{"role": "user"}]),
-            (RunFinishedSuccessOutcome(), lambda: None),
+            (RunFinishedInterruptOutcome.model_construct(interrupts=[]), lambda _: [{"role": "user"}]),
+            (RunFinishedSuccessOutcome(), lambda _: None),
             (RunFinishedSuccessOutcome(), _raise_build_error),
         ],
     )

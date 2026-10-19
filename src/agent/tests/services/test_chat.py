@@ -1649,6 +1649,9 @@ def test_snapshot_keeps_stale_image_url_when_refresh_fails(mock_get_download_url
     mock_get_download_url.assert_called_once()
 
 
+_SESSION_PV_STATE = {"runtime_paas_sbx_pv": [{"type": "paas-sbx-pv", "mount_path": "session", "volume_id": "vol-1"}]}
+
+
 @patch(
     "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
     return_value={"download_url": "https://example.test/download/line.png"},
@@ -1667,7 +1670,7 @@ def test_run_end_snapshot_rebuilds_from_db_and_signs_markdown_image(mock_get_dow
         executor_info={"app_code": "app", "executor": "luka"},
     )
 
-    snapshot = agent._build_run_end_snapshot_agui_messages()
+    snapshot = agent._build_run_end_snapshot_agui_messages(_SESSION_PV_STATE)
 
     resource_manager.get_chat_session_contents.assert_called_once_with("session-1")
     assert [item["id"] for item in snapshot] == ["1", "2"]
@@ -1681,7 +1684,16 @@ def test_run_end_snapshot_is_none_without_db_records():
     resource_manager.get_chat_session_contents.return_value = []
     agent = ChatCompletionAgent(thread_id="session-1", resource_manager=resource_manager, executor_info={})
 
-    assert agent._build_run_end_snapshot_agui_messages() is None
+    assert agent._build_run_end_snapshot_agui_messages(_SESSION_PV_STATE) is None
+
+
+def test_run_end_snapshot_skips_db_read_without_session_pv():
+    """会话没有 PV 时不可能有需签发的图片，尾帧直接跳过，不做全量读取。"""
+    resource_manager = MagicMock()
+    agent = ChatCompletionAgent(thread_id="session-1", resource_manager=resource_manager, executor_info={})
+
+    assert agent._build_run_end_snapshot_agui_messages({}) is None
+    resource_manager.get_chat_session_contents.assert_not_called()
 
 
 @patch(
@@ -1704,7 +1716,7 @@ def test_stream_emits_run_end_snapshot_before_run_finished(mock_get_download_url
         resource_manager=resource_manager,
         executor_info={"app_code": "app", "executor": "luka"},
     )
-    results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True))]
+    results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True, sandbox_pv_id="vol-1"))]
 
     snapshot_indices = [i for i, e in enumerate(results) if e.get("type") == EventType.MESSAGES_SNAPSHOT.value]
     finished_index = next(i for i, e in enumerate(results) if e.get("type") == EventType.RUN_FINISHED.value)

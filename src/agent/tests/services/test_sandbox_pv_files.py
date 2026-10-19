@@ -962,6 +962,8 @@ class TestFillMarkdownPvImageUrls:
         assert not has_markdown_pv_image("![外链](https://example.com/a.png)")
         assert not has_markdown_pv_image("普通路径 /app/.storage/session/a.png")
         assert not has_markdown_pv_image("![附件](/app/.storage/session/a.pdf)")
+        # 非法路径签不出来，前置判断同样返回 False，避免白建签发服务
+        assert not has_markdown_pv_image("![越界](/app/.storage/session/../etc/a.png)")
 
     @pytest.mark.parametrize("text", ["![附件](/app/.storage/session/secret.env)", "![x]($STORAGE_PATH/session/a.pdf)"])
     def test_does_not_sign_non_image_pv_file_in_image_syntax(self, text):

@@ -449,12 +449,24 @@ _MARKDOWN_PV_IMAGE_RE = re.compile(
 )
 
 
+def _signable_markdown_pv_image_path(match: re.Match[str]) -> str:
+    """Markdown 图片语法匹配项对应的可签发 PV 相对路径；路径非法或非图片后缀时返回空串。
+
+    只签发图片后缀：分享页匿名读取时，图片语法里引用的任意 PV 文件都不应拿到下载链接。
+    """
+    try:
+        path = normalize_session_pv_path(match.group(2), required=True)
+    except SandboxFileInvalidArgumentError:
+        return ""
+    return path if image_mime_type({}, path) is not None else ""
+
+
 def has_markdown_pv_image(text: str) -> bool:
     """文本是否含可签发的 Markdown 会话 PV 图片语法；调用方据此决定要不要构建签发服务。
 
-    判定规则与 ``fill_markdown_pv_image_urls`` 一致（仅图片后缀），纯外链或非图片 PV 文件不付出构建成本。
+    与 ``fill_markdown_pv_image_urls`` 共用 ``_signable_markdown_pv_image_path``，纯外链或非图片 PV 文件不付出构建成本。
     """
-    return any(image_mime_type({}, match.group(2)) is not None for match in _MARKDOWN_PV_IMAGE_RE.finditer(text))
+    return any(_signable_markdown_pv_image_path(match) for match in _MARKDOWN_PV_IMAGE_RE.finditer(text))
 
 
 def fill_markdown_pv_image_urls(
@@ -475,12 +487,8 @@ def fill_markdown_pv_image_urls(
     failed: set[str] = set()
 
     def _sign(match: re.Match[str]) -> str:
-        try:
-            path = normalize_session_pv_path(match.group(2), required=True)
-        except SandboxFileInvalidArgumentError:
-            return match.group(0)
-        # 只签发图片后缀：分享页匿名读取时，图片语法里引用的任意 PV 文件都不应拿到下载链接
-        if image_mime_type({}, path) is None:
+        path = _signable_markdown_pv_image_path(match)
+        if not path:
             return match.group(0)
         url = cache.get((session_code, path))
         if not url and path not in failed:

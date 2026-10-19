@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from logging import getLogger
@@ -86,7 +87,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         approval_interrupts: list[dict] | None = None,
         ask_user_question_interrupts: list[dict] | None = None,
         run_end_extras_hook: Callable[..., AsyncGenerator[Any, None]] | None = None,
-        run_end_snapshot_builder: Callable[[], list[dict] | None] | None = None,
+        run_end_snapshot_builder: Callable[[State], list[dict] | None] | None = None,
         interrupt_processor: InterruptProcessor | None = None,
     ):
         super().__init__(
@@ -146,7 +147,8 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         if self._run_end_snapshot_builder is None or not isinstance(outcome, RunFinishedSuccessOutcome):
             return
         try:
-            messages = self._run_end_snapshot_builder()
+            # 构造器内含同步 HTTP（读会话内容 + 逐张签发），挪到线程池避免阻塞事件循环
+            messages = await asyncio.to_thread(self._run_end_snapshot_builder, state_values)
         except Exception:
             logger.exception("尾帧 MESSAGES_SNAPSHOT 构造失败，跳过本轮尾帧，不影响 RUN_FINISHED")
             return
