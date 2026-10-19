@@ -443,19 +443,28 @@ def fill_user_image_urls(
 
 
 _PV_IMAGE_PATH_PREFIXES = (f"{TEMP_UPLOAD_VOLUME_MOUNT_PATH}/", f"{SESSION_VOLUME_PATH}/", "${STORAGE_PATH}/session/")
-# 只匹配 Markdown 图片语法 ``![alt](会话 PV 路径)``，正文里的普通路径不改写。
-_MARKDOWN_PV_IMAGE_RE = re.compile(
-    r"(!\[[^\]\n]*\]\()(?:" + "|".join(re.escape(prefix) for prefix in _PV_IMAGE_PATH_PREFIXES) + r")([^)\s]+)\)"
-)
+# file://<运行时>/ 前缀：运行时名可为空（file:///…），其后的斜杠数量不限。
+_FILE_URI_PREFIX_RE = re.compile(r"file://[^/]*/+")
+# 匹配 Markdown 图片语法 ``![alt](目标)``，目标允许一层括号配对（如 a(1).png）。
+# 是否为会话 PV 图片由 ``_signable_markdown_pv_image_path`` 判定，正文里的普通路径不改写。
+_MARKDOWN_PV_IMAGE_RE = re.compile(r"(!\[[^\]\n]*\]\()((?:[^()\s]|\([^()\s]*\))+)\)")
 
 
 def _signable_markdown_pv_image_path(match: re.Match[str]) -> str:
-    """Markdown 图片语法匹配项对应的可签发 PV 相对路径；路径非法或非图片后缀时返回空串。
+    """Markdown 图片语法匹配项对应的可签发 PV 相对路径；非会话 PV 图片、路径非法或非图片后缀时返回空串。
 
+    目标可写成挂载路径，也可写成 ``file://<运行时>/…``：剥掉运行时前缀后统一归一为挂载路径形式。
     只签发图片后缀：分享页匿名读取时，图片语法里引用的任意 PV 文件都不应拿到下载链接。
     """
+    target = match.group(2)
+    if file_uri := _FILE_URI_PREFIX_RE.match(target):
+        rest = target[file_uri.end() :]
+        target = rest if rest.startswith("$") else f"/{rest}"
+    prefix = next((p for p in _PV_IMAGE_PATH_PREFIXES if target.startswith(p)), None)
+    if prefix is None:
+        return ""
     try:
-        path = normalize_session_pv_path(match.group(2), required=True)
+        path = normalize_session_pv_path(target[len(prefix) :], required=True)
     except SandboxFileInvalidArgumentError:
         return ""
     return path if image_mime_type({}, path) is not None else ""
