@@ -2,7 +2,7 @@
 """artifacts_generated 业务层 hook 契约测试（services/agent/artifacts.py）。
 
 覆盖点：
-- ``_has_session_pv`` 判定（true/false 各分支）
+- ``has_session_pv`` 判定（true/false 各分支）
 - ``_files_to_artifacts`` 转换（目录过滤 / 空 path 过滤 / name 兜底 / 后缀提取）
 - ``build_artifacts_generated_hook`` 退化：无 PV / rm=None 均返回空 async generator
 - 正常路径：hook emit CustomEvent 并调用 ``dispatch_event``
@@ -21,14 +21,14 @@ from ag_ui.core import CustomEvent, EventType
 from aidev_agent.enums import ActivityType, PromptRole
 from aidev_agent.services.agent.artifacts import (
     _files_to_artifacts,
-    _has_session_pv,
     build_artifacts_generated_hook,
+    has_session_pv,
 )
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 
 
 # ---------------------------------------------------------------------------
-# _has_session_pv
+# has_session_pv
 # ---------------------------------------------------------------------------
 
 
@@ -39,18 +39,18 @@ class TestHasSessionPv:
                 {"type": "paas-sbx-pv", "mount_path": "session", "volume_id": "vol-1"},
             ]
         }
-        assert _has_session_pv(state) is True
+        assert has_session_pv(state) is True
 
     def test_empty_state(self):
-        assert _has_session_pv({}) is False
+        assert has_session_pv({}) is False
 
     def test_wrong_mount_path(self):
         state = {"runtime_paas_sbx_pv": [{"type": "paas-sbx-pv", "mount_path": "other", "volume_id": "v"}]}
-        assert _has_session_pv(state) is False
+        assert has_session_pv(state) is False
 
     def test_no_volume_id(self):
         state = {"runtime_paas_sbx_pv": [{"type": "paas-sbx-pv", "mount_path": "session"}]}
-        assert _has_session_pv(state) is False
+        assert has_session_pv(state) is False
 
 
 # ---------------------------------------------------------------------------

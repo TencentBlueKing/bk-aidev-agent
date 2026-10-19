@@ -64,7 +64,7 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
     SecuritySettings,
 )
-from aidev_agent.services.agent.artifacts import _has_session_pv, build_artifacts_generated_hook
+from aidev_agent.services.agent.artifacts import build_artifacts_generated_hook, has_session_pv
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
@@ -1227,7 +1227,7 @@ class ChatCompletionAgent(BaseModel):
         （同一换源与迁移），保证尾帧包含本轮产物且 id 与库一致。读不到记录时返回 None，不下发空快照。
         会话没有 PV 时不会产生需签发的图片，直接返回 None，省掉一次全量读取。
         """
-        if not _has_session_pv(state_values):
+        if not has_session_pv(state_values):
             return None
         raw_records = self.resource_manager.get_chat_session_contents(self.thread_id) or []
         session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)
