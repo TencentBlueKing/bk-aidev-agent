@@ -192,7 +192,12 @@
         getReferenceClientRect.contextElement = resolveTipContextElement(props.tippyOptions?.appendTo);
         descriptionTip = tippy(document.createElement('div'), {
           ...createModelDescriptionTippy(getReferenceClientRect, props.tippyOptions),
-          onShow: () => Boolean(tipAnchor?.isConnected),
+          // tippy 的 onShow 只认 false（取消展示）或 void；锚点已卸载时取消
+          onShow: () => {
+            if (!tipAnchor?.isConnected) {
+              return false;
+            }
+          },
         });
       }
       descriptionTip.setContent(description);

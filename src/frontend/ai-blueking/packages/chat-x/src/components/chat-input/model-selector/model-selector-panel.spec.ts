@@ -144,7 +144,9 @@ describe('ModelSelectorPanel 描述 tip', () => {
     const options = tippyMock.mock.calls[0][1] as Props;
     expect(options.theme).toBe('ai-chat-box');
     expect(options.getReferenceClientRect?.()).toEqual(rect);
-    expect(options.onShow?.({} as never)).toBe(true);
+    expect(options.onShow?.({} as never)).toBeUndefined();
+    vi.spyOn(option.element, 'isConnected', 'get').mockReturnValue(false);
+    expect(options.onShow?.({} as never)).toBe(false);
   });
 
   it('未到延迟就离开时不应创建 tip', async () => {
