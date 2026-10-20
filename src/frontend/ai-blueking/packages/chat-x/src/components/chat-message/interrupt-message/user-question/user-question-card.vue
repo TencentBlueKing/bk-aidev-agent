@@ -60,7 +60,7 @@
       <div
         v-for="(question, qIndex) in questions"
         v-show="qIndex === currentIndex"
-        :key="qIndex"
+        :key="`${interrupt.id}:${qIndex}`"
         class="ai-user-question-card__question"
       >
         <div class="ai-user-question-card__question-title">
@@ -138,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-  import { type VNode, computed, shallowRef } from 'vue';
+  import { type VNode, computed, shallowRef, watch } from 'vue';
 
   import { Button } from 'bkui-vue';
 
@@ -210,8 +210,16 @@
   };
 
   // 完成/跳过为同步 resume，无法拿到请求结果；点击后立即在被点按钮上显示 loading 并禁用两个按钮，
-  // 待后台数据刷新使 activeUserQuestionInterrupt 失效（整卡卸载）后该状态随实例销毁自然消失
+  // 连续问题可能在同一批更新中替换 interrupt，组件不会先卸载。
   const pendingAction = shallowRef<'complete' | 'skip' | null>(null);
+
+  watch(
+    () => props.interrupt.id,
+    () => {
+      pendingAction.value = null;
+      isCollapsed.value = false;
+    },
+  );
 
   const handleComplete = () => {
     if (!completed.value || pendingAction.value !== null) return;

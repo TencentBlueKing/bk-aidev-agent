@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { computed, shallowRef } from 'vue';
+import { computed, shallowRef, watch } from 'vue';
 
 import { InterruptReason } from '../../../../ag-ui/types/constants';
 
@@ -65,6 +65,14 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
   // 当前展示题索引（一次只展示一题）
   const currentIndex = shallowRef(0);
 
+  watch(
+    () => getInterrupt()?.id,
+    () => {
+      answerMap.value = {};
+      currentIndex.value = 0;
+    },
+  );
+
   const totalCount = computed(() => questions.value.length);
   const answeredCount = computed(() =>
     questions.value.reduce((count, _question, index) => count + (answerMap.value[index] ? 1 : 0), 0),
@@ -91,7 +99,11 @@ export const useUserQuestion = (getInterrupt: () => undefined | UserQuestionInte
    * 单选预设选项：从未答 → 有效答时自动跳下一题。
    * 多选 / Others / 改选已答题：不自动跳，由标题栏箭头切换。
    */
-  const tryAutoAdvance = (questionIndex: number, prev: undefined | UserQuestionAnswerItem, answer: UserQuestionAnswerItem) => {
+  const tryAutoAdvance = (
+    questionIndex: number,
+    prev: undefined | UserQuestionAnswerItem,
+    answer: UserQuestionAnswerItem,
+  ) => {
     if (prev) return;
     if (questionIndex !== currentIndex.value) return;
     if (questions.value[questionIndex]?.multiSelect === true) return;

@@ -25,9 +25,8 @@
  */
 
 import { type VueWrapper, mount } from '@vue/test-utils';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
 import { Button } from 'bkui-vue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InterruptReason } from '../../../../ag-ui/types/constants';
 import UserQuestionCard from './user-question-card.vue';
@@ -70,8 +69,7 @@ const buildInterrupt = (): UserQuestionInterrupt => ({
 });
 
 /** 解析「已完成 N 题」进度文案中的数字 */
-const progressCount = (wrapper: VueWrapper) =>
-  wrapper.find('.ai-user-question-card__progress-num').text();
+const progressCount = (wrapper: VueWrapper) => wrapper.find('.ai-user-question-card__progress-num').text();
 
 // style-note: chat-x PR1 — 文档化状态间距 / 禁用态样式约定，配合 wiki 同步提交
 describe('UserQuestionCard', () => {
@@ -239,6 +237,47 @@ describe('UserQuestionCard', () => {
     expect(skipBtn.findComponent(Button).props('loading')).toBe(true);
     expect(completeBtn.findComponent(Button).props('disabled')).toBe(true);
     expect(wrapper.find('.ai-user-question-card__skip-icon').exists()).toBe(false);
+  });
+
+  it.each(['complete', 'skip'] as const)('新的 interrupt 清除上一轮 %s 状态且允许再次提交', async action => {
+    const onResume = vi.fn();
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt(), onResume } });
+    if (action === 'complete') {
+      const options = wrapper.findAll('.ai-user-question-option');
+      await options[0].trigger('click');
+      await options[3].trigger('click');
+    }
+    await wrapper.find(`.ai-user-question-card__${action}`).trigger('click');
+    expect(onResume).toHaveBeenCalledTimes(1);
+    await wrapper.find('.ai-user-question-card__collapse-btn').trigger('click');
+
+    // A resolved event and the next interrupt can arrive in one stream read.
+    // The component then receives the new prop without an intermediate unmount.
+    const next = { ...buildInterrupt(), id: 'uq-2', toolCallId: 'tc-2' };
+    await wrapper.setProps({ interrupt: next });
+    expect(wrapper.classes()).not.toContain('ai-user-question-card--collapsed');
+    expect(progressCount(wrapper)).toBe('0');
+    expect(wrapper.find('.ai-user-question-card__pager-text').text()).toBe('1 / 2');
+    const complete = wrapper.find('.ai-user-question-card__complete');
+    const skip = wrapper.find('.ai-user-question-card__skip');
+    expect(complete.findComponent(Button).props('loading')).toBe(false);
+    expect(skip.findComponent(Button).props('loading')).toBe(false);
+    await wrapper.findAll('.ai-user-question-option')[0].trigger('click');
+    await wrapper.findAll('.ai-user-question-option')[3].trigger('click');
+    await complete.trigger('click');
+    await complete.trigger('click');
+    expect(onResume).toHaveBeenCalledTimes(2);
+    expect(onResume.mock.calls[1][1].id).toBe('uq-2');
+  });
+
+  it('同一 interrupt 刷新不会解除提交锁', async () => {
+    const onResume = vi.fn();
+    wrapper = mount(UserQuestionCard, { props: { interrupt: buildInterrupt(), onResume } });
+    await wrapper.find('.ai-user-question-card__skip').trigger('click');
+    await wrapper.setProps({ interrupt: buildInterrupt() });
+    await wrapper.find('.ai-user-question-card__skip').trigger('click');
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('.ai-user-question-card__skip').findComponent(Button).props('loading')).toBe(true);
   });
 
   it('点击收起按钮可折叠，body 与 footer 通过 v-show 隐藏而非卸载', async () => {
