@@ -65,12 +65,12 @@ class TestRuntimeBackendDeferInMemoryStore(unittest.TestCase):
         self.assertEqual(store.get(key), {"sandbox_id": "sbx-3"})  # 记录保留
 
     def test_delete_expired_counts(self):
-        """delete_expired：max_age=0 删所有（计数正确）；max_age=1e9 不删任何。"""
+        """delete_expired：负 max_age 时全部过期（计数正确，不依赖时钟分辨率）；max_age=1e9 不删任何。"""
         store = RuntimeBackendDeferInMemoryStore()
         keys = [f"sandbox:session_{i}:paas_sandbox_skill" for i in range(3)]
         for idx, k in enumerate(keys):
             store.put(k, {"sandbox_id": f"sbx-{idx}"}, token=f"tok-{idx}")
-        removed = store.delete_expired(max_age=0)  # 全部过期
+        removed = store.delete_expired(max_age=-1)  # 空闲时长恒 ≥ 0，负阈值下全部过期，不依赖时钟分辨率
         self.assertEqual(removed, 3)
         self.assertEqual(len(store._records), 0)  # 内部记录清空
         # 重新登记后超大 max_age 不删任何

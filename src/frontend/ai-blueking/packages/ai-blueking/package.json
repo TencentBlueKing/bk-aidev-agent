@@ -1,6 +1,6 @@
 {
   "name": "@blueking/ai-blueking",
-  "version": "3.0.0",
+  "version": "3.1.0-beta.1",
   "description": "AI 小鲸 V2 - 基于新架构的智能对话组件",
   "license": "MIT",
   "author": "Tencent BlueKing",

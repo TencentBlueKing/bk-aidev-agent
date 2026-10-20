@@ -1649,6 +1649,84 @@ def test_snapshot_keeps_stale_image_url_when_refresh_fails(mock_get_download_url
     mock_get_download_url.assert_called_once()
 
 
+_SESSION_PV_STATE = {"runtime_paas_sbx_pv": [{"type": "paas-sbx-pv", "mount_path": "session", "volume_id": "vol-1"}]}
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    return_value={"download_url": "https://example.test/download/line.png"},
+)
+def test_run_end_snapshot_rebuilds_from_db_and_signs_markdown_image(mock_get_download_url):
+    """尾帧按 DB 重读的历史重组（含本轮 assistant 产物），走同一构造入口重签 Markdown PV 图片；账本不变。"""
+    resource_manager = MagicMock()
+    resource_manager.get_chat_session_contents.return_value = [
+        {"id": 1, "role": "user", "content": "画个折线图"},
+        {"id": 2, "role": "assistant", "content": "![价格](/app/.storage/session/0700_line.png)"},
+    ]
+    agent = ChatCompletionAgent(
+        thread_id="session-1",
+        chat_history=[ChatPrompt(id="1", role=PromptRole.USER.value, content="画个折线图")],
+        resource_manager=resource_manager,
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+
+    snapshot = agent._build_run_end_snapshot_agui_messages(_SESSION_PV_STATE)
+
+    resource_manager.get_chat_session_contents.assert_called_once_with("session-1")
+    assert [item["id"] for item in snapshot] == ["1", "2"]
+    assert snapshot[1]["content"] == "![价格](https://example.test/download/line.png)"
+    assert len(agent.chat_history) == 1
+    mock_get_download_url.assert_called_once_with(session_code="session-1", path="0700_line.png", expires_in=3600)
+
+
+def test_run_end_snapshot_is_none_without_db_records():
+    resource_manager = MagicMock()
+    resource_manager.get_chat_session_contents.return_value = []
+    agent = ChatCompletionAgent(thread_id="session-1", resource_manager=resource_manager, executor_info={})
+
+    assert agent._build_run_end_snapshot_agui_messages(_SESSION_PV_STATE) is None
+
+
+def test_run_end_snapshot_skips_db_read_without_session_pv():
+    """会话没有 PV 时不可能有需签发的图片，尾帧直接跳过，不做全量读取。"""
+    resource_manager = MagicMock()
+    agent = ChatCompletionAgent(thread_id="session-1", resource_manager=resource_manager, executor_info={})
+
+    assert agent._build_run_end_snapshot_agui_messages({}) is None
+    resource_manager.get_chat_session_contents.assert_not_called()
+
+
+@patch(
+    "aidev_agent.services.agent.chat.SandboxPvFileService.get_download_url",
+    return_value={"download_url": "https://example.test/download/x.png"},
+)
+def test_stream_emits_run_end_snapshot_before_run_finished(mock_get_download_url):
+    """成功出口：尾帧 MESSAGES_SNAPSHOT 位于 RUN_FINISHED 之前，内容为 DB 重组历史（Markdown 图片已签发）。"""
+    resource_manager = MagicMock(username="luka")
+    resource_manager.retrieve_chat_session.return_value = None  # 无会话属性，避免 MagicMock 流入 LangGraph 状态
+    resource_manager.get_chat_session_contents.return_value = [
+        {"id": 1, "role": "user", "content": "画图"},
+        {"id": 2, "role": "assistant", "content": "![图](/app/.storage/session/x.png)"},
+    ]
+    agent = ChatCompletionAgent(
+        chat_model=MockChatModel(responses=["好的"], stream_chunk_size=2),
+        checkpointer=MemorySaver(),
+        thread_id="session-tail",
+        chat_history=[ChatPrompt(role="user", content="画图")],
+        resource_manager=resource_manager,
+        executor_info={"app_code": "app", "executor": "luka"},
+    )
+    results = [json.loads(each[6:]) for each in agent.execute(ExecuteKwargs(stream=True, sandbox_pv_id="vol-1"))]
+
+    snapshot_indices = [i for i, e in enumerate(results) if e.get("type") == EventType.MESSAGES_SNAPSHOT.value]
+    finished_index = next(i for i, e in enumerate(results) if e.get("type") == EventType.RUN_FINISHED.value)
+    assert len(snapshot_indices) == 2 and snapshot_indices[-1] < finished_index
+    assert results[finished_index]["outcome"]["type"] == "success"
+    tail = results[snapshot_indices[-1]]["messages"]
+    assert tail[-1]["content"] == "![图](https://example.test/download/x.png)"
+    mock_get_download_url.assert_called_once_with(session_code="session-tail", path="x.png", expires_in=3600)
+
+
 def test_build_chat_history_does_not_prepend_config_role_prompts():
     """角色提示词不在 build_chat_history 前置，role/system 交由注入挂点延迟拼接。"""
     from aidev_agent.services.agent.chat import ChatAgentBuilder

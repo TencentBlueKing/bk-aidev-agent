@@ -18,6 +18,7 @@
         :models="filteredModels"
         :search-placeholder="searchPlaceholder"
         :selected-name="selectedModel"
+        :tippy-options="tippyOptions"
         @select="handleSelect"
       />
     </template>
@@ -100,6 +101,8 @@
   };
   const handleHidden = () => {
     isExpanded.value = false;
+    // 下拉内容保持挂载，收起时不会走面板卸载，需主动关掉描述 tip
+    panelRef.value?.hideDescriptionTip();
   };
 
   const handleSelect = (model: IModelOption) => {

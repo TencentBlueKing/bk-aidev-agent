@@ -9,7 +9,7 @@ dependencies = [
     "aidev-agent[opentelemetry]==3.0.0",
     "aidev-bkplugin==3.0.0",
     "aidev-wxbot==3.0.0",
-    "aidev-ai-blueking==3.0.0",
+    "aidev-ai-blueking==3.1.0b1",
     "bk-plugin-framework==2.3.15",
     "bkapi-bk-apigateway==1.0.12",
     "celery==5.4.0",

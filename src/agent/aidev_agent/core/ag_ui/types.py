@@ -278,6 +278,10 @@ class MessageSnapshotEventExtend(MessagesSnapshotEvent):
     messages: list[dict]
 
 
+class RunEndMessageSnapshotEvent(MessageSnapshotEventExtend):
+    """尾帧 MESSAGES_SNAPSHOT：仅 run-end 成功出口产出并透传到 SSE；SDK 其它内部快照仍被丢弃。"""
+
+
 class ResumeItem(ConfiguredBaseModel):
     """恢复请求项，用于提交中断处理结果"""
 

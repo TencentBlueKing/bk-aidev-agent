@@ -25,7 +25,9 @@ from aidev_agent.services.sandbox_pv_files import (
     SandboxFileServerError,
     SandboxPvFileService,
     encode_paas_query_params,
+    fill_markdown_pv_image_urls,
     fill_user_image_urls,
+    has_markdown_pv_image,
     normalize_session_pv_path,
     validate_session_upload_files,
     validate_session_upload_stats,
@@ -927,6 +929,103 @@ class TestVolumeIdCache:
         service.get_download_url(session_code="s1", path="files/a.png")
 
         assert resource_manager.retrieve_chat_session.call_count == 2
+
+
+class TestFillMarkdownPvImageUrls:
+    @pytest.mark.parametrize(
+        "text, expected_path",
+        [
+            ("![图](/app/.storage/session/0700_line.png)", "0700_line.png"),
+            ("![图]($STORAGE_PATH/session/sub/a.png)", "sub/a.png"),
+            ("![图](${STORAGE_PATH}/session/b.png)", "b.png"),
+            # stag 线上出现过 file://<运行时>//app/… 写法；斜杠数量与运行时名称均不固定
+            ("![图](file://paas_sandbox_file-kit//app/.storage/session/weather.png)", "weather.png"),
+            ("![图](file://paas_sandbox_file-kit/$STORAGE_PATH/session/sub/a.png)", "sub/a.png"),
+            ("![图](file://paas_sandbox_file-kit/${STORAGE_PATH}/session/b.png)", "b.png"),
+            ("![图](file://paas_sandbox_file-kit/app/.storage/session/c.png)", "c.png"),
+            ("![图](file://paas_sandbox_file-kit///app/.storage/session/d.png)", "d.png"),
+            ("![图](file://paas_sandbox_file-kit//$STORAGE_PATH/session/e.png)", "e.png"),
+            ("![图](file:///app/.storage/session/f.png)", "f.png"),
+            # CommonMark 允许目标地址内一层括号配对，文件名 a(1).png 也应签发
+            ("![图](/app/.storage/session/a(1).png)", "a(1).png"),
+        ],
+    )
+    def test_rewrites_pv_image_destination(self, text, expected_path):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x.png"}
+
+        result = fill_markdown_pv_image_urls(file_service, text, session_code="s1")
+
+        assert result == "![图](https://cdn/x.png)"
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path=expected_path, expires_in=3600)
+
+    def test_keeps_original_text_when_signing_fails_or_not_image(self):
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = SandboxFileServerError("gone")
+        text = "[文件](/app/.storage/session/a.pdf) 路径 /app/.storage/session/b.png ![x](/app/.storage/session/c.png)"
+
+        assert fill_markdown_pv_image_urls(file_service, text, session_code="s1") == text
+        file_service.get_download_url.assert_called_once()
+
+    def test_has_markdown_pv_image_only_matches_signable_image_syntax(self):
+        assert has_markdown_pv_image("![图](/app/.storage/session/a.png)")
+        assert has_markdown_pv_image("![图](file://paas_sandbox_file-kit//app/.storage/session/a.png)")
+        assert not has_markdown_pv_image("![外链](https://example.com/a.png)")
+        assert not has_markdown_pv_image("普通路径 /app/.storage/session/a.png")
+        assert not has_markdown_pv_image("![附件](/app/.storage/session/a.pdf)")
+        # 非法路径签不出来，前置判断同样返回 False，避免白建签发服务
+        assert not has_markdown_pv_image("![越界](/app/.storage/session/../etc/a.png)")
+
+    @pytest.mark.parametrize("text", ["![附件](/app/.storage/session/secret.env)", "![x]($STORAGE_PATH/session/a.pdf)"])
+    def test_does_not_sign_non_image_pv_file_in_image_syntax(self, text):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x"}
+
+        assert fill_markdown_pv_image_urls(file_service, text, session_code="s1") == text
+        file_service.get_download_url.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "![x](file://paas_sandbox_file-kit/a.png)",  # 没有会话 PV 标记
+            "![x](file://paas_sandbox_file-kit/app/.storage/sessions/a.png)",  # 相邻目录不是会话卷
+            "![x](file://paas_sandbox_file-kit//app/.storage/session/../etc/a.png)",  # 路径越界
+            "![x](file://paas_sandbox_file-kit//app/.storage/session/a.pdf)",  # 非图片后缀
+            "![x](file://paas_sandbox_file-kit/$STORAGE_PATH/session/a.svg)",  # 不在图片白名单内
+            "![x](app/.storage/session/a.png)",  # 无前导斜杠的裸路径不是挂载路径
+            "![x](//app/.storage/session/a.png)",  # 协议相对地址，不是 file:// 引用
+            "![x](https://example.com/file://paas_sandbox/app/.storage/session/a.png)",  # file:// 不在开头
+        ],
+    )
+    def test_does_not_sign_reference_that_is_not_session_pv_image(self, text):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x"}
+
+        assert not has_markdown_pv_image(text)
+        assert fill_markdown_pv_image_urls(file_service, text, session_code="s1") == text
+        file_service.get_download_url.assert_not_called()
+
+    def test_unexpected_signing_error_degrades_per_image(self):
+        """网络 / 解析等非 SandboxFileError 异常也只降级单张图片，同段其它图片照常签发。"""
+        file_service = MagicMock()
+        file_service.get_download_url.side_effect = [ConnectionError("paas down"), {"download_url": "https://cdn/b"}]
+        text = "![a](/app/.storage/session/files/a.png) ![b](/app/.storage/session/files/b.png)"
+
+        result = fill_markdown_pv_image_urls(file_service, text, session_code="s1")
+
+        assert result == "![a](/app/.storage/session/files/a.png) ![b](https://cdn/b)"
+
+    def test_reuses_url_cache_keyed_by_session_and_path(self):
+        file_service = MagicMock()
+        file_service.get_download_url.return_value = {"download_url": "https://cdn/x.png"}
+        cache: dict = {}
+        text = "![a](/app/.storage/session/x.png)"
+
+        fill_markdown_pv_image_urls(file_service, text, url_cache=cache, session_code="s1")
+        fill_markdown_pv_image_urls(file_service, text, url_cache=cache, session_code="s1")
+
+        file_service.get_download_url.assert_called_once()
+        assert cache == {("s1", "x.png"): "https://cdn/x.png"}
 
 
 class TestFillUserImageUrls:

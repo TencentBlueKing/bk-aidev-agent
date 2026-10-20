@@ -17,15 +17,25 @@ from typing import Any
 import pytest
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
+from aidev_agent.core.ag_ui.types import (
+    RunEndMessageSnapshotEvent,
+    RunFinishedInterruptOutcome,
+    RunFinishedSuccessOutcome,
+)
 
 
 def _make_agent(hook=None) -> AidevAGUIAgent:
     """构造仅用于 hook 单测的 agent 实例（跳过 super().__init__ 昂贵的 graph 初始化）。"""
     agent = AidevAGUIAgent.__new__(AidevAGUIAgent)
     agent._run_end_extras_hook = hook
+    agent._run_end_snapshot_builder = None
     agent.active_run = {"id": "run-1", "started_at": None}
     agent._event_handler = None
     return agent
+
+
+def _raise_build_error(state_values):
+    raise RuntimeError("build failed")
 
 
 class TestEmitRunEndExtrasProtocol:
@@ -71,6 +81,47 @@ class TestEmitRunEndExtrasProtocol:
         assert captured["active_run"] is agent.active_run
         # dispatch_event 必须是 agent 自己的 _dispatch_event（保留 DB + SSE 分发通道由协议层掌控）
         assert captured["dispatch_event"] == agent._dispatch_event
+
+
+class TestRunEndSnapshotTail:
+    @pytest.mark.asyncio
+    async def test_success_appends_snapshot_after_hook_events(self):
+        sentinel = object()
+        snapshot = [{"role": "assistant", "content": "![a](https://cdn/a.png)"}]
+
+        async def hook(*, state_values, thread_id, active_run, dispatch_event):
+            yield sentinel
+
+        captured: dict[str, Any] = {}
+
+        def builder(state_values):
+            captured["state_values"] = state_values
+            return snapshot
+
+        agent = _make_agent(hook=hook)
+        agent._run_end_snapshot_builder = builder
+        state = {"k": "v"}
+        events = [ev async for ev in agent._emit_run_end_extras(state, "sess-1", RunFinishedSuccessOutcome())]
+
+        assert events[0] is sentinel
+        assert isinstance(events[1], RunEndMessageSnapshotEvent)
+        assert events[1].messages == snapshot
+        assert captured["state_values"] is state
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "outcome, builder",
+        [
+            (RunFinishedInterruptOutcome.model_construct(interrupts=[]), lambda _: [{"role": "user"}]),
+            (RunFinishedSuccessOutcome(), lambda _: None),
+            (RunFinishedSuccessOutcome(), _raise_build_error),
+        ],
+    )
+    async def test_skips_snapshot_when_not_applicable(self, outcome, builder):
+        agent = _make_agent(hook=None)
+        agent._run_end_snapshot_builder = builder
+
+        assert [ev async for ev in agent._emit_run_end_extras({}, "sess-1", outcome)] == []
 
 
 class TestEventOrderInSource:

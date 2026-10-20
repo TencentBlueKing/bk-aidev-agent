@@ -59,7 +59,7 @@
 - **InputAttachment 输入附件区** — ChatInput 底部附件区布局，承载快捷按钮、文件与发送图标。 → `components/input-attachment.md`
 - **InputInfoAlert 输入提示条** — ChatInput 上方的信息提示条。 → `components/input-info-alert.md`
 - **InputMenuPanel 输入框菜单** — 输入框上方的统一菜单面板，@ / \ 与 + 号共用一套数据源、分组与折叠逻辑。 → `components/input-menu-panel.md`
-- **ModelSelector 模型选择器** — 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签与键盘导航。 → `components/model-selector.md`
+- **ModelSelector 模型选择器** — 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签、键盘导航，以及有描述时的 hover 气泡。 → `components/model-selector.md`
 - **SelectionFooter 多选操作栏** — 消息多选/分享模式下的底部操作栏。 → `components/selection-footer.md`
 - **ShortcutBtn 快捷指令按钮** — 单个快捷指令按钮，支持默认/append 插槽和 expose focus。 → `components/shortcut-btn.md`
 - **ShortcutBtns 快捷指令按钮组** — 快捷指令列表入口，内部组合多个 ShortcutBtn。 → `components/shortcut-btns.md`

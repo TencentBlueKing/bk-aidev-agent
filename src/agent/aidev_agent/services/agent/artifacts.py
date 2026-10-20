@@ -35,7 +35,7 @@ DispatchEvent = Callable[[BaseEvent], Any]
 RunEndExtrasHook = Callable[..., AsyncGenerator[Any, None]]
 
 
-def _has_session_pv(state_values: State) -> bool:
+def has_session_pv(state_values: State) -> bool:
     """是否存在会话级 paas 沙箱 PV。
 
     判定条件：``runtime_paas_sbx_pv`` 列表中至少存在一条同时满足：
@@ -119,7 +119,7 @@ def build_artifacts_generated_hook(
         dispatch_event: DispatchEvent,
     ) -> AsyncGenerator[Any, None]:
         # 退化路径：无 PV 或无 resource_manager 时不 emit
-        if not _has_session_pv(state_values) or resource_manager is None:
+        if not has_session_pv(state_values) or resource_manager is None:
             return
 
         started_at = (active_run or {}).get("started_at")

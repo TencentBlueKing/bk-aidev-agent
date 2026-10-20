@@ -36,44 +36,50 @@
             width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
           }"
         >
-          <div
-            v-for="(message, index) in group.messages"
-            :key="index"
-            class="ai-message-item"
-            :data-message-id="resolveMessageDomId(message)"
+          <MessageProcessList
+            :enabled="shouldShowMessageProcess(group)"
+            :generating="isGenerating && groupIndex === visibleMessageGroups.length - 1"
+            :messages="group.messages"
+            :request-created-at="resolveRequestCreatedAt(groupIndex)"
           >
-            <slot
-              name="default"
-              v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
-            >
-              <MessageRender
-                :key="index"
-                :message="message"
-                :message-tools="userMessageTools"
-                :message-tools-status="messageToolsStatus"
-                :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
-                :on-input-confirm="
-                  (content: UserMessage['content'], docSchema: TagSchema) =>
-                    handleUserInputConfirm(message, content, docSchema)
-                "
-                :on-interrupt-resume="props.onInterruptResume"
-                :on-shortcut-confirm="
-                  (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
-                "
-                :tippy-options="messageToolsTippyOptions"
+            <template #message="{ message }">
+              <div
+                class="ai-message-item"
+                :data-message-id="resolveMessageDomId(message)"
               >
-                <template
-                  v-if="$slots.answeredQuestion"
-                  #answeredQuestion="slotProps"
+                <slot
+                  name="default"
+                  v-bind="{ message, messageToolsStatus, onInterruptResume: props.onInterruptResume }"
                 >
-                  <slot
-                    name="answeredQuestion"
-                    v-bind="slotProps"
-                  />
-                </template>
-              </MessageRender>
-            </slot>
-          </div>
+                  <MessageRender
+                    :message="message"
+                    :message-tools="userMessageTools"
+                    :message-tools-status="messageToolsStatus"
+                    :on-action="(tool: IToolBtn) => handleUserAction(tool, message)"
+                    :on-input-confirm="
+                      (content: UserMessage['content'], docSchema: TagSchema) =>
+                        handleUserInputConfirm(message, content, docSchema)
+                    "
+                    :on-interrupt-resume="props.onInterruptResume"
+                    :on-shortcut-confirm="
+                      (formModel: Record<string, unknown>) => handleUserShortcutConfirm(message, formModel)
+                    "
+                    :tippy-options="messageToolsTippyOptions"
+                  >
+                    <template
+                      v-if="$slots.answeredQuestion"
+                      #answeredQuestion="slotProps"
+                    >
+                      <slot
+                        name="answeredQuestion"
+                        v-bind="slotProps"
+                      />
+                    </template>
+                  </MessageRender>
+                </slot>
+              </div>
+            </template>
+          </MessageProcessList>
           <MessageTools
             v-if="
               renderMode !== RenderMode.Share &&
@@ -108,13 +114,7 @@
     />
     <div class="ai-message-fixed-bottom">
       <ScrollBtn
-        v-show="
-          renderMode !== RenderMode.Share &&
-          (messageStatus === MessageStatus.Streaming ||
-            messageStatus === MessageStatus.StopLoading ||
-            messageStatus === MessageStatus.Fetching ||
-            messageStatus === MessageStatus.Pending)
-        "
+        v-show="isGenerating"
         :loading="messageStatus === MessageStatus.StopLoading"
         :title="messageStatus === MessageStatus.StopLoading ? t('正在停止') : t('停止生成')"
         @click="$emit('stopStreaming')"
@@ -150,6 +150,8 @@
   import ScrollBtn from '../../ai-buttons/scroll-btn/scroll-btn.vue';
   import MessageTime from '../../message-tools/message-time/message-time.vue';
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
+  import MessageProcessList from '../message-process/message-process-list.vue';
+  import { isMessageGenerating, shouldShowMessageProcess } from '../message-process/message-process-status';
   import MessageRender from '../message-render/message-render.vue';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
@@ -251,6 +253,12 @@
     return undefined;
   };
 
+  /** 助手组紧跟在对应的用户提问组之后，取前一组用户消息的 createdAt */
+  const resolveRequestCreatedAt = (groupIndex: number): number | string | undefined => {
+    const previousGroup = visibleMessageGroups.value[groupIndex - 1];
+    return previousGroup?.type === MessageRole.User ? previousGroup.messages[0]?.createdAt : undefined;
+  };
+
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');
 
@@ -278,6 +286,10 @@
     props.renderMode === RenderMode.Share
       ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
       : props.messageGroups,
+  );
+  // 「停止生成」按钮的显示条件；生成中时最后一组的过程状态栏显示「处理中」，其余各组都已结束
+  const isGenerating = computed(
+    () => props.renderMode !== RenderMode.Share && isMessageGenerating(props.messageStatus),
   );
   const handleMouseEnter = (group: MessageGroup) => {
     const lastMessage = group.messages?.at(-1);

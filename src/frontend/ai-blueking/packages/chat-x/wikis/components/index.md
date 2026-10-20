@@ -90,7 +90,7 @@ aiSummary: >
 | [InputMenuPanel](./input/input-menu-panel.md) | 输入框上方的统一菜单面板，`@` `/` `\` 与 + 号共用。 |
 | [AddMenuBtn](./input/add-menu-btn.md) | 输入框左下角 + 号，唤起聚合菜单。 |
 | [InputAttachment](./input/input-attachment.md) | 输入附件区布局。 |
-| [ModelSelector](./input/model-selector.md) | 模型下拉选择器，支持搜索与能力标签。 |
+| [ModelSelector](./input/model-selector.md) | 模型下拉选择器，支持搜索、能力标签，以及有描述时的 hover 气泡。 |
 | [InputInfoAlert](./input/input-info-alert.md) | 输入提示条。 |
 | [FileUploadBtn](./input/file-upload-btn.md) | 独立文件选择按钮（ChatInput 已改用 + 号「文件」项）。 |
 | [ShortcutRender](./input/shortcut-render.md) | 快捷指令表单渲染。 |

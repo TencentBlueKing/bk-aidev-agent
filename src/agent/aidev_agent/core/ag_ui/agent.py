@@ -334,7 +334,7 @@ class LangGraphAgent:
         yield self._dispatch_event(final_snapshot_event)
 
         # 本轮产物识别 hook（子类实现，默认 no-op）；异常内部兜底，不阻断 RUN_FINISHED
-        async for ev in self._emit_run_end_extras(result.state_values, thread_id):
+        async for ev in self._emit_run_end_extras(result.state_values, thread_id, result.outcome):
             yield ev
 
         yield self._dispatch_event(
@@ -453,7 +453,9 @@ class LangGraphAgent:
             outcome=outcome,
         )
 
-    async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
+    async def _emit_run_end_extras(
+        self, state_values: State, thread_id: str, outcome: Any = None
+    ) -> AsyncGenerator[Any, None]:
         """本轮 run 收尾扩展点：MESSAGES_SNAPSHOT 之后、RUN_FINISHED 之前每 run 触发一次。
 
         父类默认 no-op；子类覆写以 yield 自定义事件，异常须自行兜底避免阻断 RUN_FINISHED。

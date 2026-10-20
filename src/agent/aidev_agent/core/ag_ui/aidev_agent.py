@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from logging import getLogger
@@ -45,6 +46,7 @@ from .types import (
     LangGraphEventTypes,
     MessagesInProgressRecord,
     MessageSnapshotEventExtend,
+    RunEndMessageSnapshotEvent,
     RunFinishedSuccessOutcome,
     SessionPersistenceEventNames,
     State,
@@ -85,6 +87,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         approval_interrupts: list[dict] | None = None,
         ask_user_question_interrupts: list[dict] | None = None,
         run_end_extras_hook: Callable[..., AsyncGenerator[Any, None]] | None = None,
+        run_end_snapshot_builder: Callable[[State], list[dict] | None] | None = None,
         interrupt_processor: InterruptProcessor | None = None,
     ):
         super().__init__(
@@ -105,6 +108,8 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         # RUN_FINISHED 前的通用扩展点：由业务层（services/agent/artifacts.py）注入
         # 保持协议层无业务耦合。签名与父类 _emit_run_end_extras 兼容的 async generator。
         self._run_end_extras_hook = run_end_extras_hook
+        # 尾帧快照构造器（业务层注入）；返回 None 表示本轮不补发
+        self._run_end_snapshot_builder = run_end_snapshot_builder
 
     @staticmethod
     def _format_mcp_fetch_failure_message(failures: list[dict[str, Any]]) -> str:
@@ -116,24 +121,39 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             lines.append(f"[{server_name}] {message}")
         return "\n".join(lines)
 
-    async def _emit_run_end_extras(self, state_values: State, thread_id: str) -> AsyncGenerator[Any, None]:
-        """RUN_FINISHED 前的通用扩展点：若注入了 hook，转发其产出的事件序列。
+    async def _emit_run_end_extras(
+        self, state_values: State, thread_id: str, outcome: Any = None
+    ) -> AsyncGenerator[Any, None]:
+        """RUN_FINISHED 前的通用扩展点：先转发 hook 产出的事件，再按出口补发尾帧快照。
 
         本方法不感知任何业务语义（如 PV / PaaS / artifacts），业务实现由构造时注入的
         ``run_end_extras_hook`` 承载（见 :func:`aidev_agent.services.agent.artifacts.build_artifacts_generated_hook`）。
 
         hook 通过 ``dispatch_event`` 关键字参数拿到 :meth:`_dispatch_event`，从而让
         CustomEvent 仍走"DB writer + SSE 双分发"通道；事件路由由协议层掌控。
+
+        尾帧 MESSAGES_SNAPSHOT 仅在成功出口（``RunFinishedSuccessOutcome``）且注入了
+        ``run_end_snapshot_builder`` 时补发，位于 hook 事件之后；中断出口不补发，避免与中断卡片重复渲染。
+        尾帧构造失败只记日志，不阻断 RUN_FINISHED。
         """
-        if self._run_end_extras_hook is None:
+        if self._run_end_extras_hook is not None:
+            async for ev in self._run_end_extras_hook(
+                state_values=state_values,
+                thread_id=thread_id,
+                active_run=self.active_run,
+                dispatch_event=self._dispatch_event,
+            ):
+                yield ev
+        if self._run_end_snapshot_builder is None or not isinstance(outcome, RunFinishedSuccessOutcome):
             return
-        async for ev in self._run_end_extras_hook(
-            state_values=state_values,
-            thread_id=thread_id,
-            active_run=self.active_run,
-            dispatch_event=self._dispatch_event,
-        ):
-            yield ev
+        try:
+            # 构造器内含同步 HTTP（读会话内容 + 逐张签发），挪到线程池避免阻塞事件循环
+            messages = await asyncio.to_thread(self._run_end_snapshot_builder, state_values)
+        except Exception:
+            logger.exception("尾帧 MESSAGES_SNAPSHOT 构造失败，跳过本轮尾帧，不影响 RUN_FINISHED")
+            return
+        if messages is not None:
+            yield RunEndMessageSnapshotEvent(type=EventType.MESSAGES_SNAPSHOT, messages=messages)
 
     async def run(self, input: RunAgentInput) -> AsyncGenerator[str, None]:
         """运行 Agent 并生成编码后的事件流。
@@ -167,8 +187,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
                     continue
 
                 event_type = getattr(event, "type", "")
-                # 特殊处理：不输出 message snapshot 事件（已在上方手动 yield 过完整快照）
-                if event_type == EventType.MESSAGES_SNAPSHOT:
+                # 特殊处理：不输出 SDK 内部 message snapshot（首帧已在上方手动 yield 过完整快照）；
+                # 仅 _emit_run_end_extras 产出的尾帧 RunEndMessageSnapshotEvent 需透传到 RUN_FINISHED 之前。
+                if event_type == EventType.MESSAGES_SNAPSHOT and not isinstance(event, RunEndMessageSnapshotEvent):
                     logger.debug(f"message snapshot: {event}")
                 elif event_type == EventType.CUSTOM and getattr(event, "name", "") in skip_encode_custom:
                     continue
