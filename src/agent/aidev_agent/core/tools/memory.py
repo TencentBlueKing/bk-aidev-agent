@@ -61,6 +61,16 @@ def message_timestamp(value):
     return value.isoformat()
 
 
+def is_complete_ai_message(message) -> bool:
+    """Exclude tool requests and explicitly truncated/filtered model responses."""
+    return (
+        isinstance(message, AIMessage)
+        and not message.tool_calls
+        and str(message.response_metadata.get("finish_reason") or "").lower()
+        not in {"length", "max_tokens", "content_filter", "incomplete"}
+    )
+
+
 class PersonalMemoryRuntime:
     def __init__(
         self,
@@ -219,16 +229,16 @@ class PersonalMemoryRuntime:
 
     def _complete(self, state: dict, config: RunnableConfig) -> dict:
         messages = state.get("messages", [])
-        if not messages or not isinstance(messages[-1], AIMessage):
+        if not messages or not is_complete_ai_message(messages[-1]):
             return {}
         answer = messages[-1]
-        if answer.tool_calls or not answer.id or not answer.content:
+        if not answer.id or not answer.content:
             return {}
         username, context = self.context(config)
         by_id = {message["message_id"]: message for message in context["messages"]}
         for message in messages if self.merge_state_history else [answer]:
             if (
-                (isinstance(message, HumanMessage) or (isinstance(message, AIMessage) and not message.tool_calls))
+                (isinstance(message, HumanMessage) or is_complete_ai_message(message))
                 and message.id
                 and isinstance(message.content, str)
             ):

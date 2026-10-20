@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from aidev_agent.core.tools.memory import PersonalMemoryRuntime, message_timestamp
+from aidev_agent.core.tools.memory import PersonalMemoryRuntime, is_complete_ai_message, message_timestamp
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
@@ -63,7 +63,7 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
                 or not isinstance(message.content, str)
             ):
                 continue
-            if isinstance(message, AIMessage) and message.tool_calls:
+            if isinstance(message, AIMessage) and not is_complete_ai_message(message):
                 continue
             if (role, message.id) not in known:
                 metadata = message.response_metadata

@@ -4,6 +4,7 @@ import json
 import os
 import uuid
 import warnings
+from datetime import datetime, timezone
 from functools import partial
 from importlib.metadata import version as pkg_version
 from logging import getLogger
@@ -349,7 +350,14 @@ class ChatCompletionAgent(BaseModel):
         if input_text:
             # 本轮 user 记录并入 chat_history 账本（唯一事实源）：build 期账本不含本轮 user 消息，
             # 不并入则新对话首帧快照丢失用户刚发的消息；convert 链消费同一账本。
-            self.chat_history.append(ChatPrompt(role=PromptRole.USER.value, content=input_text))
+            self.chat_history.append(
+                ChatPrompt(
+                    id=str(uuid.uuid4()),
+                    role=PromptRole.USER.value,
+                    content=input_text,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
             self._dispatch_custom(
                 CustomEvent(
                     type=EventType.CUSTOM,

@@ -46,6 +46,8 @@ agent, config = CommonQAAgent.get_agent_executor(
 
 成功完成模型回答后，图进入 memory_complete 节点：收集完成的消息、识别本轮实际引用并调用平台 complete_round。工具调用中断、异常退出或没有最终回答时，不提交完成事件。最终回答 ID 为空也不会提交，宿主必须确保消息身份完整。
 
+标准入口接收本轮用户输入时即生成消息 ID 和带时区的接收时间，账本与模型输入共用该身份；不会为缺少时间戳的旧历史补写当前时间。最终回答的 `finish_reason` 为 `length`、`max_tokens`、`content_filter` 或 `incomplete` 时，不提交完成事件；这些未完成助手片段也不会从图历史补入完整快照。正常结束及未提供结束原因的既有模型响应保持兼容。
+
 ## 引用与 TTL
 
 检索结果以 ToolMessage.artifact 传递，并限定在最后一条 HumanMessage 之后的当前回答轮次。use_count 不代表引用次数。
