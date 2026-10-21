@@ -136,6 +136,22 @@ def test_run_coro_sync_preserves_worker_thread_loop():
     assert has_loop is True
 
 
+def test_run_coro_sync_releases_connections_around_wait(monkeypatch):
+    from aidev_agent.utils import loop
+
+    events = []
+    monkeypatch.setattr(loop, "release_idle_connections", lambda: events.append("release"))
+
+    async def operation():
+        events.append("operation")
+        raise ValueError("boom")
+
+    with ThreadPoolExecutor(1) as pool, pytest.raises(ValueError, match="boom"):
+        pool.submit(run_coro_sync, operation).result()
+
+    assert events == ["release", "operation", "release"]
+
+
 @pytest.mark.asyncio
 async def test_run_coro_sync_with_running_loop_delegates_to_new_thread():
     """已有 running loop 时，run_coro_sync 应委托独立线程执行，不抛 already running。

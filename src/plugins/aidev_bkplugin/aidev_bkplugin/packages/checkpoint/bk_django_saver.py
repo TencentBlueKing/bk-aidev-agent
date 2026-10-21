@@ -202,11 +202,17 @@ async def run_db_in_thread(func, *args, **kwargs):
     工作线程持有的是独立的 thread-local 连接，调用结束后需要归还，否则连接会随线程池累积。
     """
 
+    def release_connections():
+        for database in connections.all(initialized_only=True):
+            if database.connection is not None and not database.in_atomic_block and database.get_autocommit():
+                database.close()
+
     def _call():
+        release_connections()
         try:
             return func(*args, **kwargs)
         finally:
-            close_old_connections()
+            release_connections()
 
     return await sync_to_async(_call, thread_sensitive=False)()
 

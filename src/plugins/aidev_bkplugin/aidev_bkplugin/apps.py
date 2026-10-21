@@ -9,7 +9,6 @@ from django.apps import AppConfig
 from django.conf import settings
 
 from aidev_bkplugin.celery_runtime import install_celery_exit_on_broker_loss
-from aidev_bkplugin.database_runtime import install_database_connection_guard
 from aidev_bkplugin.services.metric_runtime import set_metric_service
 
 try:
@@ -207,7 +206,6 @@ class AgentConfig(AppConfig):
     name = "aidev_bkplugin"
 
     def ready(self) -> None:
-        install_database_connection_guard()
         from aidev_agent.packages.resource_manager import resource_manager
         from aidev_agent.services.common_agent import (
             CommonQAAgent,

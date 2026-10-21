@@ -399,12 +399,17 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
             finish_model_attempt_error(handle, error, retry_strategy=settings.LLM_RETRY_STRATEGY)
 
     def _generate(self, *args, **kwargs) -> ChatResult:
+        from aidev_agent.utils.db_connection import release_idle_connections
+
+        release_idle_connections()
         handle = self._begin_model_observation()
         try:
             result = super()._generate(*args, **kwargs)
         except Exception as error:
             self._finish_model_observation_error(handle, error)
             raise
+        finally:
+            release_idle_connections()
         self._finish_model_observation_success(handle)
         return result
 
@@ -554,11 +559,20 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
 
     def _stream(self, *args, **kwargs) -> Iterator[ChatGenerationChunk]:
         """对reasoning_content字段进行时间统计，并拆出首 Token / 读流 Span。"""
+        from aidev_agent.utils.db_connection import release_idle_connections
+
+        release_idle_connections()
         handle = self._begin_model_observation()
         reasoning_start_time = 0
         last_reasoning_content = ""
+        chunks = self._stream_chunks_with_token_spans(super()._stream(*args, **kwargs))
         try:
-            for chunk in self._stream_chunks_with_token_spans(super()._stream(*args, **kwargs)):
+            while True:
+                release_idle_connections()
+                try:
+                    chunk = next(chunks)
+                except StopIteration:
+                    break
                 chunk, reasoning_start_time, last_reasoning_content = self._process_reasoning_chunk(
                     chunk, reasoning_start_time, last_reasoning_content
                 )
@@ -566,6 +580,9 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         except Exception as error:
             self._finish_model_observation_error(handle, error)
             raise
+        finally:
+            chunks.close()
+            release_idle_connections()
         self._finish_model_observation_success(handle)
 
     async def _astream(self, *args, **kwargs) -> AsyncIterator[ChatGenerationChunk]:
