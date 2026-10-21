@@ -40,7 +40,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     _extract_mcp_tools_error_detail,
 )
 from aidev_agent.pydantic_models import AgentConfig, SecuritySettings
-from aidev_agent.utils.db_connection import call_with_reconnect
+from aidev_agent.utils.db_connection import call_with_healthy_connection
 from aidev_agent.utils.executor_identity import approver_authorization
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
@@ -135,7 +135,7 @@ def _get_access_token_by_user(username: str) -> str | None:
     if fn is None:
         return None
     try:
-        token = call_with_reconnect(lambda: fn(username), f"读取 access_token: username={username}")
+        token = call_with_healthy_connection(lambda: fn(username), f"读取 access_token: username={username}")
         return getattr(token, "access_token", None) if token else None
     except Exception as e:
         _logger.warning(f"Failed to get access_token by username {username}: {e}")

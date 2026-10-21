@@ -25,7 +25,7 @@ from logging import getLogger
 
 from langchain_core.tools import ToolException
 
-from aidev_agent.utils.db_connection import call_with_reconnect
+from aidev_agent.utils.db_connection import call_with_healthy_connection
 from aidev_agent.utils.tracing import recording_span
 
 try:
@@ -97,7 +97,7 @@ def _get_access_token_by_user(username: str) -> str:
         raise ToolException("bkoauth 不可用，无法获取审批人凭证")
     # 仅“无授权记录”视为审批人未授权；接口或网络异常原样抛出，避免误导为未授权
     try:
-        token = call_with_reconnect(lambda: fn(username), f"读取审批人 access_token: approved_by={username}")
+        token = call_with_healthy_connection(lambda: fn(username), f"读取审批人 access_token: approved_by={username}")
     except TokenNotExist as error:
         _logger.error("[ToolApproval] 审批人无 access_token 记录: approved_by=%s", username)
         raise unauthorized from error

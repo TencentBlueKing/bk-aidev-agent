@@ -83,6 +83,7 @@ def call_with_reconnect(operation: Callable[[], T], description: str) -> T:
         except Exception as exc:
             if not (is_database_error(exc) and is_reconnectable_error(exc)):
                 raise
+            _discard_default_connection()
             delay = _retry_delay(attempt)
             elapsed = time.monotonic() - started
             if attempt >= RECONNECT_MAX_ATTEMPTS or elapsed + delay > RECONNECT_BUDGET_SECONDS:
@@ -94,10 +95,30 @@ def call_with_reconnect(operation: Callable[[], T], description: str) -> T:
                 delay,
                 exc,
             )
-            _discard_default_connection()
             if delay:
                 time.sleep(delay)
             attempt += 1
+
+
+def call_with_healthy_connection(operation: Callable[[], T], description: str) -> T:
+    """先恢复默认连接，再执行一次可能包含外部续期的操作，禁止整体重放。"""
+    if connection is None:
+        return operation()
+
+    def ensure_usable() -> None:
+        connection.ensure_connection()
+        if not connection.is_usable():
+            raise InterfaceError("数据库连接健康检查失败")
+
+    # 事务内不能通过健康检查隐式重建连接，恢复必须交由外层事务负责。
+    if not connection.in_atomic_block:
+        call_with_reconnect(ensure_usable, description)
+    try:
+        return operation()
+    except Exception as exc:
+        if is_database_error(exc) and is_reconnectable_error(exc):
+            _discard_default_connection()
+        raise
 
 
 def _discard_default_connection() -> None:

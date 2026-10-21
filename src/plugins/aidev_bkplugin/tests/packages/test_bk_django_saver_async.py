@@ -162,11 +162,21 @@ async def test_aget_tuple_reconnects_once_when_connection_lost(mocker, saver, th
     config = _config(thread_id)
     checkpoint = empty_checkpoint()
     await saver.aput(config, checkpoint, {"source": "input"}, {})
+    queryset_class = Checkpoint.objects.get_queryset().__class__
+    original_first = queryset_class.first
+    attempts = []
+
+    def first_after_disconnect(queryset):
+        attempts.append(None)
+        if len(attempts) == 1:
+            raise OperationalError(2013, "Lost connection to MySQL server during query")
+        return original_first(queryset)
+
     get_tuple_impl = mocker.patch.object(
-        saver,
-        "_get_tuple",
-        wraps=saver._get_tuple,
-        side_effect=[OperationalError(2013, "Lost connection to MySQL server during query"), mocker.DEFAULT],
+        queryset_class,
+        "first",
+        autospec=True,
+        side_effect=first_after_disconnect,
     )
 
     loaded = await saver.aget_tuple(config)

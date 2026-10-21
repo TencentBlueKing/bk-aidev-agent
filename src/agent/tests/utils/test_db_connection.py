@@ -2,9 +2,8 @@
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidev_agent.utils import db_connection
-from aidev_agent.utils.db_connection import call_with_reconnect
+from aidev_agent.utils.db_connection import call_with_healthy_connection, call_with_reconnect
 
 
 def test_success_runs_once_without_touching_connection(fake_db_connection):
@@ -61,8 +60,8 @@ def test_gives_up_after_max_attempts_and_raises_last_error(fake_db_connection):
 
     assert exc_info.value is errors[-1]
     assert operation.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
-    # 每次准备重试前丢弃连接；最后一次失败后已无重试，不再丢弃
-    assert fake_db_connection.connection.close.call_count == db_connection.RECONNECT_MAX_ATTEMPTS - 1
+    # 最后一次失败也必须清理，避免调用方降级后继续复用坏连接
+    assert fake_db_connection.connection.close.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
     assert fake_db_connection.clock.sleeps == [0.5, 1.0, 2.0]
 
 
@@ -76,6 +75,7 @@ def test_stops_when_next_wait_would_exceed_the_window(fake_db_connection, monkey
 
     # 第 3 次失败后再等 1.0 秒，总耗时将达到 1.5 秒，超出 1.0 秒窗口，因此只尝试 3 次
     assert operation.call_count == 3
+    assert fake_db_connection.connection.close.call_count == 3
     assert fake_db_connection.clock.sleeps == [0.5]
 
 
@@ -89,6 +89,61 @@ def test_other_database_error_is_not_retried(fake_db_connection):
     assert exc_info.value is error
     assert operation.call_count == 1
     fake_db_connection.connection.close.assert_not_called()
+
+
+def test_health_check_recovers_before_operation(fake_db_connection):
+    fake_db_connection.connection.is_usable.side_effect = [False, True]
+    operation = MagicMock(return_value="ok")
+
+    assert call_with_healthy_connection(operation, "凭证") == "ok"
+
+    operation.assert_called_once_with()
+    fake_db_connection.connection.close.assert_called_once_with()
+
+
+def test_operation_database_failure_is_cleaned_without_replay(fake_db_connection):
+    error = fake_db_connection.OperationalError(2013, "save failed after refresh")
+    operation = MagicMock(side_effect=error)
+
+    with pytest.raises(fake_db_connection.OperationalError) as exc_info:
+        call_with_healthy_connection(operation, "凭证")
+
+    assert exc_info.value is error
+    operation.assert_called_once_with()
+    fake_db_connection.connection.close.assert_called_once_with()
+
+
+def test_failed_preflight_does_not_call_operation(fake_db_connection):
+    fake_db_connection.connection.ensure_connection.side_effect = fake_db_connection.OperationalError(
+        2003, "unavailable"
+    )
+    operation = MagicMock()
+
+    with pytest.raises(fake_db_connection.OperationalError):
+        call_with_healthy_connection(operation, "凭证")
+
+    operation.assert_not_called()
+    assert fake_db_connection.connection.close.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
+
+
+def test_transaction_skips_connection_preflight(fake_db_connection):
+    fake_db_connection.connection.in_atomic_block = True
+    operation = MagicMock(return_value="ok")
+
+    assert call_with_healthy_connection(operation, "凭证") == "ok"
+
+    operation.assert_called_once_with()
+    fake_db_connection.connection.ensure_connection.assert_not_called()
+    fake_db_connection.connection.is_usable.assert_not_called()
+
+
+def test_healthy_connection_without_django_runs_operation_once(monkeypatch):
+    monkeypatch.setattr(db_connection, "connection", None)
+    operation = MagicMock(return_value="ok")
+
+    assert call_with_healthy_connection(operation, "凭证") == "ok"
+
+    operation.assert_called_once_with()
 
 
 def test_non_database_error_is_not_retried(fake_db_connection):

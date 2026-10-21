@@ -34,6 +34,9 @@ def saver(mocker):
     instance = object.__new__(BKDjangoSaver)
     instance.lock = threading.Lock()
     instance.checkpoint_model = mocker.Mock()
+    queryset = instance.checkpoint_model.objects.filter.return_value
+    queryset.db = "checkpoint-read"
+    queryset.using.return_value = queryset
     instance.serde = mocker.Mock()
     instance.serde.dumps_typed.return_value = ("json", b"checkpoint")
     return instance
@@ -463,13 +466,14 @@ def test_get_tuple_reconnects_once_when_connection_lost(mocker, saver, read_conf
     assert lookup.call_count == 2
     # 失效连接必须显式丢弃，否则重读会继续复用同一个坏 socket
     connections.__getitem__.return_value.close.assert_called_once_with()
+    connections.__getitem__.assert_called_once_with("checkpoint-read")
 
 
 def test_get_tuple_raises_when_connection_stays_lost(mocker, saver, read_config, read_clock):
     """连续失效直到用完尝试次数：原样抛出最后一次异常，不降级为 None。"""
     lookup = saver.checkpoint_model.objects.filter.return_value.first
     lookup.side_effect = [OperationalError(2013, f"lost {i}") for i in range(CHECKPOINT_READ_MAX_ATTEMPTS)]
-    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
 
     with pytest.raises(OperationalError) as exc_info:
         saver.get_tuple(read_config)
@@ -477,13 +481,14 @@ def test_get_tuple_raises_when_connection_stays_lost(mocker, saver, read_config,
     assert exc_info.value.args == (2013, f"lost {CHECKPOINT_READ_MAX_ATTEMPTS - 1}")
     assert lookup.call_count == CHECKPOINT_READ_MAX_ATTEMPTS
     assert read_clock.sleeps == [0.5, 1.0, 2.0]
+    assert connections.__getitem__.return_value.close.call_count == CHECKPOINT_READ_MAX_ATTEMPTS
 
 
 def test_get_tuple_stops_when_retry_window_is_exceeded(mocker, saver, read_config, read_clock):
     mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.CHECKPOINT_READ_RETRY_BUDGET_SECONDS", 1.0)
     lookup = saver.checkpoint_model.objects.filter.return_value.first
     lookup.side_effect = [OperationalError(2013, "lost")] * CHECKPOINT_READ_MAX_ATTEMPTS
-    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
 
     with pytest.raises(OperationalError):
         saver.get_tuple(read_config)
@@ -491,6 +496,7 @@ def test_get_tuple_stops_when_retry_window_is_exceeded(mocker, saver, read_confi
     # 第 3 次失败后再等 1.0 秒，总耗时将达到 1.5 秒，超出 1.0 秒窗口，因此只尝试 3 次
     assert lookup.call_count == 3
     assert read_clock.sleeps == [0.5]
+    assert connections.__getitem__.return_value.close.call_count == 3
 
 
 def test_get_tuple_does_not_retry_other_database_error(mocker, saver, read_config):
@@ -505,3 +511,29 @@ def test_get_tuple_does_not_retry_other_database_error(mocker, saver, read_confi
     assert exc_info.value is error
     assert lookup.call_count == 1
     connections.__getitem__.return_value.close.assert_not_called()
+
+
+def test_writes_read_reconnects_its_own_alias(mocker, saver, read_config):
+    checkpoint = SimpleNamespace(
+        thread_id="thread-id",
+        checkpoint_ns="",
+        checkpoint_id="checkpoint-id",
+        parent_checkpoint_id=None,
+        type="json",
+        checkpoint=b"{}",
+        metadata={},
+    )
+    saver.checkpoint_model.objects.filter.return_value.first.return_value = checkpoint
+    saver.writes_model = mocker.Mock()
+    queryset = saver.writes_model.objects.filter.return_value.order_by.return_value.values_list.return_value
+    queryset.db = "writes-read"
+    rows = mocker.MagicMock()
+    rows.__iter__.side_effect = [OperationalError(2013, "lost"), iter([])]
+    queryset.using.return_value = rows
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    assert saver.get_tuple(read_config).pending_writes == []
+
+    assert rows.__iter__.call_count == 2
+    connections.__getitem__.assert_called_once_with("writes-read")
+    connections.__getitem__.return_value.close.assert_called_once_with()

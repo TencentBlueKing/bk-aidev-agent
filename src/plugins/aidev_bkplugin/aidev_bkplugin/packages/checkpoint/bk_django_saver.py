@@ -160,7 +160,7 @@ def _read_retry_delay(attempt: int) -> float:
     return CHECKPOINT_READ_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 2))
 
 
-def _run_database_read_with_retry(operation: Callable[[], T], model, description: str = "") -> T:
+def _run_database_read_with_retry(operation: Callable[[], T], alias: str, description: str = "") -> T:
     """读路径在连接已失效或建连失败时，丢弃连接并在时间窗口内有限次重试。
 
     读取是幂等的，重新执行没有副作用。与写路径不同，这里不做降级：读不到 checkpoint，会话就无法恢复。
@@ -174,6 +174,8 @@ def _run_database_read_with_retry(operation: Callable[[], T], model, description
         except (OperationalError, InterfaceError) as exc:
             if not _is_retryable_read_error(exc):
                 raise
+            with suppress(Exception):
+                connections[alias].close()
             delay = _read_retry_delay(attempt)
             elapsed = time.monotonic() - started
             if attempt >= CHECKPOINT_READ_MAX_ATTEMPTS or elapsed + delay > CHECKPOINT_READ_RETRY_BUDGET_SECONDS:
@@ -185,7 +187,6 @@ def _run_database_read_with_retry(operation: Callable[[], T], model, description
                 description,
                 exc,
             )
-            _discard_connection(model)
             if delay:
                 time.sleep(delay)
             attempt += 1
@@ -523,9 +524,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         # 兼容旧业务方 model：task_path 是 langgraph 上游后加的字段，
         # 部分老业务方的 writes_model 里可能还没这个字段。启动时探测一次，
         # put_writes 只在有字段时才写入，避免 TypeError: unexpected keyword 'task_path'。
-        self._writes_has_task_path = any(
-            f.name == "task_path" for f in self.writes_model._meta.get_fields()
-        )
+        self._writes_has_task_path = any(f.name == "task_path" for f in self.writes_model._meta.get_fields())
 
     def _validate_models(self) -> None:
         """验证model是否包含必需的字段， 如果自定义模型需要其他字段或者约束，可重写本方法"""
@@ -576,8 +575,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         Returns:
             检索到的检查点元组，如果未找到匹配的检查点则返回None
         """
-        # aget_tuple 也经由此入口：连接失效或建连失败时丢弃连接，在时间窗口内有限次整体重试
-        return _run_database_read_with_retry(lambda: self._get_tuple(config), self.checkpoint_model, "get_tuple")
+        return self._get_tuple(config)
 
     def _get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id = config["configurable"]["thread_id"]
@@ -586,15 +584,18 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
 
         # 构建查询条件，如果指定了checkpoint_id，则使用指定的checkpoint_id，否则使用最新的checkpoint_id
         if checkpoint_id:
-            checkpoint_obj = self.checkpoint_model.objects.filter(
+            checkpoint_queryset = self.checkpoint_model.objects.filter(
                 thread_id=thread_id, checkpoint_ns=checkpoint_ns, checkpoint_id=checkpoint_id
-            ).first()
-        else:
-            checkpoint_obj = (
-                self.checkpoint_model.objects.filter(thread_id=thread_id, checkpoint_ns=checkpoint_ns)
-                .order_by("-checkpoint_id")
-                .first()
             )
+        else:
+            checkpoint_queryset = self.checkpoint_model.objects.filter(
+                thread_id=thread_id, checkpoint_ns=checkpoint_ns
+            ).order_by("-checkpoint_id")
+
+        alias = checkpoint_queryset.db
+        checkpoint_obj = _run_database_read_with_retry(
+            lambda: checkpoint_queryset.using(alias).first(), alias, "get_tuple checkpoint"
+        )
 
         if not checkpoint_obj:
             return None
@@ -636,9 +637,12 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
             .order_by("task_id", "idx")
             .values_list("task_id", "channel", "type", "value")
         )
+        alias = writes_queryset.db
+        write_rows = _run_database_read_with_retry(
+            lambda: list(writes_queryset.using(alias)), alias, "get_tuple writes"
+        )
         writes = [
-            (task_id, channel, self.serde.loads_typed((type_, value)))
-            for task_id, channel, type_, value in writes_queryset
+            (task_id, channel, self.serde.loads_typed((type_, value))) for task_id, channel, type_, value in write_rows
         ]
         return CheckpointTuple(
             config,

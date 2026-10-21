@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidev_agent.packages.resource_manager import base as resource_base
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.utils import db_connection
@@ -35,22 +34,24 @@ def test_returns_access_token_on_success(bkoauth_lookup, fake_db_connection):
 
 
 def test_connection_lost_is_retried_once_before_returning_token(bkoauth_lookup, fake_db_connection):
-    bkoauth_lookup.side_effect = [
+    fake_db_connection.connection.ensure_connection.side_effect = [
         fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query"),
-        SimpleNamespace(access_token="alice-token"),
+        None,
     ]
+    bkoauth_lookup.return_value = SimpleNamespace(access_token="alice-token")
 
     assert resource_base._get_access_token_by_user("alice") == "alice-token"
-    assert bkoauth_lookup.call_count == 2
+    assert bkoauth_lookup.call_count == 1
     fake_db_connection.connection.close.assert_called_once_with()
 
 
-def test_database_error_degrades_to_none_after_retries_exhausted(bkoauth_lookup, fake_db_connection):
+def test_database_error_degrades_to_none_without_replaying_refresh(bkoauth_lookup, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
     bkoauth_lookup.side_effect = [error] * db_connection.RECONNECT_MAX_ATTEMPTS
 
     assert resource_base._get_access_token_by_user("alice") is None
-    assert bkoauth_lookup.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
+    assert bkoauth_lookup.call_count == 1
+    fake_db_connection.connection.close.assert_called_once_with()
 
 
 def test_resolve_access_token_degrades_to_empty_string_after_retries_exhausted(bkoauth_lookup, fake_db_connection):
@@ -74,3 +75,20 @@ def test_non_database_error_still_degrades_to_none(bkoauth_lookup, fake_db_conne
     assert resource_base._get_access_token_by_user("alice") is None
     assert bkoauth_lookup.call_count == 1
     fake_db_connection.connection.close.assert_not_called()
+
+
+def test_refresh_is_not_replayed_when_token_save_disconnects(monkeypatch, fake_db_connection):
+    refresh = MagicMock(return_value="new-token")
+    save = MagicMock(side_effect=fake_db_connection.OperationalError(2013, "save failed"))
+
+    def lookup(username):
+        token = refresh()
+        save(token)
+
+    monkeypatch.setattr(resource_base, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
+
+    assert resource_base._get_access_token_by_user("alice") is None
+
+    refresh.assert_called_once_with()
+    save.assert_called_once_with("new-token")
+    fake_db_connection.connection.close.assert_called_once_with()

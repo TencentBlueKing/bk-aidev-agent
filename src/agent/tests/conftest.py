@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidev_agent.utils import db_connection
 
 
@@ -93,7 +92,9 @@ def fake_db_connection(monkeypatch):
 
     返回的 connection.close 是 Mock，测试可断言连接是否被丢弃；clock.sleeps 记录每次退避等待，等待只推进假时钟、不真实睡眠。
     """
-    connection = SimpleNamespace(close=MagicMock())
+    connection = SimpleNamespace(
+        close=MagicMock(), ensure_connection=MagicMock(), is_usable=MagicMock(return_value=True), in_atomic_block=False
+    )
     clock = SimpleNamespace(now=0.0, sleeps=[])
 
     def _sleep(seconds: float) -> None:
