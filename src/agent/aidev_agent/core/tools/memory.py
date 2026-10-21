@@ -17,7 +17,12 @@ from langchain_core.runnables import Runnable, RunnableBinding, RunnableConfig, 
 from langchain_core.tools import StructuredTool
 
 from aidev_agent.packages.resource_manager import resource_manager
-from aidev_agent.utils.message_metadata import is_complete_finish_reason
+from aidev_agent.utils.message_metadata import (
+    assistant_source_text,
+    assistant_source_timestamp,
+    is_complete_finish_reason,
+    message_timestamp,
+)
 
 logger = logging.getLogger(__name__)
 TOOL_NAMES = {"memory_write", "memory_update", "memory_search"}
@@ -48,25 +53,12 @@ def audit_model(model):
     return model
 
 
-def message_timestamp(value):
-    """Normalize host timestamps; malformed optional metadata must not break chat."""
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    if not isinstance(value, datetime):
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.isoformat()
-
-
 def is_complete_ai_message(message) -> bool:
     """Exclude tool requests and explicitly truncated/filtered model responses."""
     return (
         isinstance(message, AIMessage)
         and not message.tool_calls
+        and message.response_metadata.get("memory_source_complete") is not False
         and is_complete_finish_reason(message.response_metadata.get("finish_reason"))
     )
 
@@ -242,16 +234,20 @@ class PersonalMemoryRuntime:
                 and message.id
                 and isinstance(message.content, str)
             ):
+                text = message.content
+                if isinstance(message, AIMessage):
+                    text = assistant_source_text(message)
                 record = {
                     **by_id.get(message.id, {}),
                     "message_id": message.id,
                     "role": "user" if isinstance(message, HumanMessage) else "assistant",
-                    "text": message.content,
+                    "text": text,
                     "complete": True,
                 }
                 metadata = message.response_metadata
                 stamp = (
                     record.get("timestamp")
+                    or (assistant_source_timestamp(message) if isinstance(message, AIMessage) else None)
                     or message_timestamp(metadata.get("created_at"))
                     or message_timestamp(metadata.get("timestamp"))
                 )
@@ -259,6 +255,8 @@ class PersonalMemoryRuntime:
                     stamp = self.message_times.setdefault(message.id, datetime.now(timezone.utc).isoformat())
                 if stamp is not None:
                     record["timestamp"] = stamp
+                    if message is answer:
+                        answer.response_metadata["source_timestamp"] = stamp
                 by_id[message.id] = record
         context["messages"] = list(by_id.values())
         try:

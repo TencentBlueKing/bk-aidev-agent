@@ -173,7 +173,18 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
             if isinstance(message, AIMessage):
                 content = message.content
                 if content and isinstance(content, str):
-                    return self._parse_content(content)
+                    parsed = self._parse_content(content)
+                    # Keep the visible final body and the original completion identity/time.
+                    return parsed.model_copy(
+                        update={
+                            "id": parsed.id or message.id,
+                            "response_metadata": {
+                                **message.response_metadata,
+                                "source_text": parsed.content.strip(),
+                                **parsed.response_metadata,
+                            },
+                        }
+                    )
                 return message
             # 非 AIMessage 情况，尝试解析 text
             return self.parse(generation.text)

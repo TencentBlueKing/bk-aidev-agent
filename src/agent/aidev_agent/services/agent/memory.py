@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime, is_complete_ai_message, message_timestamp
-from aidev_agent.utils.message_metadata import is_complete_finish_reason
+from aidev_agent.utils.message_metadata import assistant_source_text, is_complete_finish_reason
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
@@ -17,7 +17,7 @@ MEMORY_REQUEST_TIMEOUT = 2
 def history_timestamp(data: dict) -> str | None:
     return (
         message_timestamp((data.get("builtin_property") or {}).get("source_timestamp"))
-        or message_timestamp(data.get("created_at"))
+        or (message_timestamp(data.get("created_at")) if data.get("role") != "assistant" else None)
         or message_timestamp(data.get("timestamp"))
     )
 
@@ -35,6 +35,7 @@ def completed_history(history, session_id: str) -> list[dict]:
         if data["role"] == "assistant" and (
             data.get("status") not in {None, "", "complete"}
             or builtin.get("tool_calls")
+            or builtin.get("memory_source_complete") is False
             or not is_complete_finish_reason(builtin.get("finish_reason"))
         ):
             continue
@@ -43,8 +44,12 @@ def completed_history(history, session_id: str) -> list[dict]:
         message_id = str(
             builtin.get("message_id") or data.get("id") or "host-" + hashlib.sha256(identity.encode()).hexdigest()
         )
+        if data["role"] == "assistant" and isinstance(builtin.get("source_text"), str):
+            text = builtin["source_text"]
         item = {"message_id": message_id, "role": data["role"], "text": text, "complete": True}
         stamp = history_timestamp(data)
+        if data["role"] == "assistant" and stamp is None:
+            continue
         if stamp is not None:
             item["timestamp"] = stamp
         snapshot.append(item)
@@ -64,11 +69,21 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
         schemas = manager.memory_schemas(username=username, agent_code=agent_code, timeout=MEMORY_REQUEST_TIMEOUT)
         if not isinstance(schemas, dict) or schemas.get("enabled") is not True:
             return None
-        snapshot = completed_history(history, session_id)
+        records = [record.model_dump() if hasattr(record, "model_dump") else record for record in history or []]
+        snapshot = completed_history(records, session_id)
         # Preserve the full host ledger; legacy hosts may omit the current user input.
         known = {(item["role"], item["message_id"]) for item in snapshot}
+        # Model inputs retain DB IDs while the ledger exposes canonical source IDs.
+        # Both identify existing records, including records excluded from evidence.
+        known.update(
+            (record.get("role"), str(identity))
+            for record in records
+            if isinstance(record, dict)
+            for identity in [record.get("id"), (record.get("builtin_property") or {}).get("message_id")]
+            if identity
+        )
         visible = (
-            messages if not history else [message for message in messages if isinstance(message, HumanMessage)][-1:]
+            messages if not records else [message for message in messages if isinstance(message, HumanMessage)][-1:]
         )
         for message in visible:
             role = "user" if isinstance(message, HumanMessage) else "assistant"
@@ -82,21 +97,25 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
                 continue
             if (role, message.id) not in known:
                 metadata = message.response_metadata
-                stamp = message_timestamp(metadata.get("created_at")) or message_timestamp(metadata.get("timestamp"))
-                snapshot.append(
-                    {
-                        "message_id": message.id,
-                        "role": role,
-                        "text": message.content,
-                        "complete": True,
-                        "timestamp": stamp or datetime.now(timezone.utc).isoformat(),
-                    }
+                stamp = (
+                    message_timestamp(metadata.get("source_timestamp"))
+                    or message_timestamp(metadata.get("created_at"))
+                    or message_timestamp(metadata.get("timestamp"))
+                    or history_timestamp(message.additional_kwargs)
                 )
+                if role == "assistant" and stamp is None:
+                    continue
+                text = assistant_source_text(message) if role == "assistant" else message.content
+                item = {"message_id": message.id, "role": role, "text": text, "complete": True}
+                # Missing history time is unknown, not the time of this request.
+                if stamp is not None:
+                    item["timestamp"] = stamp
+                snapshot.append(item)
         context = {
             "username": username,
             "agent_code": agent_code,
             "session_id": session_id,
-            "session_date": session_date(history),
+            "session_date": session_date(records),
             "messages": snapshot,
         }
         runtime = PersonalMemoryRuntime(
