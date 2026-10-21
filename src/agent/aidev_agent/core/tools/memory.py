@@ -17,6 +17,7 @@ from langchain_core.runnables import Runnable, RunnableBinding, RunnableConfig, 
 from langchain_core.tools import StructuredTool
 
 from aidev_agent.packages.resource_manager import resource_manager
+from aidev_agent.utils.message_metadata import is_complete_finish_reason
 
 logger = logging.getLogger(__name__)
 TOOL_NAMES = {"memory_write", "memory_update", "memory_search"}
@@ -66,8 +67,7 @@ def is_complete_ai_message(message) -> bool:
     return (
         isinstance(message, AIMessage)
         and not message.tool_calls
-        and str(message.response_metadata.get("finish_reason") or "").lower()
-        not in {"length", "max_tokens", "content_filter", "incomplete"}
+        and is_complete_finish_reason(message.response_metadata.get("finish_reason"))
     )
 
 
