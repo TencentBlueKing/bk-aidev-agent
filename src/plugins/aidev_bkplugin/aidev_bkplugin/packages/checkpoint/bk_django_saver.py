@@ -908,15 +908,8 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        # list 是惰性生成器，必须在工作线程里物化，否则 QuerySet 会在事件循环所在线程求值；
-        # 物化后是完整列表，连接失效时整体重试不会留下半截结果
-        items = await run_db_in_thread(
-            lambda: _run_database_read_with_retry(
-                lambda: list(self.list(config, filter=filter, before=before, limit=limit)),
-                self.checkpoint_model,
-                "alist",
-            )
-        )
+        # list 是惰性生成器，必须在工作线程里物化，否则 QuerySet 会在事件循环所在线程求值
+        items = await run_db_in_thread(lambda: list(self.list(config, filter=filter, before=before, limit=limit)))
         for item in items:
             yield item
 

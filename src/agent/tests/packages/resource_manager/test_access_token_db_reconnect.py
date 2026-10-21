@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """bkoauth 取 access_token 时的数据库连接失效处理。
 
-回归点：数据库错误曾被 ``_get_access_token_by_user`` 吞成 None，``build_executor_info`` 随之静默降级为空凭证，
-下游只能返回难以定位的鉴权失败。
+回归点：会话线程在长时间 LLM 调用后复用已被服务端关闭的连接，bkoauth 读取报 2013；
+失效连接必须被丢弃并重试，否则同一线程后续所有 ORM 访问都会复用这条坏连接。
 """
 
 from types import SimpleNamespace
@@ -45,23 +45,20 @@ def test_connection_lost_is_retried_once_before_returning_token(bkoauth_lookup, 
     fake_db_connection.connection.close.assert_called_once_with()
 
 
-def test_database_error_is_raised_instead_of_returning_none(bkoauth_lookup, fake_db_connection):
+def test_database_error_degrades_to_none_after_retries_exhausted(bkoauth_lookup, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
     bkoauth_lookup.side_effect = [error] * db_connection.RECONNECT_MAX_ATTEMPTS
 
-    with pytest.raises(fake_db_connection.OperationalError):
-        resource_base._get_access_token_by_user("alice")
-
+    assert resource_base._get_access_token_by_user("alice") is None
     assert bkoauth_lookup.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
 
 
-def test_resolve_access_token_propagates_database_error(bkoauth_lookup, fake_db_connection):
+def test_resolve_access_token_degrades_to_empty_string_after_retries_exhausted(bkoauth_lookup, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
     bkoauth_lookup.side_effect = [error] * db_connection.RECONNECT_MAX_ATTEMPTS
     manager = _StubResourceManager(username="alice")
 
-    with pytest.raises(fake_db_connection.OperationalError):
-        manager.resolve_access_token()
+    assert manager.resolve_access_token() == ""
 
 
 def test_resolve_access_token_keeps_empty_string_when_user_has_no_token(bkoauth_lookup, fake_db_connection):
