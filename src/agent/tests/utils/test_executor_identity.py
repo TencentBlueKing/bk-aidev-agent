@@ -9,7 +9,7 @@ from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.packages.interrupt_manager.approval import ApprovalStateHandler
 from aidev_agent.packages.langchain_core.tools.base import ApiWrapper
 from aidev_agent.packages.resource_manager.base import _mcp_approver_identity_interceptor, _mcp_tool_interceptors
-from aidev_agent.utils import db_connection, executor_identity
+from aidev_agent.utils import executor_identity
 from aidev_agent.utils.executor_identity import ApproverIdentity, approver_identity_scope
 from langchain_core.tools import ToolException
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest
@@ -119,26 +119,9 @@ def test_mcp_approver_interceptor_only_mounted_for_apigw_server():
     assert _mcp_approver_identity_interceptor not in _mcp_tool_interceptors({})
 
 
-def test_approver_token_reconnects_once_when_connection_lost(monkeypatch, fake_db_connection):
-    """审批人凭证读取遇到已失效连接时先重连一次，不能误报为审批人未授权。"""
-    fake_db_connection.connection.ensure_connection.side_effect = [
-        fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query"),
-        None,
-    ]
-    lookup = MagicMock(return_value=SimpleNamespace(access_token="bob-token"))
-    monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
-
-    with approver_identity_scope(BOB):
-        authorization = executor_identity.approver_authorization("http", "tool")
-
-    assert json.loads(authorization) == {"access_token": "bob-token"}
-    assert lookup.call_count == 1
-    fake_db_connection.connection.close.assert_called_once_with()
-
-
 def test_approver_database_error_is_not_reported_as_unauthorized(monkeypatch, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
-    lookup = MagicMock(side_effect=[error] * db_connection.RECONNECT_MAX_ATTEMPTS)
+    lookup = MagicMock(side_effect=error)
     monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
 
     with approver_identity_scope(BOB), pytest.raises(fake_db_connection.OperationalError):

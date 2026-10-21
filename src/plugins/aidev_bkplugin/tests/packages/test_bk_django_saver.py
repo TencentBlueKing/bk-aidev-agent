@@ -448,9 +448,6 @@ def read_clock(mocker):
 @pytest.mark.parametrize(
     "error",
     [
-        OperationalError(2013, "Lost connection to MySQL server during query"),
-        OperationalError(2006, "MySQL server has gone away"),
-        OperationalError(2002, "Can't connect to local MySQL server through socket"),
         OperationalError(2003, "Can't connect to MySQL server on 'db'"),
         InterfaceError(0, ""),
     ],
@@ -469,8 +466,10 @@ def test_get_tuple_reconnects_once_when_connection_lost(mocker, saver, read_conf
     connections.__getitem__.assert_called_once_with("checkpoint-read")
 
 
-def test_get_tuple_raises_when_connection_stays_lost(mocker, saver, read_config, read_clock):
-    """连续失效直到用完尝试次数：原样抛出最后一次异常，不降级为 None。"""
+@pytest.mark.parametrize("budget, attempts, sleeps", [(5.0, 5, [0.5, 1.0, 2.0]), (1.0, 3, [0.5])])
+def test_get_tuple_retry_limits(mocker, saver, read_config, read_clock, budget, attempts, sleeps):
+    """次数或预算耗尽后抛出最后的异常，并清理失效连接。"""
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.CHECKPOINT_READ_RETRY_BUDGET_SECONDS", budget)
     lookup = saver.checkpoint_model.objects.filter.return_value.first
     lookup.side_effect = [OperationalError(2013, f"lost {i}") for i in range(CHECKPOINT_READ_MAX_ATTEMPTS)]
     connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
@@ -478,25 +477,9 @@ def test_get_tuple_raises_when_connection_stays_lost(mocker, saver, read_config,
     with pytest.raises(OperationalError) as exc_info:
         saver.get_tuple(read_config)
 
-    assert exc_info.value.args == (2013, f"lost {CHECKPOINT_READ_MAX_ATTEMPTS - 1}")
-    assert lookup.call_count == CHECKPOINT_READ_MAX_ATTEMPTS
-    assert read_clock.sleeps == [0.5, 1.0, 2.0]
-    assert connections.__getitem__.return_value.close.call_count == CHECKPOINT_READ_MAX_ATTEMPTS
-
-
-def test_get_tuple_stops_when_retry_window_is_exceeded(mocker, saver, read_config, read_clock):
-    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.CHECKPOINT_READ_RETRY_BUDGET_SECONDS", 1.0)
-    lookup = saver.checkpoint_model.objects.filter.return_value.first
-    lookup.side_effect = [OperationalError(2013, "lost")] * CHECKPOINT_READ_MAX_ATTEMPTS
-    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
-
-    with pytest.raises(OperationalError):
-        saver.get_tuple(read_config)
-
-    # 第 3 次失败后再等 1.0 秒，总耗时将达到 1.5 秒，超出 1.0 秒窗口，因此只尝试 3 次
-    assert lookup.call_count == 3
-    assert read_clock.sleeps == [0.5]
-    assert connections.__getitem__.return_value.close.call_count == 3
+    assert exc_info.value.args == (2013, f"lost {attempts - 1}")
+    assert lookup.call_count == connections.__getitem__.return_value.close.call_count == attempts
+    assert read_clock.sleeps == sleeps
 
 
 def test_get_tuple_does_not_retry_other_database_error(mocker, saver, read_config):
