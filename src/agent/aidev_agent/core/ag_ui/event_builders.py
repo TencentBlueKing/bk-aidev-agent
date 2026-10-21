@@ -281,4 +281,9 @@ def build_model_end_payload(output_message: Any, tools_mapping: dict[str, Any]) 
         "deferred_tool_calls": deferred_tool_calls,
         "reasoning_content": reasoning_content,
         "reasoning_duration": reasoning_duration,
+        **(
+            {"finish_reason": output_message.response_metadata["finish_reason"]}
+            if "finish_reason" in output_message.response_metadata
+            else {}
+        ),
     }

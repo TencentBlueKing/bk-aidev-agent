@@ -8,9 +8,18 @@ from datetime import datetime, timezone
 from langchain_core.messages import AIMessage, HumanMessage
 
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime, is_complete_ai_message, message_timestamp
+from aidev_agent.utils.message_metadata import is_complete_finish_reason
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
+
+
+def history_timestamp(data: dict) -> str | None:
+    return (
+        message_timestamp((data.get("builtin_property") or {}).get("source_timestamp"))
+        or message_timestamp(data.get("created_at"))
+        or message_timestamp(data.get("timestamp"))
+    )
 
 
 def completed_history(history, session_id: str) -> list[dict]:
@@ -22,14 +31,20 @@ def completed_history(history, session_id: str) -> list[dict]:
         text = data.get("content")
         if not isinstance(text, str) or not text:
             continue
+        builtin = data.get("builtin_property") or {}
         if data["role"] == "assistant" and (
-            data.get("status") not in {None, "", "complete"} or (data.get("builtin_property") or {}).get("tool_calls")
+            data.get("status") not in {None, "", "complete"}
+            or builtin.get("tool_calls")
+            or not is_complete_finish_reason(builtin.get("finish_reason"))
         ):
             continue
         identity = json.dumps([session_id, index, data["role"], text], ensure_ascii=False)
-        message_id = str(data.get("id") or "host-" + hashlib.sha256(identity.encode()).hexdigest())
+        # The database primary key differs from the host/model message identity.
+        message_id = str(
+            builtin.get("message_id") or data.get("id") or "host-" + hashlib.sha256(identity.encode()).hexdigest()
+        )
         item = {"message_id": message_id, "role": data["role"], "text": text, "complete": True}
-        stamp = message_timestamp(data.get("created_at")) or message_timestamp(data.get("timestamp"))
+        stamp = history_timestamp(data)
         if stamp is not None:
             item["timestamp"] = stamp
         snapshot.append(item)
@@ -103,7 +118,7 @@ def session_date(history) -> str:
     for record in history or []:
         data = record.model_dump() if hasattr(record, "model_dump") else record
         if isinstance(data, dict):
-            stamp = message_timestamp(data.get("created_at")) or message_timestamp(data.get("timestamp"))
+            stamp = history_timestamp(data)
             if stamp is not None:
                 return datetime.fromisoformat(stamp).date().isoformat()
     return datetime.now(timezone.utc).date().isoformat()

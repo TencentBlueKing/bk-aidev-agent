@@ -353,19 +353,23 @@ class ChatCompletionAgent(BaseModel):
         if input_text:
             # 本轮 user 记录并入 chat_history 账本（唯一事实源）：build 期账本不含本轮 user 消息，
             # 不并入则新对话首帧快照丢失用户刚发的消息；convert 链消费同一账本。
-            self.chat_history.append(
-                ChatPrompt(
-                    id=str(uuid.uuid4()),
-                    role=PromptRole.USER.value,
-                    content=input_text,
-                    created_at=datetime.now(timezone.utc).isoformat(),
-                )
+            current = ChatPrompt(
+                id=str(uuid.uuid4()),
+                role=PromptRole.USER.value,
+                content=input_text,
+                created_at=datetime.now(timezone.utc).isoformat(),
             )
+            self.chat_history.append(current)
             self._dispatch_custom(
                 CustomEvent(
                     type=EventType.CUSTOM,
                     name=SessionPersistenceEventNames.UserInputSaved.value,
-                    value={"content": input_text, "turn_id": turn_id},
+                    value={
+                        "content": input_text,
+                        "turn_id": turn_id,
+                        "message_id": current.id,
+                        "source_timestamp": current.created_at,
+                    },
                 )
             )
 

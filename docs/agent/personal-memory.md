@@ -10,6 +10,8 @@ SDK 每次请求先探测平台 schema。平台接口未部署、响应不合法
 
 SDK 保留完整宿主聊天记录，不使用被截断或改写的模型输入替代会话快照。已有消息 ID 保持不变，缺失 ID 使用会话和消息内容生成稳定标识；会话日期优先读取历史记录的创建时间。每条消息分别保留 created_at 或 timestamp，转换为带时区的 ISO 时间；无时区时间按 UTC 处理。标准入口补入的当前消息和最终回答也带时间，同一运行时重复提交相同回答保持时间不变。未完成的 assistant 消息不参与抽取。
 
+跨轮回读优先使用 builtin_property.message_id 作为来源身份，数据库主键仅作旧历史兼容回退。本轮用户 ID 和接收时间随持久化事件保存，原始时间使用 builtin_property.source_timestamp，避免落库时间替换来源时间。模型结束原因随事件保存在 builtin_property.finish_reason；历史回读与当前回答使用同一结束原因判定，截断或过滤的回答不会在下一轮重新作为完整证据上传。旧历史未保存的消息身份和结束原因无法自动恢复。
+
 SDK 调用 `/openapi/aidev/agents/v1/memory/` 智能体运行时入口，沿用应用凭证，同时将每次调用的 username 写入网关认证字段 `bk_username`，按该用户解析 access_token。username 不保证自动存在：只配置应用凭证的宿主必须补齐真实认证用户，空值或纯空白在调用前被拒绝。网关与平台还会核对用户认证状态；`X-BKAIDEV-USER` 不能指定记忆归属，也不能用自定义认证头覆盖 ResourceManager 凭证。
 
 显式提供 access_token 时，ResourceManager 的 username 必须与该次调用用户一致。共享图的动态用户不能复用固定用户的 token，应使用可按用户解析凭证的 ResourceManager 或按请求创建绑定用户的实例。
