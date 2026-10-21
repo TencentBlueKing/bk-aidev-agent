@@ -12,6 +12,7 @@ import pytest
 
 from aidev_agent.packages.resource_manager import base as resource_base
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
+from aidev_agent.utils import db_connection
 
 
 class _StubResourceManager(BaseResourceManager):
@@ -46,17 +47,17 @@ def test_connection_lost_is_retried_once_before_returning_token(bkoauth_lookup, 
 
 def test_database_error_is_raised_instead_of_returning_none(bkoauth_lookup, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
-    bkoauth_lookup.side_effect = [error, error]
+    bkoauth_lookup.side_effect = [error] * db_connection.RECONNECT_MAX_ATTEMPTS
 
     with pytest.raises(fake_db_connection.OperationalError):
         resource_base._get_access_token_by_user("alice")
 
-    assert bkoauth_lookup.call_count == 2
+    assert bkoauth_lookup.call_count == db_connection.RECONNECT_MAX_ATTEMPTS
 
 
 def test_resolve_access_token_propagates_database_error(bkoauth_lookup, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
-    bkoauth_lookup.side_effect = [error, error]
+    bkoauth_lookup.side_effect = [error] * db_connection.RECONNECT_MAX_ATTEMPTS
     manager = _StubResourceManager(username="alice")
 
     with pytest.raises(fake_db_connection.OperationalError):

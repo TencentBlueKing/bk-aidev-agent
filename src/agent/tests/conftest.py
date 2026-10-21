@@ -91,14 +91,22 @@ class _FakeInterfaceError(Exception):
 def fake_db_connection(monkeypatch):
     """把 db_connection 中的 Django 符号替换为假对象。
 
-    返回的 connection.close 是 Mock，测试可断言连接是否被丢弃。
+    返回的 connection.close 是 Mock，测试可断言连接是否被丢弃；clock.sleeps 记录每次退避等待，等待只推进假时钟、不真实睡眠。
     """
     connection = SimpleNamespace(close=MagicMock())
+    clock = SimpleNamespace(now=0.0, sleeps=[])
+
+    def _sleep(seconds: float) -> None:
+        clock.sleeps.append(seconds)
+        clock.now += seconds
+
     monkeypatch.setattr(db_connection, "OperationalError", _FakeDatabaseError)
     monkeypatch.setattr(db_connection, "InterfaceError", _FakeInterfaceError)
     monkeypatch.setattr(db_connection, "connection", connection)
+    monkeypatch.setattr(db_connection, "time", SimpleNamespace(monotonic=lambda: clock.now, sleep=_sleep))
     return SimpleNamespace(
         OperationalError=_FakeDatabaseError,
         InterfaceError=_FakeInterfaceError,
         connection=connection,
+        clock=clock,
     )

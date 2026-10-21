@@ -12,7 +12,7 @@ from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.packages.interrupt_manager.approval import ApprovalStateHandler
 from aidev_agent.packages.langchain_core.tools.base import ApiWrapper
 from aidev_agent.packages.resource_manager.base import _mcp_approver_identity_interceptor, _mcp_tool_interceptors
-from aidev_agent.utils import executor_identity
+from aidev_agent.utils import db_connection, executor_identity
 from aidev_agent.utils.executor_identity import ApproverIdentity, approver_identity_scope
 
 CALLER_AUTH = json.dumps({"access_token": "caller-token"})
@@ -140,7 +140,7 @@ def test_approver_token_reconnects_once_when_connection_lost(monkeypatch, fake_d
 
 def test_approver_database_error_is_not_reported_as_unauthorized(monkeypatch, fake_db_connection):
     error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
-    lookup = MagicMock(side_effect=[error, error])
+    lookup = MagicMock(side_effect=[error] * db_connection.RECONNECT_MAX_ATTEMPTS)
     monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
 
     with approver_identity_scope(BOB), pytest.raises(fake_db_connection.OperationalError):

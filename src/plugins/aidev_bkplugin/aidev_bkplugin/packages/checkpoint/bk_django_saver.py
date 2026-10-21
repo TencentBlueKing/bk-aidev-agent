@@ -54,6 +54,13 @@ RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
 CONNECTION_LOST_DATABASE_ERROR_CODES = {2006, 2013, 2055}
 CHECKPOINT_WRITE_MAX_RETRIES = 3
 CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
+# 读路径重试策略：丢弃失效连接后重试；首次立即重试，之后指数退避；若下一次等待会使总耗时超过预算则放弃。
+# 与写路径不同，读路径不降级：读不到 checkpoint，会话就无法恢复，因此次数更多、窗口更宽。
+CHECKPOINT_READ_MAX_ATTEMPTS = 5
+CHECKPOINT_READ_RETRY_BASE_DELAY_SECONDS = 0.5
+CHECKPOINT_READ_RETRY_BUDGET_SECONDS = 5.0
+# 建连失败（服务重启、主机短暂不可达）只在读路径重试；写路径保持原有策略
+CHECKPOINT_READ_CONNECT_ERROR_CODES = {2002, 2003}
 _SQLITE_WRITE_LOCKS: dict[str, threading.RLock] = {}
 _SQLITE_WRITE_LOCKS_GUARD = threading.Lock()
 
@@ -138,19 +145,50 @@ def _run_database_write_with_retry(operation: Callable[[], None], model, descrip
             time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
 
 
+def _is_retryable_read_error(exc: Exception) -> bool:
+    """读路径可重试的错误：连接已失效，或建立连接失败。"""
+    if _is_connection_lost_error(exc):
+        return True
+    error_code = exc.args[0] if exc.args else None
+    return error_code in CHECKPOINT_READ_CONNECT_ERROR_CODES
+
+
+def _read_retry_delay(attempt: int) -> float:
+    """第 attempt 次尝试失败后，发起下一次尝试前的等待秒数：依次为 0、0.5、1、2 ..."""
+    if attempt == 1:
+        return 0.0
+    return CHECKPOINT_READ_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 2))
+
+
 def _run_database_read_with_retry(operation: Callable[[], T], model, description: str = "") -> T:
-    """读路径仅在连接已失效时丢弃连接并重试一次。
+    """读路径在连接已失效或建连失败时，丢弃连接并在时间窗口内有限次重试。
 
     读取是幂等的，重新执行没有副作用。与写路径不同，这里不做降级：读不到 checkpoint，会话就无法恢复。
+    尝试次数上限为 CHECKPOINT_READ_MAX_ATTEMPTS；若下一次等待会使总耗时超过预算，则原样上抛最后一次异常。
     """
-    try:
-        return operation()
-    except (OperationalError, InterfaceError) as exc:
-        if not _is_connection_lost_error(exc):
-            raise
-        logger.warning("checkpoint 读取遇到已失效的数据库连接，丢弃后重试一次：%s, error=%s", description, exc)
-        _discard_connection(model)
-        return operation()
+    started = time.monotonic()
+    attempt = 1
+    while True:
+        try:
+            return operation()
+        except (OperationalError, InterfaceError) as exc:
+            if not _is_retryable_read_error(exc):
+                raise
+            delay = _read_retry_delay(attempt)
+            elapsed = time.monotonic() - started
+            if attempt >= CHECKPOINT_READ_MAX_ATTEMPTS or elapsed + delay > CHECKPOINT_READ_RETRY_BUDGET_SECONDS:
+                raise
+            logger.warning(
+                "checkpoint 读取遇到已失效或不可用的数据库连接，第 %s 次尝试失败，%.1f 秒后重试：%s, error=%s",
+                attempt,
+                delay,
+                description,
+                exc,
+            )
+            _discard_connection(model)
+            if delay:
+                time.sleep(delay)
+            attempt += 1
 
 
 async def run_db_in_thread(func, *args, **kwargs):
@@ -538,7 +576,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         Returns:
             检索到的检查点元组，如果未找到匹配的检查点则返回None
         """
-        # aget_tuple 也经由此入口：连接被服务端关闭时丢弃连接并整体重试一次
+        # aget_tuple 也经由此入口：连接失效或建连失败时丢弃连接，在时间窗口内有限次整体重试
         return _run_database_read_with_retry(lambda: self._get_tuple(config), self.checkpoint_model, "get_tuple")
 
     def _get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:

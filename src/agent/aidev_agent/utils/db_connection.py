@@ -16,10 +16,11 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-# 数据库连接失效后的一次性重连，仅用于幂等读取。
+# 数据库连接失效或建连失败时的有限次重连，仅用于幂等读取。
 # SDK 不强制依赖 Django：宿主未安装 Django 时没有可重建的 ORM 连接，所有判断都退化为“不是数据库错误”，
 # 调用会原样执行。
 
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from logging import getLogger
@@ -34,8 +35,17 @@ _logger = getLogger(__name__)
 
 T = TypeVar("T")
 
-# 服务端或中间代理关闭空闲连接后，客户端要到下一次使用时才会报出的错误码（pymysql）
-CONNECTION_LOST_DATABASE_ERROR_CODES = frozenset({2006, 2013, 2055})
+# 可重连的错误码（pymysql）：
+# 2006 / 2013 / 2055 是服务端或中间代理关闭空闲连接后，下一次使用时才报出的错误；
+# 2002 / 2003 是建连失败，常见于服务重启或主机短暂不可达，重试窗口需要覆盖它们，否则重试对这类故障无效。
+RECONNECTABLE_DATABASE_ERROR_CODES = frozenset({2002, 2003, 2006, 2013, 2055})
+
+# 重连策略（与插件读路径保持一致）：首次重试立即发起，丢弃的失效连接换成新连接通常即可恢复；之后指数退避。
+# 若下一次等待会使自首次尝试起的总耗时超过 RECONNECT_BUDGET_SECONDS，则停止重试。单次建连耗时另计：
+# pymysql 默认 connect_timeout=10 秒，主机黑洞式不可达时单次尝试本身就会耗尽窗口。
+RECONNECT_MAX_ATTEMPTS = 5
+RECONNECT_BASE_DELAY_SECONDS = 0.5
+RECONNECT_BUDGET_SECONDS = 5.0
 
 
 def is_database_error(exc: BaseException) -> bool:
@@ -44,27 +54,50 @@ def is_database_error(exc: BaseException) -> bool:
     return isinstance(exc, database_errors)
 
 
-def is_connection_lost_error(exc: BaseException) -> bool:
-    """判断数据库异常是否表示连接已失效：驱动层连接不可用，或连接在使用中被对端关闭。"""
+def is_reconnectable_error(exc: BaseException) -> bool:
+    """判断数据库异常能否通过丢弃连接后重试解决：驱动层连接不可用、连接被对端关闭，或建连失败。"""
     if InterfaceError is not None and isinstance(exc, InterfaceError):
         return True
     error_code = exc.args[0] if exc.args else None
-    return error_code in CONNECTION_LOST_DATABASE_ERROR_CODES
+    return error_code in RECONNECTABLE_DATABASE_ERROR_CODES
+
+
+def _retry_delay(attempt: int) -> float:
+    """第 attempt 次尝试失败后，发起下一次尝试前的等待秒数：依次为 0、0.5、1、2 ..."""
+    if attempt == 1:
+        return 0.0
+    return RECONNECT_BASE_DELAY_SECONDS * (2 ** (attempt - 2))
 
 
 def call_with_reconnect(operation: Callable[[], T], description: str) -> T:
-    """执行幂等的数据库读取；连接已失效时丢弃当前线程的默认连接并重试一次。
+    """执行幂等的数据库读取；连接失效或建连失败时丢弃当前线程的默认连接，在时间窗口内有限次重试。
 
-    重试仍失败，或异常不是连接失效时原样抛出，由调用方决定如何失败；禁止在这里吞成空结果。
+    最多尝试 RECONNECT_MAX_ATTEMPTS 次；若下一次等待会使总耗时超过 RECONNECT_BUDGET_SECONDS，则不再重试。
+    全部失败后原样抛出最后一次异常，由调用方决定如何失败；禁止在这里吞成空结果。
     """
-    try:
-        return operation()
-    except Exception as exc:
-        if not (is_database_error(exc) and is_connection_lost_error(exc)):
-            raise
-        _logger.warning("%s：数据库连接已失效，丢弃连接后重试一次，error=%s", description, exc)
-        _discard_default_connection()
-        return operation()
+    started = time.monotonic()
+    attempt = 1
+    while True:
+        try:
+            return operation()
+        except Exception as exc:
+            if not (is_database_error(exc) and is_reconnectable_error(exc)):
+                raise
+            delay = _retry_delay(attempt)
+            elapsed = time.monotonic() - started
+            if attempt >= RECONNECT_MAX_ATTEMPTS or elapsed + delay > RECONNECT_BUDGET_SECONDS:
+                raise
+            _logger.warning(
+                "%s：数据库连接失效或不可用，第 %s 次尝试失败，%.1f 秒后重试，error=%s",
+                description,
+                attempt,
+                delay,
+                exc,
+            )
+            _discard_default_connection()
+            if delay:
+                time.sleep(delay)
+            attempt += 1
 
 
 def _discard_default_connection() -> None:
