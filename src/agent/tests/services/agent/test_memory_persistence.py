@@ -4,12 +4,20 @@ import copy
 from unittest.mock import MagicMock
 
 import pytest
-from ag_ui.core import CustomEvent, EventType
+from ag_ui.core import (
+    CustomEvent,
+    EventType,
+    RunErrorEvent,
+    RunFinishedEvent,
+    TextMessageContentEvent,
+    TextMessageStartEvent,
+)
 from aidev_agent.core.ag_ui.event_builders import build_model_end_payload
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.agent.memory import automatic_personal_memory, completed_history
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
+from aidev_agent.utils.event import RunId
 from langchain_core.messages import AIMessage
 
 
@@ -78,6 +86,9 @@ def test_current_user_identity_and_source_time_survive_persistence(persisted_cha
         ("max_tokens", False),
         ("content_filter", False),
         ("incomplete", False),
+        ("cancelled", False),
+        ("stopped", False),
+        ("error", False),
     ],
 )
 def test_completed_answer_gate_survives_persistence(persisted_chat, memory_manager, reason, kept):
@@ -120,3 +131,44 @@ def test_user_event_without_source_time_still_preserves_identity(persisted_chat)
         )
     )
     assert records[0]["builtin_property"] == {"message_id": "canonical"}
+
+
+def partial_answer(writer):
+    writer.handle_text_message_start(
+        TextMessageStartEvent(type=EventType.TEXT_MESSAGE_START, message_id="partial", role="assistant")
+    )
+    writer.handle_text_message_content(
+        TextMessageContentEvent(type=EventType.TEXT_MESSAGE_CONTENT, message_id="partial", delta="Partial fact")
+    )
+
+
+@pytest.mark.parametrize(
+    "termination,kept",
+    [("complete", True), ("cancelled", False), ("stopped", False), ("cancel_error", False), ("error", False)],
+)
+def test_partial_answer_termination_survives_next_round(persisted_chat, memory_manager, termination, kept):
+    writer, records = persisted_chat
+    partial_answer(writer)
+    if termination in {"error", "cancel_error"}:
+        message = RunId.CANCELLED_MESSAGE if termination == "cancel_error" else "Failure"
+        writer.handle_run_error(RunErrorEvent(type=EventType.RUN_ERROR, message=message))
+    else:
+        writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="s", run_id=termination))
+    history = [ChatPrompt.model_validate(record) for record in records]
+    runtime = automatic_personal_memory(memory_manager, "alice", "s", history, [], agent_code="agent-a")
+    runtime.complete({"messages": [AIMessage(id="next-answer", content="Next answer")]}, {})
+    messages = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
+    assert ("partial" in [message["message_id"] for message in messages]) is kept
+    assert records[0]["status"] == "complete"  # Display semantics are preserved.
+    expected = None if kept else "error" if termination == "error" else "cancelled"
+    assert records[0]["builtin_property"].get("finish_reason") == expected
+
+
+def test_cancellation_after_model_end_does_not_mark_completed_answer_partial(persisted_chat):
+    writer, records = persisted_chat
+    partial_answer(writer)
+    save_answer(writer, AIMessage(id="partial", content="Complete answer", response_metadata={"finish_reason": "stop"}))
+    writer.handle_run_finished(RunFinishedEvent(type=EventType.RUN_FINISHED, thread_id="s", run_id="cancelled"))
+    assert len(records) == 1
+    assert completed_history(records, "s")[0]["text"] == "Complete answer"
+    assert records[0]["builtin_property"]["finish_reason"] == "stop"

@@ -554,11 +554,12 @@ class BaseSessionWriter(ABC):
                     reasoning_content=thinking_content,
                 )
 
-            # 回写 assistant 消息（status="complete"，不区分取消/非取消）
+            # Preserve display status while keeping cancelled fragments out of memory.
             self._write_assistant_message(
                 message_id=message_id,
                 content=content if content else "",
                 tool_calls=[],
+                **({"finish_reason": "cancelled"} if self._is_cancelled else {}),
             )
 
             # 标记为已写入
@@ -755,6 +756,7 @@ class BaseSessionWriter(ABC):
                     message_id=message_id,
                     content=content if content else "",
                     tool_calls=[],
+                    finish_reason="cancelled",
                 )
                 if self._write_error_count == errors_before:
                     self._written_message_ids.add(message_id)
@@ -993,6 +995,7 @@ class BaseSessionWriter(ABC):
                 message_id=message_id,
                 content=content if content else "",
                 tool_calls=[],
+                finish_reason="error",
             )
             self._written_message_ids.add(message_id)
 
