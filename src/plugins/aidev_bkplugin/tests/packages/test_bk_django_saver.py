@@ -413,3 +413,55 @@ def test_put_writes_new_model_falsy_task_path_falls_back_to_empty_string(mocker)
     for call in bulk_upsert_mock.call_args_list:
         writes_objects = call.args[1]
         assert writes_objects[0].task_path == ""
+
+
+@pytest.fixture
+def read_config():
+    return {"configurable": {"thread_id": "thread-id", "checkpoint_id": "checkpoint-id"}}
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError(2013, "Lost connection to MySQL server during query"),
+        OperationalError(2006, "MySQL server has gone away"),
+        InterfaceError(0, ""),
+    ],
+)
+def test_get_tuple_reconnects_once_when_connection_lost(mocker, saver, read_config, error):
+    """读取时连接已被服务端关闭：丢弃坏连接后重读一次，成功则对调用方透明。"""
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = [error, None]
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    assert saver.get_tuple(read_config) is None
+
+    assert lookup.call_count == 2
+    # 失效连接必须显式丢弃，否则重读会继续复用同一个坏 socket
+    connections.__getitem__.return_value.close.assert_called_once_with()
+
+
+def test_get_tuple_raises_when_connection_stays_lost(mocker, saver, read_config):
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = [OperationalError(2013, "lost"), OperationalError(2013, "lost again")]
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    with pytest.raises(OperationalError) as exc_info:
+        saver.get_tuple(read_config)
+
+    assert exc_info.value.args == (2013, "lost again")
+    assert lookup.call_count == 2
+
+
+def test_get_tuple_does_not_retry_other_database_error(mocker, saver, read_config):
+    error = OperationalError(1146, "table doesn't exist")
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = error
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    with pytest.raises(OperationalError) as exc_info:
+        saver.get_tuple(read_config)
+
+    assert exc_info.value is error
+    assert lookup.call_count == 1
+    connections.__getitem__.return_value.close.assert_not_called()

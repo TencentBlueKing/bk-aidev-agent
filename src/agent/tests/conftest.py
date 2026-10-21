@@ -2,6 +2,12 @@ import logging
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+
+from aidev_agent.utils import db_connection
 
 
 def pytest_ignore_collect(collection_path: Path, path, config):
@@ -71,3 +77,28 @@ if logger is not None:
 
     # Intercept standard logging and route to loguru
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+
+
+class _FakeDatabaseError(Exception):
+    """替代 django.db.OperationalError：SDK 测试环境不安装 Django，用假异常驱动连接重连分支。"""
+
+
+class _FakeInterfaceError(Exception):
+    """替代 django.db.InterfaceError。"""
+
+
+@pytest.fixture
+def fake_db_connection(monkeypatch):
+    """把 db_connection 中的 Django 符号替换为假对象。
+
+    返回的 connection.close 是 Mock，测试可断言连接是否被丢弃。
+    """
+    connection = SimpleNamespace(close=MagicMock())
+    monkeypatch.setattr(db_connection, "OperationalError", _FakeDatabaseError)
+    monkeypatch.setattr(db_connection, "InterfaceError", _FakeInterfaceError)
+    monkeypatch.setattr(db_connection, "connection", connection)
+    return SimpleNamespace(
+        OperationalError=_FakeDatabaseError,
+        InterfaceError=_FakeInterfaceError,
+        connection=connection,
+    )

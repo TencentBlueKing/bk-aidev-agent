@@ -40,6 +40,7 @@ from aidev_agent.packages.langchain_core.tools.base import (
     _extract_mcp_tools_error_detail,
 )
 from aidev_agent.pydantic_models import AgentConfig, SecuritySettings
+from aidev_agent.utils.db_connection import call_with_reconnect, is_database_error
 from aidev_agent.utils.executor_identity import approver_authorization
 from aidev_agent.utils.loop import run_coro_sync
 from aidev_agent.utils.tracing import CLIENT_SPAN_KIND, recording_span, trace_headers
@@ -129,14 +130,19 @@ def _mcp_tool_interceptors(server_config: dict[str, Any]) -> list:
 
 
 def _get_access_token_by_user(username: str) -> str | None:
-    """通过 bkoauth 获取用户 access_token（延迟访问，依赖 Django AppConfig.ready 调用 _init_function）。"""
+    """通过 bkoauth 获取用户 access_token（延迟访问，依赖 Django AppConfig.ready 调用 _init_function）。
+
+    数据库错误必须向上抛出：返回 None 表示“用户没有 token”，上层会静默降级为空凭证。
+    """
     fn = getattr(bkoauth, "get_access_token_by_user", None) if bkoauth else None
     if fn is None:
         return None
     try:
-        token = fn(username)
+        token = call_with_reconnect(lambda: fn(username), f"读取 access_token: username={username}")
         return getattr(token, "access_token", None) if token else None
     except Exception as e:
+        if is_database_error(e):
+            raise
         _logger.warning(f"Failed to get access_token by username {username}: {e}")
         return None
 

@@ -25,7 +25,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from typing import Any, Callable, Optional, Tuple, cast
+from typing import Any, Callable, Optional, Tuple, TypeVar, cast
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -46,6 +46,8 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.serde.types import ChannelProtocol
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
 # 服务端或中间代理关闭连接后，客户端要到下一次使用时才发现；语句本身没有问题，重建连接即可恢复。
@@ -134,6 +136,21 @@ def _run_database_write_with_retry(operation: Callable[[], None], model, descrip
                 _discard_connection(model)
             close_old_connections()
             time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
+
+
+def _run_database_read_with_retry(operation: Callable[[], T], model, description: str = "") -> T:
+    """读路径仅在连接已失效时丢弃连接并重试一次。
+
+    读取是幂等的，重新执行没有副作用。与写路径不同，这里不做降级：读不到 checkpoint，会话就无法恢复。
+    """
+    try:
+        return operation()
+    except (OperationalError, InterfaceError) as exc:
+        if not _is_connection_lost_error(exc):
+            raise
+        logger.warning("checkpoint 读取遇到已失效的数据库连接，丢弃后重试一次：%s, error=%s", description, exc)
+        _discard_connection(model)
+        return operation()
 
 
 async def run_db_in_thread(func, *args, **kwargs):
@@ -521,6 +538,10 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         Returns:
             检索到的检查点元组，如果未找到匹配的检查点则返回None
         """
+        # aget_tuple 也经由此入口：连接被服务端关闭时丢弃连接并整体重试一次
+        return _run_database_read_with_retry(lambda: self._get_tuple(config), self.checkpoint_model, "get_tuple")
+
+    def _get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_id = get_checkpoint_id(config)
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
@@ -849,8 +870,15 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        # list 是惰性生成器，必须在工作线程里物化，否则 QuerySet 会在事件循环所在线程求值
-        items = await run_db_in_thread(lambda: list(self.list(config, filter=filter, before=before, limit=limit)))
+        # list 是惰性生成器，必须在工作线程里物化，否则 QuerySet 会在事件循环所在线程求值；
+        # 物化后是完整列表，连接失效时整体重试不会留下半截结果
+        items = await run_db_in_thread(
+            lambda: _run_database_read_with_retry(
+                lambda: list(self.list(config, filter=filter, before=before, limit=limit)),
+                self.checkpoint_model,
+                "alist",
+            )
+        )
         for item in items:
             yield item
 

@@ -118,3 +118,30 @@ def test_mcp_approver_interceptor_only_mounted_for_apigw_server():
     )
     assert _mcp_approver_identity_interceptor not in _mcp_tool_interceptors({"headers": {"Authorization": "Bearer x"}})
     assert _mcp_approver_identity_interceptor not in _mcp_tool_interceptors({})
+
+
+def test_approver_token_reconnects_once_when_connection_lost(monkeypatch, fake_db_connection):
+    """审批人凭证读取遇到已失效连接时先重连一次，不能误报为审批人未授权。"""
+    lookup = MagicMock(
+        side_effect=[
+            fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query"),
+            SimpleNamespace(access_token="bob-token"),
+        ]
+    )
+    monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
+
+    with approver_identity_scope(BOB):
+        authorization = executor_identity.approver_authorization("http", "tool")
+
+    assert json.loads(authorization) == {"access_token": "bob-token"}
+    assert lookup.call_count == 2
+    fake_db_connection.connection.close.assert_called_once_with()
+
+
+def test_approver_database_error_is_not_reported_as_unauthorized(monkeypatch, fake_db_connection):
+    error = fake_db_connection.OperationalError(2013, "Lost connection to MySQL server during query")
+    lookup = MagicMock(side_effect=[error, error])
+    monkeypatch.setattr(executor_identity, "bkoauth", SimpleNamespace(get_access_token_by_user=lookup))
+
+    with approver_identity_scope(BOB), pytest.raises(fake_db_connection.OperationalError):
+        executor_identity.approver_authorization("http", "tool")

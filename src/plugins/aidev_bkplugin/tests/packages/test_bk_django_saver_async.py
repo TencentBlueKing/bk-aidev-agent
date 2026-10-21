@@ -155,3 +155,39 @@ async def test_sync_implementations_are_dispatched_off_event_loop_thread(saver, 
 
     assert set(executed_in) == {"put", "put_writes", "get_tuple", "delete_thread"}
     assert all(t is not loop_thread for t in executed_in.values())
+
+
+async def test_aget_tuple_reconnects_once_when_connection_lost(mocker, saver, thread_id):
+    """读路径遇到已失效连接：工作线程丢弃连接后重读一次，调用方拿到正常结果。"""
+    config = _config(thread_id)
+    checkpoint = empty_checkpoint()
+    await saver.aput(config, checkpoint, {"source": "input"}, {})
+    get_tuple_impl = mocker.patch.object(
+        saver,
+        "_get_tuple",
+        wraps=saver._get_tuple,
+        side_effect=[OperationalError(2013, "Lost connection to MySQL server during query"), mocker.DEFAULT],
+    )
+
+    loaded = await saver.aget_tuple(config)
+
+    assert loaded is not None
+    assert loaded.checkpoint["id"] == checkpoint["id"]
+    assert get_tuple_impl.call_count == 2
+
+
+async def test_alist_reconnects_once_when_connection_lost(mocker, saver, thread_id):
+    """alist 物化在工作线程完成，连接失效时整体重试，不会返回半截结果。"""
+    config = _config(thread_id)
+    await saver.aput(config, empty_checkpoint(), {}, {})
+    list_impl = mocker.patch.object(
+        saver,
+        "list",
+        wraps=saver.list,
+        side_effect=[OperationalError(2013, "Lost connection to MySQL server during query"), mocker.DEFAULT],
+    )
+
+    items = [item async for item in saver.alist(config)]
+
+    assert len(items) == 1
+    assert list_impl.call_count == 2
