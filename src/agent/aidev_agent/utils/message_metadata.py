@@ -2,4 +2,12 @@
 
 
 def is_complete_finish_reason(value) -> bool:
-    return str(value or "").lower() not in {"length", "max_tokens", "content_filter", "incomplete"}
+    return str(value or "").lower() not in {
+        "length",
+        "max_tokens",
+        "content_filter",
+        "incomplete",
+        "cancelled",
+        "stopped",
+        "error",
+    }
