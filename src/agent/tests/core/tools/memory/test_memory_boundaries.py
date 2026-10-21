@@ -99,7 +99,9 @@ def test_bad_reference_types_and_ids_are_rejected(runtime, references):
         runtime.referenced_ids(answer, [{"memory_id": "used"}])
 
 
-@pytest.mark.parametrize("finish_reason", ["length", "max_tokens", "content_filter", "incomplete", "LENGTH"])
+@pytest.mark.parametrize(
+    "finish_reason", ["length", "max_tokens", "content_filter", "incomplete", "LENGTH", "cancelled", "stopped", "error"]
+)
 def test_graph_does_not_commit_unfinished_response(runtime, finish_reason):
     graph, _ = (
         ReActAgentBuilder()
