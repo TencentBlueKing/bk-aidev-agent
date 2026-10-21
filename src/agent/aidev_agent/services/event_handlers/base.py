@@ -323,6 +323,11 @@ class BaseSessionWriter(ABC):
     def handle_user_input_saved(self, event) -> None:
         """处理 user 输入落库事件（所有带 input 路径）：直调 _do_create_content 写 user 记录。"""
         value = event.value if isinstance(event.value, dict) else {}
+        prop = {"turn_id": value.get("turn_id") or ""}
+        if value.get("message_id"):
+            prop["builtin_property"] = {"message_id": value["message_id"]}
+            if value.get("source_timestamp"):
+                prop["builtin_property"]["source_timestamp"] = value["source_timestamp"]
         try:
             self._do_create_content(
                 payload={
@@ -330,7 +335,7 @@ class BaseSessionWriter(ABC):
                     "role": PromptRole.USER.value,
                     "content": value.get("content") or "",
                     "status": "success",
-                    "property": {"turn_id": value.get("turn_id") or ""},
+                    "property": prop,
                 },
                 headers=self._get_headers(),
             )
@@ -836,6 +841,7 @@ class BaseSessionWriter(ABC):
             message_id=message_id,
             content=content,
             tool_calls=tool_calls,
+            **({"finish_reason": payload["finish_reason"]} if "finish_reason" in payload else {}),
         )
 
         # 记录需要审批但尚未执行的 tool_calls，待工具实际执行后补充写入
@@ -1307,6 +1313,7 @@ class BaseSessionWriter(ABC):
         content: str,
         tool_calls: list,
         status: str = "complete",
+        finish_reason: str | None = None,
     ) -> None:
         """回写 assistant 消息
 
@@ -1320,6 +1327,8 @@ class BaseSessionWriter(ABC):
             "message_id": message_id,
             "tool_calls": tool_calls,
         }
+        if finish_reason is not None:
+            assistant_property["finish_reason"] = finish_reason
 
         # 记录 builtin_property，以便后续追加审批 tool_calls 时合并
         self._assistant_builtin_properties[message_id] = dict(assistant_property)
