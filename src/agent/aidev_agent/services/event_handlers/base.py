@@ -177,6 +177,10 @@ class BaseSessionWriter(ABC):
         # 用于追踪已写入的 assistant 消息的 builtin_property，以便后续追加 tool_calls 时合并
         # key: assistant_message_id, value: builtin_property dict
         self._assistant_builtin_properties: dict[str, dict] = {}
+        self._assistant_message_properties: dict[str, dict] = {}
+        self._memory_source_completions: dict[str, bool] = {}
+        self._memory_source_texts: dict[str, str] = {}
+        self._memory_source_lock = threading.RLock()
 
     # ---------- 公共事件入口 ----------
 
@@ -230,7 +234,9 @@ class BaseSessionWriter(ABC):
         """
         event_name = event.event.get("name", "")
 
-        if event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
+        if event_name == SessionPersistenceEventNames.MemorySourceFinalized.value:
+            self.handle_memory_source_finalized(event)
+        elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
             self.handle_flow_agent_start(event)
@@ -252,6 +258,8 @@ class BaseSessionWriter(ABC):
 
         if event_name == SessionPersistenceEventNames.ChatModelEnd.value:
             self.handle_model_end(event)
+        elif event_name == SessionPersistenceEventNames.MemorySourceFinalized.value:
+            self.handle_memory_source_finalized(event)
         elif event_name == SessionPersistenceEventNames.ArtifactsGenerated.value:
             self.handle_artifacts_generated(event)
         elif event_name == SessionPersistenceEventNames.AskUserQuestionFinalized.value:
@@ -794,7 +802,47 @@ class BaseSessionWriter(ABC):
             self._thinking_content = ""
             self._thinking_active = False
 
+    def handle_memory_source_finalized(self, event: RawEvent | CustomEvent) -> None:
+        payload = event.value if isinstance(event, CustomEvent) else event.event.get("data", {})
+        message_id = payload.get("message_id") if isinstance(payload, dict) else None
+        complete = payload.get("memory_source_complete") if isinstance(payload, dict) else None
+        if not message_id or type(complete) is not bool:
+            return
+        text = payload.get("source_text")
+        if complete and (not isinstance(text, str) or not text.strip()):
+            return
+        with self._memory_source_lock:
+            complete = self._memory_source_completions.setdefault(message_id, complete)
+            if complete:
+                self._memory_source_texts.setdefault(message_id, text)
+            existing = self._assistant_builtin_properties.get(message_id)
+            content_id = self._content_ids_by_message_id.get(message_id)
+            if existing is None or content_id is None:
+                return
+            merged = {**existing, "memory_source_complete": complete}
+            if complete:
+                merged["source_text"] = self._memory_source_texts[message_id]
+            if merged == existing:
+                return
+            prop = {**self._assistant_message_properties.get(message_id, {}), "builtin_property": merged}
+            errors_before = self._write_error_count
+            self._safe_call(
+                self._do_update_content,
+                message_id,
+                "finalize_memory_source",
+                content_id=content_id,
+                payload={"property": prop},
+                headers=self._get_headers(),
+            )
+            if self._write_error_count == errors_before:
+                self._assistant_builtin_properties[message_id] = merged
+                self._assistant_message_properties[message_id] = prop
+
     def handle_model_end(self, event: RawEvent | CustomEvent) -> None:
+        with self._memory_source_lock:
+            self._handle_model_end(event)
+
+    def _handle_model_end(self, event: RawEvent | CustomEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
 
         Args:
@@ -844,6 +892,11 @@ class BaseSessionWriter(ABC):
             content=content,
             tool_calls=tool_calls,
             **({"finish_reason": payload["finish_reason"]} if "finish_reason" in payload else {}),
+            **({"source_timestamp": payload["source_timestamp"]} if payload.get("source_timestamp") else {}),
+            source_text=self._memory_source_texts.get(message_id, payload.get("source_text")),
+            memory_source_complete=self._memory_source_completions.get(
+                message_id, payload.get("memory_source_complete")
+            ),
         )
 
         # 记录需要审批但尚未执行的 tool_calls，待工具实际执行后补充写入
@@ -1317,6 +1370,9 @@ class BaseSessionWriter(ABC):
         tool_calls: list,
         status: str = "complete",
         finish_reason: str | None = None,
+        source_timestamp: str | None = None,
+        source_text: str | None = None,
+        memory_source_complete: bool | None = None,
     ) -> None:
         """回写 assistant 消息
 
@@ -1332,6 +1388,12 @@ class BaseSessionWriter(ABC):
         }
         if finish_reason is not None:
             assistant_property["finish_reason"] = finish_reason
+        if source_timestamp is not None:
+            assistant_property["source_timestamp"] = source_timestamp
+        if source_text is not None:
+            assistant_property["source_text"] = source_text
+        if memory_source_complete is not None:
+            assistant_property["memory_source_complete"] = memory_source_complete
 
         # 记录 builtin_property，以便后续追加审批 tool_calls 时合并
         self._assistant_builtin_properties[message_id] = dict(assistant_property)
@@ -1345,6 +1407,10 @@ class BaseSessionWriter(ABC):
         )
 
     def _flush_deferred_tool_call(self, tool_call_id: str, tool_name: str | None = None) -> None:
+        with self._memory_source_lock:
+            self._flush_deferred_tool_call_locked(tool_call_id, tool_name)
+
+    def _flush_deferred_tool_call_locked(self, tool_call_id: str, tool_name: str | None = None) -> None:
         """将延迟写入的审批 tool_call 补充到对应的 assistant 消息
 
         当需要审批的工具实际执行完成后（handle_tool_finish），调用此方法
@@ -1494,6 +1560,8 @@ class BaseSessionWriter(ABC):
         )
         if content_id is not None:
             self._content_ids_by_message_id[message_id] = content_id
+            if role == PromptRole.ASSISTANT.value:
+                self._assistant_message_properties.setdefault(message_id, dict(payload["property"]))
         return content_id
 
     def _update_session_content(

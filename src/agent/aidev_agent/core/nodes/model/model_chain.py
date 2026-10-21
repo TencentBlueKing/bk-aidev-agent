@@ -23,15 +23,19 @@ import logging
 import time
 from typing import Any
 
+from langchain_core.callbacks import adispatch_custom_event, dispatch_custom_event
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableLambda
+from langchain_core.runnables.config import merge_configs
 from langchain_core.tools import BaseTool
 from openai import RateLimitError
 from tenacity import RetryError
 
 from aidev_agent.config import settings
+from aidev_agent.core.ag_ui.types import SessionPersistenceEventNames
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
+from aidev_agent.utils.message_metadata import AssistantCompletionTimestamp, finalize_memory_source
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_model_rate_limit, record_model_retry
@@ -236,6 +240,18 @@ def _build_model_chain(
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
         )
+        llm_with_tools = llm_with_tools.with_config(
+            merge_configs(
+                getattr(llm_with_tools, "config", None),
+                {
+                    "callbacks": [
+                        AssistantCompletionTimestamp(
+                            pending_transform=bool(tools and (use_structured_response or use_tool_call_promotion))
+                        )
+                    ]
+                },
+            )
+        )
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
         # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
         invoke_kwargs: dict[str, Any] = {}
@@ -287,6 +303,9 @@ def _build_model_chain(
                     error=error,
                 )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
+        source = finalize_memory_source(response)
+        if source is not None:
+            dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
         ctx.response = response
         return ctx
 
@@ -299,6 +318,18 @@ def _build_model_chain(
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
+        )
+        llm_with_tools = llm_with_tools.with_config(
+            merge_configs(
+                getattr(llm_with_tools, "config", None),
+                {
+                    "callbacks": [
+                        AssistantCompletionTimestamp(
+                            pending_transform=bool(tools and (use_structured_response or use_tool_call_promotion))
+                        )
+                    ]
+                },
+            )
         )
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
         # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
@@ -363,6 +394,9 @@ def _build_model_chain(
                     error=error,
                 )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
+        source = finalize_memory_source(response)
+        if source is not None:
+            await adispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
         ctx.response = response
         return ctx
 

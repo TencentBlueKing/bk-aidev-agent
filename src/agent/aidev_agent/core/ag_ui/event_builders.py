@@ -12,6 +12,7 @@ from ag_ui.core import EventType
 from langchain_core.messages import ToolMessage
 
 from aidev_agent.packages.interrupt_manager import is_approval_configured
+from aidev_agent.utils.message_metadata import assistant_source_timestamp
 
 from .events import ExtendToolCallResultEvent
 from .types import ExtendFunctionCall, ExtendToolCall
@@ -276,11 +277,23 @@ def build_model_end_payload(output_message: Any, tools_mapping: dict[str, Any]) 
 
     return {
         "message_id": message_id,
+        "source_timestamp": assistant_source_timestamp(output_message, generate=True),
         "content": content,
+        **(
+            {"source_text": output_message.response_metadata["source_text"]}
+            if output_message.response_metadata.get("memory_source_complete") is True
+            and isinstance(output_message.response_metadata.get("source_text"), str)
+            else {}
+        ),
         "tool_calls": tool_calls,
         "deferred_tool_calls": deferred_tool_calls,
         "reasoning_content": reasoning_content,
         "reasoning_duration": reasoning_duration,
+        **(
+            {"memory_source_complete": output_message.response_metadata["memory_source_complete"]}
+            if "memory_source_complete" in output_message.response_metadata
+            else {}
+        ),
         **(
             {"finish_reason": output_message.response_metadata["finish_reason"]}
             if "finish_reason" in output_message.response_metadata
