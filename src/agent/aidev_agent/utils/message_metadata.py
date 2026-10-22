@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage
 
+from aidev_agent.utils.message_text import strip_think_blocks
+
 
 def message_timestamp(value):
     """Normalize host timestamps; malformed optional metadata must not break chat."""
@@ -43,7 +45,7 @@ def assistant_source_text(message) -> str:
     text = message.response_metadata.get("source_text")
     if not isinstance(text, str):
         text = message.content
-    return text.strip()
+    return strip_think_blocks(text, preserve_whitespace=True)
 
 
 def is_complete_finish_reason(value) -> bool:
@@ -55,6 +57,8 @@ def is_complete_finish_reason(value) -> bool:
         "cancelled",
         "stopped",
         "error",
+        "tool_calls",
+        "function_call",
     }
 
 
@@ -76,19 +80,22 @@ class AssistantCompletionTimestamp(BaseCallbackHandler):
                         message.response_metadata.update(memory_source_pending=True, memory_source_complete=False)
 
 
-def finalize_memory_source(message) -> dict | None:
-    """Settle eligibility using the actual transformed output, never raw-text guesses."""
+def finalize_memory_source(message, *, accepted: bool = True) -> dict | None:
+    """Settle eligibility only after the caller accepts the transformed output."""
     if not isinstance(message, AIMessage) or not message.response_metadata.pop("memory_source_pending", False):
         return None
+    text = strip_think_blocks(message.content, preserve_whitespace=True) if isinstance(message.content, str) else ""
     complete = bool(
-        not message.tool_calls
-        and isinstance(message.content, str)
-        and message.content.strip()
+        accepted
+        and not message.tool_calls
+        and not message.invalid_tool_calls
+        and text.strip()
         and is_complete_finish_reason(message.response_metadata.get("finish_reason"))
     )
     message.response_metadata["memory_source_complete"] = complete
     result = {"message_id": message.id, "memory_source_complete": complete}
     if complete:
-        message.response_metadata["source_text"] = message.content.strip()
+        message.response_metadata["source_text"] = text
         result["source_text"] = message.response_metadata["source_text"]
+        result["source_timestamp"] = assistant_source_timestamp(message, generate=True)
     return result

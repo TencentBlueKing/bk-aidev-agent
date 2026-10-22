@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime, is_complete_ai_message, message_timestamp
 from aidev_agent.utils.message_metadata import assistant_source_text, is_complete_finish_reason
+from aidev_agent.utils.message_text import strip_think_blocks
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
@@ -46,9 +47,18 @@ def completed_history(history, session_id: str) -> list[dict]:
         )
         if data["role"] == "assistant" and isinstance(builtin.get("source_text"), str):
             text = builtin["source_text"]
+        if data["role"] == "assistant":
+            text = strip_think_blocks(text, preserve_whitespace=True)
+            if not text.strip():
+                continue
         item = {"message_id": message_id, "role": data["role"], "text": text, "complete": True}
         stamp = history_timestamp(data)
-        if data["role"] == "assistant" and stamp is None:
+        if (
+            data["role"] == "assistant"
+            and stamp is None
+            and data.get("status") != "complete"
+            and builtin.get("memory_source_complete") is not True
+        ):
             continue
         if stamp is not None:
             item["timestamp"] = stamp
@@ -103,7 +113,7 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
                     or message_timestamp(metadata.get("timestamp"))
                     or history_timestamp(message.additional_kwargs)
                 )
-                if role == "assistant" and stamp is None:
+                if role == "assistant" and stamp is None and metadata.get("memory_source_complete") is not True:
                     continue
                 text = assistant_source_text(message) if role == "assistant" else message.content
                 item = {"message_id": message.id, "role": role, "text": text, "complete": True}
