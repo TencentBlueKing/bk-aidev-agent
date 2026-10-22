@@ -128,3 +128,14 @@ def test_real_client_validation_preserves_forgotten_business_error(
         }
     else:
         assert result == "Personal memory is temporarily unavailable."
+
+
+@pytest.mark.parametrize("raw", [b"invalid json", b"[]", b"{}", b'{"error":[]}', b'{"error":{"code":"403"}}'])
+def test_unknown_validation_envelopes_remain_unavailable(contract_manager, monkeypatch, raw):
+    client = Client(endpoint="http://127.0.0.1:45678/")
+    response = Response()
+    response.status_code, response._content = 400, raw
+    monkeypatch.setattr(client.session, "request", lambda **kwargs: response)
+    contract_manager.memory_tool.side_effect = lambda payload, **kwargs: client.api.memory_tool(json=payload)
+    runtime = automatic_personal_memory(contract_manager, "alice", "s", [], [], agent_code="agent")
+    assert runtime.make_tools()[0].invoke({}) == "Personal memory is temporarily unavailable."
