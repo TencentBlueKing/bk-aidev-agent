@@ -104,7 +104,8 @@ def build_artifacts_generated_hook(
     行为：
     - 无会话级 PV / ``resource_manager is None`` → 空 async generator（不 emit）
     - PaaS 调用异常 → ``logger.warning(exc_info=True)`` 后 return，不阻断主流程
-    - 正常路径：调用 ``dispatch_event`` 触发 DB writer + SSE 分发，并 yield 结果
+    - ``list_files`` 成功但本轮无文件 → 不 emit（不发 ``status=empty``）
+    - 正常路径（有文件）：调用 ``dispatch_event`` 触发 DB writer + SSE 分发，并 yield 结果
 
     :param resource_manager: 请求级 ResourceManager；``None`` 时 hook 直接退化
     :param executor_info: 传给 :class:`SandboxPvFileService` 的凭证信息
@@ -139,10 +140,13 @@ def build_artifacts_generated_hook(
             )
             return
 
+        if not artifacts:
+            return
+
         run_id = (active_run or {}).get("id", "")
         payload = {
             "runId": run_id,
-            "status": "complete" if artifacts else "empty",
+            "status": "complete",
             "artifacts": artifacts,
         }
         logger.info(

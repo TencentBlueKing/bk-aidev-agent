@@ -4,7 +4,7 @@
 覆盖点：
 - ``has_session_pv`` 判定（true/false 各分支）
 - ``_files_to_artifacts`` 转换（目录过滤 / 空 path 过滤 / name 兜底 / 后缀提取）
-- ``build_artifacts_generated_hook`` 退化：无 PV / rm=None 均返回空 async generator
+- ``build_artifacts_generated_hook`` 退化：无 PV / rm=None / 空文件列表均不 emit
 - 正常路径：hook emit CustomEvent 并调用 ``dispatch_event``
 - 异常兜底：PaaS 抛错时 hook 静默 return，不 emit、不重抛
 - BaseSessionWriter 分发路径（artifacts_generated → handle_artifacts_generated）保持不变
@@ -179,15 +179,15 @@ class TestHookNormalPath:
         # dispatch_event 必须被调用一次（走 DB writer + SSE 分发通道）
         dispatch.assert_called_once()
 
-    def test_empty_result_emits_empty_status(self):
+    def test_empty_result_does_not_emit(self):
         hook = build_artifacts_generated_hook(resource_manager=MagicMock(), executor_info={})
+        dispatch = MagicMock()
         with patch("aidev_agent.services.agent.artifacts.SandboxPvFileService") as svc_cls:
             svc_cls.return_value.list_files.return_value = {"results": []}
-            events = _consume(hook, self._state, "sess-1")
+            events = _consume(hook, self._state, "sess-1", dispatch=dispatch)
 
-        assert len(events) == 1
-        assert events[0].value["status"] == "empty"
-        assert events[0].value["artifacts"] == []
+        assert events == []
+        dispatch.assert_not_called()
 
     def test_active_run_started_at_forwarded_to_list_files(self):
         """active_run.started_at 应作为 since 传给 list_files。"""
