@@ -20,12 +20,28 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from aidev_agent.exceptions import AgentDeadlineExceededError
-from aidev_agent.utils import (
-    Empty,
-)
+from aidev_agent.utils import Empty
 from aidev_agent.utils.async_utils import async_generator_with_timeout, async_to_sync_generator
 from aidev_agent.utils.local import request_local
 from aidev_agent.utils.loop import _thread_local
+
+
+def test_stream_wait_releases_producer_connections(monkeypatch):
+    from aidev_agent.utils import async_utils
+
+    releases = []
+    monkeypatch.setattr(async_utils, "release_idle_connections", lambda: releases.append(True))
+
+    async def stream():
+        yield "first"
+        yield "second"
+
+    result = async_utils.async_to_sync_generator(stream())
+    assert next(result) == "first"
+    releases.clear()
+    assert next(result) == "second"
+    assert releases
+    result.close()
 
 
 async def gen(interval: int = 0.2):

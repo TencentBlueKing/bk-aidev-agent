@@ -19,6 +19,7 @@ from typing import AsyncGenerator, Awaitable, Callable
 
 from aidev_agent.exceptions import AgentDeadlineExceededError
 from aidev_agent.utils import Empty
+from aidev_agent.utils.db_connection import release_idle_connections
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_operation_timeout
@@ -114,6 +115,7 @@ def async_to_sync_generator(
 
     def run_loop():
         nonlocal consumer_task
+        release_idle_connections()
         asyncio.set_event_loop(loop)
         consumer_task = context.run(loop.create_task, consume_async())
         task_ready.set()
@@ -130,12 +132,15 @@ def async_to_sync_generator(
             with suppress(RuntimeError):
                 loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
+            release_idle_connections()
 
     loop_thread = threading.Thread(target=run_loop, name="aidev-async-generator", daemon=True)
     loop_thread.start()
     task_ready.wait()
     try:
         while True:
+            # 等待流式结果前释放生产者线程的连接，不能带着旧连接等待 LLM。
+            release_idle_connections()
             item = data_queue.get()
             if item is end:
                 if error is not None:
@@ -143,6 +148,7 @@ def async_to_sync_generator(
                 break
             yield item
     finally:
+        release_idle_connections()
         if not consumer_task.done():
             loop.call_soon_threadsafe(consumer_task.cancel)
         loop_thread.join()

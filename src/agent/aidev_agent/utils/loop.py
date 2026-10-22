@@ -25,6 +25,8 @@ from contextvars import copy_context
 from logging import getLogger
 from typing import Any
 
+from aidev_agent.utils.db_connection import release_idle_connections
+
 logger = getLogger(__name__)
 
 # Thread-local storage for event loops
@@ -128,6 +130,7 @@ def run_coro_sync(
     coro = coro_or_factory() if callable(coro_or_factory) else coro_or_factory
     if timeout is not None:
         coro = asyncio.wait_for(coro, timeout=timeout)
+    release_idle_connections()
     try:
         return loop.run_until_complete(coro)
     except RuntimeError as e:
@@ -138,6 +141,8 @@ def run_coro_sync(
                 loop,
             )
         raise
+    finally:
+        release_idle_connections()
 
 
 def _run_coro_in_new_thread(
@@ -159,10 +164,13 @@ def _run_coro_in_new_thread(
         return await coro
 
     def _runner():
+        release_idle_connections()
         try:
             box["value"] = context.run(asyncio.run, _execute())
         except BaseException as err:  # noqa: BLE001
             box["error"] = err
+        finally:
+            release_idle_connections()
 
     worker = threading.Thread(target=_runner, name="run-coroutine-sync", daemon=True)
     worker.start()

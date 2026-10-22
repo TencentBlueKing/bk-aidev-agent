@@ -155,3 +155,32 @@ async def test_sync_implementations_are_dispatched_off_event_loop_thread(saver, 
 
     assert set(executed_in) == {"put", "put_writes", "get_tuple", "delete_thread"}
     assert all(t is not loop_thread for t in executed_in.values())
+
+
+async def test_aget_tuple_reconnects_once_when_connection_lost(mocker, saver, thread_id):
+    """读路径遇到已失效连接：工作线程丢弃连接后重读一次，调用方拿到正常结果。"""
+    config = _config(thread_id)
+    checkpoint = empty_checkpoint()
+    await saver.aput(config, checkpoint, {"source": "input"}, {})
+    queryset_class = Checkpoint.objects.get_queryset().__class__
+    original_first = queryset_class.first
+    attempts = []
+
+    def first_after_disconnect(queryset):
+        attempts.append(None)
+        if len(attempts) == 1:
+            raise OperationalError(2013, "Lost connection to MySQL server during query")
+        return original_first(queryset)
+
+    get_tuple_impl = mocker.patch.object(
+        queryset_class,
+        "first",
+        autospec=True,
+        side_effect=first_after_disconnect,
+    )
+
+    loaded = await saver.aget_tuple(config)
+
+    assert loaded is not None
+    assert loaded.checkpoint["id"] == checkpoint["id"]
+    assert get_tuple_impl.call_count == 2

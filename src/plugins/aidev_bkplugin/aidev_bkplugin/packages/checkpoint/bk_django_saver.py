@@ -25,7 +25,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import contextmanager, suppress
-from typing import Any, Callable, Optional, Tuple, cast
+from typing import Any, Callable, Optional, Tuple, TypeVar, cast
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -47,11 +47,20 @@ from langgraph.checkpoint.serde.types import ChannelProtocol
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 RETRYABLE_DATABASE_ERROR_CODES = {1205, 1213}
 # 服务端或中间代理关闭连接后，客户端要到下一次使用时才发现；语句本身没有问题，重建连接即可恢复。
 CONNECTION_LOST_DATABASE_ERROR_CODES = {2006, 2013, 2055}
 CHECKPOINT_WRITE_MAX_RETRIES = 3
 CHECKPOINT_WRITE_RETRY_DELAY_SECONDS = 0.05
+# 读路径重试策略：丢弃失效连接后重试；首次立即重试，之后指数退避；若下一次等待会使总耗时超过预算则放弃。
+# 与写路径不同，读路径不降级：读不到 checkpoint，会话就无法恢复，因此次数更多、窗口更宽。
+CHECKPOINT_READ_MAX_ATTEMPTS = 5
+CHECKPOINT_READ_RETRY_BASE_DELAY_SECONDS = 0.5
+CHECKPOINT_READ_RETRY_BUDGET_SECONDS = 5.0
+# 建连失败（服务重启、主机短暂不可达）只在读路径重试；写路径保持原有策略
+CHECKPOINT_READ_CONNECT_ERROR_CODES = {2002, 2003}
 _SQLITE_WRITE_LOCKS: dict[str, threading.RLock] = {}
 _SQLITE_WRITE_LOCKS_GUARD = threading.Lock()
 
@@ -136,6 +145,53 @@ def _run_database_write_with_retry(operation: Callable[[], None], model, descrip
             time.sleep(CHECKPOINT_WRITE_RETRY_DELAY_SECONDS * (2**attempt))
 
 
+def _is_retryable_read_error(exc: Exception) -> bool:
+    """读路径可重试的错误：连接已失效，或建立连接失败。"""
+    if _is_connection_lost_error(exc):
+        return True
+    error_code = exc.args[0] if exc.args else None
+    return error_code in CHECKPOINT_READ_CONNECT_ERROR_CODES
+
+
+def _read_retry_delay(attempt: int) -> float:
+    """第 attempt 次尝试失败后，发起下一次尝试前的等待秒数：依次为 0、0.5、1、2 ..."""
+    if attempt == 1:
+        return 0.0
+    return CHECKPOINT_READ_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 2))
+
+
+def _run_database_read_with_retry(operation: Callable[[], T], alias: str, description: str = "") -> T:
+    """读路径在连接已失效或建连失败时，丢弃连接并在时间窗口内有限次重试。
+
+    读取是幂等的，重新执行没有副作用。与写路径不同，这里不做降级：读不到 checkpoint，会话就无法恢复。
+    尝试次数上限为 CHECKPOINT_READ_MAX_ATTEMPTS；若下一次等待会使总耗时超过预算，则原样上抛最后一次异常。
+    """
+    started = time.monotonic()
+    attempt = 1
+    while True:
+        try:
+            return operation()
+        except (OperationalError, InterfaceError) as exc:
+            if not _is_retryable_read_error(exc):
+                raise
+            with suppress(Exception):
+                connections[alias].close()
+            delay = _read_retry_delay(attempt)
+            elapsed = time.monotonic() - started
+            if attempt >= CHECKPOINT_READ_MAX_ATTEMPTS or elapsed + delay > CHECKPOINT_READ_RETRY_BUDGET_SECONDS:
+                raise
+            logger.warning(
+                "checkpoint 读取遇到已失效或不可用的数据库连接，第 %s 次尝试失败，%.1f 秒后重试：%s, error=%s",
+                attempt,
+                delay,
+                description,
+                exc,
+            )
+            if delay:
+                time.sleep(delay)
+            attempt += 1
+
+
 async def run_db_in_thread(func, *args, **kwargs):
     """在独立线程中执行 Django ORM 调用并返回结果。
 
@@ -146,11 +202,17 @@ async def run_db_in_thread(func, *args, **kwargs):
     工作线程持有的是独立的 thread-local 连接，调用结束后需要归还，否则连接会随线程池累积。
     """
 
+    def release_connections():
+        for database in connections.all(initialized_only=True):
+            if database.connection is not None and not database.in_atomic_block and database.get_autocommit():
+                database.close()
+
     def _call():
+        release_connections()
         try:
             return func(*args, **kwargs)
         finally:
-            close_old_connections()
+            release_connections()
 
     return await sync_to_async(_call, thread_sensitive=False)()
 
@@ -468,9 +530,7 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         # 兼容旧业务方 model：task_path 是 langgraph 上游后加的字段，
         # 部分老业务方的 writes_model 里可能还没这个字段。启动时探测一次，
         # put_writes 只在有字段时才写入，避免 TypeError: unexpected keyword 'task_path'。
-        self._writes_has_task_path = any(
-            f.name == "task_path" for f in self.writes_model._meta.get_fields()
-        )
+        self._writes_has_task_path = any(f.name == "task_path" for f in self.writes_model._meta.get_fields())
 
     def _validate_models(self) -> None:
         """验证model是否包含必需的字段， 如果自定义模型需要其他字段或者约束，可重写本方法"""
@@ -521,21 +581,27 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
         Returns:
             检索到的检查点元组，如果未找到匹配的检查点则返回None
         """
+        return self._get_tuple(config)
+
+    def _get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_id = get_checkpoint_id(config)
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
 
         # 构建查询条件，如果指定了checkpoint_id，则使用指定的checkpoint_id，否则使用最新的checkpoint_id
         if checkpoint_id:
-            checkpoint_obj = self.checkpoint_model.objects.filter(
+            checkpoint_queryset = self.checkpoint_model.objects.filter(
                 thread_id=thread_id, checkpoint_ns=checkpoint_ns, checkpoint_id=checkpoint_id
-            ).first()
-        else:
-            checkpoint_obj = (
-                self.checkpoint_model.objects.filter(thread_id=thread_id, checkpoint_ns=checkpoint_ns)
-                .order_by("-checkpoint_id")
-                .first()
             )
+        else:
+            checkpoint_queryset = self.checkpoint_model.objects.filter(
+                thread_id=thread_id, checkpoint_ns=checkpoint_ns
+            ).order_by("-checkpoint_id")
+
+        alias = checkpoint_queryset.db
+        checkpoint_obj = _run_database_read_with_retry(
+            lambda: checkpoint_queryset.using(alias).first(), alias, "get_tuple checkpoint"
+        )
 
         if not checkpoint_obj:
             return None
@@ -577,9 +643,12 @@ class BKDjangoSaver(BaseCheckpointSaver[str]):
             .order_by("task_id", "idx")
             .values_list("task_id", "channel", "type", "value")
         )
+        alias = writes_queryset.db
+        write_rows = _run_database_read_with_retry(
+            lambda: list(writes_queryset.using(alias)), alias, "get_tuple writes"
+        )
         writes = [
-            (task_id, channel, self.serde.loads_typed((type_, value)))
-            for task_id, channel, type_, value in writes_queryset
+            (task_id, channel, self.serde.loads_typed((type_, value))) for task_id, channel, type_, value in write_rows
         ]
         return CheckpointTuple(
             config,

@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 
 import threading
+from types import SimpleNamespace
 
 import pytest
-from aidev_bkplugin.packages.checkpoint.bk_django_saver import BKDjangoSaver, _database_write_lock, bulk_upsert
+from aidev_bkplugin.packages.checkpoint.bk_django_saver import (
+    CHECKPOINT_READ_MAX_ATTEMPTS,
+    BKDjangoSaver,
+    _database_write_lock,
+    bulk_upsert,
+)
 from django.db import InterfaceError, OperationalError, connection, models
 from langgraph.checkpoint.base import WRITES_IDX_MAP
 
@@ -28,6 +34,9 @@ def saver(mocker):
     instance = object.__new__(BKDjangoSaver)
     instance.lock = threading.Lock()
     instance.checkpoint_model = mocker.Mock()
+    queryset = instance.checkpoint_model.objects.filter.return_value
+    queryset.db = "checkpoint-read"
+    queryset.using.return_value = queryset
     instance.serde = mocker.Mock()
     instance.serde.dumps_typed.return_value = ("json", b"checkpoint")
     return instance
@@ -413,3 +422,101 @@ def test_put_writes_new_model_falsy_task_path_falls_back_to_empty_string(mocker)
     for call in bulk_upsert_mock.call_args_list:
         writes_objects = call.args[1]
         assert writes_objects[0].task_path == ""
+
+
+@pytest.fixture
+def read_config():
+    return {"configurable": {"thread_id": "thread-id", "checkpoint_id": "checkpoint-id"}}
+
+
+@pytest.fixture
+def read_clock(mocker):
+    """替换读路径使用的 time：退避等待只推进假时钟并记录，不真实睡眠。"""
+    clock = SimpleNamespace(now=0.0, sleeps=[])
+
+    def _sleep(seconds: float) -> None:
+        clock.sleeps.append(seconds)
+        clock.now += seconds
+
+    mocker.patch(
+        "aidev_bkplugin.packages.checkpoint.bk_django_saver.time",
+        SimpleNamespace(monotonic=lambda: clock.now, sleep=_sleep),
+    )
+    return clock
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError(2003, "Can't connect to MySQL server on 'db'"),
+        InterfaceError(0, ""),
+    ],
+)
+def test_get_tuple_reconnects_once_when_connection_lost(mocker, saver, read_config, error):
+    """读取时连接已被服务端关闭：丢弃坏连接后重读一次，成功则对调用方透明。"""
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = [error, None]
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    assert saver.get_tuple(read_config) is None
+
+    assert lookup.call_count == 2
+    # 失效连接必须显式丢弃，否则重读会继续复用同一个坏 socket
+    connections.__getitem__.return_value.close.assert_called_once_with()
+    connections.__getitem__.assert_called_once_with("checkpoint-read")
+
+
+@pytest.mark.parametrize("budget, attempts, sleeps", [(5.0, 5, [0.5, 1.0, 2.0]), (1.0, 3, [0.5])])
+def test_get_tuple_retry_limits(mocker, saver, read_config, read_clock, budget, attempts, sleeps):
+    """次数或预算耗尽后抛出最后的异常，并清理失效连接。"""
+    mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.CHECKPOINT_READ_RETRY_BUDGET_SECONDS", budget)
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = [OperationalError(2013, f"lost {i}") for i in range(CHECKPOINT_READ_MAX_ATTEMPTS)]
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    with pytest.raises(OperationalError) as exc_info:
+        saver.get_tuple(read_config)
+
+    assert exc_info.value.args == (2013, f"lost {attempts - 1}")
+    assert lookup.call_count == connections.__getitem__.return_value.close.call_count == attempts
+    assert read_clock.sleeps == sleeps
+
+
+def test_get_tuple_does_not_retry_other_database_error(mocker, saver, read_config):
+    error = OperationalError(1146, "table doesn't exist")
+    lookup = saver.checkpoint_model.objects.filter.return_value.first
+    lookup.side_effect = error
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    with pytest.raises(OperationalError) as exc_info:
+        saver.get_tuple(read_config)
+
+    assert exc_info.value is error
+    assert lookup.call_count == 1
+    connections.__getitem__.return_value.close.assert_not_called()
+
+
+def test_writes_read_reconnects_its_own_alias(mocker, saver, read_config):
+    checkpoint = SimpleNamespace(
+        thread_id="thread-id",
+        checkpoint_ns="",
+        checkpoint_id="checkpoint-id",
+        parent_checkpoint_id=None,
+        type="json",
+        checkpoint=b"{}",
+        metadata={},
+    )
+    saver.checkpoint_model.objects.filter.return_value.first.return_value = checkpoint
+    saver.writes_model = mocker.Mock()
+    queryset = saver.writes_model.objects.filter.return_value.order_by.return_value.values_list.return_value
+    queryset.db = "writes-read"
+    rows = mocker.MagicMock()
+    rows.__iter__.side_effect = [OperationalError(2013, "lost"), iter([])]
+    queryset.using.return_value = rows
+    connections = mocker.patch("aidev_bkplugin.packages.checkpoint.bk_django_saver.connections")
+
+    assert saver.get_tuple(read_config).pending_writes == []
+
+    assert rows.__iter__.call_count == 2
+    connections.__getitem__.assert_called_once_with("writes-read")
+    connections.__getitem__.return_value.close.assert_called_once_with()
