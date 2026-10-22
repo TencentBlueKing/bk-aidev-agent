@@ -82,6 +82,8 @@ def audit_model(model, *, timeout: float = 2):
 
 def is_forgotten_content_error(error) -> bool:
     """Recognize the platform's validation envelope, without exposing raw errors."""
+    if isinstance(error, ValueError):
+        return bool(error.args) and isinstance(error.args[0], str) and error.args[0].startswith("FORGOTTEN_CONTENT:")
     if not isinstance(error, HTTPResponseError) or error.response_status_code != 400:
         return False
     try:
