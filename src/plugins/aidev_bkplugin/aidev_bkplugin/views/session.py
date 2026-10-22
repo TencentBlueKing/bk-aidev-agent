@@ -24,6 +24,7 @@ from rest_framework.views import Response
 
 from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE, DEFAULT_SESSION_PAGE_SIZE
 from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.session_images import sign_history_markdown_images
 from aidev_bkplugin.utils import is_local_dev
 from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
 
@@ -357,7 +358,13 @@ class ChatSessionContentViewSet(PluginViewSet):
     @action(["GET"], url_path="content", detail=False)
     def content(self, request, **kwargs):
         result = self.client.api.get_chat_session_contents(params=request.query_params)
-        return Response(data=result["data"])
+        data = result["data"]
+        sign_history_markdown_images(
+            data,
+            request.query_params.get("session_code") or "",
+            lambda: ChatSessionViewSet._make_pv_file_service(self, request),
+        )
+        return Response(data=data)
 
     def destroy(self, request, pk, **kwargs):
         result = self.client.api.destroy_chat_session_content(path_params={"id": pk})

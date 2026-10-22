@@ -27,8 +27,9 @@ import { defineComponent } from 'vue';
 
 import { describe, expect, it } from 'vitest';
 
-import { InsertMenuTag } from './command';
+import { DeleteAdjacentTag, InsertMenuTag } from './command';
 
+import type { SelectionSnapshot } from '../../../edix/doc/types';
 import type { IInputMenuItem } from '../../../types/input-menu';
 
 const readInsertedData = (item: IInputMenuItem) => {
@@ -70,5 +71,65 @@ describe('InsertMenuTag', () => {
 
     expect(data.icon).toBe('');
     expect(data.description).toBe('');
+  });
+});
+
+const fileTag = { data: { label: '上传文件接入说明.md', value: 'f1', type: 'artifact' } };
+
+const caret = (column: number, line = 0): SelectionSnapshot => [
+  [line, column],
+  [line, column],
+];
+
+const readDeleteRange = (
+  direction: 'backward' | 'forward',
+  doc: Parameters<typeof DeleteAdjacentTag>[0],
+  selection: SelectionSnapshot,
+) => {
+  const transaction = DeleteAdjacentTag(doc, selection, direction);
+  if (!transaction) {
+    return undefined;
+  }
+  const operation = transaction[0] as { _end: readonly [number, number]; _start: readonly [number, number] };
+  return { start: operation._start, end: operation._end };
+};
+
+describe('DeleteAdjacentTag', () => {
+  it('行首标签后面回删时删掉这个标签', () => {
+    expect(readDeleteRange('backward', [[fileTag]], caret(1))).toEqual({
+      start: [0, 0],
+      end: [0, 1],
+    });
+  });
+
+  it('标签前面有文字时，只删光标前的标签', () => {
+    expect(readDeleteRange('backward', [[{ text: 'hi' }, fileTag]], caret(3))).toEqual({
+      start: [0, 2],
+      end: [0, 3],
+    });
+  });
+
+  it('光标紧挨普通文字时不处理', () => {
+    expect(readDeleteRange('backward', [[fileTag, { text: ' ' }]], caret(2))).toBeUndefined();
+    expect(readDeleteRange('backward', [[{ text: 'hi' }]], caret(1))).toBeUndefined();
+  });
+
+  it('行首没有内容时回删不处理', () => {
+    expect(readDeleteRange('backward', [[fileTag]], caret(0))).toBeUndefined();
+  });
+
+  it('光标在标签前面时，Delete 删掉这个标签', () => {
+    expect(readDeleteRange('forward', [[fileTag, { text: 'x' }]], caret(0))).toEqual({
+      start: [0, 0],
+      end: [0, 1],
+    });
+  });
+
+  it('有选区时不处理，留给原来的删除', () => {
+    const selection: SelectionSnapshot = [
+      [0, 0],
+      [0, 2],
+    ];
+    expect(readDeleteRange('backward', [[fileTag, { text: 'x' }]], selection)).toBeUndefined();
   });
 });

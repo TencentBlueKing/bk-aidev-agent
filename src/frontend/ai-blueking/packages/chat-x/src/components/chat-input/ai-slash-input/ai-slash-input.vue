@@ -43,7 +43,7 @@
   import { type KeyboardPayload, createEditor, docToString, ReplaceAll, stringToDoc } from '../../../edix';
   import { MentionTag } from '../../mention';
   import { CHAR_TRIGGERS } from '../input-menu/constants';
-  import { DeleteTag, InsertMenuTag, InsertText } from './command';
+  import { DeleteAdjacentTag, DeleteTag, InsertMenuTag, InsertText } from './command';
   import { tagSchema } from './constants';
   import { useMenuTrigger } from './use-menu-trigger';
 
@@ -133,6 +133,22 @@
     }, 16);
   };
 
+  // editor.command 不回传事务是否生成，用这个标记判断这次按键有没有删掉标签
+  let adjacentTagHandled = false;
+  const deleteAdjacentTag: typeof DeleteAdjacentTag = (doc, selection, direction) => {
+    const transaction = DeleteAdjacentTag(doc, selection, direction);
+    adjacentTagHandled = transaction != null;
+    return transaction;
+  };
+
+  /** 无修饰键的退格 / Delete。Ctrl/Alt 是按词删除，Shift 是扩展选区，都留给浏览器 */
+  const isPlainCaretDelete = (event: KeyboardEvent) =>
+    (event.key === 'Backspace' || event.key === 'Delete') &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey;
+
   const handleKeyDown = (event: KeyboardEvent & KeyboardPayload) => {
     emit('keydown', event);
     if (event.key === 'Enter' || event.key === 'NumpadEnter') {
@@ -141,6 +157,16 @@
       }
       event.preventDefault?.();
       return false;
+    }
+    if (isPlainCaretDelete(event)) {
+      adjacentTagHandled = false;
+      editor.command(deleteAdjacentTag, event.key === 'Backspace' ? 'backward' : 'forward');
+      if (adjacentTagHandled) {
+        // 取消 keydown 后 beforeinput 不会再发，避免和这里的删除叠在一起
+        event.preventDefault?.();
+        scheduleSync();
+        return true;
+      }
     }
     if ((CHAR_TRIGGERS as readonly string[]).includes(event.key)) {
       menuTrigger.activateChar(event.key as Exclude<MenuTrigger, 'plus'>);
