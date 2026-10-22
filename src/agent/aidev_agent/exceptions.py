@@ -52,12 +52,14 @@ class AgentException(AIDevException):
     @classmethod
     def from_exception(cls, exc: BaseException, *, message: str | None = None) -> "AgentException":
         status_code, code, code_name = extract_exception_status_fields(exc)
-        return cls(
+        result = cls(
             message=message or (str(exc) or cls.MESSAGE),
             status_code=status_code,
             code=code,
             code_name=code_name,
         )
+        result.storage_error = extract_storage_read_error(exc)
+        return result
 
 
 class AgentDeadlineExceededError(TimeoutError):
@@ -240,6 +242,63 @@ def extract_exception_status_fields(exc: Any) -> tuple[int | None, Any, str | No
     return status_code, code, code_name
 
 
+class KnowledgeStorageReadError(AIDevException):
+    """Safe knowledge-store error carried across platform, tool and stream boundaries."""
+
+    def __init__(
+        self, *, status_code: int | None = None, upstream_status_code: int | None = None, trace_id: str | None = None
+    ):
+        self.upstream_status_code = _http_status(upstream_status_code)
+        self.trace_id = trace_id if isinstance(trace_id, str) and re.fullmatch(r"[0-9a-fA-F]{32}", trace_id) else None
+        reason = "存储服务限流，请稍后重试" if self.upstream_status_code == 429 else "存储服务不可用"
+        message = f"知识库文档读取失败：{reason}"
+        if self.upstream_status_code is not None:
+            message += f" (HTTP {self.upstream_status_code})"
+        if self.trace_id:
+            message += f"; trace_id: {self.trace_id}"
+        super().__init__(message=message, status_code=status_code, code="STORAGE_READ_ERROR")
+
+
+def extract_storage_read_error(exc: Any) -> KnowledgeStorageReadError | None:
+    """Recognize only the platform's explicit storage classification, never message keywords."""
+    seen = set()
+    stack = [exc]
+    while stack:
+        current = stack.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, KnowledgeStorageReadError):
+            return current
+        stored = getattr(current, "storage_error", None)
+        if isinstance(stored, KnowledgeStorageReadError):
+            return stored
+        candidates = [
+            {"code": getattr(current, "code", None), "data": getattr(current, "data", None)},
+            _response_mapping(getattr(current, "response", None)),
+            getattr(current, "body", None),
+            _parse_mapping(str(getattr(current, "message", current))),
+        ]
+        for payload in candidates:
+            for error in _mapping_candidates(payload):
+                if error.get("code") != "STORAGE_READ_ERROR":
+                    continue
+                details = error.get("data")
+                details = details if isinstance(details, dict) else {}
+                status_code, _, _ = extract_exception_status_fields(current)
+                status_code = status_code or _http_status(getattr(current, "STATUS_CODE", None))
+                return KnowledgeStorageReadError(
+                    status_code=status_code,
+                    upstream_status_code=details.get("upstream_status_code"),
+                    trace_id=details.get("trace_id") or error.get("trace_id") or payload.get("trace_id"),
+                )
+        stack.append(getattr(current, "__cause__", None) or getattr(current, "__context__", None))
+        nested = getattr(current, "exceptions", None)
+        if isinstance(nested, (list, tuple)):
+            stack.extend(nested)
+    return None
+
+
 def _friendly_known_error(message: str) -> str | None:
     match = _MULTIMODAL_MODEL.search(message)
     if not match:
@@ -256,10 +315,19 @@ def streaming_chunk_exception_handling(exception: Exception) -> str:
         "code": code if code not in (None, "") else (status_code or 400),
         "message": message,
     }
+    if storage_error := extract_storage_read_error(exception):
+        ret.update(
+            code=storage_error.code,
+            status_code=storage_error.status_code or status_code,
+            upstream_status_code=storage_error.upstream_status_code,
+            trace_id=storage_error.trace_id,
+        )
     return f"data: {json.dumps(ret)}\n\n"
 
 
 def extract_model_error_message(exception: Exception) -> str:
+    if storage_error := extract_storage_read_error(exception):
+        return storage_error.message
     err_msg = exception.message if hasattr(exception, "message") else str(exception)
     if list(find_mcp_errors(exception)):
         return "模型调用异常: MCP调用工具异常"

@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from aidev_agent.exceptions import extract_storage_read_error
 from aidev_agent.packages.langchain_core.retrievers.utils import normalize_query_for_search
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
 from aidev_agent.pydantic_models import KnowledgeSettings
@@ -34,7 +35,16 @@ class BkRetriever:
 
         query_payload = self._build_query_payload(query, knowledge_query_options, chat_history or [], llm_code)
         logger.info("查询知识库: knowledge_base_count=%s", len(query_payload["knowledge_base_id"]))
-        response = self._query_instance(query_payload)
+        try:
+            response = self._query_instance(query_payload)
+        except Exception as error:
+            # In-process platform exceptions already carry the safe message and
+            # API metadata; preserve their type for the platform's handler.
+            if getattr(error, "code", None) == "STORAGE_READ_ERROR":
+                raise
+            if storage_error := extract_storage_read_error(error):
+                raise storage_error from error
+            raise
         self._validate_documents(response["documents"])
         return response
 
