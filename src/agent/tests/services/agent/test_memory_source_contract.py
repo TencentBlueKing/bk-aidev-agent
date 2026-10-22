@@ -139,3 +139,27 @@ def test_unknown_validation_envelopes_remain_unavailable(contract_manager, monke
     contract_manager.memory_tool.side_effect = lambda payload, **kwargs: client.api.memory_tool(json=payload)
     runtime = automatic_personal_memory(contract_manager, "alice", "s", [], [], agent_code="agent")
     assert runtime.make_tools()[0].invoke({}) == "Personal memory is temporarily unavailable."
+
+
+@pytest.mark.parametrize(
+    "error,forgotten",
+    [
+        (ValueError("FORGOTTEN_CONTENT: 已遗忘"), True),
+        (ValueError("OTHER: invalid request"), False),
+        (ValueError(), False),
+        (ValueError(400), False),
+        (RuntimeError("FORGOTTEN_CONTENT: unrelated"), False),
+    ],
+)
+def test_internal_manager_preserves_only_forgotten_value_error(contract_manager, error, forgotten):
+    contract_manager.memory_tool.side_effect = error
+    runtime = automatic_personal_memory(contract_manager, "alice", "s", [], [], agent_code="agent")
+    observed = runtime.make_tools()[0].invoke({})
+    if forgotten:
+        assert json.loads(observed) == {
+            "code": "FORGOTTEN_CONTENT",
+            "message": "该内容已被用户遗忘，本次未保存。",
+            "retryable": False,
+        }
+    else:
+        assert observed == "Personal memory is temporarily unavailable."
