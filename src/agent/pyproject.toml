@@ -27,6 +27,7 @@ dependencies = [
     "langchain-classic>=1.0.1",
     "wrapt>1,<2",
     "json-repair>=0.58.6",
+    "jsonschema>=4.25.1,<5",
     "bashlex>=0.18,<1.0.0",
     "e2b>=2.20.0",
     "e2b-code-interpreter>=2.6.0",

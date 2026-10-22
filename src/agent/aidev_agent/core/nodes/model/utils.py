@@ -25,6 +25,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
+from aidev_agent.utils.message_text import strip_think_blocks as strip_think_blocks
+
 from .tool_call_repair import parse_standalone_plain_text_tool_call_blocks
 
 logger = logging.getLogger(__name__)
@@ -33,23 +35,10 @@ logger = logging.getLogger(__name__)
 # 思考块与截断辅助函数
 # ---------------------------------------------------------------------------
 
-# 匹配完整的 think/thinking/reasoning 块，支持多行内容。
-_THINK_BLOCK_RE = re.compile(
-    r"<(think|thinking|reasoning)>.*?</\1>",
-    re.DOTALL | re.IGNORECASE,
-)
-
 _THINK_OPEN_TAG_RE = re.compile(
     r"<(?:think|thinking|reasoning)>",
     re.IGNORECASE,
 )
-
-
-def strip_think_blocks(content: str) -> str:
-    """从内容中移除 ``<think>...</think>``、``<thinking>...</thinking>`` 和
-    ``<reasoning>...</reasoning>`` 标签块。
-    """
-    return _THINK_BLOCK_RE.sub("", content).strip()
 
 
 def has_inline_thinking(content: str) -> bool:
