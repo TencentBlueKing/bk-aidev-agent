@@ -25,13 +25,51 @@
  */
 
 import { Transaction } from '../../../edix/doc/edit';
+import { comparePosition } from '../../../edix/doc/position';
 
 import type { EditorCommand } from '../../../edix';
-import type { Position } from '../../../edix/doc/types';
+import type { DocNode, Position } from '../../../edix/doc/types';
 import type { IInputMenuItem } from '../../../types/input-menu';
 
 export const DeleteTag: EditorCommand<[Position, Position]> = (_doc, _selection, start: Position, end: Position) => {
   return new Transaction().delete(start, end);
+};
+
+/** offset 落在 void 标签上时为 true；落在文字里或超出行尾时为 false */
+const isTagAt = (line: readonly DocNode[], offset: number) => {
+  let cursor = 0;
+  for (const node of line) {
+    const size = 'text' in node ? node.text.length : 1;
+    if (offset < cursor + size) {
+      return !('text' in node);
+    }
+    cursor += size;
+  }
+  return false;
+};
+
+/**
+ * 删除折叠光标紧邻的 void 标签。
+ *
+ * 行首 @ 文件是 contenteditable=false。删掉它后面的空格后，Chrome 的 beforeinput
+ * 范围落在标签两侧的空白文本节点上，序列化后长度为零，回删被丢掉。
+ * 有选区、或旁边是普通文字时不处理，仍交给原来的输入事件。
+ */
+export const DeleteAdjacentTag: EditorCommand<['backward' | 'forward']> = (doc, selection, direction) => {
+  const [anchor, focus] = selection;
+  if (comparePosition(anchor, focus) !== 0) {
+    return;
+  }
+  const [line, column] = focus;
+  const row = doc[line];
+  if (!row) {
+    return;
+  }
+  const offset = direction === 'backward' ? column - 1 : column;
+  if (offset < 0 || !isTagAt(row, offset)) {
+    return;
+  }
+  return new Transaction().delete([line, offset], [line, offset + 1]);
 };
 
 /**

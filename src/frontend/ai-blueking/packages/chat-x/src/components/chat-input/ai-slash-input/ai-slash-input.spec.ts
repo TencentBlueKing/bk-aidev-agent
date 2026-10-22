@@ -33,11 +33,20 @@ import AiSlashInput from './ai-slash-input.vue';
 import type { IInputMenuItem, TagSchema } from '../../../types';
 
 /** 与 edix Editor.command 行为对齐：执行命令函数并传入伪造的 doc / selection，供 GetDocSnapshot 等逻辑使用 */
-const { editorCommand, editorOptions } = vi.hoisted(() => {
+const { deleteAdjacentTagMock, editorCommand, editorOptions } = vi.hoisted(() => {
   const fakeDoc = [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[];
-  const options: { onKeyDown?: (event: { key: string; preventDefault?: () => void; shiftKey?: boolean }) => unknown } =
-    {};
+  const options: {
+    onKeyDown?: (event: {
+      altKey?: boolean;
+      ctrlKey?: boolean;
+      key: string;
+      metaKey?: boolean;
+      preventDefault?: () => void;
+      shiftKey?: boolean;
+    }) => unknown;
+  } = {};
   return {
+    deleteAdjacentTagMock: vi.fn(() => undefined as unknown),
     editorCommand: vi.fn((fn: unknown, ...args: unknown[]) => {
       if (typeof fn === 'function') {
         (fn as (...params: unknown[]) => unknown)(fakeDoc, [], ...args);
@@ -121,6 +130,7 @@ vi.mock('../../file-icon/file-icon.vue', () => ({
 }));
 
 vi.mock('./command', () => ({
+  DeleteAdjacentTag: (...args: unknown[]) => deleteAdjacentTagMock(...args),
   DeleteTag: 'DeleteTag',
   InsertMenuTag: 'InsertMenuTag',
   InsertText: 'InsertText',
@@ -143,6 +153,7 @@ describe('AiSlashInput', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    deleteAdjacentTagMock.mockReturnValue(undefined);
   });
 
   afterEach(() => {
@@ -256,6 +267,29 @@ describe('AiSlashInput', () => {
       expect(editorOptions.onKeyDown?.({ key: 'Enter', preventDefault })).toBe(false);
       expect(preventDefault).toHaveBeenCalled();
       expect(editorOptions.onKeyDown?.({ key: 'Enter', shiftKey: true, preventDefault })).toBeUndefined();
+    });
+
+    it('回删命中紧邻标签时拦截浏览器默认删除', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      deleteAdjacentTagMock.mockReturnValue({});
+      const preventDefault = vi.fn();
+      expect(editorOptions.onKeyDown?.({ key: 'Backspace', preventDefault })).toBe(true);
+      expect(preventDefault).toHaveBeenCalledOnce();
+      expect(deleteAdjacentTagMock).toHaveBeenCalledWith(expect.anything(), [], 'backward');
+    });
+
+    it('旁边不是标签时，回删仍交给浏览器', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      const preventDefault = vi.fn();
+      expect(editorOptions.onKeyDown?.({ key: 'Delete', preventDefault })).toBeUndefined();
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(deleteAdjacentTagMock).toHaveBeenCalledWith(expect.anything(), [], 'forward');
+    });
+
+    it('带修饰键的回删不改走标签删除', () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      editorOptions.onKeyDown?.({ key: 'Backspace', ctrlKey: true, preventDefault: vi.fn() });
+      expect(deleteAdjacentTagMock).not.toHaveBeenCalled();
     });
 
     it('粘贴文件时抛出 upload 事件', async () => {
