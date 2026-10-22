@@ -33,7 +33,7 @@ def remote_ledger():
         rows.append(row)
         return {"data": copy.deepcopy(row)}
 
-    def update(*, path_params, json, headers):
+    def update(*, path_params, json, headers, timeout=None):
         row = next(row for row in rows if row["id"] == path_params["id"])
         row.update(copy.deepcopy(json))  # The API replaces property; it never merges it.
         return {"data": copy.deepcopy(row)}
@@ -155,8 +155,18 @@ def test_duplicate_or_conflicting_finalizations_keep_first_canonical_source(remo
     raw, _, payload = answer_and_finalization()
     save_raw(writer, raw)
     writer(finalize_event(payload))
-    writer(finalize_event({**payload, "memory_source_complete": late_complete, "source_text": "Wrong draft"}))
+    writer(
+        finalize_event(
+            {
+                **payload,
+                "memory_source_complete": late_complete,
+                "source_text": "Wrong draft",
+                "source_timestamp": "2026-10-23T00:00:00Z",
+            }
+        )
+    )
     assert completed_history(snapshot(rows), "session")[0]["text"] == PUBLIC
+    assert completed_history(snapshot(rows), "session")[0]["timestamp"] == STAMP
     client.api.update_chat_session_content.assert_called_once()
 
 

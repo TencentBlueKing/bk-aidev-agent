@@ -34,6 +34,7 @@ from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.agent.memory import automatic_personal_memory, completed_history
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.message_metadata import finalize_memory_source
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk
@@ -82,9 +83,19 @@ def memory_manager():
 
 
 def save_answer(writer, answer):
+    # These test answers represent a host-accepted result. Persist raw output
+    # first, then explicitly finalize it as the standard model chain does.
+    answer.response_metadata.update(memory_source_pending=True, memory_source_complete=False)
     writer.handle_model_end(
         CustomEvent(
             type=EventType.CUSTOM, name="aidev_session_chat_model_end", value=build_model_end_payload(answer, {})
+        )
+    )
+    writer.handle_memory_source_finalized(
+        CustomEvent(
+            type=EventType.CUSTOM,
+            name=SessionPersistenceEventNames.MemorySourceFinalized.value,
+            value=finalize_memory_source(answer),
         )
     )
 
@@ -351,12 +362,18 @@ def completion_chain(provider_time, *, model=None, config=None, structured=False
     return chain, ctx
 
 
-async def streamed_completion(provider_time, **options):
+async def streamed_completion(provider_time, *, finalizations=None, **options):
     chain, ctx = completion_chain(provider_time, **options)
     model_output = final_output = None
     async for event in chain.astream_events(ctx, version="v2"):
         if event["event"] == "on_chat_model_end":
             model_output = event["data"]["output"].model_copy(deep=True)
+        if (
+            finalizations is not None
+            and event["event"] == "on_custom_event"
+            and event["name"] == SessionPersistenceEventNames.MemorySourceFinalized.value
+        ):
+            finalizations.append(copy.deepcopy(event["data"]))
         if event["event"] == "on_chain_end" and not event["parent_ids"]:
             final_output = event["data"]["output"].response.model_copy(deep=True)
     return model_output, final_output
@@ -381,8 +398,8 @@ def test_streamed_completion_time_survives_copies_and_three_rounds(
 ):
     writer, records = persisted_chat
     monkeypatch.setattr("aidev_agent.utils.message_metadata.datetime", CompletionClock)
-    event_answer, state_answer = asyncio.run(streamed_completion(provider_time))
-    assert event_answer is not state_answer
+    finalizations = []
+    event_answer, state_answer = asyncio.run(streamed_completion(provider_time, finalizations=finalizations))
     stamp = provider_time.replace("Z", "+00:00") if provider_time else CompletionClock.current.isoformat()
     assert (
         event_answer.response_metadata["source_timestamp"]
@@ -396,9 +413,15 @@ def test_streamed_completion_time_survives_copies_and_three_rounds(
     first = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"][0]
     if not writer_first:
         persist_model_event(writer, event_answer, event_kind)
-    assert len(records) == 1
+    assert completed_history(records, "s") == []
+    for source in finalizations:
+        writer(
+            CustomEvent(
+                type=EventType.CUSTOM, name=SessionPersistenceEventNames.MemorySourceFinalized.value, value=source
+            )
+        )
     assert completed_history(records, "s") == [first]
-    assert first["timestamp"] == records[0]["builtin_property"]["source_timestamp"] == stamp
+    assert first["timestamp"] == stamp
     assert_three_reloaded_rounds(records, memory_manager, first)
 
 
@@ -582,7 +605,9 @@ def test_standard_agui_source_id_text_time_and_fingerprint_survive_replay(
     assert current == completed_history(records, "s")[0]
     assert source_fingerprint(current) == source_fingerprint(completed_history(records, "s")[0])
     assert records[0]["content"] == (
-        '{"action":"Final Answer","action_input":"I prefer Python"}' if mode == "structured" else current["text"]
+        '{"action":"Final Answer","action_input":"I prefer Python"}'
+        if mode == "structured"
+        else current["text"].strip()
     )
     if mode == "structured":
         assert records[0]["builtin_property"]["source_text"] == answer.content
@@ -621,7 +646,7 @@ def test_transformed_incomplete_or_tool_response_never_submits_completion(
     assert records[0]["builtin_property"]["memory_source_complete"] is False
 
 
-def test_source_text_does_not_change_user_evidence_or_reference_audit(memory_manager):
+def test_source_text_preserves_user_evidence_and_guides_reference_audit(memory_manager):
     user = HumanMessage(
         id="user", content="  My preference  ", response_metadata={"created_at": "2026-10-20T00:00:00Z"}
     )
@@ -635,9 +660,9 @@ def test_source_text_does_not_change_user_evidence_or_reference_audit(memory_man
     runtime.complete({"messages": [user, tool, answer]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
     assert sent[0]["text"] == user.content
-    assert sent[1]["text"] == "Original source"
+    assert sent[1]["text"] == "  Original source  "
     audit = json.loads(runtime.reference_model.invoke.call_args.args[0][1].content)
-    assert audit["answer"] == answer.content
+    assert audit["answer"] == "  Original source  "
 
 
 @pytest.mark.parametrize("failed_update", [False, True])
@@ -747,7 +772,7 @@ def test_no_ledger_replay_retains_original_source_across_rounds(memory_manager, 
     runtime = automatic_personal_memory(memory_manager, "alice", "session-1", [], [], agent_code="agent-a")
     runtime.complete({"messages": [answer]}, {})
     original = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"][0]
-    assert original["text"] == (text if structured else content.strip())
+    assert original["text"] == (text if structured else content)
     for round_index in [2, 3]:
         restored = automatic_personal_memory(memory_manager, "alice", "session-1", [], [answer], agent_code="agent-a")
         current = AIMessage(

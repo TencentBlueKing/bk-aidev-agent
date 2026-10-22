@@ -49,7 +49,7 @@ from .pydantic_models import (
     RetryableRateLimitError,
 )
 from .quality_gate import QualityGate
-from .utils import promote_plain_text_tool_call_message
+from .utils import has_content_after_think_block, promote_plain_text_tool_call_message
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +172,15 @@ def _exhaustion_fallback(ctx: ProcessorContext) -> ProcessorContext:
     return ctx
 
 
+def _accepted_memory_source(ctx: ProcessorContext) -> dict | None:
+    """A terminal recovery route may still return a thinking-only response."""
+    content = getattr(ctx.response, "content", None)
+    return finalize_memory_source(
+        ctx.response,
+        accepted=isinstance(content, str) and has_content_after_think_block(content),
+    )
+
+
 def _build_model_chain(
     *,
     llm,
@@ -243,13 +252,7 @@ def _build_model_chain(
         llm_with_tools = llm_with_tools.with_config(
             merge_configs(
                 getattr(llm_with_tools, "config", None),
-                {
-                    "callbacks": [
-                        AssistantCompletionTimestamp(
-                            pending_transform=bool(tools and (use_structured_response or use_tool_call_promotion))
-                        )
-                    ]
-                },
+                {"callbacks": [AssistantCompletionTimestamp(pending_transform=True)]},
             )
         )
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
@@ -303,9 +306,6 @@ def _build_model_chain(
                     error=error,
                 )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
-        source = finalize_memory_source(response)
-        if source is not None:
-            dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
         ctx.response = response
         return ctx
 
@@ -322,13 +322,7 @@ def _build_model_chain(
         llm_with_tools = llm_with_tools.with_config(
             merge_configs(
                 getattr(llm_with_tools, "config", None),
-                {
-                    "callbacks": [
-                        AssistantCompletionTimestamp(
-                            pending_transform=bool(tools and (use_structured_response or use_tool_call_promotion))
-                        )
-                    ]
-                },
+                {"callbacks": [AssistantCompletionTimestamp(pending_transform=True)]},
             )
         )
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
@@ -394,11 +388,31 @@ def _build_model_chain(
                     error=error,
                 )
             raise RetryableRateLimitError(ctx.response or AIMessage(content=""))
-        source = finalize_memory_source(response)
-        if source is not None:
-            await adispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
         ctx.response = response
         return ctx
+
+    def _finalize_response(ctx: ProcessorContext) -> ProcessorContext:
+        source = _accepted_memory_source(ctx)
+        if source is not None:
+            dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+        return ctx
+
+    async def _afinalize_response(ctx: ProcessorContext) -> ProcessorContext:
+        source = _accepted_memory_source(ctx)
+        if source is not None:
+            await adispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+        return ctx
+
+    def _check_quality(ctx: ProcessorContext) -> ProcessorContext:
+        try:
+            return quality_gate(ctx)
+        except Exception:
+            # Raw model-end events remain pending; publish rejection explicitly
+            # for hosts that observe finalization events independently.
+            source = finalize_memory_source(ctx.response, accepted=False)
+            if source is not None:
+                dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+            raise
 
     # ------------------------------------------------------------------
     # 链组合：_render_messages（仅一次）| model_chain（含重试 + 回退）
@@ -406,7 +420,13 @@ def _build_model_chain(
     # _render_messages 不参与重试——消息渲染是幂等的、只应跑一次，
     # 重试时只需重建 model_chain（llm | capture | quality）。
     # with_fallbacks 也只包裹 model_chain——耗尽时返回最后响应。
-    model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(quality_gate)
+    # Keep every raw result ineligible until transforms and quality recovery accept it.
+    # Rejected attempts and exhausted retry fallbacks never reach finalization.
+    model_chain = (
+        RunnableLambda(_call_llm, _acall_llm)
+        | RunnableLambda(_check_quality)
+        | RunnableLambda(_finalize_response, _afinalize_response)
+    )
     # 用重试包装 — 捕获所有 RETRYABLE_EXCEPTIONS
     retryable_model_chain = model_chain.with_retry(
         retry_if_exception_type=RETRYABLE_EXCEPTIONS,

@@ -47,6 +47,7 @@ from aidev_agent.packages.interrupt_manager.ask_user_question import (
 )
 from aidev_agent.packages.interrupt_manager.types import InterruptReason
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.message_metadata import message_timestamp
 from aidev_agent.utils.tracing import get_current_trace_id
 
 logger = getLogger(__name__)
@@ -180,6 +181,7 @@ class BaseSessionWriter(ABC):
         self._assistant_message_properties: dict[str, dict] = {}
         self._memory_source_completions: dict[str, bool] = {}
         self._memory_source_texts: dict[str, str] = {}
+        self._memory_source_timestamps: dict[str, str] = {}
         self._memory_source_lock = threading.RLock()
 
     # ---------- 公共事件入口 ----------
@@ -567,6 +569,7 @@ class BaseSessionWriter(ABC):
                 message_id=message_id,
                 content=content if content else "",
                 tool_calls=[],
+                memory_source_complete=False,
                 **({"finish_reason": "cancelled"} if self._is_cancelled else {}),
             )
 
@@ -815,6 +818,8 @@ class BaseSessionWriter(ABC):
             complete = self._memory_source_completions.setdefault(message_id, complete)
             if complete:
                 self._memory_source_texts.setdefault(message_id, text)
+                if timestamp := message_timestamp(payload.get("source_timestamp")):
+                    self._memory_source_timestamps.setdefault(message_id, timestamp)
             existing = self._assistant_builtin_properties.get(message_id)
             content_id = self._content_ids_by_message_id.get(message_id)
             if existing is None or content_id is None:
@@ -822,6 +827,8 @@ class BaseSessionWriter(ABC):
             merged = {**existing, "memory_source_complete": complete}
             if complete:
                 merged["source_text"] = self._memory_source_texts[message_id]
+                if message_id in self._memory_source_timestamps:
+                    merged["source_timestamp"] = self._memory_source_timestamps[message_id]
             if merged == existing:
                 return
             prop = {**self._assistant_message_properties.get(message_id, {}), "builtin_property": merged}
@@ -892,10 +899,10 @@ class BaseSessionWriter(ABC):
             content=content,
             tool_calls=tool_calls,
             **({"finish_reason": payload["finish_reason"]} if "finish_reason" in payload else {}),
-            **({"source_timestamp": payload["source_timestamp"]} if payload.get("source_timestamp") else {}),
+            source_timestamp=self._memory_source_timestamps.get(message_id, payload.get("source_timestamp")),
             source_text=self._memory_source_texts.get(message_id, payload.get("source_text")),
             memory_source_complete=self._memory_source_completions.get(
-                message_id, payload.get("memory_source_complete")
+                message_id, False if tool_calls or deferred_tool_calls else payload.get("memory_source_complete")
             ),
         )
 

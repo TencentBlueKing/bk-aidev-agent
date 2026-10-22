@@ -180,7 +180,7 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
                             "id": parsed.id or message.id,
                             "response_metadata": {
                                 **message.response_metadata,
-                                "source_text": parsed.content.strip(),
+                                "source_text": parsed.content,
                                 **parsed.response_metadata,
                             },
                         }

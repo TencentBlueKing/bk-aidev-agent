@@ -83,6 +83,7 @@ class AGUISessionWriter(BaseSessionWriter):
 
     _SESSION_STATUS_MAX_ATTEMPTS = 3
     _SESSION_STATUS_RETRY_BASE_DELAY = 0.2
+    _MEMORY_SOURCE_UPDATE_TIMEOUT = 2
 
     def __init__(
         self,
@@ -552,13 +553,25 @@ class AGUISessionWriter(BaseSessionWriter):
                 current = self._assistant_builtin_properties.get(message_id, {})
                 if current.get("memory_source_complete") is True:
                     builtin.update(
-                        {key: current[key] for key in ("memory_source_complete", "source_text") if key in current}
+                        {
+                            key: current[key]
+                            for key in ("memory_source_complete", "source_text", "source_timestamp")
+                            if key in current
+                        }
                     )
                 if "tool_calls" in current:
                     builtin["tool_calls"] = current["tool_calls"]
                 prop["builtin_property"] = builtin
                 payload = {**payload, "property": prop}
-            self.client.api.update_chat_session_content(path_params={"id": content_id}, json=payload, headers=headers)
+            # Bound memory metadata writes at the HTTP boundary, preserving the hook
+            # signature used by in-process writers that do not perform network IO.
+            source_complete = ((payload.get("property") or {}).get("builtin_property") or {}).get(
+                "memory_source_complete"
+            )
+            options = {"timeout": self._MEMORY_SOURCE_UPDATE_TIMEOUT} if type(source_complete) is bool else {}
+            self.client.api.update_chat_session_content(
+                path_params={"id": content_id}, json=payload, headers=headers, **options
+            )
             if message_id is not None and isinstance(prop, dict):
                 self._assistant_message_properties[message_id] = dict(prop)
 
