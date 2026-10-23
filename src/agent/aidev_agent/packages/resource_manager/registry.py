@@ -70,15 +70,15 @@ class ResourceManagerProtocol(Protocol):
         ...
 
     def memory_schemas(self, *, username: str, agent_code: str, **kwargs) -> dict:
-        """Return authoritative personal-memory tool schemas for an authenticated user."""
+        """为已认证用户返回指定智能体的权威个人记忆策略与工具 schema（业务返回结构 = 后端 ``data`` 字段）。"""
         ...
 
     def memory_tool(self, payload: dict, *, username: str, **kwargs) -> dict:
-        """Invoke a memory tool with host-owned session context and user identity."""
+        """以宿主持有的会话上下文和用户身份调用记忆工具（业务返回结构 = 后端 ``data`` 字段）。"""
         ...
 
     def complete_memory_round(self, payload: dict, *, username: str, **kwargs) -> dict:
-        """Submit a completed answer snapshot and the IDs actually referenced by it."""
+        """提交一轮完整回答的会话快照及其实际引用的记忆 ID（业务返回结构 = 后端 ``data`` 字段）。"""
         ...
 
     def create_tool_approval(self, payload: dict, *, username: str | None = None, **kwargs) -> dict:

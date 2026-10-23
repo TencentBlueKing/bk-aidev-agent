@@ -1620,7 +1620,7 @@ class ChatCompletionAgent(BaseModel):
         return self.agent_cls.get_agent_executor(
             personal_memory_runtime=automatic_personal_memory(
                 self.resource_manager,
-                (self.executor_info or {}).get("executor") or getattr(self.resource_manager, "username", ""),
+                (self.executor_info or {}).get("executor") or "",
                 self.thread_id,
                 self.chat_history,
                 messages,

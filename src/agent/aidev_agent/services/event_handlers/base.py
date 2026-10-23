@@ -179,6 +179,7 @@ class BaseSessionWriter(ABC):
         # key: assistant_message_id, value: builtin_property dict
         self._assistant_builtin_properties: dict[str, dict] = {}
         self._assistant_message_properties: dict[str, dict] = {}
+        self._assistant_contents: dict[str, str] = {}
         self._memory_source_completions: dict[str, bool] = {}
         self._memory_source_texts: dict[str, str] = {}
         self._memory_source_timestamps: dict[str, str] = {}
@@ -806,6 +807,13 @@ class BaseSessionWriter(ABC):
             self._thinking_active = False
 
     def handle_memory_source_finalized(self, event: RawEvent | CustomEvent) -> None:
+        """处理 `MemorySourceFinalized` 事件，记录并回写 assistant 消息的记忆来源结算结果。
+
+        payload 缺少 `message_id`、`memory_source_complete` 不是 bool，或判为完整但 `source_text` 为空时忽略。
+        在 `_memory_source_lock` 内按消息 ID 以首次结算为准缓存结果（含正文与时间戳），供稍后的模型结束回写使用；
+        若该消息已落库，则把结算结果合并进 `builtin_property` 并更新会话内容，内容未变化时跳过，
+        写入失败不抛异常（计入写错误数），且不更新本地属性缓存。
+        """
         payload = event.value if isinstance(event, CustomEvent) else event.event.get("data", {})
         message_id = payload.get("message_id") if isinstance(payload, dict) else None
         complete = payload.get("memory_source_complete") if isinstance(payload, dict) else None
@@ -826,7 +834,10 @@ class BaseSessionWriter(ABC):
                 return
             merged = {**existing, "memory_source_complete": complete}
             if complete:
-                merged["source_text"] = self._memory_source_texts[message_id]
+                if self._memory_source_texts[message_id] != self._assistant_contents.get(message_id):
+                    merged["source_text"] = self._memory_source_texts[message_id]
+                else:
+                    merged.pop("source_text", None)
                 if message_id in self._memory_source_timestamps:
                     merged["source_timestamp"] = self._memory_source_timestamps[message_id]
             if merged == existing:
@@ -834,7 +845,7 @@ class BaseSessionWriter(ABC):
             prop = {**self._assistant_message_properties.get(message_id, {}), "builtin_property": merged}
             errors_before = self._write_error_count
             self._safe_call(
-                self._do_update_content,
+                self._do_update_memory_source,
                 message_id,
                 "finalize_memory_source",
                 content_id=content_id,
@@ -1397,13 +1408,14 @@ class BaseSessionWriter(ABC):
             assistant_property["finish_reason"] = finish_reason
         if source_timestamp is not None:
             assistant_property["source_timestamp"] = source_timestamp
-        if source_text is not None:
+        if source_text is not None and source_text != content:
             assistant_property["source_text"] = source_text
         if memory_source_complete is not None:
             assistant_property["memory_source_complete"] = memory_source_complete
 
         # 记录 builtin_property，以便后续追加审批 tool_calls 时合并
         self._assistant_builtin_properties[message_id] = dict(assistant_property)
+        self._assistant_contents[message_id] = content
 
         self._create_session_content(
             message_id=message_id,
@@ -1631,6 +1643,10 @@ class BaseSessionWriter(ABC):
             payload: 更新数据，包含 content, property 等字段
             headers: HTTP 头信息
         """
+
+    def _do_update_memory_source(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """回写记忆来源结算结果；默认复用 `_do_update_content`，需要限制等待时间的子类单独覆盖。"""
+        self._do_update_content(content_id=content_id, payload=payload, headers=headers)
 
     # ---------- 断点续传支持（基于会话状态判断） ----------
 

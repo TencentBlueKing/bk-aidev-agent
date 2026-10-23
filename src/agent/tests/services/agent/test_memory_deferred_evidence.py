@@ -127,6 +127,7 @@ def native_answer(content):
         use_structured_response=False,
         enable_parallel_tool_calls=False,
         use_tool_call_promotion=False,
+        track_memory_source=True,
     )
     context = ProcessorContext(
         state={"messages": []}, config={}, store=None, model_chain_state=ModelChainState(max_retries=0)

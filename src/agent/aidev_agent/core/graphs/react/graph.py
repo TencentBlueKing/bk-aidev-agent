@@ -228,7 +228,11 @@ class ReActAgentBuilder:
     # 模型设置
     # ====================================================================================================
     def enable_personal_memory(self, runtime: PersonalMemoryRuntime) -> "ReActAgentBuilder":
-        """Enable automatic personal memory using host-owned request context."""
+        """启用自动个人记忆：注入使用宿主请求上下文的 `PersonalMemoryRuntime`。
+
+        构建时会追加记忆工具并在图末尾增加 `memory_complete` 结算节点；运行时未配置引用审计模型时
+        `build()` 默认复用主 llm。返回 self 以支持链式调用。
+        """
         self._personal_memory = runtime
         return self
 
@@ -812,7 +816,10 @@ class ReActAgentBuilder:
             model_node: 模型节点
         """
         # 判断 use_structured_response
-        node_options_kwargs = {"use_structured_response": self._compute_use_structured_response()}
+        node_options_kwargs = {
+            "use_structured_response": self._compute_use_structured_response(),
+            "track_memory_source": self._personal_memory is not None,
+        }
 
         # 从 model_context_options 提取参数
         model_context_options = self._model_context_options

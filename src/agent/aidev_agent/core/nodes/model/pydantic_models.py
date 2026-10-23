@@ -153,6 +153,10 @@ class ModelNodeSettings(BaseModel):
         default=False,
         description="是否启用任务完成度评估。关闭后 has_content 分支直接返回 NORMAL_COMPLETION，省去每次正常响应的额外判断 LLM 调用",
     )
+    track_memory_source: bool = Field(
+        default=False,
+        description="本次运行是否接入个人记忆；仅开启时结算回答的记忆来源资格并保留来源元数据",
+    )
 
     # ---------------------------------------------------------------------
     # Security settings（由 graph 装配层从 SecuritySettings 拆解注入）

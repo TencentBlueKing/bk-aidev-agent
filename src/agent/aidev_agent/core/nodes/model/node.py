@@ -209,6 +209,7 @@ def build_model_node(
         use_structured_response=use_structured_response,
         enable_parallel_tool_calls=enable_parallel_tool_calls,
         use_tool_call_promotion=node_options.use_tool_call_promotion,
+        track_memory_source=node_options.track_memory_source,
     )
 
     def model_node(
