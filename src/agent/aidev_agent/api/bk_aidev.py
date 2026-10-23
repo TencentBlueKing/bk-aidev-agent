@@ -302,6 +302,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/share/{share_token}/",
     )
 
+    get_shared_chat_download_url = bind_property(
+        Operation,
+        name="get_shared_chat_download_url",
+        method="GET",
+        path="/openapi/aidev/resource/v1/chat/share/{share_token}/pv_files/download_url/",
+    )
+
     upgrade_agent_sessions = bind_property(
         Operation,
         name="upgrade_agent_sessions",
