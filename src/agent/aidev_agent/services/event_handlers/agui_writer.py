@@ -84,6 +84,7 @@ class AGUISessionWriter(BaseSessionWriter):
     _SESSION_STATUS_MAX_ATTEMPTS = 3
     _SESSION_STATUS_RETRY_BASE_DELAY = 0.2
     _MEMORY_SOURCE_UPDATE_TIMEOUT = 2
+    _update_timeout: float | None = None
 
     def __init__(
         self,
@@ -532,6 +533,18 @@ class AGUISessionWriter(BaseSessionWriter):
             logger.info("创建会话内容成功: content_id=%s", content_id)
         return content_id
 
+    def _do_update_memory_source(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """回写记忆来源结算结果，仍经 `_do_update_content`（保留子类重写），HTTP 等待限制为固定秒数。
+
+        超时标记只在持有 `_memory_source_lock` 期间生效，其他更新需等锁释放，不会继承该超时。
+        """
+        with self._memory_source_lock:
+            self._update_timeout = self._MEMORY_SOURCE_UPDATE_TIMEOUT
+            try:
+                self._do_update_content(content_id=content_id, payload=payload, headers=headers)
+            finally:
+                self._update_timeout = None
+
     def _do_update_content(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
         """通过 API 更新已有的会话内容"""
         logger.info("开始更新会话内容: content_id=%s, payload=%s, headers=%s", content_id, payload, headers)
@@ -563,12 +576,7 @@ class AGUISessionWriter(BaseSessionWriter):
                     builtin["tool_calls"] = current["tool_calls"]
                 prop["builtin_property"] = builtin
                 payload = {**payload, "property": prop}
-            # Bound memory metadata writes at the HTTP boundary, preserving the hook
-            # signature used by in-process writers that do not perform network IO.
-            source_complete = ((payload.get("property") or {}).get("builtin_property") or {}).get(
-                "memory_source_complete"
-            )
-            options = {"timeout": self._MEMORY_SOURCE_UPDATE_TIMEOUT} if type(source_complete) is bool else {}
+            options = {"timeout": self._update_timeout} if self._update_timeout is not None else {}
             self.client.api.update_chat_session_content(
                 path_params={"id": content_id}, json=payload, headers=headers, **options
             )

@@ -17,11 +17,13 @@ _FENCE_RE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<tail>[^\n]*)(?:\n|\Z
 
 
 def strip_think_blocks(content: str, *, preserve_whitespace: bool = False) -> str:
-    """Remove reasoning outside visible Markdown literals using forward scanning.
+    """单次正向扫描，剔除可见 Markdown 字面量之外的 `<think>`/`<thinking>`/`<reasoning>` 推理块。
 
-    Index closing delimiters once. Unmatched code runs and reasoning openers
-    must not repeatedly search the remaining answer or retry delimiter suffixes.
-    Real reasoning consumes its contents before interpreting any Markdown there.
+    围栏代码块、同段落内闭合的行内代码、引用/缩进代码行和转义字符中的标签按原文保留；
+    找不到对应闭合标签的推理开标签也保留。闭合定界符位置预先只索引一次，未闭合的代码
+    定界符或推理开标签不会反复向后搜索剩余文本或重试定界符后缀；命中的推理块整体消费，
+    块内的 Markdown 不再解析。`preserve_whitespace=True` 时原样返回剩余文本；否则去除
+    首尾空白，但首行缩进达到代码缩进（≥4 列）时保留该行缩进，仅去除尾部空白。
     """
     ticks = defaultdict(list)
     for match in _TICKS_RE.finditer(content):

@@ -55,7 +55,9 @@ def answer_and_finalization():
             "memory_source_complete": False,
         },
     )
-    parser = StructuredOutputToToolMessageParser(llm=MockChatModel(responses=[], model_name="deepseek-r1"))
+    parser = StructuredOutputToToolMessageParser(
+        llm=MockChatModel(responses=[], model_name="deepseek-r1"), keep_memory_source=True
+    )
     answer = parser.parse_result([ChatGeneration(message=raw)])
     return raw, answer, finalize_memory_source(answer)
 

@@ -58,6 +58,7 @@ def make_chain():
         use_structured_response=False,
         enable_parallel_tool_calls=False,
         use_tool_call_promotion=False,
+        track_memory_source=True,
     )
 
 

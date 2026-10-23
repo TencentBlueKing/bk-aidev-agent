@@ -34,7 +34,7 @@ from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.agent.memory import automatic_personal_memory, completed_history
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.utils.event import RunId
-from aidev_agent.utils.message_metadata import finalize_memory_source
+from aidev_agent.utils.message_metadata import finalize_memory_source, memory_finish_reason
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk
@@ -355,6 +355,7 @@ def completion_chain(provider_time, *, model=None, config=None, structured=False
         use_structured_response=structured,
         enable_parallel_tool_calls=False,
         use_tool_call_promotion=promote,
+        track_memory_source=True,
     )
     ctx = ProcessorContext(
         state={"messages": []}, config=config or {}, store=None, model_chain_state=ModelChainState(max_retries=0)
@@ -512,7 +513,8 @@ def test_model_transformations_keep_source_completion_metadata(structured, promo
     )
     assert state_answer.id == event_answer.id
     assert state_answer.response_metadata["source_timestamp"] == event_answer.response_metadata["source_timestamp"]
-    assert state_answer.response_metadata["finish_reason"] == "stop"
+    assert memory_finish_reason(state_answer.response_metadata) == "stop"
+    assert ("finish_reason" in state_answer.response_metadata) is not structured
     assert bool(state_answer.tool_calls) is promote
     assert state_answer.content == ("I prefer Python" if structured else model.responses[0])
 
@@ -524,9 +526,14 @@ def test_structured_final_answer_keeps_completion_gate(reason, complete):
         content='{"action":"Final Answer","action_input":"Parsed answer"}',
         response_metadata={"source_timestamp": "2026-10-20T00:00:00+00:00", "finish_reason": reason},
     )
-    parsed = StructuredOutputToToolMessageParser().parse_result([ChatGeneration(message=original)])
+    parsed = StructuredOutputToToolMessageParser(keep_memory_source=True).parse_result(
+        [ChatGeneration(message=original)]
+    )
     assert parsed.id == original.id
-    assert parsed.response_metadata == {**original.response_metadata, "source_text": parsed.content.strip()}
+    assert parsed.response_metadata == {
+        "source_timestamp": original.response_metadata["source_timestamp"],
+        "memory_source_finish_reason": reason,
+    }
     assert parsed.content == "Parsed answer"
     assert is_complete_ai_message(parsed) is complete
 
@@ -634,7 +641,7 @@ def test_transformed_incomplete_or_tool_response_never_submits_completion(
     assert (
         answer.tool_calls
         if mode in {"promotion", "structured_tool"}
-        else answer.response_metadata["finish_reason"] == reason
+        else memory_finish_reason(answer.response_metadata) == reason
     )
     for index in range(3):
         runtime = automatic_personal_memory(
@@ -767,7 +774,9 @@ def test_no_ledger_replay_retains_original_source_across_rounds(memory_manager, 
     content = json.dumps({"action": "Final Answer", "action_input": text}) if structured else text
     source = AIMessage(id="answer-1", content=content, response_metadata={"source_timestamp": "2026-10-20T00:00:00Z"})
     answer = (
-        StructuredOutputToToolMessageParser().parse_result([ChatGeneration(message=source)]) if structured else source
+        StructuredOutputToToolMessageParser(keep_memory_source=True).parse_result([ChatGeneration(message=source)])
+        if structured
+        else source
     )
     runtime = automatic_personal_memory(memory_manager, "alice", "session-1", [], [], agent_code="agent-a")
     runtime.complete({"messages": [answer]}, {})

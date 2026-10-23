@@ -52,6 +52,7 @@ def metadata_free_chain():
         use_structured_response=False,
         enable_parallel_tool_calls=False,
         use_tool_call_promotion=False,
+        track_memory_source=True,
     )
     ctx = ProcessorContext(
         state={"messages": []}, config={}, store=None, model_chain_state=ModelChainState(max_retries=0)
@@ -84,7 +85,7 @@ def writer_without_tool_metadata():
 def test_writer_without_tool_metadata_preserves_source_and_saved_attributes(writer_without_tool_metadata):
     writer, client = writer_without_tool_metadata
     incoming = {"new_property": "new-value", "builtin_property": {"message_id": "answer", "finish_reason": "stop"}}
-    writer._do_update_content(1, {"property": incoming}, {})
+    writer._do_update_memory_source(1, {"property": incoming}, {})
     kwargs = client.api.update_chat_session_content.call_args.kwargs
     assert kwargs["path_params"] == {"id": 1}
     assert kwargs["timeout"] == writer._MEMORY_SOURCE_UPDATE_TIMEOUT

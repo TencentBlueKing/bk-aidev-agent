@@ -112,7 +112,11 @@ async def test_long_unmatched_code_does_not_starve_sibling_chat_task():
 @pytest.mark.parametrize("hidden", [False, True])
 @pytest.mark.parametrize(
     "literal",
-    ["```xml\n<think>example</think>\n```", "Use `<reasoning>example</reasoning>`.", "    <think>example</think>"],
+    [
+        "```xml\n<think>example</think>\n```",
+        "Use `<reasoning>example</reasoning>`.",
+        "Note:\n    <think>example</think>",
+    ],
 )
 def test_visible_literal_survives_current_writer_history_and_reference_audit(promote, hidden, literal):
     text = ("<think>Discarded private draft</think>\n" if hidden else "") + literal
