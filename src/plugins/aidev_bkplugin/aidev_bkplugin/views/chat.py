@@ -70,6 +70,8 @@ class ChatCompletionViewSet(PluginViewSet):
             session_code = data["session_code"]
             execute_kwargs.session_code = session_code
             turn_id = execute_kwargs.turn_id or ""
+            if authorize_prompt := AgentHelper.get_authorize_prompt(rm, username):
+                raise ClientBlueException(message=authorize_prompt)
             session_temporary = data.get("session_temporary")
             # 获取输入
             _input = data["input"]

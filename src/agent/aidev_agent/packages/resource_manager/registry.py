@@ -125,6 +125,14 @@ class ResourceManagerProtocol(Protocol):
         """被调方校验主调方智能体调用权限，返回平台 ``data``（含 ``allowed`` 等字段）。"""
         ...
 
+    def get_agent_access_status(self, username: str, **kwargs) -> dict:
+        """查询访问者对当前智能体的授权状态，返回平台 ``data``（含 ``status`` / ``apply_url``）。"""
+        ...
+
+    def apply_agent_access(self, username: str, **kwargs) -> dict:
+        """生成访问者的当前智能体使用权限申请链接，返回平台 ``data``（含 ``apply_url``）。"""
+        ...
+
     def construct_tool(
         self,
         tool_code: str,

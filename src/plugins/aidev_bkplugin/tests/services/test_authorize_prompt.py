@@ -1,0 +1,40 @@
+# -*- coding: utf-8 -*-
+"""``AgentHelper.get_authorize_prompt`` 对话入口授权校验契约。"""
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+from aidev_bkplugin.constants import AUTHORIZE_PAGE_PATH
+from aidev_bkplugin.services.agent_helpers import AgentHelper
+
+MODULE = "aidev_bkplugin.services.agent_helpers"
+
+
+@pytest.mark.parametrize(
+    "bkoauth_installed, access_token, saas_url, expected",
+    [
+        (False, "", "", ""),
+        (True, "token", "", ""),
+        (
+            True,
+            "",
+            "https://agent.example.com/bk_plugin/plugin_api/agent/ping/",
+            f"https://agent.example.com{AUTHORIZE_PAGE_PATH}",
+        ),
+        (True, "", "", "请联系智能体管理员"),
+    ],
+)
+def test_get_authorize_prompt(bkoauth_installed, access_token, saas_url, expected):
+    rm = MagicMock()
+    rm.resolve_access_token.return_value = access_token
+    bkoauth = MagicMock() if bkoauth_installed else None
+    with (
+        patch(f"{MODULE}.bkoauth", bkoauth),
+        patch(f"{MODULE}.AgentConfigFetcher.get_info", return_value={"saas_url": saas_url}),
+    ):
+        prompt = AgentHelper.get_authorize_prompt(rm, "alice")
+
+    if expected:
+        assert expected in prompt
+    else:
+        assert prompt == ""
