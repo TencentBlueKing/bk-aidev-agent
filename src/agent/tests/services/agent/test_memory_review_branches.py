@@ -144,11 +144,8 @@ def test_raw_finalization_dispatch_updates_only_source_eligibility_and_is_idempo
     writer._do_update_content.assert_called_once()
     assert records[0]["content"] == before["content"]
     assert records[0]["status"] == before["status"]
-    assert records[0]["builtin_property"] == {
-        **before["builtin_property"],
-        "memory_source_complete": True,
-        "source_text": "Original answer",
-    }
+    assert records[0]["content"] == "Original answer"
+    assert records[0]["builtin_property"] == {**before["builtin_property"], "memory_source_complete": True}
     assert completed_history(records, "session-1") == [
         {"message_id": "answer-1", "role": "assistant", "text": "Original answer", "complete": True, "timestamp": STAMP}
     ]

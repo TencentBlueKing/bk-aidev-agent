@@ -32,6 +32,8 @@ from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.output_parsers.json import parse_json_markdown
 from langchain_core.outputs import ChatGeneration, Generation
 
+from aidev_agent.utils.message_metadata import memory_source_metadata
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -140,6 +142,7 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
 
     llm: Optional[BaseChatModel] = None
     enable_parallel_tool_calls: bool = False
+    keep_memory_source: bool = False
 
     class Config:
         arbitrary_types_allowed = True
@@ -174,13 +177,13 @@ class StructuredOutputToToolMessageParser(BaseOutputParser[AIMessage]):
                 content = message.content
                 if content and isinstance(content, str):
                     parsed = self._parse_content(content)
-                    # Keep the visible final body and the original completion identity/time.
+                    if not self.keep_memory_source:
+                        return parsed
                     return parsed.model_copy(
                         update={
                             "id": parsed.id or message.id,
                             "response_metadata": {
-                                **message.response_metadata,
-                                "source_text": parsed.content,
+                                **memory_source_metadata(message.response_metadata),
                                 **parsed.response_metadata,
                             },
                         }

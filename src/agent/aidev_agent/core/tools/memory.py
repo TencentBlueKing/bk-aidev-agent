@@ -26,6 +26,7 @@ from aidev_agent.utils.message_metadata import (
     assistant_source_text,
     assistant_source_timestamp,
     is_complete_finish_reason,
+    memory_finish_reason,
     message_timestamp,
 )
 
@@ -34,7 +35,13 @@ TOOL_NAMES = {"memory_write", "memory_update", "memory_search"}
 
 
 def audit_model(model, *, timeout: float = 2):
-    """Copy model configuration without mutating the answering model or its clients."""
+    """复制一份用于记忆引用审计的模型，不修改正在作答的模型及其客户端。
+
+    副本清空 callbacks、关闭缓存与流式；`BaseChatOpenAI` 通过 `with_options` 派生超时为
+    `timeout`、不重试的新客户端（共享连接池，不共享请求配置），若客户端由外部注入则抛
+    `ValueError`。递归处理 `RunnableBinding`（清空回调、关闭 stream、覆盖 timeout）和
+    `RunnableWithFallbacks`；其他无法隔离回调的 `Runnable` 抛 `ValueError`。
+    """
     if isinstance(model, BaseChatModel):
         updates = {"callbacks": [], "cache": False}
         if "streaming" in type(model).model_fields:
@@ -81,7 +88,11 @@ def audit_model(model, *, timeout: float = 2):
 
 
 def is_forgotten_content_error(error) -> bool:
-    """Recognize the platform's validation envelope, without exposing raw errors."""
+    """识别平台“内容已被用户遗忘”（`FORGOTTEN_CONTENT:`）校验错误，不暴露原始错误内容。
+
+    支持消息以该前缀开头的 `ValueError`，以及 HTTP 400 且错误包 `error.code == "400"`、
+    `error.message`（字符串或列表）含该前缀的 `HTTPResponseError`；响应体无法解析时返回 `False`。
+    """
     if isinstance(error, ValueError):
         return bool(error.args) and isinstance(error.args[0], str) and error.args[0].startswith("FORGOTTEN_CONTENT:")
     if not isinstance(error, HTTPResponseError) or error.response_status_code != 400:
@@ -99,7 +110,11 @@ def is_forgotten_content_error(error) -> bool:
 
 
 def is_complete_ai_message(message) -> bool:
-    """Exclude empty answers, tool requests and truncated/filtered model responses."""
+    """判断消息是否为可作为记忆来源的完整 assistant 回答。
+
+    排除非字符串内容、剔除推理块后为空的回答、含（无效）工具调用、已结算为非记忆来源
+    （`memory_source_complete is False`）以及截断/过滤等不完整 `finish_reason` 的响应。
+    """
     return (
         isinstance(message, AIMessage)
         and isinstance(message.content, str)
@@ -107,7 +122,7 @@ def is_complete_ai_message(message) -> bool:
         and not message.tool_calls
         and not message.invalid_tool_calls
         and message.response_metadata.get("memory_source_complete") is not False
-        and is_complete_finish_reason(message.response_metadata.get("finish_reason"))
+        and is_complete_finish_reason(memory_finish_reason(message.response_metadata))
     )
 
 
@@ -124,6 +139,14 @@ class PersonalMemoryRuntime:
         reference_timeout: float = 2,
         merge_state_history: bool = True,
     ):
+        """初始化个人记忆运行时。
+
+        `context_provider` 根据 `RunnableConfig` 返回宿主持有的身份与会话上下文（模型参数无法篡改）；
+        `manager` 缺省使用全局 `resource_manager()`；`schemas` 为预取的平台策略，缺省时按需拉取；
+        `best_effort=True` 时工具调用与轮次结算失败只降级不抛异常；`request_timeout` 透传给平台请求；
+        `reference_timeout` 为引用审计模型超时，须为正的有限数，否则抛 `ValueError`；
+        `merge_state_history` 控制结算时是否把图状态中的全部消息合并进上下文快照。
+        """
         self.context_provider = context_provider
         self.manager = manager if manager is not None else resource_manager()
         self.reference_model = reference_model
@@ -143,9 +166,15 @@ class PersonalMemoryRuntime:
         self.policy = None
 
     def request_options(self) -> dict:
+        """返回透传给平台记忆接口的请求参数；仅在配置了 `request_timeout` 时携带 `timeout`。"""
         return {"timeout": self.request_timeout} if self.request_timeout is not None else {}
 
     def context(self, config: RunnableConfig) -> tuple[str, dict]:
+        """从宿主 `context_provider` 取得深拷贝的上下文，拆出 `username` 后返回 `(username, context)`。
+
+        缺少已认证用户名或 `agent_code`、`session_id`、`session_date` 任一会话元数据时抛 `ValueError`；
+        `messages` 缺省补为空列表。
+        """
         context = copy.deepcopy(self.context_provider(config))
         username = context.pop("username", None)
         if (
@@ -161,6 +190,12 @@ class PersonalMemoryRuntime:
         return username, context
 
     def make_tools(self, config: RunnableConfig | None = None) -> list[StructuredTool]:
+        """按平台下发的记忆策略构建 `memory_write`/`memory_update`/`memory_search` 三个工具。
+
+        使用预取的 `schemas` 或向平台拉取策略，并缓存到 `self.policy`；策略 `agent_code` 不一致或
+        `memory_epoch` 不是正整数时抛 `ValueError`。`enabled is False` 时返回空列表；否则要求恰好
+        返回三个工具 schema，并预先做一次 OpenAI 工具格式转换，让 schema 问题在自动发现阶段暴露。
+        """
         username, context = self.context(config or {})
         policy = self.schemas
         if policy is None:
@@ -189,6 +224,12 @@ class PersonalMemoryRuntime:
         return tools
 
     def scoped_payload(self, context: dict, payload: dict, config: RunnableConfig) -> dict | None:
+        """把请求体与宿主上下文、当前记忆激活信息组装为平台请求 payload。
+
+        尚未加载策略时先调用 `make_tools`；记忆未启用时返回 `None`。上下文中的 `agent_code`
+        必须与策略一致，否则抛 `ValueError`（运行时不能切换智能体）。若策略带 `enabled_at`，
+        只保留时间戳不早于启用时刻的消息。返回附带 `agent_code`、`memory_epoch`、`context` 的新 dict。
+        """
         if self.policy is None:
             self.make_tools(config)
         if self.policy.get("enabled") is not True:
@@ -209,6 +250,10 @@ class PersonalMemoryRuntime:
         return {**payload, "agent_code": agent_code, "memory_epoch": self.policy["memory_epoch"], "context": context}
 
     def make_tool(self, schema: dict) -> StructuredTool:
+        """根据平台函数 schema 构建单个记忆工具（`content_and_artifact` 响应格式）。
+
+        `parameters` 必须是合法的 JSON Schema object，否则抛 `ValueError` 或 schema 校验异常。
+        """
         name = schema["name"]
         parameters = schema["parameters"]
         if not isinstance(parameters, dict) or parameters.get("type") != "object":
@@ -216,6 +261,12 @@ class PersonalMemoryRuntime:
         Draft202012Validator.check_schema(parameters)
 
         def invoke_memory(config: RunnableConfig, **arguments):
+            """以宿主身份与会话上下文调用平台记忆工具，返回 `(content, artifact)`。
+
+            `memory_search` 的命中写入 artifact 的 `personal_memory_hits`，供本轮引用审计使用。
+            记忆已禁用时返回提示文本；`best_effort` 下遇到遗忘内容错误返回不可重试的
+            `FORGOTTEN_CONTENT` 结果，其他异常只记录告警并返回“暂不可用”，非 best-effort 时直接抛出。
+            """
             try:
                 username, context = self.context(config)
                 payload = self.scoped_payload(context, {"name": name, "call": arguments}, config)
@@ -249,6 +300,7 @@ class PersonalMemoryRuntime:
 
     @staticmethod
     def round_hits(messages: list) -> list[dict]:
+        """收集本轮（最后一条 `HumanMessage` 之后）工具消息 artifact 中的记忆检索命中，不含往轮命中。"""
         start = max((index for index, message in enumerate(messages) if isinstance(message, HumanMessage)), default=-1)
         hits = []
         for message in messages[start + 1 :]:
@@ -257,6 +309,12 @@ class PersonalMemoryRuntime:
         return hits
 
     def referenced_ids(self, answer: AIMessage, hits: list[dict]) -> list[str]:
+        """确定完成的回答实际引用了哪些本轮检索到的记忆，返回去重排序后的 `memory_id` 列表。
+
+        本轮无命中时返回空列表；优先使用回答 `additional_kwargs.personal_memory_references` 的显式引用，
+        否则用隔离副本（`audit_model`）的 `reference_model` 审计回答正文与命中，未配置审计模型时返回空列表。
+        结果不是列表或包含非本轮命中的 ID 时抛 `ValueError`。
+        """
         allowed = {hit["memory_id"] for hit in hits}
         if not allowed:
             return []
@@ -286,6 +344,10 @@ class PersonalMemoryRuntime:
         return sorted(set(selected))
 
     def complete(self, state: dict, config: RunnableConfig) -> dict:
+        """图结束节点：结算本轮记忆，始终返回空的状态更新。
+
+        `best_effort` 下任何异常只记录告警并返回 `{}`，不影响对话结果；否则直接抛出。
+        """
         try:
             return self._complete(state, config)
         except Exception as error:
@@ -295,6 +357,13 @@ class PersonalMemoryRuntime:
             return {}
 
     def _complete(self, state: dict, config: RunnableConfig) -> dict:
+        """在最后一条消息为完整回答时，向平台提交本轮会话快照与实际引用的记忆 ID。
+
+        以宿主上下文消息为底，合并状态中的消息（`merge_state_history=False` 时仅合并本轮回答）；
+        时间优先沿用宿主记录，其次取消息元数据，仍缺失且非合并模式时按消息 ID 缓存首次补齐的
+        当前时间（重复结算保持一致），并回写回答的 `source_timestamp`。引用审计失败时按无引用处理，
+        避免误续期 TTL 或丢失会话抽取；以回答 ID 作为 `round_id`，过滤后消息为空或记忆未启用时不提交。
+        """
         messages = state.get("messages", [])
         if not messages or not is_complete_ai_message(messages[-1]):
             return {}

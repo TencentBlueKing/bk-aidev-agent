@@ -40,6 +40,7 @@ def build_chain(text, structured, promote):
         use_structured_response=structured,
         enable_parallel_tool_calls=False,
         use_tool_call_promotion=promote,
+        track_memory_source=True,
     )
     ctx = ProcessorContext(
         state={"messages": []}, config={}, store=None, model_chain_state=ModelChainState(max_retries=0)
