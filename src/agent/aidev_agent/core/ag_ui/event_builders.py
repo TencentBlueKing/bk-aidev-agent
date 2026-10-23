@@ -12,6 +12,7 @@ from ag_ui.core import EventType
 from langchain_core.messages import ToolMessage
 
 from aidev_agent.packages.interrupt_manager import is_approval_configured
+from aidev_agent.utils.message_metadata import assistant_source_timestamp, is_complete_finish_reason
 
 from .events import ExtendToolCallResultEvent
 from .types import ExtendFunctionCall, ExtendToolCall
@@ -273,12 +274,37 @@ def build_model_end_payload(output_message: Any, tools_mapping: dict[str, Any]) 
 
     reasoning_duration = output_message.additional_kwargs.get("reasoning_time", 0)
     message_id = output_message.id
+    # Host callbacks may copy this raw output before the model's stamp callback.
+    # Eligibility requires an explicit acceptance; a later failed update must
+    # never leave a raw draft eligible in persisted history.
+    memory_source_complete = output_message.response_metadata.get("memory_source_complete") is True
+    if (
+        output_message.tool_calls
+        or output_message.invalid_tool_calls
+        or not output_message.content.strip()
+        or not is_complete_finish_reason(output_message.response_metadata.get("finish_reason"))
+    ):
+        # Display may hide deferred calls or replace an empty answer with reasoning.
+        # Preserve raw evidence eligibility independently of those display policies.
+        memory_source_complete = False
 
     return {
         "message_id": message_id,
+        "source_timestamp": assistant_source_timestamp(output_message, generate=True),
         "content": content,
+        **(
+            {"source_text": output_message.response_metadata["source_text"]}
+            if memory_source_complete is True and isinstance(output_message.response_metadata.get("source_text"), str)
+            else {}
+        ),
         "tool_calls": tool_calls,
         "deferred_tool_calls": deferred_tool_calls,
         "reasoning_content": reasoning_content,
         "reasoning_duration": reasoning_duration,
+        "memory_source_complete": memory_source_complete,
+        **(
+            {"finish_reason": output_message.response_metadata["finish_reason"]}
+            if "finish_reason" in output_message.response_metadata
+            else {}
+        ),
     }

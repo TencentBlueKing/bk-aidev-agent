@@ -165,7 +165,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         """
         event_encoder = EventEncoder()
         temp_message_emitted = False
-        skip_encode_custom = frozenset({SessionPersistenceEventNames.ChatModelEnd.value})
+        skip_encode_custom = frozenset(
+            {SessionPersistenceEventNames.ChatModelEnd.value, SessionPersistenceEventNames.MemorySourceFinalized.value}
+        )
 
         # 每次 SSE 连接先下发完整消息快照，让前端重置到 DB 中的会话状态；
         # 后续 RabbitMQ replay 只负责补当前 run 的流式增量。

@@ -59,6 +59,7 @@ from aidev_agent.core.tools.a2a_tools import BkAiBackend as BkAiA2ABackend
 from aidev_agent.core.tools.a2a_tools import LocalBackend as LocalA2ABackend
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
+from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.core.tools.read_image import make_read_image_tool
 from aidev_agent.core.tools.runtime_tools import get_client_tools_with_runtime
 from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
@@ -221,10 +222,20 @@ class ReActAgentBuilder:
         self._tool_node_options: ToolNodeSettings | None = None
         self._security_settings: SecuritySettings | None = None
         self._resource_manager = None
+        self._personal_memory: PersonalMemoryRuntime | None = None
 
     # ====================================================================================================
     # 模型设置
     # ====================================================================================================
+    def enable_personal_memory(self, runtime: PersonalMemoryRuntime) -> "ReActAgentBuilder":
+        """启用自动个人记忆：注入使用宿主请求上下文的 `PersonalMemoryRuntime`。
+
+        构建时会追加记忆工具并在图末尾增加 `memory_complete` 结算节点；运行时未配置引用审计模型时
+        `build()` 默认复用主 llm。返回 self 以支持链式调用。
+        """
+        self._personal_memory = runtime
+        return self
+
     def set_llm(self, llm: BaseChatModel) -> "ReActAgentBuilder":
         self._llm = llm
         return self
@@ -583,6 +594,8 @@ class ReActAgentBuilder:
 
     def set_bkai_options(self, options: AgentExecutorKwargs) -> "ReActAgentBuilder":
         """将 BkAi 平台通用配置（AgentExecutorKwargs）映射到 builder 内部状态。"""
+        if options.personal_memory_runtime is not None:
+            self.enable_personal_memory(options.personal_memory_runtime)
         if options.resource_manager is not None:
             self._resource_manager = options.resource_manager
         if options.security_settings is not None:
@@ -803,7 +816,10 @@ class ReActAgentBuilder:
             model_node: 模型节点
         """
         # 判断 use_structured_response
-        node_options_kwargs = {"use_structured_response": self._compute_use_structured_response()}
+        node_options_kwargs = {
+            "use_structured_response": self._compute_use_structured_response(),
+            "track_memory_source": self._personal_memory is not None,
+        }
 
         # 从 model_context_options 提取参数
         model_context_options = self._model_context_options
@@ -921,6 +937,9 @@ class ReActAgentBuilder:
             if knowledge_tool:
                 tools.append(knowledge_tool)
                 logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
+
+        if self._personal_memory is not None:
+            tools.extend(self._personal_memory.make_tools())
 
         # 为所有工具添加忽略错误表示
         if ignore_errors:
@@ -1230,6 +1249,12 @@ class ReActAgentBuilder:
         """
         graph = StateGraph(state_schema=state_schema)
 
+        end_node = END
+        if self._personal_memory is not None:
+            graph.add_node("memory_complete", self._personal_memory.complete)
+            graph.add_edge("memory_complete", END)
+            end_node = "memory_complete"
+
         # 如果配置了知识库,添加 knowledge 节点
         if knowledge_node:
             graph.add_node("knowledge", knowledge_node)
@@ -1256,7 +1281,7 @@ class ReActAgentBuilder:
                 self._should_continue,
                 {
                     "pv_node": "pv_node",
-                    "end": END,
+                    "end": end_node,
                 },
             )
             # pv_node →(Send 分派)→ tools → model (形成 ReAct 循环)
@@ -1264,7 +1289,7 @@ class ReActAgentBuilder:
             graph.add_edge("tools", "model")
         else:
             # 无工具时直接结束
-            graph.add_edge("model", END)
+            graph.add_edge("model", end_node)
 
         compile_graph = graph.compile(
             checkpointer=checkpointer,
@@ -1291,6 +1316,8 @@ class ReActAgentBuilder:
         """构建并返回 compiled graph 与 runnable config。"""
         if self._llm is None:
             raise ValueError("ReActAgentBuilder 构建失败：缺少 llm，请先调用 set_llm(...) 或 set_bkai_options(...)")
+        if self._personal_memory is not None and self._personal_memory.reference_model is None:
+            self._personal_memory.reference_model = self._llm
         callbacks = list(self._callbacks or [])
         non_thinking_llm = self._non_thinking_llm or self._llm
         # judge_llm 回退到 non_thinking_llm / 主 llm，未配置 non_thinking_llm 时使用主 llm
