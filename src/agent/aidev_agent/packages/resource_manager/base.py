@@ -539,6 +539,18 @@ class BaseResourceManager(abc.ABC):
             "data", {}
         )
 
+    def get_agent_access_status(self, username: str, **kwargs) -> dict:
+        """查询访问者对当前智能体的授权状态，访问者通过 ``X-BKAIDEV-USER`` 头透传。"""
+        headers = {**(kwargs.pop("headers", None) or {}), "X-BKAIDEV-USER": username}
+        client = self.get_client()
+        return client.api.get_agent_access_status(headers=headers, **kwargs).get("data", {})
+
+    def apply_agent_access(self, username: str, **kwargs) -> dict:
+        """生成访问者的当前智能体使用权限申请链接，已申请过时平台直接返回已有链接。"""
+        headers = {**(kwargs.pop("headers", None) or {}), "X-BKAIDEV-USER": username}
+        client = self.get_client()
+        return client.api.apply_agent_access(data={}, headers=headers, **kwargs).get("data", {})
+
     def retrieve_skill(
         self,
         skill_id: str,
