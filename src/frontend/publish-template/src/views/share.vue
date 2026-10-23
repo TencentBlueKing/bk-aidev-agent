@@ -189,9 +189,7 @@
     )
 
     if (!response.ok) {
-      // 窗口关闭或路径不在分享内时，后端提示文案直接展示给访问者
-      const body = (await response.json().catch(() => null)) as { message?: string } | null
-      throw new Error(body?.message || `HTTP ${response.status}: ${response.statusText}`)
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
     const result = (await response.json()) as {

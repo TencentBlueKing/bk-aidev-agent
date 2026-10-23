@@ -3,7 +3,7 @@
 
 覆盖点：
 - create / retrieve 透传 X-BKAIDEV-USER；分享者票据以 AIDEV-TICKET 透传（cookie 优先，header 兜底，缺失则不带）
-- 产物下载 action 透传 path 与身份；上游 404 映射为本地 404 并保留提示；上游信封缺失时给通用提示；其它上游错误原样抛出
+- 产物下载 action 只转发 path，不透传请求人身份
 """
 
 import sys
@@ -12,7 +12,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from bkapi_client_core.exceptions import HTTPResponseError
 from django.conf import settings
 
 if not settings.configured:
@@ -36,7 +35,6 @@ agent_config_mod.AgentConfigFetcher = MagicMock()
 sys.modules["aidev_bkplugin.services.agent_config"] = agent_config_mod
 
 from aidev_bkplugin.views import session as session_mod  # noqa: E402
-from blueapps.core.exceptions import ResourceNotFound  # noqa: E402
 
 
 def _request(username="alice", cookies=None, meta=None, query_params=None, data=None):
@@ -54,12 +52,6 @@ def _view(api):
     view = session_mod.ChatSessionShareView()
     view.client = SimpleNamespace(api=api)
     return view
-
-
-def _upstream_error(status_code, message):
-    """bkapi 上游错误：响应体为 bk-aidev 错误信封 ``{"error": {"message": ...}}``。"""
-    response = SimpleNamespace(status_code=status_code, json=lambda: {"error": {"message": message}})
-    return HTTPResponseError(response=response)
 
 
 @pytest.fixture
@@ -116,46 +108,17 @@ class TestChatSessionShareView:
             headers={"X-BKAIDEV-USER": "alice", "AIDEV-TICKET": "t"},
         )
 
-    def test_download_url_forwards_path_and_identity(self, bkticket_cookie):
+    def test_download_url_forwards_path_without_identity(self, bkticket_cookie):
         api = MagicMock()
         api.get_shared_chat_download_url.return_value = {"data": {"download_url": "https://signed"}}
 
         response = _view(api).pv_files_download_url(
-            _request(username="bob", query_params={"path": "files/a.png"}),
+            _request(username="bob", cookies={"bk_ticket": "t"}, query_params={"path": "files/a.png"}),
             pk="tok",
         )
 
         api.get_shared_chat_download_url.assert_called_once_with(
             path_params={"share_token": "tok"},
             params={"path": "files/a.png"},
-            headers={"X-BKAIDEV-USER": "bob"},
         )
         assert response.data == {"download_url": "https://signed"}
-
-    def test_download_url_maps_upstream_404_to_not_found_with_hint(self):
-        api = MagicMock()
-        api.get_shared_chat_download_url.side_effect = _upstream_error(
-            404, "图片和产物已过期，请分享人重新打开此分享链接签发"
-        )
-
-        with pytest.raises(ResourceNotFound) as exc_info:
-            _view(api).pv_files_download_url(_request(query_params={"path": "files/a.png"}), pk="tok")
-
-        assert exc_info.value.message == "图片和产物已过期，请分享人重新打开此分享链接签发"
-
-    def test_download_url_uses_generic_hint_when_upstream_body_is_not_envelope(self):
-        api = MagicMock()
-        broken_response = SimpleNamespace(status_code=404, json=MagicMock(side_effect=ValueError("not json")))
-        api.get_shared_chat_download_url.side_effect = HTTPResponseError(response=broken_response)
-
-        with pytest.raises(ResourceNotFound) as exc_info:
-            _view(api).pv_files_download_url(_request(query_params={"path": "files/a.png"}), pk="tok")
-
-        assert exc_info.value.message == "分享文件不可用"
-
-    def test_download_url_reraises_other_upstream_errors(self):
-        api = MagicMock()
-        api.get_shared_chat_download_url.side_effect = _upstream_error(500, "boom")
-
-        with pytest.raises(HTTPResponseError):
-            _view(api).pv_files_download_url(_request(query_params={"path": "files/a.png"}), pk="tok")

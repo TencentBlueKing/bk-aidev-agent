@@ -182,8 +182,7 @@ class ChatSessionViewSet(PluginViewSet):
         # 1) cookie[BKAUTH_BACKEND_TYPE]：前端浏览器同域直调场景
         # 2) HTTP_AIDEV_TICKET header：cookie 缺失时的手动兜底
         # 3) access_token：apigw 场景，用 username 通过 bkoauth 换取
-        ticket_key = getattr(settings, "BKAUTH_BACKEND_TYPE", "bk_ticket")
-        bk_ticket = request.COOKIES.get(ticket_key, "") or request.META.get("HTTP_AIDEV_TICKET", "")
+        ticket_key, bk_ticket = _request_ticket(request)
         executor_info = {
             "app_code": settings.BK_APP_CODE,
             "app_secret": settings.BK_APP_SECRET,
@@ -405,26 +404,23 @@ class ChatSessionContentFeedbackViewSet(PluginViewSet):
         return Response(data=result["data"])
 
 
+def _request_ticket(request) -> tuple[str, str]:
+    """取请求中的用户票据，返回 ``(ticket_key, ticket)``：cookie 优先，``HTTP_AIDEV_TICKET`` header 兜底。"""
+    ticket_key = getattr(settings, "BKAUTH_BACKEND_TYPE", "bk_ticket")
+    return ticket_key, request.COOKIES.get(ticket_key, "") or request.META.get("HTTP_AIDEV_TICKET", "")
+
+
 def _share_identity_headers(request) -> dict:
     """分享接口的身份透传。
 
     ``X-BKAIDEV-USER`` 标识分享者或访问者；``AIDEV-TICKET`` 仅在分享者本人请求时被 bk-aidev 用于换取智能体 token，
-    以重开 1 小时访问窗口。票据取值顺序与 ``_make_pv_file_service`` 保持一致：cookie 优先，header 兜底。
+    以重开 1 小时访问窗口。
     """
     headers = {"X-BKAIDEV-USER": request.user.username}
-    ticket_key = getattr(settings, "BKAUTH_BACKEND_TYPE", "bk_ticket")
-    bk_ticket = request.COOKIES.get(ticket_key, "") or request.META.get("HTTP_AIDEV_TICKET", "")
+    _, bk_ticket = _request_ticket(request)
     if bk_ticket:
         headers["AIDEV-TICKET"] = bk_ticket
     return headers
-
-
-def _upstream_error_message(exc: HTTPResponseError) -> str:
-    """取 bk-aidev 错误信封中的 message；信封缺失时返回通用提示。"""
-    try:
-        return exc.response.json()["error"]["message"]
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return "分享文件不可用"
 
 
 class ChatSessionShareView(PluginViewSet):
@@ -441,18 +437,9 @@ class ChatSessionShareView(PluginViewSet):
 
     @action(["GET"], detail=True, url_path="pv_files/download_url")
     def pv_files_download_url(self, request, pk, **kwargs):
-        """分享页产物下载：转发 bk-aidev 按分享窗口签发。
-
-        上游 404（窗口已关闭或路径不在分享快照内）映射为本地 404，并保留 bk-aidev 的提示文案。
-        """
-        try:
-            result = self.client.api.get_shared_chat_download_url(
-                path_params={"share_token": pk},
-                params={"path": request.query_params.get("path", "")},
-                headers=_share_identity_headers(request),
-            )
-        except HTTPResponseError as exc:
-            if getattr(getattr(exc, "response", None), "status_code", None) != 404:
-                raise
-            raise ResourceNotFound(message=_upstream_error_message(exc)) from exc
+        """分享页产物下载：转发 bk-aidev 按分享窗口签发，签发只用分享者缓存的 token，不透传请求人身份。"""
+        result = self.client.api.get_shared_chat_download_url(
+            path_params={"share_token": pk},
+            params={"path": request.query_params.get("path", "")},
+        )
         return Response(data=result["data"])
