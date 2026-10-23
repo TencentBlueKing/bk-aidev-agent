@@ -239,6 +239,20 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/agent/call_permission/check/",
     )
 
+    get_agent_access_status = bind_property(
+        Operation,
+        name="get_agent_access_status",
+        method="GET",
+        path="/openapi/aidev/resource/v1/agent/access/status/",
+    )
+
+    apply_agent_access = bind_property(
+        Operation,
+        name="apply_agent_access",
+        method="POST",
+        path="/openapi/aidev/resource/v1/agent/access/apply/",
+    )
+
     retrieve_resource_v1_prompt = bind_property(
         Operation,
         name="retrieve_resource_v1_prompt",
@@ -407,7 +421,9 @@ class BKAidevApi(ApiProtocol):
     @classmethod
     def get_client_by_username(cls, username, app_code=None, app_secret=None, **kwargs):
         return _partial(Client, _get_client_by_username)(
-            username, endpoint=BKAIDEV_URL,
-            bk_app_code=app_code, bk_app_secret=app_secret,
+            username,
+            endpoint=BKAIDEV_URL,
+            bk_app_code=app_code,
+            bk_app_secret=app_secret,
             **kwargs,
         )

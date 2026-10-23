@@ -11,6 +11,7 @@ from rest_framework.routers import DefaultRouter
 
 from aidev_bkplugin.openapi.views import (
     OpenapiAgentAbilitiesViewSet,
+    OpenapiAgentAccessViewSet,
     OpenapiAgentInfoViewSet,
     OpenapiChatCompletionViewSet,
     OpenapiChatSessionContentViewSet,
@@ -25,6 +26,7 @@ _router.register("abilities", OpenapiAgentAbilitiesViewSet, "abilities")
 _router.register("session", OpenapiChatSessionViewSet, "session")
 _router.register("session_content", OpenapiChatSessionContentViewSet, "session_content")
 _router.register("agent", OpenapiAgentInfoViewSet, "agent_info")
+_router.register("access", OpenapiAgentAccessViewSet, "access")
 _router.register("user_operation", OpenapiUserOperationViewSet, "user_operation")
 _router.register("llms", OpenapiLLMViewSet, "openapi_llms")
 
