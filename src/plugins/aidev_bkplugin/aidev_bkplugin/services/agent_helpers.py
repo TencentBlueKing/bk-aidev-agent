@@ -18,10 +18,16 @@ from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from django.conf import settings
 
+from aidev_bkplugin.constants import AUTHORIZE_PAGE_PATH
 from aidev_bkplugin.models import Checkpoint, Write
 from aidev_bkplugin.packages.checkpoint import BKDjangoSaver
 
 from .agent_config import AgentConfigFetcher
+
+try:
+    import bkoauth
+except ImportError:
+    bkoauth = None
 
 if TYPE_CHECKING:
     from aidev_agent.api.bk_aidev import Client
@@ -70,6 +76,22 @@ class AgentHelper:
         except Exception as e:
             logger.warning(f"[build_session_detail_url] 构建会话详情 URL 失败: session_code={session_code}, error={e}")
             return ""
+
+    @classmethod
+    def get_authorize_prompt(cls, resource_manager: ResourceManagerProtocol, username: str) -> str:
+        """对话入口授权校验：用户无可用 bkoauth access_token 时返回授权提示，已授权返回空串。
+
+        未安装 bkoauth 的环境不拦截。
+        """
+        if bkoauth is None or resource_manager.resolve_access_token(username):
+            return ""
+        saas_url = AgentConfigFetcher.get_info(username=username).get("saas_url", "")
+        if not saas_url:
+            logger.warning(f"[get_authorize_prompt] agent 配置中无 saas_url，无法拼授权页 URL, username={username}")
+            return "当前用户尚未授权，请联系智能体管理员获取授权页面。"
+        parsed = urlparse(saas_url)
+        authorize_url = f"{parsed.scheme}://{parsed.netloc}{AUTHORIZE_PAGE_PATH}"
+        return f"当前用户尚未授权，请先到 {authorize_url} 完成授权，授权后重新发送消息。"
 
     @classmethod
     def get_agent_version(cls) -> dict:
