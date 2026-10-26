@@ -142,7 +142,7 @@ interface AIBluekingProps {
   // 高级配置
   /** Nimbus 点击前钩子函数，返回 false 阻止默认 showPanel 行为 */
   beforeNimbusClick?: () => boolean | Promise<boolean | void> | void;
-  /** ResizeLayout 配置（执行情况侧面板拖拽） */
+  /** ResizeLayout 配置（侧栏拖拽） */
   resizeProps?: {
     disabled?: boolean;
     initialDivide?: number | string;
@@ -154,7 +154,7 @@ interface AIBluekingProps {
   /** 消息时间展示所用的 IANA 时区名（≥ v2.2.3），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 */
   timezone?: string;
 
-  /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传内层 ChatBot）；该 Tab order 固定 0 且不可关闭 */
+  /** 保留字段。chat-x 3.0.0 起 ChatContainer 不读取，设置后没有「执行情况」Tab 可隐藏 */
   executionTabVisible?: boolean;
   /**
    * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，透传内层 ChatBot）
@@ -394,7 +394,7 @@ interface ChatBotProps {
   messageTools?: IToolBtn[];
   /** 自定义 AI 消息反馈工具组（与内置按 id 合并） */
   updateTools?: IToolBtn[];
-  /** ResizeLayout 配置（执行情况侧面板拖拽） */
+  /** ResizeLayout 配置（侧栏拖拽） */
   resizeProps?: {
     disabled?: boolean;
     initialDivide?: number | string;
@@ -406,7 +406,7 @@ interface ChatBotProps {
   /** 消息时间展示所用的 IANA 时区名（≥ v2.2.3），透传至 ChatContainer；未配置时按浏览器时区展示 */
   timezone?: string;
 
-  /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传 ChatContainer）；该 Tab order 固定 0 且不可关闭 */
+  /** 保留字段。chat-x 3.0.0 起 ChatContainer 不读取，设置后没有「执行情况」Tab 可隐藏 */
   executionTabVisible?: boolean;
   /**
    * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，透传 ChatContainer）

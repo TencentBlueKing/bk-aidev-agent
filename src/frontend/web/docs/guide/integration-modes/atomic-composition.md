@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
 
 分享的端到端请求由业务侧发起：示例中点击「分享」只进入**多选模式**，便于对照实现。
 
-## 工具栏二次开发：MessageContainer 回调 ↔ HTTP ↔ chat-helper
+## 工具栏二次开发：MessageContainer 回调 ↔ HTTP ↔ chat-helper {#工具栏回调}
 
 `MessageContainer` 通过 **props 回调**处理「复制 / 引用 / 重新生成 / 删除 / 分享 / 点赞点踩」；**不要**再使用已废弃的 `@cite` 等事件。
 
@@ -112,8 +112,8 @@ onBeforeUnmount(() => {
 | -------------- | ---- | -------------------------------------- | -------------------------- |
 | `cite` | `onAgentAction` / `onUserAction` | 拼文本写入输入区 `v-model:cite`，`ChatInput` `ref.focus()` | 无（纯前端） |
 | `rebuild` | `onAgentAction` | `agent.abortChat()` 后 **`agent.resendMessage(userMessageId, sessionCode)`** | `session_content/batch_delete/`、`session_content/`、`chat_completion/` |
-| `delete`（助手条） | `onAgentAction` | 找到本轮 user 后 **`message.deleteMessages([user, ...aiGroup])`** | `session_content/batch_delete/` |
-| `delete`（用户气泡） | `onUserAction` | 从该 user 起到下一条 user 前 **`message.deleteMessages([user, ...ai])`** | 同上 |
+| `delete`（助手条） | `onAgentAction` | 在完整消息列表里定位这一轮（锚点对不上唯一一轮则放弃），**`message.deleteMessages(turn)`**。`turn` 含用户消息，以及到下一条用户消息之前的全部消息（含未放进 `aiGroup` 的 tool） | `session_content/batch_delete/`（body 只有 user id） |
+| `delete`（用户气泡） | `onUserAction` | 从该 user 起到下一条 user 前，**`message.deleteMessages(turn)`** | 同上 |
 | `share` | `onAgentAction` | **`enable-selection`** + **`v-model:selected-user-messages`**，确认后 **`message.shareMessages(...)`** | `POST share/` |
 | `like` / `unlike` | `onAgentAction` 返回原因；`onAgentFeedback` 提交 | `getSessionFeedbackReasons(rate)`；`postSessionFeedback({ sessionCode, sessionContentIds, rate, labels, comment })`，userId 可用 **`findLastUserMessageIdBefore(list, aiGroup[0])`** | `session_feedback/reasons/`、`session_feedback/` |
 

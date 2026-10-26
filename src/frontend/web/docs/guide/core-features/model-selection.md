@@ -72,6 +72,18 @@ const models: ILlmItem[] = [
 
 时序约束：若存在 `sessionModule` 但 `current` 尚未就绪，**不会**先落 default，避免挡住后续的 `session.model`。
 
+## 模型描述 {#模型描述}
+
+列表项的 `description` 去掉首尾空白后仍有内容时，鼠标停在该选项上约 300ms，用气泡展示这段纯文本。有描述时不再用浏览器原生 `title`（名称上的 `title` 也会去掉）。没有描述、或只有空白时，名称仍用原生 `title` 提示全名。
+
+同一下拉里同时只保留一个气泡。鼠标离开、列表滚动、搜索换了一批选项，或下拉收起时，气泡关闭。禁用项只要有描述，悬停同样展示。
+
+气泡复用外层 tippy 的 `appendTo`、`placement`、`zIndex`。未传时分别是 `document.body`、`auto`、`10001`。经 `ChatContainer` 使用时，这三项来自 `commonTippyOptions`（全屏会把 `appendTo` 改到全屏容器）。
+
+::: warning 文档站示例仍是 2.4.x
+交互示例运行已发布的 2.4.x，模型描述仍可能是原生 `title`，还没有这层气泡。
+:::
+
 ## 数据流
 
 ```

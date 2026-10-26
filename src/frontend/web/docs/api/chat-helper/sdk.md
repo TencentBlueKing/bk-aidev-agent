@@ -216,7 +216,7 @@ Message 模块管理当前会话的消息列表。
 | `plusMessage`              | `(msg: IMessage) => void`                                   | 添加消息到列表         |
 | `createAndPlusMessage`     | `(msg: Partial<IMessage>) => IMessage`                      | 创建消息并添加到列表   |
 | `modifyMessage`            | `(msg: Partial<IMessage>) => void`                          | 修改消息               |
-| `deleteMessages`           | `(msgs: IMessage[]) => Promise<void>`                       | 删除消息               |
+| `deleteMessages`           | `(msgs: IMessage[]) => Promise<void>`                       | 乐观移除传入的消息。请求体只提交其中的用户消息 id；没有用户消息 id 时直接返回。ChatBot 传入整轮消息 |
 | `shareMessages`            | `(code, msgs, expiredAt?) => Promise<{ shareUrl: string }>` | 分享消息               |
 | `getCurrentLoadingMessage` | `() => IMessage \| undefined`                               | 获取当前正在加载的消息 |
 | `getMessageByMessageId`    | `(id: string) => IMessage \| undefined`                     | 根据 ID 获取消息       |

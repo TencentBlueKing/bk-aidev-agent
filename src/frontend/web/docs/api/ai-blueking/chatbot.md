@@ -97,7 +97,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`）。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `rebuild` |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `delete` |
-| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（侧栏拖拽） |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）（**≥ v2.2.3**），透传至 ChatContainer；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 
@@ -107,7 +107,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示（**≥ v2.2.0-beta.11**）。该 Tab 始终存在、不可关闭、`order` 固定 `0`；置 `false` 仅将其从 Tab 栏隐藏，若当前选中的正是它则自动切到首个可见 Tab |
+| `executionTabVisible` | `boolean` | `true` | 保留字段。chat-x 3.0.0 起侧栏不再有内建「执行情况」Tab，`ChatContainer` 不读取该值，设置后没有效果。常驻默认 Tab 为「文件产物」。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible) |
 | `getSideRenderComponent` | `GetSideRenderComponent` | — | `(h, props) => VNode \| undefined`。返回 VNode 时作为侧栏内容根；返回 `undefined` 时使用 `addCustomTab` 的 `data.component` |
 | `getSideTabRenderComponent` | `GetSideTabRenderComponent` | — | `(h, tab, { removeCustomTab }) => VNode \| undefined`。自定义 Tab 标签；未返回时使用默认图标 + 文案 + 关闭按钮 |
 | `onCustomTabChange` | `OnCustomTabChange` | — | `(tab) => Promise<unknown>`。Tab 切换时拉取详情并写入 `data.props`；**未传**且为 Flow 节点 Tab（含 `task_id`、`node_id`）时，使用内置 `getFlowAgentTaskNodeInfo` |

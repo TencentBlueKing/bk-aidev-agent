@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 | --- | --- |
 | `changelog.md` | 版本更新记录，新版本插在文首 |
-| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）；`enableMessageCollapse` 关闭消息折叠与过程状态栏 |
+| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）；`enableMessageCollapse` 关闭消息折叠与过程状态栏；`executionTabVisible` 在 chat-x 3.0.0 起无效 |
 
 ## 指南 `/guide/`
 
@@ -31,16 +31,16 @@
 
 | 链接 | 文件 | 典型更新场景 |
 | --- | --- | --- |
-| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、刷新后以服务端为准）；消息折叠 `enableMessageCollapse`（默认折叠 + 过程状态栏）；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
+| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、思考已停止、无正文时补「用户已取消」）；消息折叠 `enableMessageCollapse`（默认折叠 + 过程状态栏，可关闭）；删除整轮；消息时间展示（≥ v2.2.3）；文件上传（附件按钮常驻、单文件 &lt; 20MB、`delete-file`、上限 9、`pv_files`）；`stream_mode` 续流 |
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill·MCP·工具、`@` 资源；统一 `menuSources` 与 `property.docSchema`（≥ v2.4.0） |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
-| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；上传入口常驻，不跟 `support_vision` |
+| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；上传入口常驻，不跟 `support_vision`；`description` hover 气泡（3.1.0-beta.1） |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
-| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；`executionTabVisible`（≥ v2.2.0）；文件产物 Tab（≥ v2.2.2）；空态也可打开侧栏 / 产物空态（≥ v2.2.3）；执行情况面板不展示节点重试/跳过（≥ v2.2.4）；侧栏固定右侧 + 嵌入模式须业务 Header |
+| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；chat-x 3.0.0 起内建「执行情况」Tab 已下线，`executionTabVisible` 不再生效；常驻默认 Tab 为「文件产物」（`loadOnSelect: false` 不走业务渲染器）；侧栏固定右侧 + 嵌入模式须业务 Header。文档站示例仍是 2.4.x，页面上还有执行情况 Tab |
 | `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`（≥ v2.2.4）、`messageTools`/`updateTools`；动态 placeholder（≥ v2.2.4）；`size` / `timezone`（≥ v2.2.3） |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
@@ -102,7 +102,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 | 界面与渲染 | `demos/header-slots.md` | `#headerLeft` / `#headerActions` / `showHistoryIcon` 配置台（浮窗配置含插槽）、renderMode 三种模式 |
 | 界面与渲染 | `demos/custom-message.md` | `#message` + `parseCustomBlocks` 渲染图表 / 表单 / iframe（`CustomMessageRenderer.vue`）、`#codeHeader` 插入编辑器（`CodeToEditor.vue`）；iframe 静态页 `public/demo-assets/mini-dashboard.html` |
 
-| 界面与渲染 | `demos/side-render.md` | 流程智能体执行情况 / 节点详情 / 重试跳过、`getSideRenderComponent` / `getSideTabRenderComponent` / `onCustomTabChange`；Mock 档案 `~flow/`（`src/mock-flow.ts`），页面含真实 SSE 事件序列 |
+| 界面与渲染 | `demos/side-render.md` | 流程智能体节点详情 / 重试跳过（示例仍是 npm 2.4.x，侧栏还有「执行情况」Tab；源码 3.0 已下线）、`getSideRenderComponent` / `getSideTabRenderComponent` / `onCustomTabChange`；Mock 档案 `~flow/`（`src/mock-flow.ts`），页面含真实 SSE 事件序列 |
 
 目录中已无 planned 条目；新增示例页时先在 `demos-catalog.ts` 登记。
 

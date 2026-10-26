@@ -123,7 +123,7 @@ function openAI() {
 | `beforeNimbusClick` | `() => boolean \| Promise<boolean \| void> \| void` | — | Nimbus 点击前钩子函数，返回 `false` 阻止默认 showPanel 行为 |
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
-| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（执行情况侧面板拖拽） |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（侧栏拖拽） |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）（**≥ v2.2.3**），透传至 ChatBot → ChatContainer；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 | `enableMessageCollapse` | `boolean` | `true` | 是否启用所有轮次消息的顶层折叠及过程状态栏，透传至内层 `ChatBot`。默认折叠；置 `false` 时完整展示每组消息并隐藏过程状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
@@ -134,7 +134,7 @@ function openAI() {
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示（**≥ v2.2.0-beta.11**），透传至内层 `ChatBot`。该 Tab 始终存在、不可关闭、`order` 固定 `0`；置 `false` 仅将其从 Tab 栏隐藏 |
+| `executionTabVisible` | `boolean` | `true` | 保留字段，透传至内层 `ChatBot`。chat-x 3.0.0 起不再生效，常驻默认 Tab 为「文件产物」。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible) |
 
 ## Events
 

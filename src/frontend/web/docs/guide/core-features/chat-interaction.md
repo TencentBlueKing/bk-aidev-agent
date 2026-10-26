@@ -203,6 +203,41 @@ aiBluekingRef.value.stopGeneration();
 - 封口冻结的是点击瞬间的内容。后端取消生效前可能又多生成了一段并落库，**刷新或重新进入会话后，内容可能比点击时更长**，以服务端历史为准。
 - 同一会话紧接着发送下一条消息时，SDK 会先等停止请求落定再开始新一轮生成，宿主无需自己串行化。等待期间界面仍处于生成态，可再次点击停止取消这条排队的消息；切换会话也会取消它。
 - `receive-end` 在封口时触发一次。请勿在该事件里整表拉取消息刷新列表，否则会把封口后服务端多生成的内容重新拉回界面。
+- 正在进行的思考显示「思考已停止」。有助手正文时，[过程状态栏](#助手过程状态栏)为「已停止」；尾段还没有助手正文（只有思考、工具调用，或完全为空）时，会补一条「用户已取消」（`status: error`），过程状态栏为「失败」。
+
+## 助手过程状态栏 {#助手过程状态栏}
+
+每一轮有内容的助手消息组，会在消息上方显示过程状态栏（chat-x 内部组件，不从包入口导出）。`ChatBot` / `AIBlueking` 默认带上，没有新的 prop。用户消息组和空组不显示。
+
+| 条件 | 文案 | 消息 |
+| --- | --- | --- |
+| 容器 `messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`，且是最后一组；`renderMode` 不是分享 | 「处理中」，文字闪动，不显示耗时 | 展示全部 |
+| 组内最后一条 `status` 为 `error` | 「失败」 | 至少两条时默认只留最后一条 |
+| 最后一条为 `stop` | 「已停止」 | 同上 |
+| 最后一条为 `disabled` | 「已禁用」 | 同上 |
+| 其余终态 | 「已完成」 | 同上 |
+
+生成中更早的助手组仍按各自终态折叠。分享态不显示「处理中」，按终态展示。
+
+耗时只在终态、且两端时间都有时出现，形如「已完成，耗时 2m2s」（状态与「耗时」之间是中文逗号，「耗时」与时长之间是空格）：
+
+- 起点：紧邻的上一组是用户消息时，取该组第一条 `createdAt`
+- 终点：本组内最晚的 `createdAt`
+- 缺任一端，或间隔为 0，不显示耗时；不足 1 秒显示 `<1s`
+
+可折叠时点击状态栏展开或收起。从生成中进入可折叠终态会自动收回。只有一条消息时没有箭头。
+
+自定义整组的 `#group` 会换掉这栏。`#message`（以及 `MessageContainer` 的默认插槽）在折叠时只收到当前可见的消息，未展开的前序消息不进入 DOM。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
+
+::: warning 文档站示例仍是 2.4.x
+交互示例运行已发布的 `@blueking/ai-blueking@2.4.1`，示例对话里还没有过程状态栏。
+:::
+
+## 删除一轮消息
+
+`ChatBot` / `AIBlueking` 删除助手回复或用户消息时，删的是整轮：从这一轮的用户消息起，到下一条用户消息之前，包含挂在列表里、但没有放进工具栏分组的 tool 消息。后端 `batch_delete` 仍只收用户消息 id，由服务端删掉该轮。
+
+助手锚点对不上唯一一轮时，组件放弃删除，避免删到别的轮次。原子组装请按同样范围调用 `message.deleteMessages`，见 [工具栏二次开发](/guide/integration-modes/atomic-composition#工具栏回调)。
 
 ## 文件上传 {#文件上传}
 
@@ -210,8 +245,10 @@ aiBluekingRef.value.stopGeneration();
 
 - **允许类型**：默认 `DEFAULT_UPLOAD_ACCEPT`（图片 / 文档 / 文本 / 代码扩展名）。系统选择框带 `accept` 过滤；拖拽 / 粘贴仍会再按扩展名校验，不支持的格式会提示「因格式不支持未添加」且不入队。
 - **数量**：待发送列表最多 **9** 个；已满时再次选择会弹出错误提示且不入队。一次选择多个文件时 `onUpload` 只回调一次并传入 `File[]`。
+- **大小**：单个文件须严格小于 20MB（`20 * 1024 * 1024` 字节）。达到或超过上限、以及空文件，选择 / 拖拽 / 粘贴都不会入队。
 - **接口**：`session.uploadFiles` 按 `agent.info.agentSdkVersion` 分流——能解析且 `< 2.2.2rc25` 走旧 `upload/{fileName}/`（逐个）；否则（含空字符串 / 缺省）走 `pv_files/upload/`（一次 multipart）。上传中 / 失败态会展示在附件卡片上。
-- **附件按钮显隐**：仍跟随选中模型 `property.support_vision`；快捷指令 `supportUpload.vision` 优先。
+- **附件按钮**：常驻开启，不跟随选中模型 `property.support_vision`，也不跟随快捷指令 `supportUpload.vision`。与 [模型选择](/guide/core-features/model-selection) 的约定一致。
+- **取消附件**：`ChatBot` 收到 `delete-file` 后删除远端文件。已有 `outputId` / `id` 时立即删除；还在上传、尚无 path 时先记下文件，等上传回包再删。卡片立刻消失，接口失败也不会把附件加回来。原子组装请监听 `ChatInput` / `ChatContainer` 的 `@delete-file`。
 
 原子组装时请自行把 `ChatInput.onUpload` 接到 `session.uploadFiles`。详见 [chat-x ChatInput](/api/chat-x/components#chatinput)、[chat-helper SDK](/api/chat-helper/sdk)。
 

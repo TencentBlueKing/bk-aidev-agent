@@ -5,11 +5,23 @@
 ### 新功能
 
 - **消息顶层折叠可关闭**（`enableMessageCollapse`）：`AIBlueking` / `ChatBot` 透传 chat-x `ChatContainer`。默认 `true`，终态折叠本轮过程消息并展示过程状态栏（处理中 / 已完成 / 失败 / 已停止 / 已禁用及耗时）。设为 `false` 后完整展示每组消息，并隐藏整个过程状态栏；工具栏和消息内部的折叠不变。分享模式同样遵循此配置。详见 [聊天交互 · 消息折叠](/guide/core-features/chat-interaction#消息折叠)
+- **模型描述气泡**：模型 `description` 去空白后非空时，选项悬停约 300ms 后用气泡展示纯文本，不再用原生 `title`。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)
 
 ### 优化
 
-- **停止生成立即生效**：点击停止后前端立即封口，本轮消息收为「已停止」，后续流式内容不再写入界面，不再等后端真正停下；同会话下一轮生成会先等停止请求落定（等待期间可再次停止取消）。刷新后内容仍以服务端历史为准，可能比点击瞬间更长。详见 [聊天交互 · 停止生成](/guide/core-features/chat-interaction#停止生成)
+- **停止生成立即生效**：点击停止后前端立即封口，后续流式内容不再写入界面，不再等后端真正停下。有助手正文时过程状态栏为「已停止」；尾段没有助手正文时补一条「用户已取消」，过程状态栏为「失败」。同会话下一轮生成会先等停止请求落定（等待期间可再次停止取消）。刷新后内容仍以服务端历史为准，可能比点击瞬间更长。详见 [聊天交互 · 停止生成](/guide/core-features/chat-interaction#停止生成)
 - **思考块支持停止态**：停止生成时正在进行的思考显示「思考已停止」，不再停留在「思考中」
+- **删除助手回复会清掉整轮**：从对应的用户消息起，直到下一条用户消息之前（含未进工具栏分组的 tool 消息）一并删除。对不上唯一一轮时放弃删除，避免删错。接口仍只提交用户消息 id。详见 [原子组件组装](/guide/integration-modes/atomic-composition#工具栏回调)
+- **上传**：附件按钮常驻，不跟随 `support_vision`。单文件须严格小于 20MB。取消待发送附件时 ChatBot 会删除远端文件
+
+### 变更
+
+- **侧栏内建「执行情况」Tab 已下线**（chat-x 3.0.0）：常驻默认 Tab 改为「文件产物」。`executionTabVisible` 仍留在 `ChatBot` / `AIBlueking` 类型上，但 `ChatContainer` 已不读取，设置后没有效果。`useMessageGroup` 不再返回 `executionGroups`，也不再接收 `keyword`。对话流里的执行统计、失败节点重试 / 跳过仍在。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)、[FAQ](/faq#为什么-executiontabvisible-不生效)
+
+### 文档
+
+- 更新 [聊天交互](/guide/core-features/chat-interaction)、[模型选择](/guide/core-features/model-selection)、[侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)、[原子组件组装](/guide/integration-modes/atomic-composition)
+- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)、[chat-helper SDK](/api/chat-helper/sdk)、[FAQ](/faq)
 
 ---
 

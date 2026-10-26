@@ -37,6 +37,7 @@
 | `select-shortcut` | `(shortcut: IShortcut)` | 选择快捷指令 |
 | `delete-shortcut` | - | 删除当前快捷指令 |
 | `model-change` | `(model: IModelOption)` | 切换模型 |
+| `delete-file` | `(file: Partial<UploadFile>)` | 取消待发送附件。UI 已移除该卡片；业务方用 `id` / `outputId` 删远端文件，失败不恢复 |
 
 ### Slots
 
@@ -59,8 +60,9 @@
 | --- | --- |
 | `Enter` | 发送消息 |
 | `Shift + Enter` | 换行 |
-| `/` | 触发提示词选择 |
-| `@` | 触发资源选择 |
+| `/` | Skill / MCP / 工具 |
+| `\` | Prompt |
+| `@` | 资源（知识库、文档、产物） |
 | `↑` / `↓` | 在提示词/资源列表中导航 |
 | `Esc` | 关闭提示词/资源选择面板 |
 
@@ -83,7 +85,7 @@
 
 ## MessageContainer
 
-消息列表容器，负责渲染消息列表和管理消息选择。
+消息列表容器，负责渲染消息列表和管理消息选择。有内容的助手组上方展示[过程状态栏](/guide/core-features/chat-interaction#助手过程状态栏)：生成中为「处理中」，终态显示已完成 / 失败 / 已停止 / 已禁用，至少两条时默认折叠。
 
 ### Props
 
@@ -116,7 +118,8 @@
 
 | 插槽名 | 参数 | 说明 |
 | --- | --- | --- |
-| `default` | `{ message }` | 自定义单条消息渲染 |
+| `default` | `{ message }` | 自定义单条消息渲染。终态折叠时只传入当前可见消息 |
+| `group` | `{ group }` | 替换整组默认内容（含过程状态栏、消息列表与工具栏） |
 
 ### Expose
 
@@ -240,6 +243,8 @@
 
 模型下拉选择器，支持搜索与能力标签。通常由 `ChatInput` / `ChatContainer` 在传入 `models` 后自动渲染于发送按钮左侧；也可独立使用。
 
+`description` 去空白后非空时，选项悬停约 300ms 展示纯文本气泡，不再使用原生 `title`。气泡只复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)。
+
 ### Props
 
 | 属性 | 类型 | 默认值 | 说明 |
@@ -248,6 +253,7 @@
 | `disabled` | `boolean` | `false` | 是否禁用 |
 | `placeholder` | `string` | `'选择模型'` | 无选中时的占位文案 |
 | `searchPlaceholder` | `string` | `'搜索模型关键字'` | 搜索框占位文案 |
+| `tippyOptions` | `Partial<TippyOptions>` | — | 下拉 Tippy 配置。描述气泡只复用其中的 `appendTo`、`placement`、`zIndex` |
 
 ### v-model
 

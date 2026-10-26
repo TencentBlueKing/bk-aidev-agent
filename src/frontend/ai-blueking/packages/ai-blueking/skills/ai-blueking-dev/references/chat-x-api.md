@@ -113,7 +113,7 @@ import {
 
 ## ChatContainer 聊天主容器
 
-`ChatContainer` 将消息区、输入区、快捷指令表单、分享底栏、执行情况侧栏等组合为一块；`ai-blueking` 的 `ChatBot` 内部主要使用此组件。
+`ChatContainer` 将消息区、输入区、快捷指令表单、分享底栏、文件产物侧栏等组合为一块；`ai-blueking` 的 `ChatBot` 内部主要使用此组件。
 
 ### Props（交集类型）
 
@@ -121,7 +121,7 @@ import {
 
 | 来源 | 主要字段 | 说明 |
 |------|-----------|------|
-| ChatContainerProps | `chatLoading?`、`commonTippyOptions?`（原样透传；仅全屏态强制把 `appendTo` 改为全屏容器，未传时不注入 `appendTo`，各浮层沿用自身默认挂载点）、`executionTabVisible?`（默认 `true`）、`enableMessageCollapse?`（默认 `true`，关闭后完整展示并隐藏过程状态栏）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`welcomeTitle?` | 侧栏固定右侧展开、Tab、欢迎语、全局 tippy、字号主题、消息顶层折叠、侧栏渲染 |
+| ChatContainerProps ∪ MessageContainerProps | `chatLoading?`、`commonTippyOptions?`（原样透传；仅全屏态强制把 `appendTo` 改为全屏容器，未传时不注入 `appendTo`，各浮层沿用自身默认挂载点）、`enableMessageCollapse?`（来自 MessageContainer，默认 `true`，关闭后完整展示并隐藏过程状态栏）、`getSideRenderComponent?`、`getSideTabRenderComponent?`、`onCustomTabChange?`、`onArtifactClick?`、`openingRemark?`、`asideCollapsed?`（严格受控，不传则内部自持默认折叠）、`resizeProps?`、`size?`（`AiSizeMode`，默认 `'small'`）、`timezone?`、`welcomeTitle?`。**没有** `executionTabVisible`（3.0.0 已移除；ChatBot 仍透传但容器忽略） | 侧栏固定右侧展开，常驻默认 Tab 为「文件产物」（`loadOnSelect: false`），欢迎语、全局 tippy、字号主题、消息顶层折叠、侧栏渲染 |
 | ChatInputProps | 同 [ChatInput](#chatinput-聊天输入框) | 内部透传 `ChatInput` |
 | MessageContainerProps（省略项由容器内部注入） | `messages`、`messageStatus?`、`messageTools?`、`updateTools?`、`userMessageTools?`、`messageToolsStatus?`、`onAgentAction?`、`onAgentFeedback?`、`onUserAction?`、`onInterruptResume?`、`onUserInputConfirm?`、`onUserShortcutConfirm?` 等 | `enableSelection` / `messageGroups` / `messageToolsTippyOptions` 由内部 `useMessageGroup` 管理；`messageTools`/`updateTools`/`userMessageTools` 与内置工具按 id 合并 |
 
@@ -319,19 +319,20 @@ onSendMessage?: (
 
 ```typescript
 useMessageGroup(options: {
-  keyword?: ShallowRef<string>;            // 可选，执行情况搜索关键词
   messages: ComputedRef<Message[]>;         // 原始消息列表
   renderMode?: MaybeRef<RenderMode>;        // 可选，share 态下不自动追加 Loading 组
   selectedUserMessages: Ref<Message[] | undefined>;
 })
 ```
 
+3.0.0 起不再接收 `keyword`，也不再返回 `executionGroups`。
+
 **返回**：
 
 ```typescript
 const {
   messageGroups,               // 分组后的 MessageGroup[]
-  executionGroups,             // 执行情况（工具调用 / flow-agent）分组
+  sessionArtifacts,            // 会话文件产物（按 outputId 去重）
   activeUserQuestionInterrupt, // 最近一条待响应的 UserQuestion 中断（供 chat-input 上方浮层渲染）
   pendingApprovalCount,        // 待审批（AIDev 第三方）中断数量
   pendingApprovalTipText,      // 待审批提示文案
@@ -341,7 +342,6 @@ const {
   onCancelShare,               // 取消分享
   onConfirmShare,              // 确认分享
 } = useMessageGroup({
-  keyword,
   messages,
   renderMode,
   selectedUserMessages,

@@ -427,6 +427,10 @@ const blocks = parseCustomBlocks(`
 `#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在作用域内，自定义渲染时这些操作不可用；AI 消息工具栏在插槽外渲染，不受影响。
 :::
 
+::: info 源码 3.1 过程折叠
+终态且助手组至少有两条消息时，[过程状态栏](/guide/core-features/chat-interaction#助手过程状态栏)默认折叠，`#message` 只收到当前可见的最后一条。展开后，前面的思考和工具消息才会进入插槽。文档站示例仍是 2.4.x，没有这层折叠。
+:::
+
 ---
 
 ## 配置 AI Prompt

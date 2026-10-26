@@ -4,7 +4,7 @@
 
 ## 概述
 
-带执行情况侧栏的对话布局中，除默认「执行情况」Tab 外，FlowAgent 等活动消息可通过 `addCustomTab` 打开节点详情等自定义 Tab。此前需在 `ChatContainer` 层配置 `getSideRenderComponent` 等能力；自 **v2.1.4-beta.7** 起，以下 Props 已透传到 **`ChatBot`** 与 **`AIBlueking`**，集成方无需再单独包裹 `ChatContainer`。
+侧栏常驻默认 Tab 是「文件产物」。FlowAgent 等活动消息可通过 `addCustomTab` 打开节点详情等自定义 Tab。此前需在 `ChatContainer` 层配置 `getSideRenderComponent` 等能力；自 **v2.1.4-beta.7** 起，以下 Props 已透传到 **`ChatBot`** 与 **`AIBlueking`**，集成方无需再单独包裹 `ChatContainer`。
 
 | 能力 | Prop | 说明 |
 | --- | --- | --- |
@@ -15,40 +15,27 @@
 与 [消息自定义渲染](/guide/core-features/custom-message-rendering) 的区别：
 
 - **消息自定义渲染**：主对话区消息体内的 `custom-component` 块
-- **侧栏自定义渲染**：右侧执行情况面板中的 Tab 内容与标签（侧栏固定右侧，已移除 `placement`）
+- **侧栏自定义渲染**：右侧侧栏中的 Tab 内容与标签（侧栏固定右侧，已移除 `placement`）
 
 底层机制与 `@blueking/chat-x` 的 `ChatContainer` 一致，详见 chat-x Wiki「自定义侧栏内容 / Tab 标签」。
 
-## 「执行情况」Tab 显隐 {#execution-tab-visible}
+## 内建「执行情况」Tab 已下线 {#execution-tab-visible}
 
-侧栏默认的「执行情况」Tab **始终存在、不可关闭**，`order` 固定为 `0`，恒排在所有业务自定义 Tab 之前。自 **v2.2.0-beta.11** 起，可通过 `executionTabVisible` 控制其显隐，透传至 `ChatBot` 与 `AIBlueking`：
+chat-x **3.0.0** 起，侧栏不再内建「执行情况」Tab，也不再导出 `ExecutionSummary`。`useCustomTabProvider` 改为由容器传入 `defaultTab`。`ChatContainer` 传入的常驻默认 Tab 是「文件产物」（`order: -1`，不可关闭，`loadOnSelect: false`）。
 
-```vue
-<template>
-  <!-- 隐藏默认「执行情况」Tab，仅保留业务自定义 Tab -->
-  <AIBlueking :execution-tab-visible="false" />
-  <!-- ChatBot 同理 -->
-  <ChatBot :execution-tab-visible="false" />
-</template>
-```
+`ChatBot` / `AIBlueking` 的类型里仍有 `executionTabVisible`，组件也会把它传给 `ChatContainer`，但 `ChatContainer` 已不声明、不读取这个 prop，**设置后没有效果**。不要再用它隐藏默认 Tab。
 
-| Prop | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `executionTabVisible` | `boolean` | `true` | 「执行情况」Tab 是否展示；置 `false` 仅将其从 Tab 栏隐藏 |
+v2.2.x 文档站示例仍带这个 Tab，见 [示例 · 侧栏 Tab 自定义](/demos/side-render) 顶部说明。
 
-::: info 行为说明
-
-- 缺省 `true`，即默认展示「执行情况」Tab；无需配置即可保持原有行为。
-- 置 `false` 后该 Tab 从标签栏隐藏；若当前选中的正是它，选中态会**自动切到首个可见 Tab**，隐藏 Tab 的内容不再渲染。
-- 该 Tab 的 `order`（`0`）与不可关闭特性由 `@blueking/chat-x` 内部保证，业务侧无法通过 `addCustomTab` 覆盖。
-- 自 **v2.2.4** 起，侧栏「执行情况」面板内的 FlowAgent 失败节点**不展示「重试 / 跳过」**（对话流内仍展示，依赖 `retryable` / `skippable`）。面板定位是回看执行过程，不承载操作。
-:::
+对话流里的 FlowAgent 标题栏仍显示执行统计。失败节点的「重试 / 跳过」只出现在对话流（依赖 `retryable` / `skippable`），分享态只读。
 
 ## 内置「文件产物」Tab
 
-自 **v2.2.2** 起，`AIBlueking` / `ChatBot` 会把 `ChatContainer.onArtifactClick` 接到 `pv_files/download_url`。AI 回复中的文件卡片可打开侧栏固定的「文件产物」Tab（`name: 'file-artifact'`），聚合当前会话 `property.artifacts` 并预览 / 下载。集成方无需额外配置；原子组装时需自行传入 `onArtifactClick`。
+「文件产物」（`name: 'file-artifact'`）是侧栏常驻默认 Tab：排在自定义 Tab 之前，不可关闭，没有产物时展示「暂无数据」。它自持数据（`loadOnSelect: false`），选中时不触发 `onCustomTabChange`，`getSideRenderComponent` 也不会改写它的内容。
 
-自 **v2.2.3** 起，该 Tab **常驻不随产物有无增删**：空会话或无产物时也可打开侧栏，面板展示「暂无数据」空态。浮窗展开侧栏时会先腾出右侧空间再扩宽面板，见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。
+自 **v2.2.2** 起，`AIBlueking` / `ChatBot` 会把 `ChatContainer.onArtifactClick` 接到 `pv_files/download_url`。AI 回复中的文件卡片打开这个 Tab，聚合当前会话里带 `outputId` 的产物与附件并预览 / 下载。集成方无需额外配置；原子组装时需自行传入 `onArtifactClick`。
+
+浮窗展开侧栏时会先腾出右侧空间再扩宽面板，见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。
 
 侧栏折叠由 `v-model:asideCollapsed` 驱动。浮窗入口在 `AIHeader`；**嵌入式 ChatBot 须业务 Header 提供开关**，否则用户无法手动展开/收起。详见 [ChatBot 页面嵌入 · 业务 Header](/guide/integration-modes/chatbot-embedded#业务-header会话名称--侧栏开关)。
 
@@ -71,8 +58,9 @@ sequenceDiagram
 
 选中自定义 Tab 后，内容区渲染优先级为：
 
-1. `getSideRenderComponent(h, selectedTab.data.props)` 返回的 VNode
-2. 否则使用 `addCustomTab` 时传入的 `data.component`，并 `v-bind="data.props"`
+1. `loadOnSelect === false` 的 Tab（「文件产物」）直接用 Tab 自己的 `data.component`，不调用 `getSideRenderComponent`
+2. 其余 Tab：`getSideRenderComponent(h, selectedTab.data.props)` 返回的 VNode
+3. 否则使用 `addCustomTab` 时传入的 `data.component`，并 `v-bind="data.props"`
 
 ## 快速开始
 
@@ -235,8 +223,8 @@ import type {
 若 `ChatBot` 包在可拖拽面板内，监听 `execution-panel-change`，在侧栏因 `addCustomTab` 自动展开时同步外层布局（与 `isCollapse` 联动）。
 :::
 
-::: info 执行情况 Tab 清空自定义 Tab
-当 `executionGroups` 为空且搜索关键词为空时，`ChatContainer` 会 `resetCustomTab`，清空自定义 Tab 并折叠侧栏。
+::: info 自定义 Tab 何时被清空
+会话消息变化**不会**调用 `resetCustomTab`。`ChatContainer` 在卸载时才把侧栏重置为仅保留默认「文件产物」Tab。
 :::
 
 ::: info props 命名与 remount
@@ -245,7 +233,7 @@ import type {
 
 ## 参考示例
 
-[示例 · 侧栏 Tab 自定义](/demos/side-render) 连接文档站内置的巡检流程 Mock，可直接体验执行情况、节点详情、重试 / 跳过，以及本页的三个自定义 Props；页面还列出了流程智能体的 SSE 事件序列（`flow_agent_*` 的 `value` 为任务数组、状态为 BKFlow 大写）。
+[示例 · 侧栏 Tab 自定义](/demos/side-render) 连接文档站内置的巡检流程 Mock。该示例跑的是已发布 2.4.x，侧栏仍有「执行情况」Tab，可体验节点详情、重试 / 跳过和三个自定义 Props。当前源码没有这个内建 Tab。页面还列出了流程智能体的 SSE 事件序列（`flow_agent_*` 的 `value` 为任务数组、状态为 BKFlow 大写）。
 
 仓库内 Playground（`packages/ai-blueking/playground`）也提供完整示例（其中 SSE 示例将 `value` 简写为对象，实际协议为数组）：
 

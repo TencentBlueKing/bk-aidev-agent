@@ -339,3 +339,11 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 ```
 
 关闭后过程状态栏（折叠箭头、状态文案、耗时）不再渲染。工具栏，以及思考块等消息内部的折叠，仍然保留。改回 `true` 会恢复折叠和状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠)。
+
+---
+
+## 为什么 executionTabVisible 不生效？
+
+chat-x 3.0.0 起，侧栏不再内建「执行情况」Tab。常驻默认 Tab 是「文件产物」。`executionTabVisible` 还在 `ChatBot` / `AIBlueking` 的类型里，也会被传下去，但 `ChatContainer` 已经不读它，所以 `true` / `false` 都看不到那个 Tab。
+
+文档站的[侧栏示例](/demos/side-render)若仍跑已发布 2.4.x，示例里会有「执行情况」Tab。按当前源码集成见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。

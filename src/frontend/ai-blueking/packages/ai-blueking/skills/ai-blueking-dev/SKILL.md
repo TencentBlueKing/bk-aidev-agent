@@ -3,7 +3,7 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、消息折叠（enableMessageCollapse）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
 metadata:
   author: blueking
-  version: '5.49'
+  version: '5.50'
   packages:
     ai-blueking: 3.1.0-beta.1
     chat-x: 3.1.0-beta.1
@@ -310,6 +310,18 @@ ChatBot 在 `url` / `chatHelper` 变化或卸载时只会 `abortChat()`，不会
 - 同会话下一轮 `streamRequest(stream_mode: start)`（含发送、重发、HITL 恢复）会先等在途停止请求落定再开新流；`attach` 不等待。宿主无需自己串行化。排队期间 `isChatting` 为 `true`（仍显示停止按钮）；此时再 `stopChat` 只取消排队的 start、不重复发停止请求；`abortChat` 或切走会话也会作废排队的 start。
 - 封口冻结的是点击瞬间的前端列表。后端取消生效前仍可能多生成并落库，**刷新/重进会话后内容可能比点击时更长**，以服务端为准。
 - `ChatBusinessManager.isStopLoading` 已废弃（恒为 `false`）：停止不再有「正在停止」中间态。
+
+### 助手过程状态栏与删除整轮（3.1.0-beta.1）
+
+`MessageContainer` 给每一轮有内容的助手组加上过程状态栏（不导出）。生成中最后一组是「处理中」；终态看组内最后一条：`error` → 失败，`stop` → 已停止，`disabled` → 已禁用，其余已完成。终态且至少两条时默认只渲染最后一条，`#message` / `#default` 也只收到可见消息。`#group` 换掉整组后没有这栏。耗时从紧邻用户消息的 `createdAt` 算到组内最晚 `createdAt`，文案形如「已完成，耗时 2m2s」。
+
+删除助手回复或用户消息时，ChatBot 用 `collectTurnMessages` / `collectTurnMessagesByAnchor` 收集整轮再 `deleteMessages`。锚点对不上唯一一轮则放弃。`deleteMessages` 请求体只有用户消息 id。
+
+模型 `description` 去空白后非空时，选项 hover 约 300ms 出纯文本气泡，复用外层 tippy 的 `appendTo` / `placement` / `zIndex`。
+
+### 侧栏内建「执行情况」Tab 已下线（chat-x 3.0.0）
+
+常驻默认 Tab 是「文件产物」（`order: -1`，`loadOnSelect: false`，不走 `getSideRenderComponent` / `onCustomTabChange`）。`executionTabVisible` 仍在 ChatBot / AIBlueking props 里并被透传，`ChatContainer` 不读取，设置无效。`useMessageGroup` 不再接收 `keyword`，也不再返回 `executionGroups`。对话流标题栏的执行统计、失败节点重试 / 跳过仍在。文档站示例依赖 npm 2.4.1，示例里还有执行情况 Tab。
 
 ### `#headerLeft` 插槽自定义 Header 左侧
 

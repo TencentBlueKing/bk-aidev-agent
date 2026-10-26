@@ -899,7 +899,7 @@ ChatBot 与 AIBlueking 均支持 `renderMode` prop（默认 `chat`），由 chat
 
 ## 侧栏自定义渲染与自定义 Tab（side render / custom tabs）
 
-执行情况侧面板（`#aside`）支持通过 **props（非 slot）** 注入自定义渲染，`AIBlueking` 与 `ChatBot` 都接受这三个 prop，AIBlueking 会原样透传给内部 ChatBot：
+侧栏（`#aside`）常驻默认 Tab 是「文件产物」（chat-x 3.0.0 起没有内建「执行情况」Tab，`executionTabVisible` 无效）。自定义 Tab 通过 **props（非 slot）** 注入渲染，`AIBlueking` 与 `ChatBot` 都接受这三个 prop，AIBlueking 会原样透传给内部 ChatBot。「文件产物」`loadOnSelect: false`，不走下面的内容渲染和 `onCustomTabChange`：
 
 | Prop | 签名 | 说明 |
 |------|------|------|
