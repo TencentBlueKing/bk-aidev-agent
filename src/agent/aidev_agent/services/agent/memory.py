@@ -7,10 +7,10 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime, is_complete_ai_message, message_timestamp
-from aidev_agent.utils.message_metadata import assistant_source_text, is_complete_finish_reason
+from aidev_agent.utils.message_metadata import is_complete_finish_reason
 from aidev_agent.utils.message_text import strip_think_blocks
 
 logger = logging.getLogger(__name__)
@@ -24,13 +24,14 @@ _policy_suppressed_until: dict[tuple, float] = {}
 _policy_lock = threading.Lock()
 
 
-def _policy_key(manager, username: str, agent_code: str) -> tuple:
+def _policy_key(manager, username: str, agent_code: str, version=None) -> tuple:
     """返回探测抑制的缓存键，包含 manager 类型、租户与应用，避免不同租户的同名智能体互相影响。"""
     return (
         type(manager).__qualname__,
         getattr(manager, "tenant_id", None),
         getattr(manager, "app_code", None),
         agent_code,
+        version,
         username,
     )
 
@@ -124,12 +125,13 @@ def completed_history(history, session_id: str) -> list[dict]:
     return snapshot
 
 
-def automatic_personal_memory(manager, username: str, session_id: str, history, messages, *, agent_code: str = ""):
+def automatic_personal_memory(
+    manager, username: str, session_id: str, history, messages, *, agent_code: str = "", version: str | None = None
+):
     """为标准 SDK 对话入口自动构建个人记忆运行时，不可用时返回 `None` 以降级为普通对话。
 
     要求 `agent_code`、`username`、`session_id` 有效且 `manager` 实现三个记忆接口；平台返回
-    `enabled` 不为 `True` 时不启用。会合并已完成历史快照与本轮可见消息（有历史时仅补最后一条
-    用户输入），并以 best-effort 模式和 `MEMORY_REQUEST_TIMEOUT` 超时创建运行时、预先生成工具。
+    `enabled` 不为 `True` 时不启用。只绑定当前轮用户输入；历史原文只在单次工具明确选择角色时按需读取，并以 best-effort 模式和 `MEMORY_REQUEST_TIMEOUT` 超时创建运行时、预先生成工具。
     平台判定未启用时 `POLICY_DISABLED_TTL` 秒内、探测失败时 `POLICY_FAILURE_TTL` 秒内不再重复探测，
     因此开启记忆最多延迟该时长生效。任何异常只记录告警并返回 `None`，不阻断对话。
     """
@@ -141,11 +143,13 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
         callable(getattr(manager, name, None)) for name in ["memory_schemas", "memory_tool", "complete_memory_round"]
     ):
         return None
-    key = _policy_key(manager, username, agent_code)
-    if _policy_suppressed(key):
+    key = _policy_key(manager, username, agent_code, version)
+    if version != "draft" and _policy_suppressed(key):
         return None
     try:
-        schemas = manager.memory_schemas(username=username, agent_code=agent_code, timeout=MEMORY_REQUEST_TIMEOUT)
+        schemas = manager.memory_schemas(
+            username=username, agent_code=agent_code, version=version, timeout=MEMORY_REQUEST_TIMEOUT
+        )
     except Exception as error:
         _suppress_policy(key, POLICY_FAILURE_TTL)
         logger.warning("Personal memory unavailable; continuing chat: %s", type(error).__name__)
@@ -155,49 +159,10 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
         return None
     try:
         records = [record.model_dump() if hasattr(record, "model_dump") else record for record in history or []]
-        snapshot = completed_history(records, session_id)
-        # Preserve the full host ledger; legacy hosts may omit the current user input.
-        known = {(item["role"], item["message_id"]) for item in snapshot}
-        # Model inputs retain DB IDs while the ledger exposes canonical source IDs.
-        # Both identify existing records, including records excluded from evidence.
-        known.update(
-            (record.get("role"), str(identity))
-            for record in records
-            if isinstance(record, dict)
-            for identity in [record.get("id"), (record.get("builtin_property") or {}).get("message_id")]
-            if identity
-        )
-        visible = (
-            messages if not records else [message for message in messages if isinstance(message, HumanMessage)][-1:]
-        )
-        for message in visible:
-            role = "user" if isinstance(message, HumanMessage) else "assistant"
-            if (
-                not isinstance(message, (HumanMessage, AIMessage))
-                or not message.id
-                or not isinstance(message.content, str)
-            ):
-                continue
-            if isinstance(message, AIMessage) and not is_complete_ai_message(message):
-                continue
-            if (role, message.id) not in known:
-                metadata = message.response_metadata
-                stamp = (
-                    message_timestamp(metadata.get("source_timestamp"))
-                    or message_timestamp(metadata.get("created_at"))
-                    or message_timestamp(metadata.get("timestamp"))
-                    or history_timestamp(message.additional_kwargs)
-                )
-                if role == "assistant" and stamp is None and metadata.get("memory_source_complete") is not True:
-                    continue
-                text = assistant_source_text(message) if role == "assistant" else message.content
-                item = {"message_id": message.id, "role": role, "text": text, "complete": True}
-                # Missing history time is unknown, not the time of this request.
-                if stamp is not None:
-                    item["timestamp"] = stamp
-                snapshot.append(item)
+        snapshot = current_input(records, messages, session_id)
         context = {
             "username": username,
+            "version": version,
             "agent_code": agent_code,
             "session_id": session_id,
             "session_date": session_date(records),
@@ -209,13 +174,72 @@ def automatic_personal_memory(manager, username: str, session_id: str, history, 
             schemas=schemas,
             best_effort=True,
             request_timeout=MEMORY_REQUEST_TIMEOUT,
-            merge_state_history=False,
+            include_state_input=False,
+            tool_source_provider=lambda role: selected_sources(records, messages, snapshot, session_id, role),
         )
         runtime.make_tools()
         return runtime
     except Exception as error:
         logger.warning("Personal memory unavailable; continuing chat: %s", type(error).__name__)
         return None
+
+
+def current_input(history, messages, session_id):
+    """只取本轮最后一条用户输入；按 ID 回查宿主原文，不把历史带入自动抽取。"""
+    current = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
+    if current is None:
+        return (
+            completed_history(history[-1:], session_id)
+            if history and isinstance(history[-1], dict) and history[-1].get("role") == "user"
+            else []
+        )
+    for record in reversed(history):
+        if not isinstance(record, dict) or record.get("role") != "user":
+            continue
+        ids = {
+            str(value)
+            for value in (record.get("id"), (record.get("builtin_property") or {}).get("message_id"))
+            if value
+        }
+        if current.id and str(current.id) in ids:
+            return completed_history([record], session_id)
+    if not current.id or not isinstance(current.content, str):
+        return []
+    item = {"message_id": current.id, "role": "user", "text": current.content, "complete": True}
+    stamp = (
+        message_timestamp(current.response_metadata.get("source_timestamp"))
+        or history_timestamp(current.response_metadata)
+        or history_timestamp(current.additional_kwargs)
+    )
+    if stamp is not None:
+        item["timestamp"] = stamp
+    return [item]
+
+
+def selected_sources(history, messages, current, session_id, role):
+    """单次 role 原文保存只发送明确选择的最近来源，不将其他历史提交为记忆输入。"""
+    sources = completed_history(history, session_id)
+    known = {item["message_id"] for item in sources}
+    for message in messages:
+        if is_complete_ai_message(message) and message.id and message.id not in known:
+            sources.extend(
+                completed_history(
+                    [
+                        {
+                            "id": message.id,
+                            "role": "assistant",
+                            "content": message.content,
+                            "builtin_property": message.response_metadata,
+                        }
+                    ],
+                    session_id,
+                )
+            )
+            known.add(message.id)
+    sources.extend(item for item in current if item["message_id"] not in known)
+    roles = {"user", "assistant"} if role == "all" else {role}
+    latest = {item["role"]: item for item in sources if item["role"] in roles}
+    return [item for item in sources if latest.get(item["role"]) is item]
 
 
 def session_date(history) -> str:

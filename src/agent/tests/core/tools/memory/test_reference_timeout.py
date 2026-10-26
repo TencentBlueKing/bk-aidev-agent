@@ -60,7 +60,7 @@ def runtime_with_hit(model, **options):
         "messages": [],
     }
     runtime = PersonalMemoryRuntime(lambda _: context, manager=manager, reference_model=model, **options)
-    runtime.policy = {"enabled": True, "agent_code": "agent", "memory_epoch": 1}
+    runtime.policy = {"enabled": True, "agent_code": "agent", "version": "1.0.0"}
     state = {
         "messages": [
             HumanMessage(id="u", content="Preference?"),

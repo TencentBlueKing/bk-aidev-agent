@@ -137,7 +137,8 @@ class PersonalMemoryRuntime:
         best_effort: bool = False,
         request_timeout: float | None = None,
         reference_timeout: float = 2,
-        merge_state_history: bool = True,
+        include_state_input: bool = True,
+        tool_source_provider: Callable[[str], list[dict]] | None = None,
     ):
         """初始化个人记忆运行时。
 
@@ -145,7 +146,8 @@ class PersonalMemoryRuntime:
         `manager` 缺省使用全局 `resource_manager()`；`schemas` 为预取的平台策略，缺省时按需拉取；
         `best_effort=True` 时工具调用与轮次结算失败只降级不抛异常；`request_timeout` 透传给平台请求；
         `reference_timeout` 为引用审计模型超时，须为正的有限数，否则抛 `ValueError`；
-        `merge_state_history` 控制结算时是否把图状态中的全部消息合并进上下文快照。
+        `include_state_input` 控制是否从图状态补入当前用户输入；结算始终只提交当前输入和最终回答。
+        `tool_source_provider` 仅在单次工具显式选择 role 时读取所选原文，不参与自动抽取。
         """
         self.context_provider = context_provider
         self.manager = manager if manager is not None else resource_manager()
@@ -161,7 +163,8 @@ class PersonalMemoryRuntime:
         ):
             raise ValueError("reference_timeout must be a positive finite number")
         self.reference_timeout = reference_timeout
-        self.merge_state_history = merge_state_history
+        self.include_state_input = include_state_input
+        self.tool_source_provider = tool_source_provider
         self.message_times = {}
         self.policy = None
 
@@ -193,19 +196,24 @@ class PersonalMemoryRuntime:
         """按平台下发的记忆策略构建 `memory_write`/`memory_update`/`memory_search` 三个工具。
 
         使用预取的 `schemas` 或向平台拉取策略，并缓存到 `self.policy`；策略 `agent_code` 不一致或
-        `memory_epoch` 不是正整数时抛 `ValueError`。`enabled is False` 时返回空列表；否则要求恰好
+        `version` 不是字符串或与宿主选择不一致时抛 `ValueError`。`enabled is False` 时返回空列表；否则要求恰好
         返回三个工具 schema，并预先做一次 OpenAI 工具格式转换，让 schema 问题在自动发现阶段暴露。
         """
         username, context = self.context(config or {})
         policy = self.schemas
         if policy is None:
             policy = self.manager.memory_schemas(
-                username=username, agent_code=context["agent_code"], **self.request_options()
+                username=username,
+                agent_code=context["agent_code"],
+                version=context.get("version"),
+                **self.request_options(),
             )
         if not isinstance(policy, dict) or policy.get("agent_code") != context["agent_code"]:
             raise ValueError("Platform returned a different memory agent")
-        if type(policy.get("memory_epoch")) is not int or policy["memory_epoch"] < 1:
-            raise ValueError("Platform did not return a valid memory activation")
+        if not isinstance(policy.get("version"), str):
+            raise ValueError("Platform did not return a memory configuration version")
+        if context.get("version") is not None and context["version"] != policy["version"]:
+            raise ValueError("Platform returned a different memory configuration version")
         self.policy = policy
         if policy.get("enabled") is False:
             return []
@@ -224,11 +232,11 @@ class PersonalMemoryRuntime:
         return tools
 
     def scoped_payload(self, context: dict, payload: dict, config: RunnableConfig) -> dict | None:
-        """把请求体与宿主上下文、当前记忆激活信息组装为平台请求 payload。
+        """把请求体与宿主上下文、当前配置版本组装为平台请求 payload。
 
         尚未加载策略时先调用 `make_tools`；记忆未启用时返回 `None`。上下文中的 `agent_code`
-        必须与策略一致，否则抛 `ValueError`（运行时不能切换智能体）。若策略带 `enabled_at`，
-        只保留时间戳不早于启用时刻的消息。返回附带 `agent_code`、`memory_epoch`、`context` 的新 dict。
+        必须与策略一致，否则抛 `ValueError`（运行时不能切换智能体或版本）。
+        只保留本次触发所需的消息证据，返回附带 `agent_code`、`version`、`context` 的新 dict。
         """
         if self.policy is None:
             self.make_tools(config)
@@ -238,16 +246,20 @@ class PersonalMemoryRuntime:
         agent_code = context.pop("agent_code")
         if agent_code != self.policy["agent_code"]:
             raise ValueError("Memory runtime cannot switch agents")
-        cutoff = self.policy.get("enabled_at")
-        if cutoff:
-            cutoff = datetime.fromisoformat(message_timestamp(cutoff))
-            context["messages"] = [
-                message
-                for message in context["messages"]
-                if message_timestamp(message.get("timestamp"))
-                and datetime.fromisoformat(message_timestamp(message["timestamp"])) >= cutoff
-            ]
-        return {**payload, "agent_code": agent_code, "memory_epoch": self.policy["memory_epoch"], "context": context}
+        version = context.pop("version", self.policy["version"])
+        if version is not None and version != self.policy["version"]:
+            raise ValueError("Memory runtime cannot switch configuration versions")
+        if payload.get("name") in TOOL_NAMES:
+            role = (payload.get("call") or {}).get("role")
+            if role and self.tool_source_provider is not None:
+                context["messages"] = self.tool_source_provider(role)
+            else:
+                roles = {"user", "assistant"} if role == "all" else {role or "user"}
+                latest = {item["role"]: item for item in context["messages"] if item["role"] in roles}
+                context["messages"] = [item for item in context["messages"] if latest.get(item["role"]) is item]
+            if payload["name"] == "memory_search":
+                context["messages"] = []
+        return {**payload, "agent_code": agent_code, "version": self.policy["version"], "context": context}
 
     def make_tool(self, schema: dict) -> StructuredTool:
         """根据平台函数 schema 构建单个记忆工具（`content_and_artifact` 响应格式）。
@@ -359,7 +371,7 @@ class PersonalMemoryRuntime:
     def _complete(self, state: dict, config: RunnableConfig) -> dict:
         """在最后一条消息为完整回答时，向平台提交本轮会话快照与实际引用的记忆 ID。
 
-        以宿主上下文消息为底，合并状态中的消息（`merge_state_history=False` 时仅合并本轮回答）；
+        只取当前用户输入和最终回答（`include_state_input=False` 时用户原文以宿主为准）；
         时间优先沿用宿主记录，其次取消息元数据，仍缺失且非合并模式时按消息 ID 缓存首次补齐的
         当前时间（重复结算保持一致），并回写回答的 `source_timestamp`。引用审计失败时按无引用处理，
         避免误续期 TTL 或丢失会话抽取；以回答 ID 作为 `round_id`，过滤后消息为空或记忆未启用时不提交。
@@ -371,8 +383,15 @@ class PersonalMemoryRuntime:
         if not answer.id or not answer.content:
             return {}
         username, context = self.context(config)
-        by_id = {message["message_id"]: message for message in context["messages"]}
-        for message in messages if self.merge_state_history else [answer]:
+        current = next((item for item in reversed(context["messages"]) if item["role"] == "user"), None)
+        by_id = {current["message_id"]: current} if current else {}
+        input_message = next((item for item in reversed(messages) if isinstance(item, HumanMessage)), None)
+        if self.include_state_input and input_message is not None:
+            by_id = {input_message.id: by_id[input_message.id]} if input_message.id in by_id else {}
+        prior_answer = next((item for item in context["messages"] if item["message_id"] == answer.id), None)
+        if prior_answer is not None:
+            by_id[answer.id] = prior_answer
+        for message in [input_message, answer] if self.include_state_input else [answer]:
             if (
                 (isinstance(message, HumanMessage) or is_complete_ai_message(message))
                 and message.id
@@ -395,7 +414,7 @@ class PersonalMemoryRuntime:
                     or message_timestamp(metadata.get("created_at"))
                     or message_timestamp(metadata.get("timestamp"))
                 )
-                if stamp is None and not self.merge_state_history:
+                if stamp is None and not self.include_state_input:
                     stamp = self.message_times.setdefault(message.id, datetime.now(timezone.utc).isoformat())
                 if stamp is not None:
                     record["timestamp"] = stamp
