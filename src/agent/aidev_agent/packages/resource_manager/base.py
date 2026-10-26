@@ -681,7 +681,6 @@ class BaseResourceManager(abc.ABC):
                         kind=CLIENT_SPAN_KIND,
                         use_global_tracer=True,
                         attributes={
-                            "rpc.system": "mcp",
                             "mcp.operation.name": "tools/list",
                             "mcp.server.name": server_name,
                             "mcp.transport": transport,

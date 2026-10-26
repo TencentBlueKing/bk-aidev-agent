@@ -641,7 +641,7 @@ class TestBkAidevAgentCallbackHandler:
 
         span = exporter.get_finished_spans()[0]
         assert span.attributes["tool.type"] == "mcp"
-        assert span.attributes["rpc.system.name"] == "jsonrpc"
+        assert "rpc.system.name" not in span.attributes
         assert span.attributes["mcp.method.name"] == "tools/call"
         assert span.attributes["mcp.server.name"] == "resource"
         assert span.attributes["mcp.transport"] == "streamable_http"

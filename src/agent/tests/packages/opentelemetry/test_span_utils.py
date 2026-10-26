@@ -330,20 +330,19 @@ def test_set_tool_request_skips_absent_optional_keys(span_and_attributes):
             {"mcp_name": "resource", "mcp_transport": "streamable_http"},
             {
                 "tool.type": "mcp",
-                "rpc.system.name": "jsonrpc",
                 "mcp.method.name": "tools/call",
                 "mcp.server.name": "resource",
                 "mcp.transport": "streamable_http",
             },
-            ["tool.code", "mcp.tool.name"],
+            ["tool.code", "mcp.tool.name", "rpc.system.name"],
         ),
-        ({"mcp_name": "resource"}, {"mcp.transport": "unknown"}, ["tool.code"]),
+        ({"mcp_name": "resource"}, {"mcp.transport": "unknown"}, ["tool.code", "rpc.system.name"]),
         ({"tool_code": "get_ticket"}, {"tool.type": "http_api", "tool.code": "get_ticket"}, ["rpc.system.name"]),
         (None, {}, ["tool.type", "tool.code", "rpc.system.name"]),
     ],
 )
 def test_set_tool_request_metadata_branches(span_and_attributes, metadata, expected, absent):
-    """metadata 分支：mcp 五键（tool.type/rpc.system.name/mcp.method.name/mcp.server.name/mcp.transport，transport 兜底 unknown）/ http_api 两键 / 无分支仅基础键"""
+    """metadata 分支：mcp 四键（tool.type/mcp.method.name/mcp.server.name/mcp.transport，transport 兜底 unknown）/ http_api 两键 / 无分支仅基础键"""
     span, attributes = span_and_attributes
     set_tool_request(span, {}, "{}", {}, metadata, tool_name="search", call_index=1)
     attrs = attributes()
