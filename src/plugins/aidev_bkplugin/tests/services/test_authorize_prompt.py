@@ -5,9 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_bkplugin.constants import AUTHORIZE_PAGE_QUERY
-from aidev_bkplugin.services.agent_helpers import AgentHelper
 
-MODULE = "aidev_bkplugin.services.agent_helpers"
+# 必须在模块级拿到真实模块对象并用 patch.object：tests/views 下的用例会用假模块永久替换
+# sys.modules["aidev_bkplugin.services.agent_helpers"]，按字符串路径 patch 会落到假模块上。
+from aidev_bkplugin.services import agent_helpers
 
 
 @pytest.mark.parametrize(
@@ -29,10 +30,10 @@ def test_get_authorize_prompt(bkoauth_installed, access_token, saas_url, expecte
     rm.resolve_access_token.return_value = access_token
     bkoauth = MagicMock() if bkoauth_installed else None
     with (
-        patch(f"{MODULE}.bkoauth", bkoauth),
-        patch(f"{MODULE}.AgentConfigFetcher.get_info", return_value={"saas_url": saas_url}),
+        patch.object(agent_helpers, "bkoauth", bkoauth),
+        patch.object(agent_helpers.AgentConfigFetcher, "get_info", return_value={"saas_url": saas_url}),
     ):
-        prompt = AgentHelper.get_authorize_prompt(rm, "alice")
+        prompt = agent_helpers.AgentHelper.get_authorize_prompt(rm, "alice")
 
     if expected:
         assert expected in prompt
