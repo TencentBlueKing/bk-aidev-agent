@@ -84,6 +84,11 @@ class CommonInputsFormMixin:
             "caller_bk_biz_id": {"type": "string", "title": "调用者BK业务ID"},
             "caller_executor": {"type": "string", "title": "调用人"},
             "caller_order_type": {"type": "string", "title": "调用AI工单类型"},
+            "mode": {
+                "type": "string",
+                "title": "工具加载模式（default 全量；dontInterrupt 跳过所有会中断的工具；dontAsk 仅跳过 ask 类工具）",
+                "enum": ["default", "dontInterrupt", "dontAsk"],
+            },
         },
     }
 

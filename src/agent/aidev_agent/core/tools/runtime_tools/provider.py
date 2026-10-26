@@ -840,7 +840,12 @@ def get_execute_tool(
                     "请经 AgentConfig.security_settings 或 set_bkai_options 注入配置；"
                     "确需跳过校验请显式调用 enable_security_runtime(False)。"
                 )
-            enforce_command_security(command, target_runtime, settings.command, risk_assessor)
+            enforce_command_security(
+                command,
+                target_runtime,
+                settings.command,
+                risk_assessor,
+            )
 
         result = resolved_backend.execute(command, config=config, state=state)
 
@@ -869,7 +874,12 @@ def get_execute_tool(
                     "请经 AgentConfig.security_settings 或 set_bkai_options 注入配置；"
                     "确需跳过校验请显式调用 enable_security_runtime(False)。"
                 )
-            enforce_command_security(command, target_runtime, settings.command, risk_assessor)
+            enforce_command_security(
+                command,
+                target_runtime,
+                settings.command,
+                risk_assessor,
+            )
 
         result = await resolved_backend.aexecute(command, config=config, state=state)
 

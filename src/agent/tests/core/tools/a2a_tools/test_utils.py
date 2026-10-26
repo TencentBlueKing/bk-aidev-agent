@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason
 from aidev_agent.core.tools.a2a_tools.utils import (
     build_enriched_result,
+    extract_child_execute_kwargs,
     sanitize_error_message,
 )
+from aidev_agent.pydantic_models import ExecuteKwargs
 
 
 class TestBuildEnrichedResult:
@@ -170,3 +173,45 @@ class TestSanitizeErrorMessage:
         result = sanitize_error_message(msg)
         assert "eyJhbGci" not in result
         assert "REDACTED" in result
+
+
+# ============== 工具加载模式（mode）继承 ==============
+
+
+class TestChildExecuteKwargsModeInheritance:
+    """REQ-6 / AC-11：A2A 子 Agent 的 ``mode`` 与父一致，不回落也不升级。
+
+    子对象由 ``ek.model_copy()`` 全量继承；BKAI 远端以 ``execute_kwargs.model_dump()``
+    构造 HTTP payload（``bkai_backend.py``），故此处直接断言复制与序列化两条路径。
+    """
+
+    @pytest.mark.parametrize("mode", ["dontInterrupt", "dontAsk"])
+    def test_child_inherits_non_default_mode(self, mode: str) -> None:
+        parent = ExecuteKwargs(mode=mode)
+        child = extract_child_execute_kwargs(
+            {"configurable": {"execute_kwargs": parent}}, state=None, session_code="child", caller_bk_app_code=""
+        )
+        assert child.mode == mode
+
+    def test_child_inherits_default_mode(self) -> None:
+        child = extract_child_execute_kwargs(
+            {"configurable": {"execute_kwargs": ExecuteKwargs()}},
+            state=None,
+            session_code="child",
+            caller_bk_app_code="",
+        )
+        assert child.mode == "default"
+
+    def test_child_without_parent_execute_kwargs_falls_back_to_default(self) -> None:
+        child = extract_child_execute_kwargs({}, state=None, session_code="child", caller_bk_app_code="")
+        assert child.mode == "default"
+
+    @pytest.mark.parametrize("mode", ["default", "dontInterrupt", "dontAsk"])
+    def test_serialized_payload_contains_mode(self, mode: str) -> None:
+        """BKAI 远端 payload（``execute_kwargs.model_dump()``）带出父 mode。"""
+        parent = ExecuteKwargs(mode=mode)
+        child = extract_child_execute_kwargs(
+            {"configurable": {"execute_kwargs": parent}}, state=None, session_code="child", caller_bk_app_code=""
+        )
+        payload = {"execute_kwargs": child.model_dump()}
+        assert payload["execute_kwargs"]["mode"] == mode

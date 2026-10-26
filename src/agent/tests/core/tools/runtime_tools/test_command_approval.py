@@ -323,3 +323,97 @@ class TestCommandReviewPrepareChain:
         assert enriched.value["metadata"]["toolArgs"]["command_review"] == review
         assert enriched.value["reason"] == ca.TOOL_APPROVAL_REASON
         assert enriched.value["toolCallId"] == ca.command_fingerprint(self.RAW)
+
+
+class TestExecuteToolApprovalSwitch:
+    """审批开关只落在装配期的安全配置上，工具工厂不参与开关传递。
+
+    工具始终从 ``resolver.security_settings`` 读取处置档：``approval`` 走审批，
+    ``block``（dontInterrupt 的装配期改写结果）fail-closed 直接拒绝——
+    不触发 ``interrupt``、不创建 ITSM 单、命令也不进入 backend 执行。
+    """
+
+    GREY_COMMAND = "touch /tmp/x"
+
+    @staticmethod
+    def _tool_and_sink(monkeypatch, *, disposition: str):
+        import copy
+        from tempfile import TemporaryDirectory
+
+        from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
+        from aidev_agent.core.tools.runtime_tools.provider import RuntimeBackendResolver, get_execute_tool
+        from aidev_agent.core.tools.runtime_tools.types import ExecuteResult
+        from aidev_agent.pydantic_models import SecuritySettings
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            ca, "interrupt", lambda value: captured.append(copy.deepcopy(value)) or {"payload": {"approved": True}}
+        )
+        settings = SecuritySettings(
+            command=SecurityCommandSettings(
+                enable_command_blocklist=True,
+                command_review_disposition=disposition,
+                command_approval_approvers="u1",
+            )
+        )
+        sink: list[str] = []
+        tmpdir = TemporaryDirectory()
+        backend = FilesystemBackend(root_dir=tmpdir.name)
+
+        def _sync(command, *, config=None, state=None, timeout=None, max_output_size=None):
+            sink.append(command)
+            return ExecuteResult(output="stub-ok", exit_code=0)
+
+        async def _async(command, *, config=None, state=None, timeout=None, max_output_size=None):
+            sink.append(command)
+            return ExecuteResult(output="stub-ok", exit_code=0)
+
+        backend.execute = _sync
+        backend.aexecute = _async
+        resolver = RuntimeBackendResolver(default_runtime="local", security_settings=settings).register_runtime(
+            "local", backend
+        )
+        tool = get_execute_tool(resolver)
+        return tool, sink, captured, tmpdir
+
+    @pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+    def test_block_disposition_rejects_without_interrupt_and_without_execution(self, asynchronous, monkeypatch):
+        import asyncio
+
+        tool, sink, captured, tmpdir = self._tool_and_sink(monkeypatch, disposition="block")
+        args = {"command": self.GREY_COMMAND, "target_runtime": "local"}
+        with pytest.raises(ValueError, match="命令执行被拒绝"):
+            asyncio.run(tool.ainvoke(args)) if asynchronous else tool.invoke(args)
+        assert captured == []  # 未触发 interrupt，未建审批单
+        assert sink == []  # 命令未交给 backend 执行
+        tmpdir.cleanup()
+
+    @pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+    def test_approval_disposition_keeps_approval_flow(self, asynchronous, monkeypatch):
+        import asyncio
+
+        tool, sink, captured, tmpdir = self._tool_and_sink(monkeypatch, disposition="approval")
+        args = {"command": self.GREY_COMMAND, "target_runtime": "local"}
+        asyncio.run(tool.ainvoke(args)) if asynchronous else tool.invoke(args)
+        assert len(captured) == 1  # 审批照旧发起一次
+        assert sink == [self.GREY_COMMAND]
+        tmpdir.cleanup()
+
+    def test_tool_set_still_contains_execute(self, monkeypatch):
+        """开关不影响工具集合形状：仍是 7 件，且含 name="execute"。"""
+        from tempfile import TemporaryDirectory
+
+        from aidev_agent.core.tools.runtime_tools.local_backend import FilesystemBackend
+        from aidev_agent.core.tools.runtime_tools.provider import (
+            RuntimeBackendResolver,
+            get_client_tools_with_runtime,
+        )
+        from aidev_agent.pydantic_models import SecuritySettings
+
+        with TemporaryDirectory() as tmpdir:
+            resolver = RuntimeBackendResolver(
+                default_runtime="local", security_settings=SecuritySettings()
+            ).register_runtime("local", FilesystemBackend(root_dir=tmpdir))
+            tools = get_client_tools_with_runtime(resolver)
+        assert len(tools) == 7
+        assert "execute" in {t.name for t in tools}

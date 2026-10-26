@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
-from aidev_agent.core.ag_ui.aidev_agent import ASK_USER_QUESTION_TOOL_NAME, AidevAGUIAgent
+from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
@@ -45,6 +45,7 @@ from aidev_agent.enums import AgentType, PromptRole
 from aidev_agent.exceptions import AgentDeadlineExceededError, AgentException
 from aidev_agent.packages.interrupt_manager import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
+    ASK_USER_QUESTION_TOOL_NAME,
     ApprovalHandler,
     AskUserQuestionHandler,
     InterruptReason,

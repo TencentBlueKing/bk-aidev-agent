@@ -467,6 +467,47 @@ class TestApprovalBranch:
         assert calls == []
 
 
+class TestCommandApprovalDisabled:
+    """工具加载模式 dontInterrupt 关闭审批后的 fail-closed 分支。
+
+    装配期把 review 处置档降为 ``block``（见 ``ReActAgentBuilder._apply_command_approval_switch`），
+    本类固化该配置下 ``enforce_command_security`` 的行为：不调用 ``require_command_approval``、
+    不创建审批单，直接抛与 block 档同措辞的拒绝；``allow`` 档不受影响。
+    """
+
+    @staticmethod
+    def _approval_settings(**kwargs) -> SecurityCommandSettings:
+        """审批关闭后的等效配置：处置档为 block，审批人保留但不被消费。"""
+        merged = dict(command_review_disposition="block", command_approval_approvers="u1")
+        merged.update(kwargs)
+        return SecurityCommandSettings(**merged)
+
+    def test_block_disposition_never_calls_approval(self, monkeypatch):
+        calls: list[str] = []
+        monkeypatch.setattr(cs, "require_command_approval", lambda *a, **kw: calls.append("hit") or True)
+        with pytest.raises(ValueError, match="命令执行被拒绝"):
+            enforce_command_security("touch /tmp/x", "local", self._approval_settings())
+        assert calls == []
+
+    def test_smart_allow_does_not_run_for_block_disposition(self, monkeypatch):
+        """处置档为 block 时不跑评估器：审批已关闭，预分流不该再把命令放行。"""
+        calls: list[str] = []
+        monkeypatch.setattr(cs, "require_command_approval", lambda *a, **kw: calls.append("hit") or True)
+        ss = self._approval_settings(enable_command_review_auto=True)
+        assessor = type("R", (), {"assess": lambda self, c: "allow"})()
+        with pytest.raises(ValueError, match="命令执行被拒绝"):
+            enforce_command_security("touch /tmp/x", "local", ss, assessor)
+        assert calls == []
+
+    def test_disposition_allow_still_passes(self, monkeypatch):
+        """部署侧显式 allow 档不产生中断，dontInterrupt 不改变它。"""
+        calls: list[str] = []
+        monkeypatch.setattr(cs, "require_command_approval", lambda *a, **kw: calls.append("hit") or True)
+        ss = SecurityCommandSettings(command_review_disposition="allow")
+        enforce_command_security("touch /tmp/x", "local", ss)
+        assert calls == []
+
+
 class TestValidateHasNoApprovalSideEffect:
     """``validate_command`` 不触发审批——合并组 #1 的唯一归属地。
 

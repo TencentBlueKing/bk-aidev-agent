@@ -336,3 +336,29 @@ def test_apply_caller_context_overwrite_on_resume():
     assert kwargs.executor == "user-a"
     assert kwargs.caller_executor == "user-a"
     assert kwargs.caller_bk_app_code == "app-001"
+
+
+class TestExecuteKwargsMode:
+    """工具加载模式 ``mode``：默认值、合法取值、非法拒绝与复制/序列化保留。"""
+
+    def test_default_is_default(self):
+        assert ExecuteKwargs().mode == "default"
+
+    @pytest.mark.parametrize("mode", ["default", "dontInterrupt", "dontAsk"])
+    def test_accepts_legal_values(self, mode):
+        kw = ExecuteKwargs(mode=mode)
+        assert kw.mode == mode
+        assert kw.model_dump()["mode"] == mode
+
+    def test_rejects_illegal_value(self):
+        with pytest.raises(ValueError):
+            ExecuteKwargs(mode="disabled")
+
+    def test_model_copy_preserves_mode(self):
+        assert ExecuteKwargs(mode="dontInterrupt").model_copy().mode == "dontInterrupt"
+
+    def test_json_schema_exposes_enum(self):
+        """Literal 使 schema 直接带出三项枚举，模板/文档无需另立常量。"""
+        mode_schema = ExecuteKwargs.model_json_schema()["properties"]["mode"]
+        assert mode_schema["enum"] == ["default", "dontInterrupt", "dontAsk"]
+        assert mode_schema["default"] == "default"

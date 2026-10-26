@@ -49,6 +49,7 @@ from aidev_agent.core.graphs.react.skill_middleware import (
     _extract_paas_params,
 )
 from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware, ToolFilterMiddleware
+from aidev_agent.core.graphs.react.tool_loading_mode import command_approval_allowed, filter_tools_by_loading_mode
 from aidev_agent.core.nodes.knowledge import make_knowledge_node
 from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
@@ -75,7 +76,13 @@ from aidev_agent.packages.langchain_core.models.utils import is_model_without_fu
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.security.command import CommandRiskAssessor
-from aidev_agent.pydantic_models import AgentExecutorKwargs, KnowledgeSettings, ModelContextSettings, SecuritySettings
+from aidev_agent.pydantic_models import (
+    AgentExecutorKwargs,
+    ExecuteKwargs,
+    KnowledgeSettings,
+    ModelContextSettings,
+    SecuritySettings,
+)
 
 if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
@@ -220,6 +227,8 @@ class ReActAgentBuilder:
         self._langchain_middleware: Sequence[AgentMiddleware] = ()
         self._tool_node_options: ToolNodeSettings | None = None
         self._security_settings: SecuritySettings | None = None
+        # 请求级执行参数（工具加载模式 mode 的来源）；未注入时为默认 ExecuteKwargs
+        self._execute_kwargs: ExecuteKwargs = ExecuteKwargs()
         self._resource_manager = None
 
     # ====================================================================================================
@@ -616,6 +625,9 @@ class ReActAgentBuilder:
             self._enable_agentic_rag_tool = options.knowledge_query_options.enable_agentic_rag_tool
         if options.model_context_options is not None:
             self._model_context_options = options.model_context_options
+        # 请求级执行参数：工具加载模式（mode）在装配期用于裁剪会中断的工具
+        if options.execute_kwargs is not None:
+            self._execute_kwargs = options.execute_kwargs
 
         # RuntimeBackendResolver（由调用方构造并注入）——必须先于 skills 块内
         # enable_runtime_paas/local（新方案下这些调用要求 resolver 已存在）
@@ -761,6 +773,22 @@ class ReActAgentBuilder:
                 "安全配置不回落默认值，未注入即视为构建错误。"
             )
 
+        # mode 语义落到安全配置：工具加载模式无中断能力（dontInterrupt）时把命令审批从
+        # 安全配置里关掉，即 review 处置档 approval → block——不再产生审批中断，灰名单
+        # 命令 fail-closed 直接拒绝且不创建 ITSM 单（显式 allow / block 档不受影响）。
+        # 工具工厂与 enforce_command_security 只读这份配置，不接收开关参数。
+        # 改写的是浅拷贝上的嵌套 command 配置，注入的共享对象不被原地修改（与脱敏模型
+        # 只读共享同一约定）；随后同步给 resolver。build 可能多次调用，已关闭时不再处理。
+        if not command_approval_allowed(self._execute_kwargs.mode):
+            command_settings = self._security_settings.command
+            if command_settings.command_review_disposition == "approval":
+                security_settings = self._security_settings.model_copy(deep=False)
+                security_settings.command = command_settings.model_copy(update={"command_review_disposition": "block"})
+                self._security_settings = security_settings
+                if self._runtime_backend_resolver is not None:
+                    self._runtime_backend_resolver._security_settings = security_settings
+                logger.info("[ReActAgentBuilder] 工具加载模式无中断能力，命令审批已关闭（review 处置档降为 block）")
+
     def _prepare_agent_knowledge_node(
         self, *, knowledge_llm, knowledge_query_options: KnowledgeSettings | None, chat_history
     ):
@@ -870,6 +898,8 @@ class ReActAgentBuilder:
         langchain_middleware: Sequence[AgentMiddleware],
     ) -> List[BaseTool]:
         tools: List[BaseTool] = []
+        # 工具加载模式：装配期裁剪（命令审批开关已在 _prepare_agent_options 落到安全配置上）。
+        mode = self._execute_kwargs.mode
         # 加载所有传入的工具
         if extra_tools:
             tools.extend(extra_tools or [])
@@ -929,7 +959,10 @@ class ReActAgentBuilder:
             for i in range(len(tools)):
                 tools[i].handle_validation_error = True
                 tools[i].handle_tool_error = True
-        return tools
+
+        # 按工具加载模式裁剪（default 原样返回，保证与变更前一致）；
+        # 过滤后的列表在 build() 中同时交给 model 节点与 ToolNode。
+        return filter_tools_by_loading_mode(tools, mode)
 
     def _prepare_skills(self) -> None:
         """准备 skills 系统。

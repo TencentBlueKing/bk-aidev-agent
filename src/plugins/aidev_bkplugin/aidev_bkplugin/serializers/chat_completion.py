@@ -17,6 +17,7 @@
 import uuid
 
 from aidev_agent.pydantic_models import ExecuteKwargs
+from pydantic import ValidationError
 from rest_framework import serializers
 
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
@@ -84,7 +85,11 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
         # 同时直接返回 ExecuteKwargs 实例，避免下游再做一次 model_validate。
         merged = {"stream": False, **(value or {})}
         username = (self.context or {}).get("username")
-        return build_execute_kwargs(merged, username)
+        try:
+            return build_execute_kwargs(merged, username)
+        except ValidationError as err:
+            # pydantic 校验失败（如 mode 非法）转 DRF 400，而不是冒泡成 500。
+            raise serializers.ValidationError({"execute_kwargs": err.errors()}) from err
 
     def validate(self, attrs):
         if (
