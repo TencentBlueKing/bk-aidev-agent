@@ -4,7 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_bkplugin.constants import AUTHORIZE_PAGE_PATH
+from aidev_bkplugin.constants import AUTHORIZE_PAGE_QUERY
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 
 MODULE = "aidev_bkplugin.services.agent_helpers"
@@ -18,8 +18,8 @@ MODULE = "aidev_bkplugin.services.agent_helpers"
         (
             True,
             "",
-            "https://agent.example.com/bk_plugin/plugin_api/agent/ping/",
-            f"https://agent.example.com{AUTHORIZE_PAGE_PATH}",
+            "https://apps.example.com/agent/bk_plugin/plugin_api/agent/ping/",
+            f"https://apps.example.com/agent/{AUTHORIZE_PAGE_QUERY}",
         ),
         (True, "", "", "请联系智能体管理员"),
     ],

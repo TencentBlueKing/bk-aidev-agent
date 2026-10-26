@@ -18,7 +18,7 @@ from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from django.conf import settings
 
-from aidev_bkplugin.constants import AUTHORIZE_PAGE_PATH
+from aidev_bkplugin.constants import AUTHORIZE_PAGE_QUERY
 from aidev_bkplugin.models import Checkpoint, Write
 from aidev_bkplugin.packages.checkpoint import BKDjangoSaver
 
@@ -89,8 +89,8 @@ class AgentHelper:
         if not saas_url:
             logger.warning(f"[get_authorize_prompt] agent 配置中无 saas_url，无法拼授权页 URL, username={username}")
             return "当前用户尚未授权，请联系智能体管理员获取授权页面。"
-        parsed = urlparse(saas_url)
-        authorize_url = f"{parsed.scheme}://{parsed.netloc}{AUTHORIZE_PAGE_PATH}"
+        # saas_url 是平台按 agent_url 拼出的 ping 地址，截掉 bk_plugin/ 及之后部分即智能体访问地址（保留子路径）
+        authorize_url = saas_url.split("bk_plugin/", 1)[0] + AUTHORIZE_PAGE_QUERY
         return f"当前用户尚未授权，请先到 {authorize_url} 完成授权，授权后重新发送消息。"
 
     @classmethod
