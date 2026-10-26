@@ -214,7 +214,9 @@ class WxAiBotViewSet(ViewSet):
             if result is not None:
                 return result, None
             username = current_context.sender_id
-            if authorize_prompt := AgentHelper.get_authorize_prompt(PluginResourceManager(username=username), username):
+            if authorize_prompt := AgentHelper.get_authorize_prompt(
+                PluginResourceManager(username=username), username, markdown=True
+            ):
                 return stream_msg(authorize_prompt, True, stream_id), None
             # 处理引用消息
             content = self._process_quote(payload, content)

@@ -78,10 +78,13 @@ class AgentHelper:
             return ""
 
     @classmethod
-    def get_authorize_prompt(cls, resource_manager: ResourceManagerProtocol, username: str) -> str:
+    def get_authorize_prompt(
+        cls, resource_manager: ResourceManagerProtocol, username: str, markdown: bool = False
+    ) -> str:
         """对话入口授权校验：用户无可用 bkoauth access_token 时返回授权提示，已授权返回空串。
 
-        未安装 bkoauth 的环境不拦截。
+        未安装 bkoauth 的环境不拦截。``markdown`` 为 True 时授权页渲染为 Markdown 超链接，
+        仅用于支持 Markdown 的渠道（如企微）；Web 错误消息按纯文本展示，保持裸 URL。
         """
         if bkoauth is None or resource_manager.resolve_access_token(username):
             return ""
@@ -91,7 +94,8 @@ class AgentHelper:
             return "当前用户尚未授权，请联系智能体管理员获取授权页面。"
         # saas_url 是平台按 agent_url 拼出的 ping 地址，截掉 bk_plugin/ 及之后部分即智能体访问地址（保留子路径）
         authorize_url = saas_url.split("bk_plugin/", 1)[0] + AUTHORIZE_PAGE_QUERY
-        return f"当前用户尚未授权，请先到 {authorize_url} 完成授权，授权后重新发送消息。"
+        link = f"[授权页]({authorize_url})" if markdown else authorize_url
+        return f"当前用户尚未授权，请先到 {link} 完成授权，授权后重新发送消息。"
 
     @classmethod
     def get_agent_version(cls) -> dict:
