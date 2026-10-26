@@ -22,8 +22,7 @@ def contract_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -68,28 +67,26 @@ def test_verbatim_body_survives_current_writer_and_next_round(contract_manager, 
 
 
 @pytest.mark.parametrize("proof", [{"status": "complete"}, {"builtin_property": {"memory_source_complete": True}}])
-@pytest.mark.parametrize("cutoff", [None, "2026-10-21T00:00:00Z"])
-def test_explicit_completion_keeps_unknown_time_until_activation_cutoff(contract_manager, proof, cutoff):
+def test_explicit_role_selection_keeps_unknown_time_without_automatic_replay(contract_manager, proof):
     record = {"id": "old", "role": "assistant", "content": "\n Keep Case\n", **proof}
-    contract_manager.memory_schemas.return_value["enabled_at"] = cutoff
     runtime = automatic_personal_memory(contract_manager, "alice", "s", [record], [], agent_code="agent")
-    source = runtime.context({})[1]["messages"][0]
+    source = runtime.tool_source_provider("assistant")[0]
     assert source == {"message_id": "old", "role": "assistant", "text": "\n Keep Case\n", "complete": True}
     runtime.complete({"messages": [AIMessage(id="next", content="Next answer")]}, {})
     sent = contract_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    assert (source in sent) is (cutoff is None)
+    assert source not in sent
+    assert [item["message_id"] for item in sent] == ["next"]
 
 
-@pytest.mark.parametrize("cutoff", [None, "2026-10-21T00:00:00Z"])
-def test_completed_host_message_without_time_is_not_globally_dropped(contract_manager, cutoff):
-    contract_manager.memory_schemas.return_value["enabled_at"] = cutoff
+def test_completed_host_message_without_time_is_not_globally_dropped(contract_manager):
     answer = AIMessage(id="old", content="Host answer", response_metadata={"memory_source_complete": True})
     runtime = automatic_personal_memory(contract_manager, "alice", "s", [], [answer], agent_code="agent")
-    source = runtime.context({})[1]["messages"][0]
+    source = runtime.tool_source_provider("assistant")[0]
     assert source["text"] == "Host answer" and "timestamp" not in source
     runtime.complete({"messages": [AIMessage(id="next", content="Next answer")]}, {})
     sent = contract_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    assert (source in sent) is (cutoff is None)
+    assert source not in sent
+    assert [item["message_id"] for item in sent] == ["next"]
 
 
 @pytest.mark.parametrize("body", ["", " \n\t", "<think>private</think>\n\n"])

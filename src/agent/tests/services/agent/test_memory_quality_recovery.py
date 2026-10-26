@@ -72,8 +72,7 @@ def manager():
     resource.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -143,4 +142,5 @@ def test_recovery_eligibility_survives_history_reload(ledger, manager, asynchron
     following = automatic_personal_memory(manager, "alice", "session", history, [], agent_code="agent")
     following.complete({"messages": [AIMessage(id="next", content="Next completed answer")]}, {})
     sent = manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    assert [item["text"] for item in sent] == [*expected, "Next completed answer"]
+    assert [item["text"] for item in following.tool_source_provider("assistant")] == expected
+    assert [item["text"] for item in sent] == ["Next completed answer"]

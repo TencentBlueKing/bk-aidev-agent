@@ -26,8 +26,7 @@ def runtime():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent-a",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": manager.memory_schemas.return_value,
     }
     manager.memory_tool.return_value = {

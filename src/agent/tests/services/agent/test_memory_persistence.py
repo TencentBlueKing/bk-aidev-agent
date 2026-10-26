@@ -5,7 +5,7 @@ import copy
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from threading import Event
 from unittest.mock import MagicMock
 
@@ -72,8 +72,7 @@ def memory_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent-a",
-        "memory_epoch": 1,
-        "enabled_at": "2026-10-01T00:00:00Z",
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -116,22 +115,20 @@ def model_messages(history):
 @pytest.mark.parametrize(
     "stamp,after_cutoff", [(None, False), ("2026-10-01T00:00:00Z", False), ("2026-10-21T00:00:00Z", True)]
 )
-@pytest.mark.parametrize("cutoff", [None, "2026-10-20T00:00:00Z"])
-def test_resume_keeps_ledger_identity_and_time(memory_manager, canonical_id, stamp, after_cutoff, cutoff):
+def test_resume_keeps_ledger_identity_and_time(memory_manager, canonical_id, stamp, after_cutoff):
     builtin = {"message_id": canonical_id, "created_at": "2026-10-22T00:00:00Z"}
     if stamp:
         builtin["source_timestamp"] = stamp
     history = [ChatPrompt(id="17", role="user", content="Original preference", builtin_property=builtin)]
     messages = model_messages(history)
     assert messages[-1].id == "17"  # Keep the existing model-message protocol.
-    memory_manager.memory_schemas.return_value["enabled_at"] = cutoff
     runtime = automatic_personal_memory(memory_manager, "alice", "s", history, messages, agent_code="agent-a")
     runtime.complete({"messages": messages + [AIMessage(id="answer", content="Continued")]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
     original = {"message_id": canonical_id, "role": "user", "text": "Original preference", "complete": True}
     if stamp:
         original["timestamp"] = stamp.replace("Z", "+00:00")
-    expected = [original] if not cutoff or after_cutoff else []
+    expected = [original]
     assert sent[:-1] == expected
     assert sent[-1]["message_id"] == "answer"
 
@@ -142,7 +139,6 @@ def test_new_input_after_resume_keeps_its_received_time(persisted_chat, memory_m
     agent = ChatCompletionAgent(chat_history=[old], event_handler=writer)
     agent._prepare_pre_run_history(ExecuteKwargs(input="New preference"))
     current = agent.chat_history[-1]
-    memory_manager.memory_schemas.return_value["enabled_at"] = current.created_at
     messages = model_messages(agent.chat_history)
     runtime = automatic_personal_memory(
         memory_manager, "alice", "s", agent.chat_history, messages, agent_code="agent-a"
@@ -155,18 +151,16 @@ def test_new_input_after_resume_keeps_its_received_time(persisted_chat, memory_m
 
 
 @pytest.mark.parametrize("source", ["response_metadata", "additional_kwargs", None])
-@pytest.mark.parametrize("cutoff", [None, "2026-10-20T00:00:00Z"])
-def test_legacy_visible_input_never_invents_a_timestamp(memory_manager, source, cutoff):
+def test_legacy_visible_input_never_invents_a_timestamp(memory_manager, source):
     stamp = "2026-10-21T00:00:00+00:00"
     metadata = {source: {"created_at": stamp}} if source else {}
     message = HumanMessage(id="legacy-user", content="Preference", **metadata)
-    memory_manager.memory_schemas.return_value["enabled_at"] = cutoff
     runtime = automatic_personal_memory(memory_manager, "alice", "s", [], [message], agent_code="agent-a")
     snapshot = runtime.context({})[1]["messages"]
     assert snapshot[0].get("timestamp") == (stamp if source else None)
     runtime.complete({"messages": [message, AIMessage(id="answer", content="Understood")]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    expected_ids = ["legacy-user", "answer"] if source or not cutoff else ["answer"]
+    expected_ids = ["legacy-user", "answer"]
     assert [item["message_id"] for item in sent] == expected_ids
 
 
@@ -184,17 +178,15 @@ def test_reloaded_rounds_do_not_duplicate_historical_users(persisted_chat, memor
         runtime.complete({"messages": messages + [answer]}, {})
         sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
         assert [item for item in sent if item["role"] == "user"] == [original]
-        assert len(sent) == index + 2
+        assert len(sent) == 2
         save_answer(writer, answer)
         agent.chat_history = [ChatPrompt.model_validate(record) for record in records]
-    memory_manager.memory_schemas.return_value["enabled_at"] = (
-        datetime.now(timezone.utc) + timedelta(days=2)
-    ).isoformat()
+
     runtime = automatic_personal_memory(
         memory_manager, "alice", "s", agent.chat_history, model_messages(agent.chat_history), agent_code="agent-a"
     )
     runtime.complete({"messages": [AIMessage(id="after-reopen", content="Answer")]}, {})
-    assert memory_manager.complete_memory_round.call_count == 3
+    assert memory_manager.complete_memory_round.call_count == 4
 
 
 def test_current_user_identity_and_source_time_survive_persistence(persisted_chat):
@@ -232,7 +224,8 @@ def test_completed_answer_gate_survives_persistence(persisted_chat, memory_manag
     runtime = automatic_personal_memory(memory_manager, "alice", "session-1", history, [], agent_code="agent-a")
     runtime.complete({"messages": [AIMessage(id="next-answer", content="Next answer")]}, {})
     messages = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    assert ("first-answer" in [message["message_id"] for message in messages]) is kept
+    assert [message["message_id"] for message in messages] == ["next-answer"]
+    assert bool(runtime.tool_source_provider("assistant")) is kept
     assert records[0]["status"] == "complete"
     assert records[0]["builtin_property"].get("finish_reason") == reason
 
@@ -287,10 +280,8 @@ def partial_answer(writer):
     "termination,kept",
     [("complete", True), ("cancelled", False), ("stopped", False), ("cancel_error", False), ("error", False)],
 )
-@pytest.mark.parametrize("cutoff", [None, "2026-10-01T00:00:00Z"])
-def test_partial_answer_termination_survives_next_round(persisted_chat, memory_manager, termination, kept, cutoff):
+def test_partial_answer_termination_survives_next_round(persisted_chat, memory_manager, termination, kept):
     writer, records = persisted_chat
-    memory_manager.memory_schemas.return_value["enabled_at"] = cutoff
     kept = False  # Stream-only history has no verifiable source completion time.
     partial_answer(writer)
     if termination in {"error", "cancel_error"}:
@@ -435,9 +426,11 @@ def assert_three_reloaded_rounds(records, manager, original):
         runtime.complete({"messages": [AIMessage(id=f"next-{index}", content="Next answer")]}, {})
         sent = manager.complete_memory_round.call_args.args[0]["context"]["messages"]
         matching = [item for item in sent if item["message_id"] == original["message_id"]]
-        assert matching == [original]
-        assert source_fingerprint(matching[0]) == source_fingerprint(original)
-    manager.memory_schemas.return_value.update(enabled_at="2026-10-21T00:00:00Z", memory_epoch=2)
+        assert matching == []
+        selected = runtime.tool_source_provider("assistant")
+        assert selected == [original]
+        assert source_fingerprint(selected[0]) == source_fingerprint(original)
+    manager.memory_schemas.return_value.update(version="1.0.0")
     runtime = automatic_personal_memory(manager, "alice", "s", history, model_messages(history), agent_code="agent-a")
     runtime.complete({"messages": [AIMessage(id="after-reopen", content="New answer")]}, {})
     sent = manager.complete_memory_round.call_args.args[0]["context"]["messages"]
@@ -449,7 +442,6 @@ def test_legacy_assistant_database_write_time_is_not_completion_evidence(memory_
     history = [{"id": 7, "role": "assistant", "content": "Old answer", "created_at": "2026-10-22T00:00:00Z"}]
     history[0]["builtin_property"] = {"source_timestamp": stamp}
     assert completed_history(history, "s") == []
-    memory_manager.memory_schemas.return_value["enabled_at"] = "2026-10-21T00:00:00Z"
     runtime = automatic_personal_memory(memory_manager, "alice", "s", history, [], agent_code="agent-a")
     runtime.complete({"messages": [AIMessage(id="new", content="New answer")]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
@@ -689,12 +681,10 @@ def test_missing_or_failed_finalization_keeps_history_ineligible(
         assert answer.id not in [message["message_id"] for message in sent]
 
 
-@pytest.mark.parametrize("cutoff", [None, "2026-10-21T00:00:00Z"])
-def test_old_assistant_without_verifiable_source_time_is_never_evidence(memory_manager, cutoff):
+def test_old_assistant_without_verifiable_source_time_is_never_evidence(memory_manager):
     history = [
         {"id": 7, "role": "assistant", "content": '[lookup]\n{"query":"Python"}', "created_at": "2026-10-22T00:00:00Z"}
     ]
-    memory_manager.memory_schemas.return_value["enabled_at"] = cutoff
     for index in range(3):
         runtime = automatic_personal_memory(memory_manager, "alice", "s", history, [], agent_code="agent-a")
         runtime.complete({"messages": [AIMessage(id=f"next-{index}", content="Next answer")]}, {})
@@ -745,7 +735,7 @@ def test_undated_assistant_input_is_not_promoted_to_new_evidence(memory_manager)
     assert [message["message_id"] for message in sent] == ["new"]
 
 
-def test_explicit_history_merge_preserves_each_answer_source_time(memory_manager):
+def test_custom_runtime_only_submits_final_answer_from_state_history(memory_manager):
     context = {
         "username": "alice",
         "agent_code": "agent-a",
@@ -761,7 +751,6 @@ def test_explicit_history_merge_preserves_each_answer_source_time(memory_manager
     runtime.complete({"messages": [old, answer]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
     assert {message["message_id"]: message["timestamp"] for message in sent} == {
-        "old": "2026-10-20T00:00:00+00:00",
         "new": "2026-10-21T00:00:00+00:00",
     }
     assert answer.response_metadata["source_timestamp"] == "2026-10-21T00:00:00+00:00"
@@ -791,4 +780,6 @@ def test_no_ledger_replay_retains_original_source_across_rounds(memory_manager, 
         )
         restored.complete({"messages": [current]}, {})
         replayed = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"][0]
-        assert replayed == original
+        assert replayed["message_id"] == current.id
+        assert replayed["message_id"] != original["message_id"]
+        assert restored.tool_source_provider("assistant") == [original]

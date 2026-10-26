@@ -27,8 +27,7 @@ def manager():
     result.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent-a",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": result.memory_schemas.return_value,
     }
     result.memory_tool.return_value = {"hits": []}
@@ -51,7 +50,7 @@ def test_missing_user_skips_discovery(manager, username):
 def test_unavailable_platform_skips_memory(manager, error):
     manager.memory_schemas.side_effect = error
     assert make_runtime(manager) is None
-    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", timeout=2)
+    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", version=None, timeout=2)
 
 
 def test_invalid_schemas_skip_memory(manager):
@@ -59,7 +58,7 @@ def test_invalid_schemas_skip_memory(manager):
     assert make_runtime(manager) is None
 
 
-def test_full_ledger_preserves_completed_history_and_date(manager):
+def test_current_input_preserves_host_text_without_historical_extraction(manager):
     history = [
         ChatPrompt(id="old", role="user", content="Original text", created_at="2026-10-01T12:00:00Z"),
         ChatPrompt(id="a", role="assistant", content="Partial", status="error"),
@@ -74,12 +73,12 @@ def test_full_ledger_preserves_completed_history_and_date(manager):
     )
     username, context = runtime.context({})
     assert username == "alice" and context["session_date"] == "2026-10-01"
-    assert [item["text"] for item in context["messages"]] == ["Original text", "Hi"]
+    assert [item["text"] for item in context["messages"]] == ["Hi"]
     runtime.complete(
         {"messages": [HumanMessage(content="Transformed", id="u-1"), AIMessage(content="Hello", id="a-1")]}, {}
     )
     snapshot = manager.complete_memory_round.call_args.args[0]["context"]["messages"]
-    assert [item["text"] for item in snapshot] == ["Original text", "Hi", "Hello"]
+    assert [item["text"] for item in snapshot] == ["Hi", "Hello"]
 
 
 def test_legacy_ledger_ids_are_stable():
@@ -132,7 +131,7 @@ def test_standard_chat_automatically_enables_memory(manager):
     graph, config = agent._get_agent(messages, execute_kwargs=ExecuteKwargs(executor="other-user"))
     result = graph.invoke({"messages": messages}, config)
     assert result["messages"][-1].content == "Hello"
-    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", timeout=2)
+    manager.memory_schemas.assert_called_once_with(username="alice", agent_code="agent-a", version=None, timeout=2)
     manager.complete_memory_round.assert_called_once()
     assert manager.complete_memory_round.call_args.kwargs["username"] == "alice"
 
@@ -172,8 +171,8 @@ def test_discovery_cannot_switch_agent_identity(manager):
     manager.complete_memory_round.assert_not_called()
 
 
-def test_reopened_agent_only_uploads_fresh_messages(manager):
-    manager.memory_schemas.return_value.update(memory_epoch=3, enabled_at="2026-10-09T08:00:00Z")
+def test_runtime_keeps_only_current_round_across_configuration_versions(manager):
+    manager.memory_schemas.return_value.update(version="1.0.0")
     history = [
         {"id": "old", "role": "user", "content": "Old", "created_at": "2026-10-01T08:00:00Z"},
         {"id": "new", "role": "user", "content": "New", "created_at": "2026-10-09T08:00:00Z"},
@@ -181,7 +180,7 @@ def test_reopened_agent_only_uploads_fresh_messages(manager):
     runtime = automatic_personal_memory(manager, "alice", "s", history, [], agent_code="agent-a")
     runtime.complete({"messages": [AIMessage(content="Answer", id="a")]}, {})
     payload = manager.complete_memory_round.call_args.args[0]
-    assert payload["agent_code"] == "agent-a" and payload["memory_epoch"] == 3
+    assert payload["agent_code"] == "agent-a" and payload["version"] == "1.0.0"
     assert [message["message_id"] for message in payload["context"]["messages"]] == ["new", "a"]
     assert "agent_code" not in payload["context"]
 
@@ -205,9 +204,9 @@ def real_input_agent(manager, monkeypatch):
     return agent
 
 
-@pytest.mark.parametrize("epoch", [1, 3])
-def test_real_chat_input_keeps_identity_and_time_after_activation(manager, real_input_agent, epoch):
-    manager.memory_schemas.return_value.update(memory_epoch=epoch, enabled_at="2026-10-09T00:00:00Z")
+@pytest.mark.parametrize("version", ["draft", "1.0.0"])
+def test_real_chat_input_keeps_identity_and_time_after_activation(manager, real_input_agent, version):
+    manager.memory_schemas.return_value.update(version=version)
     agent = real_input_agent
     before = datetime.now(timezone.utc)
     agent._prepare_pre_run_history(ExecuteKwargs(input="I prefer Python"))
@@ -233,7 +232,7 @@ def test_real_chat_input_keeps_identity_and_time_after_activation(manager, real_
     ]
     assert records[0]["message_id"] == current.id
     assert records[0]["timestamp"] == current.created_at
-    assert payload["memory_epoch"] == epoch
+    assert payload["version"] == version
     assert "created_at" not in agent.chat_history[1].model_dump()
 
 
@@ -290,3 +289,36 @@ def test_incompatible_manager_skips_discovery(manager):
 @pytest.mark.parametrize("manager_value,session_id", [(None, "s"), (object(), "")])
 def test_missing_manager_or_session_skips_memory(manager_value, session_id):
     assert automatic_personal_memory(manager_value, "alice", session_id, [], [], agent_code="agent-a") is None
+
+
+def test_disabled_released_version_does_not_suppress_enabled_draft(manager):
+    manager.memory_schemas.return_value.update(enabled=False, version="1.0.0")
+    assert automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="1.0.0") is None
+    manager.memory_schemas.return_value.update(enabled=True, version="draft")
+    runtime = automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="draft")
+    assert runtime is not None
+    assert manager.memory_schemas.call_args.kwargs["version"] == "draft"
+
+
+def test_draft_edit_is_visible_on_next_debug_request(manager):
+    manager.memory_schemas.return_value.update(enabled=False, version="draft")
+    assert automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="draft") is None
+    manager.memory_schemas.return_value.update(enabled=True)
+    assert automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="draft") is not None
+    assert manager.memory_schemas.call_count == 2
+
+
+def test_runtime_pins_exact_discovered_version_and_preserves_context(manager):
+    manager.memory_schemas.return_value.update(version="1.0.0")
+    runtime = automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="1.0.0")
+    _, context = runtime.context({})
+    payload = runtime.scoped_payload(context, {}, {})
+    assert payload["version"] == "1.0.0" and "version" not in payload["context"]
+    context["version"] = "draft"
+    with pytest.raises(ValueError, match="versions"):
+        runtime.scoped_payload(context, {}, {})
+
+
+def test_schema_version_must_match_requested_configuration(manager):
+    manager.memory_schemas.return_value.update(version="draft")
+    assert automatic_personal_memory(manager, "alice", "s", [], [], agent_code="agent-a", version="1.0.0") is None

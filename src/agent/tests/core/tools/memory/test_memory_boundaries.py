@@ -29,10 +29,10 @@ def test_naive_message_time_is_explicitly_utc():
     assert message_timestamp(datetime(2026, 10, 1)) == datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat()
 
 
-@pytest.mark.parametrize("epoch", [None, True, 0, -1, "1"])
-def test_invalid_epoch_rejects_discovery(runtime, epoch):
-    runtime.manager.memory_schemas.return_value["memory_epoch"] = epoch
-    with pytest.raises(ValueError, match="activation"):
+@pytest.mark.parametrize("version", [None, True, 0, -1, {}])
+def test_invalid_version_rejects_discovery(runtime, version):
+    runtime.manager.memory_schemas.return_value["version"] = version
+    with pytest.raises(ValueError, match="version"):
         runtime.make_tools()
 
 
@@ -154,9 +154,8 @@ def test_empty_state_does_not_submit(runtime):
     runtime.manager.complete_memory_round.assert_not_called()
 
 
-def test_empty_filtered_snapshot_does_not_submit(runtime):
-    runtime.manager.memory_schemas.return_value["enabled_at"] = "2026-10-09T00:00:00Z"
+def test_old_completed_snapshot_is_not_filtered_by_configuration(runtime):
     runtime.complete(
         {"messages": [AIMessage(content="Old", id="a", response_metadata={"created_at": "2026-10-01T00:00:00Z"})]}, {}
     )
-    runtime.manager.complete_memory_round.assert_not_called()
+    runtime.manager.complete_memory_round.assert_called_once()

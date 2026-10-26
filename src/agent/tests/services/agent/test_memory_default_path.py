@@ -206,7 +206,7 @@ def test_indented_think_literal_is_thinking_exhaustion_and_not_evidence():
 @pytest.fixture
 def policy_manager():
     manager = MagicMock(username="service-account")
-    manager.memory_schemas.return_value = {"enabled": False, "agent_code": "agent-a", "memory_epoch": 1}
+    manager.memory_schemas.return_value = {"enabled": False, "agent_code": "agent-a", "version": "1.0.0"}
     return manager
 
 
@@ -255,8 +255,7 @@ def test_enabled_policy_is_probed_every_round(policy_manager, clock):
     policy_manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent-a",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")

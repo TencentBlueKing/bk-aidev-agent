@@ -73,8 +73,7 @@ def memory_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -165,7 +164,7 @@ def test_native_answer_eligibility_survives_display_fallback(memory_manager, con
     current.complete({"messages": [answer]}, {})
     if content.strip():
         memory_manager.complete_memory_round.assert_called_once()
-        expected_ids = ["native-answer", "next"]
+        expected_ids = ["next"]
     else:
         memory_manager.complete_memory_round.assert_not_called()
         assert record["builtin_property"]["memory_source_complete"] is False
@@ -174,4 +173,5 @@ def test_native_answer_eligibility_survives_display_fallback(memory_manager, con
     following.complete({"messages": [AIMessage(id="next", content="Hello")]}, {})
     sent = memory_manager.complete_memory_round.call_args.args[0]["context"]["messages"]
     assert [message["message_id"] for message in sent] == expected_ids
-    assert [message["text"] for message in sent] == (["Final answer", "Hello"] if content.strip() else ["Hello"])
+    assert [message["text"] for message in sent] == ["Hello"]
+    assert bool(following.tool_source_provider("assistant")) is bool(content.strip())

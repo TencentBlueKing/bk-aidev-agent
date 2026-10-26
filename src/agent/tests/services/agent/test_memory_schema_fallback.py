@@ -22,8 +22,7 @@ def schema_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {}}}
             for name in ("memory_write", "memory_update", "memory_search")

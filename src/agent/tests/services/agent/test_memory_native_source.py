@@ -96,8 +96,7 @@ def source_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "memory_epoch": 1,
-        "enabled_at": None,
+        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -131,7 +130,8 @@ def test_hidden_inline_reasoning_is_not_memory_evidence(mode, tag):
     runtime = automatic_personal_memory(manager, "alice", "s", ledger, [], agent_code="agent")
     runtime.complete({"messages": [AIMessage(id="next", content="Next answer")]}, {})
     replayed = manager.complete_memory_round.call_args.args[0]["context"]["messages"][0]
-    assert replayed == sent[0]  # Text, identity and timestamp (hence fingerprint) remain stable.
+    assert replayed["message_id"] == "next"
+    assert runtime.tool_source_provider("assistant") == sent  # Only explicit selection reuses the original source.
 
     audit = MagicMock()
     audit.invoke.return_value = AIMessage(content='{"memory_ids":[]}')

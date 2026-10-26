@@ -1625,6 +1625,7 @@ class ChatCompletionAgent(BaseModel):
                 self.chat_history,
                 messages,
                 agent_code=self.memory_agent_code or (self.agent_info or {}).get("agent_code", ""),
+                version=(self.agent_info or {}).get("version"),
             ),
             llm=self.chat_model,
             non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
