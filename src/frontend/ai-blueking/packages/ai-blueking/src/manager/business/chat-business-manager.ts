@@ -137,7 +137,7 @@ export class ChatBusinessManager {
   }
 
   /**
-   * 停止生成接口是否正在调用中
+   * @deprecated 停止已改为同步封口，不再有「停止请求中」状态，恒为 false。保留仅为兼容外部读取。
    */
   get isStopLoading(): Ref<boolean> {
     return this._isStopLoading;
@@ -533,15 +533,15 @@ export class ChatBusinessManager {
   /**
    * 停止生成
    *
-   * 仅通知后端 stop，不断开 chat_completion SSE。
+   * stopChat 会先同步封住当前流（界面立即停止），再通知后端 stop，不断开 chat_completion SSE。
    * 后端会通过 RUN_ERROR（用户已取消）结束流；前端 abort 会打乱后台时序。
    */
   async stopGeneration(): Promise<void> {
     const sessionCode = this.sessionModule?.current?.value?.sessionCode ?? '';
-    this._isStopLoading.value = true;
+    // 同步结束生成态：不等停止请求返回，封口在 stopChat 内部同步完成
+    this._isGenerating.value = false;
     try {
       await this.agentModule.stopChat(sessionCode);
-      this._isGenerating.value = false;
       this.emit('stop', {});
     } catch (error) {
       console.error('Failed to stop generation:', error);
@@ -550,8 +550,6 @@ export class ChatBusinessManager {
         error,
       });
       throw error;
-    } finally {
-      this._isStopLoading.value = false;
     }
   }
 }

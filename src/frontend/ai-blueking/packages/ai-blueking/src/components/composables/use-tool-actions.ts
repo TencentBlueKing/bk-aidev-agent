@@ -14,7 +14,8 @@ import { MessageRole } from '@blueking/chat-x';
 import {
   applyRequestOptionsContext,
   buildDocSchemaPayload,
-  findLastUserMessageBefore,
+  collectTurnMessages,
+  collectTurnMessagesByAnchor,
   findLastUserMessageIdBefore,
 } from '../../utils';
 
@@ -80,15 +81,12 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
 
     try {
       const allMessages = chatBusinessManager.value.messages.value as Message[];
-      const lastUserMessage = findLastUserMessageBefore(allMessages, aiMessages[0]);
-
-      if (!lastUserMessage) {
-        console.error('[ChatBot] No user message found before AI messages');
+      const messagesToDelete = collectTurnMessagesByAnchor(allMessages, aiMessages[0]);
+      if (!messagesToDelete) {
+        console.error('[ChatBot] Cannot delete messages: AI messages do not map to a single turn');
         return;
       }
-
-      const messagesToDelete = [lastUserMessage, ...aiMessages];
-      await chatHelper.value.message.deleteMessages(messagesToDelete as any);
+      await chatHelper.value.message.deleteMessages(messagesToDelete as IMessage[]);
     } catch (error) {
       reportError(error, 'Failed to delete messages');
     }
@@ -127,22 +125,12 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
 
     try {
       const allMessages = chatBusinessManager.value.messages.value as Message[];
-      const userMessageIndex = allMessages.findIndex((m: Message) => m === userMessage);
-      if (userMessageIndex === -1) {
+      const messagesToDelete = collectTurnMessages(allMessages, userMessage);
+      if (!messagesToDelete) {
         console.error('[ChatBot] User message not found in messages list');
         return;
       }
 
-      const aiMessages: Message[] = [];
-      for (let i = userMessageIndex + 1; i < allMessages.length; i++) {
-        const msg = allMessages[i];
-        if (msg.role === MessageRole.User) {
-          break;
-        }
-        aiMessages.push(msg as Message);
-      }
-
-      const messagesToDelete = [userMessage, ...aiMessages];
       await chatHelper.value.message.deleteMessages(messagesToDelete as IMessage[]);
     } catch (error) {
       reportError(error, 'Failed to delete user message');

@@ -19,19 +19,17 @@ vi.mock('../../../utils', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../utils')>();
   return {
     ...actual,
-    findLastUserMessageBefore: vi.fn((messages: any[], aiMessage: any) => {
-      const idx = messages.indexOf(aiMessage);
-      for (let i = idx - 1; i >= 0; i--) {
-        if (messages[i].role === 'user') return messages[i];
-      }
-      return null;
-    }),
     findLastUserMessageIdBefore: vi.fn((messages: any[], aiMessage: any) => {
-      const idx = messages.indexOf(aiMessage);
-      for (let i = idx - 1; i >= 0; i--) {
-        if (messages[i].role === 'user') return messages[i].id;
+      let lastUserMessage = null;
+      for (const message of messages) {
+        if (message.role === 'user' && message.id !== undefined) {
+          lastUserMessage = message;
+        }
+        if (message === aiMessage) {
+          break;
+        }
       }
-      return undefined;
+      return lastUserMessage?.id;
     }),
     applyRequestOptionsContext: vi.fn((property: any, getRequestOptions?: () => any) => {
       if (!getRequestOptions) return property;
@@ -113,6 +111,93 @@ describe('useToolActions', () => {
       expect(params.chatHelper.value!.message.deleteMessages).toHaveBeenCalledWith(
         expect.arrayContaining([userMsg, aiMsg]),
       );
+    });
+
+    it('should delete the whole turn including tool messages absent from the callback', async () => {
+      const params = createParams();
+      const user1 = createMockUserMessage({ id: 'u1' });
+      const assistant = createMockAIMessage({ id: 'a1' });
+      const tool = { id: 't1', role: 'tool', content: 'tool result' };
+      const assistant2 = createMockAIMessage({ id: 'a2' });
+      const user2 = createMockUserMessage({ id: 'u2' });
+      const laterAssistant = createMockAIMessage({ id: 'a3' });
+      (params.chatBusinessManager.value!.messages as any).value = [
+        user1,
+        assistant,
+        tool,
+        assistant2,
+        user2,
+        laterAssistant,
+      ];
+
+      const { handleAgentAction } = useToolActions(params);
+      await handleAgentAction({ id: 'delete' } as any, [assistant, assistant2] as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).toHaveBeenCalledWith([
+        user1,
+        assistant,
+        tool,
+        assistant2,
+      ]);
+    });
+
+    it('should include a tool message that sits before the assistant anchor', async () => {
+      const params = createParams();
+      const user1 = createMockUserMessage({ id: 'u1' });
+      const tool = { id: 't1', role: 'tool', content: 'tool result' };
+      const assistant = createMockAIMessage({ id: 'a1' });
+      const user2 = createMockUserMessage({ id: 'u2' });
+      (params.chatBusinessManager.value!.messages as any).value = [user1, tool, assistant, user2];
+
+      const { handleAgentAction } = useToolActions(params);
+      await handleAgentAction({ id: 'delete' } as any, [assistant] as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).toHaveBeenCalledWith([user1, tool, assistant]);
+    });
+
+    it('should not delete when the anchor is a copy that is not in the list', async () => {
+      const params = createParams();
+      const user1 = createMockUserMessage({ id: 'u1' });
+      const assistant = createMockAIMessage({ id: 'a1' });
+      const user2 = createMockUserMessage({ id: 'u2' });
+      (params.chatBusinessManager.value!.messages as any).value = [user1, assistant, user2];
+
+      const { handleAgentAction } = useToolActions(params);
+      await handleAgentAction({ id: 'delete' } as any, [{ ...assistant }] as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).not.toHaveBeenCalled();
+    });
+
+    it('should not delete when AI messages are empty', async () => {
+      const params = createParams();
+      const user1 = createMockUserMessage({ id: 'u1' });
+      (params.chatBusinessManager.value!.messages as any).value = [user1, createMockAIMessage()];
+
+      const { handleAgentAction } = useToolActions(params);
+      await handleAgentAction({ id: 'delete' } as any, [] as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).not.toHaveBeenCalled();
+    });
+
+    it('should not delete when the nearest user message has no id', async () => {
+      const params = createParams();
+      const earlierUser = createMockUserMessage({ id: 'u0' });
+      const earlierAssistant = createMockAIMessage({ id: 'a0' });
+      const idLessUser = createMockUserMessage({ id: undefined });
+      const assistant = createMockAIMessage({ id: 'a1' });
+      const tool = { id: 't1', role: 'tool', content: 'tool result' };
+      (params.chatBusinessManager.value!.messages as any).value = [
+        earlierUser,
+        earlierAssistant,
+        idLessUser,
+        assistant,
+        tool,
+      ];
+
+      const { handleAgentAction } = useToolActions(params);
+      await handleAgentAction({ id: 'delete' } as any, [assistant] as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).not.toHaveBeenCalled();
     });
 
     it('should call getSessionFeedbackReasons for like action', async () => {
@@ -201,6 +286,18 @@ describe('useToolActions', () => {
       await handleUserAction({ id: 'delete' } as any, userMsg as any);
 
       expect(params.chatHelper.value!.message.deleteMessages).toHaveBeenCalledWith([userMsg, aiMsg1, aiMsg2]);
+    });
+
+    it('should not delete when the user message is not in the list', async () => {
+      const params = createParams();
+      const listedUser = createMockUserMessage({ id: 'u1' });
+      const missingUser = createMockUserMessage({ id: 'u-missing' });
+      (params.chatBusinessManager.value!.messages as any).value = [listedUser, createMockAIMessage()];
+
+      const { handleUserAction } = useToolActions(params);
+      await handleUserAction({ id: 'delete' } as any, missingUser as any);
+
+      expect(params.chatHelper.value!.message.deleteMessages).not.toHaveBeenCalled();
     });
 
     it('should set cite and focusInput for cite action', async () => {

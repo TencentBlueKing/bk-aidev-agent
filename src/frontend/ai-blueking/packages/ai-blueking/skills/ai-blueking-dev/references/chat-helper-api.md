@@ -179,9 +179,11 @@ await agent.chat(userInput, sessionCode, undefined, {
 await agent.stopChat(sessionCode: string);  // POST session_content/stop/
 ```
 
-失败时会 reject（`ChatBusinessManager.stopGeneration` 也会向上抛，由 ChatBot 转成 `@error` 事件），调用方需自行 catch。
+发请求前会**同步封口**当前流（按流世代失效）：本轮未完成消息收为 `Stop`（尾段无助手正文时补一条 `status: error` 的「用户已取消」，与后端取消回写规则一致；`Interrupt` 消息不结算），`isChatting` 立即 `false`，协议 `onDone` 同步触发一次（本轮唯一 `receive-end`），之后该连接的 SSE 事件全部丢弃且不静默重连；连接本身不断开，等后端收尾。同会话下一轮 `streamRequest(stream_mode: start)` 会先等本次停止请求落定，排队期间 `isChatting` 为 `true`；此时再调 `stopChat` 只取消排队的 start（不重复发请求），`abortChat` / 切走会话同样作废它。请勿在 `receive-end` 里整表 `getMessages`，否则会拉回封口后服务端多生成的内容。
 
-`ChatBusinessManager.stopGeneration()` 仅调用本方法（不 abort SSE）。
+失败时会 reject（`ChatBusinessManager.stopGeneration` 也会向上抛，由 ChatBot 转成 `@error` 事件），调用方需自行 catch。失败不解除封口。
+
+`ChatBusinessManager.stopGeneration()` 仅调用本方法（不 abort SSE），且在调用前已同步清 `isGenerating`；其 `isStopLoading` 已废弃、恒为 `false`。
 
 #### abortChat
 
@@ -1013,7 +1015,8 @@ const messageToolsStatus = computed(() =>
 
 ```typescript
 onBeforeUnmount(() => {
-  agent.stopChat(session.current.value?.sessionCode ?? '');
+  // 仅断开前端 SSE；stopChat 会杀掉后台 agent，勿在卸载时调用
+  agent.abortChat();
 });
 ```
 

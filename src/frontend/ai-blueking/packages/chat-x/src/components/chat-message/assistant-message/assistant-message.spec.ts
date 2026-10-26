@@ -167,6 +167,22 @@ describe('AssistantMessage', () => {
       expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Pending);
     });
 
+    it('父消息为 Stop 且无 toolMessage 时应向 ToolCallRender 传递 Stop', () => {
+      const toolCalls = [
+        { id: 'tool-1', type: MessageContentType.Function, function: { name: 'search', arguments: '{}' } },
+      ];
+
+      wrapper = mount(AssistantMessage, {
+        props: {
+          content: '内容',
+          status: MessageStatus.Stop,
+          toolCalls,
+        },
+      });
+
+      expect(wrapper.find('.mock-toolcall-render').attributes('data-status')).toBe(MessageStatus.Stop);
+    });
+
     it('toolMessage.error 为真时应向 ToolCallRender 传递 Error', () => {
       const toolCalls = [
         {

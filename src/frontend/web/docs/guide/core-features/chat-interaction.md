@@ -165,25 +165,21 @@ AI 小鲸支持多种内容渲染格式：
 
 ## 停止生成
 
-当 AI 正在生成内容时，可以通过以下方式停止：
+当 AI 正在生成内容时，用户可点击输入框的停止按钮或消息区的「停止生成」，也可编程式停止：
 
 ```typescript
-// 方式 1：通过 ChatBot 组件 expose
-chatBotRef.value.stopChat();
-
-// 方式 2：通过 AIBlueking 组件 expose
-aiBluekingRef.value.stopChat();
+// 通过 ChatBot / AIBlueking 组件 expose
+chatBotRef.value.stopGeneration();
+aiBluekingRef.value.stopGeneration();
 ```
 
-**内部流程**：
+**点击后立即停止（前端封口）**：停止不再等后端真正停下。前端会同步把本轮未完成消息收为「已停止」（还没有助手正文、只有思考或工具调用时，补一条与后端一致的「用户已取消」错误提示），生成态立即结束，后续流式内容——包括工具调用、思考与迟到的正文——都不再写入界面。停止请求仍会发给后端，连接保持到后端按取消流程收尾。
 
-```
-stopChat()
-  → ChatBusinessManager.stopChat()
-    → agentModule.stopChat(sessionCode)    // 调用后端停止接口
-    → isGenerating = false
-    → emit('stop')
-```
+需要注意：
+
+- 封口冻结的是点击瞬间的内容。后端取消生效前可能又多生成了一段并落库，**刷新或重新进入会话后，内容可能比点击时更长**，以服务端历史为准。
+- 同一会话紧接着发送下一条消息时，SDK 会先等停止请求落定再开始新一轮生成，宿主无需自己串行化。等待期间界面仍处于生成态，可再次点击停止取消这条排队的消息；切换会话也会取消它。
+- `receive-end` 在封口时触发一次。请勿在该事件里整表拉取消息刷新列表，否则会把封口后服务端多生成的内容重新拉回界面。
 
 ## 文件上传 {#文件上传}
 
@@ -282,7 +278,7 @@ const sendProgrammatically = async () => {
 };
 
 const stopGeneration = () => {
-  chatBotRef.value?.stopChat();
+  chatBotRef.value?.stopGeneration();
 };
 </script>
 ```

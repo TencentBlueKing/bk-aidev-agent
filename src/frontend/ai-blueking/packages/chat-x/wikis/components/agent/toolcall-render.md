@@ -205,14 +205,16 @@ sinceVersion: 1.0.0
 ```typescript
 isSuccess = [complete, completed, success].includes(status);
 isError = status === 'error' || !!toolCall?.toolMessage?.error; // toolMessage.error 可独立判定失败
-isPending = !isSuccess && !isError; // 其余（含 pending / streaming / stop / undefined）统一视为进行中
+isStopped = status === 'stop'; // 用户停止：终态，不转圈，也不显示成功/失败
+isPending = !isSuccess && !isError && !isStopped; // 其余（含 pending / streaming / undefined）视为进行中
 ```
 
 | 归一状态 | 命中条件                                             | 头部渲染                                                       |
 | -------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| 进行中   | 非成功且非失败（含未传 `status`）                    | 前缀替换为「正在调用」（Skill 为「正在读取」），标题带 `is-loading` 闪动，无状态段、无箭头 |
+| 进行中   | 非成功、非失败、非停止（含未传 `status`）            | 前缀替换为「正在调用」（Skill 为「正在读取」），标题带 `is-loading` 闪动，无状态段、无箭头 |
 | 成功     | `complete` / `completed` / `success`                 | 状态段 `( 成功 )`，状态词 `#2caf5e`                            |
 | 失败     | `status === 'error'` **或** `toolMessage.error` 为真 | 状态段 `( 失败 )`，状态词 `#ea3636`                            |
+| 已停止   | `status === 'stop'`                                  | 结束态前缀（「调用工具」等），无状态段、不闪动，保留折叠箭头   |
 
 关于状态段的三个细节：
 
@@ -426,7 +428,9 @@ const assistantMessage = {
     :tool-call="toolCall"
     :status="
       !toolCall.toolMessage
-        ? MessageStatus.Pending
+        ? assistantMessage.status === MessageStatus.Stop
+          ? MessageStatus.Stop
+          : MessageStatus.Pending
         : toolCall.toolMessage.error
           ? MessageStatus.Error
           : (toolCall.toolMessage.status ?? assistantMessage.status)
@@ -444,7 +448,7 @@ const assistantMessage = {
 | 属性名   | 类型            | 默认值 | 说明                                                                                |
 | -------- | --------------- | ------ | ----------------------------------------------------------------------------------- |
 | toolCall | `ToolCall`      | —      | 工具调用信息对象                                                                    |
-| status   | `MessageStatus` | —      | 调用状态，归一为成功 / 失败 / 进行中三态；未传时按进行中渲染（「正在调用」+ 闪动）  |
+| status   | `MessageStatus` | —      | 调用状态，归一为成功 / 失败 / 已停止 / 进行中；`stop` 为终态，未传时按进行中渲染 |
 | duration | `number`        | —      | 调用耗时（毫秒），优先于 `toolCall.toolMessage?.duration`；均无时状态段不展示耗时   |
 
 ## 类型定义

@@ -503,9 +503,10 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 传给每个 `ToolCallRender` 的 `status` 按以下优先级计算：
 
-1. 无 `toolMessage` → `MessageStatus.Pending`（进行中）
-2. `toolMessage.error` 为真 → `MessageStatus.Error`（失败）
-3. 否则 → `toolMessage.status ??` 本组件 `status`
+1. 无 `toolMessage` 且本组件 `status` 为 `stop` → `MessageStatus.Stop`（用户停止，终态，不再转圈）
+2. 无 `toolMessage` → `MessageStatus.Pending`（进行中）
+3. `toolMessage.error` 为真 → `MessageStatus.Error`（失败）
+4. 否则 → `toolMessage.status ??` 本组件 `status`
 
 **进行中**（有 `toolCalls`、尚无 `toolMessage`；即便助手 `status` 已是 `complete`，工具调用仍显示「正在调用」）：
 

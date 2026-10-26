@@ -80,8 +80,10 @@
     [MessageStatus.Complete, MessageStatus.Completed, MessageStatus.Success].includes(props.status as MessageStatus),
   );
   const isError = computed(() => props.status === MessageStatus.Error || !!props.toolCall?.toolMessage?.error);
-  /** 既非成功也非失败时统一视为进行中，与旧 default 分支行为保持一致 */
-  const isPending = computed(() => !isSuccess.value && !isError.value);
+  /** Stop 为终态（用户停止），不显示成功/失败文案，但也不再视为进行中 */
+  const isStopped = computed(() => props.status === MessageStatus.Stop);
+  /** 既非成功、失败或停止时统一视为进行中，与旧 default 分支行为保持一致 */
+  const isPending = computed(() => !isSuccess.value && !isError.value && !isStopped.value);
 
   /** 优先取 function.function_type；旧数据无 function_type 时按 mcpName 兼容判定为 MCP */
   const callType = computed(() => {

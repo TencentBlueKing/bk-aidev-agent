@@ -3,11 +3,11 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
 metadata:
   author: blueking
-  version: '5.44'
+  version: '5.45'
   packages:
-    ai-blueking: 2.4.1
-    chat-x: 2.4.0
-    chat-helper: 2.4.0
+    ai-blueking: 3.1.0-beta.1
+    chat-x: 3.1.0-beta.1
+    chat-helper: 3.1.0-beta.1
 ---
 
 # AI 小鲸组件开发指南
@@ -298,6 +298,13 @@ ChatBot 内部所有错误都汇聚到单一出口 `useErrorReporter`（`src/com
 
 ChatBot 在 `url` / `chatHelper` 变化或卸载时只会 `abortChat()`，不会自动调 `stopChat`。
 **`stopGeneration` 只调 `stopChat`，不断开 SSE**：前端 abort 会打乱后端 stop 时序。流由后端 `RUN_ERROR` 收尾；`RUN_ERROR` / `RUN_FINISHED` 均为终端事件，关流后不静默重连。
+
+**点击停止立即封口（流世代封口）**：`stopChat` 在发停止请求前会同步封住当前流——本轮未完成消息收为 `Stop`（过程栏显示「已停止」，思考块显示「思考已停止」；尾段无助手正文——仅思考 / 工具调用或完全为空——时补一条 `status: error` 的「用户已取消」，与后端取消回写规则一致，带感叹号、过程栏显示「失败」），`isChatting` 立即变 `false`，且该连接后续 SSE 事件（正文、工具、思考、`MESSAGES_SNAPSHOT`、终端事件）全部被丢弃，不再触发静默重连；协议 `onDone` 在封口时同步触发一次，作为本轮唯一的 `receive-end`。注意：
+
+- **不要在 `receive-end` 回调里整表 `getMessages` 刷新列表**，否则会把封口后服务端多生成的内容拉回来，封口失效。
+- 同会话下一轮 `streamRequest(stream_mode: start)`（含发送、重发、HITL 恢复）会先等在途停止请求落定再开新流；`attach` 不等待。宿主无需自己串行化。排队期间 `isChatting` 为 `true`（仍显示停止按钮）；此时再 `stopChat` 只取消排队的 start、不重复发停止请求；`abortChat` 或切走会话也会作废排队的 start。
+- 封口冻结的是点击瞬间的前端列表。后端取消生效前仍可能多生成并落库，**刷新/重进会话后内容可能比点击时更长**，以服务端为准。
+- `ChatBusinessManager.isStopLoading` 已废弃（恒为 `false`）：停止不再有「正在停止」中间态。
 
 ### `#headerLeft` 插槽自定义 Header 左侧
 

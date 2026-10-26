@@ -297,6 +297,18 @@ describe('ReasoningMessage', () => {
       expect(wrapper.find('.ai-reasoning-message-title-text').text()).toBe('思考失败');
     });
 
+    it('Stop 状态应该显示思考已停止且不渲染 AiLoading', () => {
+      wrapper = mount(ReasoningMessage, {
+        props: {
+          content: ['思考内容'],
+          status: MessageStatus.Stop,
+        },
+      });
+
+      expect(wrapper.find('.ai-reasoning-message-title-text').text()).toBe('思考已停止');
+      expect(wrapper.find('.mock-ai-loading').exists()).toBe(false);
+    });
+
     it('Error 状态应该渲染 CommonErrorContent', () => {
       wrapper = mount(ReasoningMessage, {
         props: {

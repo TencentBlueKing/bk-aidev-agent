@@ -94,6 +94,8 @@
         return t('已思考完成') + (props.duration ? ` (${t('耗时')} ：${formatDuration(props.duration)})` : '');
       case MessageStatus.Error:
         return t('思考失败');
+      case MessageStatus.Stop:
+        return t('思考已停止');
       default:
         return t('思考中');
     }

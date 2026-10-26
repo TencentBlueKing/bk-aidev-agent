@@ -80,13 +80,12 @@ if (first?.sessionCode) {
 import { onBeforeUnmount } from 'vue';
 
 onBeforeUnmount(() => {
-  const code = chatHelper.session.current.value?.sessionCode;
+  // 仅断开前端 SSE；stopChat 会通知后端停止生成，勿在卸载时调用
   chatHelper.agent.abortChat();
-  if (code) void chatHelper.agent.stopChat(code);
 });
 ```
 
-当前 `AGUIProtocol` **没有** `destroy()` 方法；以中止请求 + 可选 `stopChat` 为主。
+当前 `AGUIProtocol` **没有** `destroy()` 方法；卸载以 `abortChat` 中止请求为主。
 
 ## 可运行示例与 Mock
 

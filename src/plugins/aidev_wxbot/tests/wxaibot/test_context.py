@@ -7,6 +7,8 @@ import pytest
 
 try:
     import django  # noqa: F401
+    from django.conf import settings
+
     from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
     from aidev_wxbot.wxaibot.context import (
         CHUNK_FLUSH_THRESHOLD,
@@ -15,7 +17,6 @@ try:
         _normalize_url,
         stream_msg,
     )
-    from django.conf import settings
 
     _wxbot_available = True
 except ImportError:
@@ -65,6 +66,13 @@ class TestStreamMsg:
         assert out["stream"]["id"] == "sid_123"
         assert out["stream"]["finish"] is True
         assert out["stream"]["content"] == "内容"
+
+    def test_msg_items_are_exposed_only_on_terminal_frame(self):
+        items = [{"msgtype": "image", "image": {"base64": "data", "md5": "digest"}}]
+
+        assert "msg_item" not in stream_msg("处理中", False, "sid_123", items)["stream"]
+        assert stream_msg("完成", True, "sid_123", items)["stream"]["msg_item"] == items
+        assert "msg_item" not in stream_msg("完成", True, "sid_123", [])["stream"]
 
 
 @pytest.mark.skipif(not _wxbot_available, reason="Django and aidev_wxbot required")
@@ -283,6 +291,80 @@ class TestLlmChunkMsg:
         msg.append_to_cache(rabbitmq_client)
 
         assert rabbitmq_client.declared_queue_args["arguments"]["x-expires"] == QUEUE_EXPIRES_MS
+
+    def test_terminal_message_prepares_images_before_publishing(self):
+        class StubRabbitMQClient:
+            def declare_queue(self, *_args, **_kwargs):
+                return True
+
+            def publish_message(self, _exchange, _queue_name, message_data):
+                self.message_data = message_data
+                return True
+
+        client = StubRabbitMQClient()
+        items = [{"msgtype": "image", "image": {"base64": "data", "md5": "digest"}}]
+        msg = LlmChunkMsg(stream_id="sid_test", content="带图回答", is_finish=True)
+
+        with patch(
+            "aidev_wxbot.wxaibot.image_reply.prepare_callback_image_reply",
+            return_value=("处理后回答", items),
+        ) as prepare:
+            msg.append_to_cache(client)
+
+        prepare.assert_called_once_with("带图回答")
+        assert client.message_data["content"] == "处理后回答"
+        assert client.message_data["msg_items"] == items
+
+    def test_terminal_message_with_existing_items_is_not_prepared_twice(self):
+        class StubRabbitMQClient:
+            def declare_queue(self, *_args, **_kwargs):
+                return True
+
+            def publish_message(self, _exchange, _queue_name, message_data):
+                self.message_data = message_data
+                return True
+
+        client = StubRabbitMQClient()
+        items = [{"msgtype": "image", "image": {"base64": "data", "md5": "digest"}}]
+        msg = LlmChunkMsg(stream_id="sid_test", content="处理后回答", is_finish=True, msg_items=items)
+
+        with patch("aidev_wxbot.wxaibot.image_reply.prepare_callback_image_reply") as prepare:
+            msg.append_to_cache(client)
+
+        prepare.assert_not_called()
+        assert client.message_data["msg_items"] == items
+
+    def test_cache_roundtrip_exposes_items_only_for_terminal_snapshot(self):
+        items = [{"msgtype": "image", "image": {"base64": "data", "md5": "digest"}}]
+
+        class StubRabbitMQClient:
+            def __init__(self, finish):
+                self.message = {
+                    "body": {
+                        "content": "回答",
+                        "think_content": "",
+                        "is_finish": finish,
+                        "docs": [],
+                        "msg_items": items,
+                    }
+                }
+
+            def get_queue_info(self, _queue_name):
+                return {"message_count": 1}
+
+            def get_message(self, _queue_name, auto_ack=True):
+                message, self.message = self.message, None
+                return message
+
+            def delete_queue(self, _queue_name):
+                return None
+
+        settings.MAX_MESSAGE_TIME = 300
+        unfinished = LlmChunkMsg(stream_id="sid_9999999999").wxaibot_msg_json_from_cache(StubRabbitMQClient(False))
+        finished = LlmChunkMsg(stream_id="sid_9999999999").wxaibot_msg_json_from_cache(StubRabbitMQClient(True))
+
+        assert "msg_item" not in unfinished["stream"]
+        assert finished["stream"]["msg_item"] == items
 
     def test_queue_expiry_always_outlives_configured_message_timeout(self, monkeypatch):
         class StubRabbitMQClient:

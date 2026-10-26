@@ -221,6 +221,20 @@ describe('ToolcallRender', () => {
       expect(wrapper.find('.mock-chevron-icon').exists()).toBe(false);
     });
 
+    it('Stop 状态应为终态：显示结束前缀、无状态段且带折叠箭头', () => {
+      wrapper = mount(ToolcallRender, {
+        props: {
+          toolCall: mockToolCall,
+          status: MessageStatus.Stop,
+        },
+      });
+
+      expect(wrapper.find('.toolcall-header-title').text()).toBe('调用工具 search');
+      expect(wrapper.find('.toolcall-header-title').classes()).not.toContain('is-loading');
+      expect(wrapper.find('.toolcall-header-status').exists()).toBe(false);
+      expect(wrapper.find('.mock-chevron-icon').exists()).toBe(true);
+    });
+
     it('Streaming 状态应该显示「正在调用」', () => {
       wrapper = mount(ToolcallRender, {
         props: {

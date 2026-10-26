@@ -80,7 +80,7 @@ Agent 模块负责与 AI Agent 交互，包括获取 Agent 信息和发起聊天
 | `getAgentInfo`        | `() => Promise<IAgentInfo>`                                               | 获取 Agent 信息                                                           |
 | `getLlms`             | `(params?: ILlmListQuery, config?) => Promise<ILlmItem[]>`                | 获取可用模型列表（`GET llms/`，未传 `llm_type` 时默认 `chat.completion`） |
 | `chat`                | `(input, sessionCode, url?, config?, property?, model?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code`；内部 `stream_mode=start`           |
-| `stopChat`            | `(sessionCode: string) => void`                                           | 停止当前聊天                                                              |
+| `stopChat`            | `(sessionCode: string) => Promise<void>`                                  | 停止当前聊天；发请求前同步封口当前流，后续 SSE 不再写入消息列表          |
 | `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?) => Promise<void>`           | 接管已有流（刷新 / 切会话且会话仍 `Running`）；内部 `stream_mode=attach`  |
 | `resendMessage`       | `(id, sessionCode, content?, url?, config?) => Promise<void>`             | 重发消息；内部 `stream_mode=start`                                        |
 | `streamRequest`       | `(options) => Promise<void>`                                              | 底层流式原语；`streamMode` 默认 `'start'`，续流传 `'attach'`              |

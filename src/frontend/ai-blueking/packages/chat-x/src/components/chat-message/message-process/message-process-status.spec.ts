@@ -31,6 +31,15 @@ describe('message-process-status', () => {
     expect(resolveProcessLabelKey([{ status: MessageStatus.Disabled }], false)).toBe('已禁用');
   });
 
+  it('中途工具失败但最终正常完成时应显示已完成', () => {
+    expect(
+      resolveProcessLabelKey(
+        [{ status: MessageStatus.Complete }, { status: MessageStatus.Error }, { status: MessageStatus.Complete }],
+        false,
+      ),
+    ).toBe('已完成');
+  });
+
   it('助手组只要有消息就显示状态栏，其他组不显示', () => {
     expect(shouldShowMessageProcess({ type: MessageRole.Assistant, messages: [{}] })).toBe(true);
     expect(shouldShowMessageProcess({ type: MessageRole.Assistant, messages: [{}, {}] })).toBe(true);

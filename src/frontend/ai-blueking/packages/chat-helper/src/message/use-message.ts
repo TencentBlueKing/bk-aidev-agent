@@ -75,6 +75,41 @@ export const useMessage = (mediator: IMediatorModule) => {
     return list.value.findLast(item => [MessageStatus.Pending, MessageStatus.Streaming].includes(item.status));
   };
 
+  /**
+   * 用户停止时把本轮尾段消息收成终态。
+   * 范围：最后一条 User 之后，跳过 Interrupt（中断卡片本身为 Pending，等待用户处理）。
+   * 尾段没有助手正文（仅有思考 / 工具调用，或完全为空）时补一条「用户已取消」（status=error），
+   * 与后端取消回写规则一致：后端仅在无助手文本输出时补写该条，刷新前后条目相同。
+   */
+  const settleStoppedTurn = (sessionCode?: string) => {
+    const messages = list.value;
+    let lastUserIndex = -1;
+    messages.forEach((item, index) => {
+      if (item.role === MessageRole.User) {
+        lastUserIndex = index;
+      }
+    });
+    const tail = messages.slice(lastUserIndex + 1);
+    const nonInterruptTail = tail.filter(item => item.role !== MessageRole.Interrupt);
+    nonInterruptTail.forEach(item => {
+      if (item.status === MessageStatus.Streaming || item.status === MessageStatus.Pending) {
+        item.status = MessageStatus.Stop;
+      }
+    });
+    const hasAssistantText = nonInterruptTail.some(
+      item => item.role === MessageRole.Assistant && typeof item.content === 'string' && item.content.trim() !== '',
+    );
+    if (!hasAssistantText) {
+      const cancelledMessage: IMessage = {
+        role: MessageRole.Assistant,
+        content: '用户已取消',
+        status: MessageStatus.Error,
+        ...(sessionCode ? { sessionCode } : {}),
+      };
+      list.value.push(cancelledMessage);
+    }
+  };
+
   const getMessageByMessageId = (id: string) => {
     return list.value.find(item => item.messageId === id);
   };
@@ -207,6 +242,7 @@ export const useMessage = (mediator: IMediatorModule) => {
     getMessages,
     clearMessages,
     getCurrentLoadingMessage,
+    settleStoppedTurn,
     getMessageByMessageId,
     modifyMessage,
     plusMessage,

@@ -142,6 +142,7 @@ t('未定义的文本'); // ✗ 编译报错
 | `思考中`     | Thinking...        |
 | `已思考完成` | Thinking Completed |
 | `思考失败`   | Thinking Failed    |
+| `思考已停止` | Thinking Stopped   |
 | `耗时`       | Duration           |
 
 ### Tool Call / MCP / Skill

@@ -85,3 +85,60 @@ export function findLastUserMessageIdBefore<T extends IMessageLike>(
   }
   return undefined;
 }
+
+/**
+ * 从用户消息起收集一整轮：含该用户消息，到下一条用户消息之前为止。
+ *
+ * @description 按对象引用定位，不检查 id。分组后不在消息组里的消息（如挂到 toolCall 上的 tool）
+ * 只要落在这一轮的位置区间内也会被收进来。
+ *
+ * @param messages - 完整的消息列表
+ * @param userMessage - 这一轮的用户消息
+ * @returns 这一轮的消息；用户消息不在列表中时返回 null
+ */
+export function collectTurnMessages<T extends IMessageLike>(messages: T[], userMessage: T): null | T[] {
+  const startIndex = messages.indexOf(userMessage);
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const turnMessages: T[] = [userMessage];
+  for (let index = startIndex + 1; index < messages.length; index++) {
+    if (messages[index].role === 'user') {
+      break;
+    }
+    turnMessages.push(messages[index]);
+  }
+  return turnMessages;
+}
+
+/**
+ * 由这一轮里的任意一条 AI 消息取出整轮消息（含对应的用户消息）。
+ *
+ * @description findLastUserMessageBefore 在锚点不在列表中时会返回整个列表最后一条用户消息，
+ * 并会跳过没有 id 的用户消息命中更早一轮。删除接口按用户消息 id 删整轮，
+ * 所以这两种情况都返回 null，交由调用方放弃操作，避免删错轮次。
+ *
+ * @param messages - 完整的消息列表
+ * @param anchor - 这一轮中的一条 AI 消息（通常是消息组的第一条）
+ * @returns 这一轮的消息；无法唯一对应这一轮时返回 null
+ */
+export function collectTurnMessagesByAnchor<T extends IMessageLike>(messages: T[], anchor: T | undefined): null | T[] {
+  const anchorIndex = anchor ? messages.indexOf(anchor) : -1;
+  if (anchorIndex === -1) {
+    return null;
+  }
+
+  const userMessage = findLastUserMessageBefore(messages, anchor as T);
+  const userIndex = userMessage ? messages.indexOf(userMessage) : -1;
+  if (userIndex === -1 || userIndex > anchorIndex) {
+    return null;
+  }
+  for (let index = userIndex + 1; index < anchorIndex; index++) {
+    if (messages[index].role === 'user') {
+      return null;
+    }
+  }
+
+  return collectTurnMessages(messages, messages[userIndex]);
+}

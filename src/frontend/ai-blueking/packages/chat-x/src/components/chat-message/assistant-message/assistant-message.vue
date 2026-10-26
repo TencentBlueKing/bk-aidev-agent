@@ -25,13 +25,7 @@
       <ToolCallRender
         v-for="toolCall in toolCalls"
         :key="toolCall.id"
-        :status="
-          !toolCall.toolMessage
-            ? MessageStatus.Pending
-            : toolCall.toolMessage.error
-              ? MessageStatus.Error
-              : (toolCall.toolMessage.status ?? status)
-        "
+        :status="resolveToolCallStatus(toolCall)"
         :tool-call="toolCall"
       />
     </div>
@@ -50,7 +44,7 @@
   import ToolCallRender from '../../tool-call/toolcall-render/toolcall-render.vue';
   import MessageArtifacts from './message-artifacts/message-artifacts.vue';
 
-  import type { AssistantMessage } from '../../../ag-ui/types/messages';
+  import type { AssistantMessage, ToolCall } from '../../../ag-ui/types/messages';
 
   // 本地 interface：content 用字面量 string，避免 Vue 将泛型 BaseMessage.content 推断为 Object
   interface AssistantMessageProps {
@@ -66,6 +60,21 @@
   }
   const props = defineProps<AssistantMessageProps>();
   const artifacts = computed(() => props.property?.artifacts);
+
+  /**
+   * 工具调用状态：
+   * 无结果时进行中（用户已停止则为停止）；结果带 error 为失败；否则取结果状态，缺省沿用本消息状态
+   */
+  const resolveToolCallStatus = (toolCall: ToolCall): MessageStatus | undefined => {
+    const { toolMessage } = toolCall;
+    if (!toolMessage) {
+      return props.status === MessageStatus.Stop ? MessageStatus.Stop : MessageStatus.Pending;
+    }
+    if (toolMessage.error) {
+      return MessageStatus.Error;
+    }
+    return toolMessage.status ?? props.status;
+  };
 </script>
 
 <style lang="scss">

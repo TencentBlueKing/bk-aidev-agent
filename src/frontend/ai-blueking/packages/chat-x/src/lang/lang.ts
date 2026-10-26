@@ -70,6 +70,7 @@ export const lang = {
   思考中: 'Thinking...',
   已思考完成: 'Thinking Completed',
   思考失败: 'Thinking Failed',
+  思考已停止: 'Thinking Stopped',
   复制成功: 'Copy Success',
   复制失败: 'Copy Failed',
   返回底部: 'Return to bottom',

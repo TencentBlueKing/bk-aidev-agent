@@ -365,15 +365,34 @@ describe('ChatBusinessManager', () => {
       expect(manager.isStopLoading.value).toBe(false);
     });
 
-    it('should set isStopLoading to true during the call and false after', async () => {
-      let capturedIsStopLoading = false;
-      mocks.mockAgentModule.stopChat.mockImplementation(async () => {
-        capturedIsStopLoading = manager.isStopLoading.value;
-      });
-
+    it('should emit stop to the event emitter only after stopChat succeeds', async () => {
       await manager.stopGeneration();
+      expect(mocks.mockEventEmitter.emit).toHaveBeenCalledWith('stop', {});
 
-      expect(capturedIsStopLoading).toBe(true);
+      mocks.mockEventEmitter.emit.mockClear();
+      mocks.mockAgentModule.stopChat.mockRejectedValueOnce(new Error('stop failed'));
+      await expect(manager.stopGeneration()).rejects.toThrow('stop failed');
+      expect(mocks.mockEventEmitter.emit).not.toHaveBeenCalledWith('stop', {});
+    });
+
+    it('should clear isGenerating synchronously before stopChat resolves', async () => {
+      manager.isGenerating.value = true;
+      let resolveStop!: () => void;
+      mocks.mockAgentModule.stopChat.mockImplementation(
+        () =>
+          new Promise<void>(resolve => {
+            resolveStop = resolve;
+          }),
+      );
+
+      const stopPromise = manager.stopGeneration();
+
+      // 封口同步完成：停止请求未返回时生成态已结束，且不再进入 StopLoading
+      expect(manager.isGenerating.value).toBe(false);
+      expect(manager.isStopLoading.value).toBe(false);
+
+      resolveStop();
+      await stopPromise;
       expect(manager.isStopLoading.value).toBe(false);
     });
 

@@ -93,6 +93,7 @@ AI 思维链（Chain-of-Thought）推理过程展示组件。由**可点击标�
 | `pending` / `streaming` / 其他 | 思考中             | `AiLoading` ✓ | `is-thinking` |
 | `complete` / `success`         | 已思考完成（耗时） | 无            | `is-complete` |
 | `error`                        | 思考失败           | 无            | `is-error`    |
+| `stop`                         | 思考已停止         | 无            | 无            |
 
 > **说明**：`streaming` 通过 `switch` 的 `default` 分支显示"思考中"，与 `pending` 效果相同。
 
@@ -267,6 +268,7 @@ const { stop } = watch(
 | `complete`         | 已思考完成（含 duration 则追加耗时） | ✗        | `#f0f1f5`       |
 | `success`          | 已思考完成（同 complete）            | ✗        | `#f0f1f5`       |
 | `error`            | 思考失败                             | ✗        | `#fff0f0`（红） |
+| `stop`             | 思考已停止（用户停止生成）           | ✗        | `#f0f1f5`       |
 
 ## 类型定义
 

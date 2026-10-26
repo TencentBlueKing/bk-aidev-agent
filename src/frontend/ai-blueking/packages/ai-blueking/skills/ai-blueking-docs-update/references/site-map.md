@@ -31,7 +31,7 @@
 
 | 链接 | 文件 | 典型更新场景 |
 | --- | --- | --- |
-| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
+| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、刷新后以服务端为准）；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |

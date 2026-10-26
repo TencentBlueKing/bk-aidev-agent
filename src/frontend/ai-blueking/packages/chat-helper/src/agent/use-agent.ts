@@ -112,6 +112,12 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   let runFinished = false;
   /** 流世代号：新开流时递增，用于忽略已被替换的旧 SSE 回调 */
   let activeStreamId = 0;
+  /** 尚未结束的那条流的世代号；仅当它仍等于 activeStreamId 时才可被 stopChat 封口 */
+  let openStreamId: number | null = null;
+  /** 正在进行中的停止请求；同会话下一轮 start 需等它落定后再开新 producer */
+  let pendingStop: { promise: Promise<unknown>; sessionCode: string } | null = null;
+  /** 正在排队等 pendingStop 的 start（尚未发出请求）；被 stopChat / abortChat / 新的排队 start 替换即作废 */
+  let queuedStart: { sessionCode: string } | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectWaitResolve: ((continued: boolean) => void) | null = null;
   let activeStreamContext: {
@@ -120,6 +126,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     url?: string;
     config?: IRequestConfig;
     streamMode: StreamMode;
+    input?: string;
   } | null = null;
 
   /**
@@ -245,6 +252,23 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   const isSameActiveSession = (sessionCode: string): boolean =>
     sessionCode === mediator.session?.current?.value?.sessionCode;
 
+  /** 仅为最后一条用户消息回填后端 id（input 型流的乐观消息用），不整表替换列表 */
+  const backfillLastUserMessageId = (sessionCode: string) => {
+    const request = mediator.http?.message?.getMessages(sessionCode);
+    if (!request) {
+      return;
+    }
+    void request
+      .then(res => {
+        const lastUserMessage = mediator.message?.list.value.findLast(item => item.role === MessageRole.User);
+        const lastApiUserMessage = res.findLast(item => item.role === MessageRole.User);
+        if (lastUserMessage && lastApiUserMessage) {
+          lastUserMessage.id = lastApiUserMessage.id;
+        }
+      })
+      .catch((): undefined => undefined);
+  };
+
   /**
    * 尝试静默重连。
    * @param streamId - 发起重连的流世代；任一 await 后若已被新流/abort 取代则立即退出，避免 abort 掉更新流
@@ -334,20 +358,46 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     /** 内部静默重连，不重置重连计数 */
     isReconnect?: boolean;
     streamMode?: StreamMode;
-  }) => {
+  }): Promise<void> => {
+    // 同会话新一轮 start 必须等在途 stop 落定，避免新 producer 在取消标记生效前启动。
+    // attach（切会话/静默重连）不等待。
+    if (streamMode === 'start' && pendingStop?.sessionCode === sessionCode) {
+      const ticket = { sessionCode };
+      queuedStart = ticket;
+      // 等待期间保持生成态，界面仍展示停止按钮、禁止再次发送
+      isChatting.value = true;
+      await pendingStop.promise.catch((): undefined => undefined);
+      const stillQueued = queuedStart === ticket;
+      if (stillQueued) {
+        queuedStart = null;
+      }
+      if (!stillQueued || !isSameActiveSession(sessionCode)) {
+        if (stillQueued) {
+          isChatting.value = false;
+        }
+        return;
+      }
+    }
+
     if (!isReconnect) {
       resetStreamReconnectState();
     }
 
-    activeStreamContext = { sessionCode, model, url, config, streamMode };
+    activeStreamContext = { sessionCode, model, url, config, streamMode, input };
 
     // 先递增世代再 abort 旧连接，避免旧流 onDone 误触发二次重连
     const streamId = ++activeStreamId;
+    openStreamId = streamId;
     const previousController = chatAbortController;
     chatAbortController = new AbortController();
     previousController?.abort?.();
 
     const isActiveStream = () => streamId === activeStreamId;
+    const closeOpenStream = () => {
+      if (openStreamId === streamId) {
+        openStreamId = null;
+      }
+    };
 
     // ag-ui 协议需要注入消息模块
     if (usedProtocol instanceof AGUIProtocol) {
@@ -367,17 +417,11 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       if (!isActiveStream()) {
         return;
       }
+      closeOpenStream();
       isChatting.value = false;
       usedProtocol.onDone?.call(usedProtocol);
       if (input) {
-        // 刷新列表，获取前端 mock message 的 id，并更新到列表中
-        mediator.http?.message?.getMessages(sessionCode).then(res => {
-          const lastUserMessage = mediator.message?.list.value.findLast(item => item.role === MessageRole.User);
-          const lastApiUserMessage = res.findLast(item => item.role === MessageRole.User);
-          if (lastUserMessage && lastApiUserMessage) {
-            lastUserMessage.id = lastApiUserMessage.id;
-          }
-        });
+        backfillLastUserMessageId(sessionCode);
       }
       // 轮询接口，判断是否可以继续聊天
       pollResumeSession(sessionCode);
@@ -387,6 +431,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       if (!isActiveStream()) {
         return;
       }
+      closeOpenStream();
       isChatting.value = false;
       usedProtocol.onError?.call(usedProtocol, error);
     };
@@ -420,6 +465,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         }
         // abort / 切会话导致的失败：静默结束，不展示错误气泡
         if (manualAbort || !isSameActiveSession(sessionCode)) {
+          closeOpenStream();
           isChatting.value = false;
           return;
         }
@@ -437,6 +483,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         const settleAttachUnavailable = (): void => {
           if (!isActiveStream() || manualAbort || !isSameActiveSession(sessionCode)) {
             if (isActiveStream()) {
+              closeOpenStream();
               isChatting.value = false;
             }
             return;
@@ -445,6 +492,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
             finishSuccessfully();
             return;
           }
+          closeOpenStream();
           isChatting.value = false;
         };
         const refresh = mediator.session?.getSession(sessionCode);
@@ -473,6 +521,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           return;
         }
         if (manualAbort || !isSameActiveSession(sessionCode)) {
+          closeOpenStream();
           isChatting.value = false;
           return;
         }
@@ -636,6 +685,35 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   };
 
   /**
+   * 按流世代封口（用户主动停止时同步执行）。
+   * 使当前流世代失效，后续 SSE 事件不再进入协议层；但不断开连接，
+   * 让后端在原连接上完成取消收尾。无可封流时（已结束 / 已 abort）不做任何事。
+   * @returns 是否实际封住了一条流
+   */
+  const sealOpenStream = (sessionCode: string): boolean => {
+    if (openStreamId === null || openStreamId !== activeStreamId) {
+      return false;
+    }
+    if (activeStreamContext?.sessionCode !== sessionCode) {
+      return false;
+    }
+    const sealedInput = activeStreamContext.input;
+    mediator.message?.settleStoppedTurn?.(sessionCode);
+    if (sealedInput) {
+      backfillLastUserMessageId(sessionCode);
+    }
+    isChatting.value = false;
+    clearReconnectTimer(false);
+    clearLongPollTimer();
+    // 先失效世代：此后该连接的 onMessage/onDone/onError 与重连尝试都会直接返回
+    activeStreamId += 1;
+    openStreamId = null;
+    // 本轮唯一的 receive-end 出口；真实关流的 onDone 已因世代失效不会再触发
+    usedProtocol.onDone?.call(usedProtocol);
+    return true;
+  };
+
+  /**
    * 中止聊天（纯前端中止，后端继续处理）
    * 会使当前流世代失效，避免 abort 后的 onDone 误触发 finishSuccessfully / pollResumeSession
    */
@@ -643,6 +721,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     manualAbort = true;
     // 先失效世代，再 abort：FetchClient 同步触发的 onDone 会因 isActiveStream=false 直接返回
     activeStreamId += 1;
+    openStreamId = null;
+    pendingStop = null;
+    queuedStart = null;
     clearReconnectTimer(false);
     clearLongPollTimer();
     isChatting.value = false;
@@ -651,11 +732,41 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   };
 
   /**
-   * 停止会话，后端中止
+   * 取消排队中的 start：它尚未发到后端，本地结算即可，无需再发停止请求
+   * @returns 是否实际取消了排队的 start
+   */
+  const cancelQueuedStart = (sessionCode: string): boolean => {
+    if (queuedStart?.sessionCode !== sessionCode) {
+      return false;
+    }
+    queuedStart = null;
+    isChatting.value = false;
+    mediator.message?.settleStoppedTurn?.(sessionCode);
+    return true;
+  };
+
+  /**
+   * 停止会话，后端中止。
+   * 发请求前先同步封口，界面立即停止接受本轮流；请求记为 pendingStop，
+   * 同会话下一轮 start 会等它落定。失败仍 reject，且不解除封口。
+   * 若同会话有排队等待中的 start，只取消该 start 并等上一轮停止请求落定（其失败由上一轮调用方处理）。
    * @param sessionCode - 会话代码
    */
-  const stopChat = async (sessionCode: string) => {
-    return mediator.http.message?.stopChat(sessionCode);
+  const stopChat = async (sessionCode: string): Promise<unknown> => {
+    if (cancelQueuedStart(sessionCode)) {
+      return pendingStop?.promise.catch((): undefined => undefined);
+    }
+    sealOpenStream(sessionCode);
+    const promise: Promise<unknown> = Promise.resolve(mediator.http?.message?.stopChat(sessionCode));
+    const record = { sessionCode, promise };
+    pendingStop = record;
+    try {
+      return await promise;
+    } finally {
+      if (pendingStop === record) {
+        pendingStop = null;
+      }
+    }
   };
 
   /**

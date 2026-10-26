@@ -77,7 +77,6 @@ export function useChatbotState(params: UseChatbotStateParams): UseChatbotStateR
   } = params;
 
   const messageStatus = computed(() => {
-    if (chatBusinessManager.value?.isStopLoading.value) return MessageStatus.StopLoading;
     const agent = (props.chatHelper || chatHelper.value)?.agent;
     return agent?.isChatting?.value ? MessageStatus.Streaming : MessageStatus.Complete;
   });
