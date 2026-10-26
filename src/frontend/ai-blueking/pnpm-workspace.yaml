@@ -4,6 +4,10 @@ overrides:
   tippy.js: ^6.3.7
   vite: ^8.0.2
   '@popperjs/core': ^2.11.8
+  # Dependabot critical
+  proxy-addr: '>=2.0.8'
+  websocket-driver: '>=0.7.5'
+  shell-quote: '>=1.8.4'
 publicHoistPattern:
   - '*stylelint*'
   - '*postcss-*'

@@ -26,7 +26,7 @@
     "@types/prompts": "^2.4.9",
     "@types/semver": "^7.5.8",
     "@vitejs/plugin-vue": "^5.0.5",
-    "@vitest/ui": "^1.3.1",
+    "@vitest/ui": "^4.0.18",
     "bkui-vue": "2.0.2-beta.29",
     "execa": "^9.2.0",
     "less": "^4.2.0",
@@ -49,7 +49,7 @@
     "vite-bundle-visualizer": "^1.2.1",
     "vite-plugin-css-injected-by-js": "^3.5.1",
     "vite-plugin-inspect": "^0.8.4",
-    "vitest": "^1.3.1",
+    "vitest": "^4.0.18",
     "vue": "^3.4.27",
     "vue-tsc": "^2.0.19",
     "zip-a-folder": "^3.1.6"
@@ -61,7 +61,11 @@
       "node-forge": ">=1.3.2",
       "axios": ">=1.11.0",
       "cross-spawn": ">=7.0.6",
-      "glob": ">=11.0.3"
+      "glob": ">=11.0.3",
+      "proxy-addr": ">=2.0.8",
+      "websocket-driver": ">=0.7.5",
+      "shell-quote": ">=1.8.4",
+      "tinypool": ">=2.1.2"
     }
   },
   "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac"
