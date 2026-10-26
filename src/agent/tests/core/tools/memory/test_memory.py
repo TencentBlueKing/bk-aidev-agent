@@ -52,7 +52,7 @@ def test_reference_audit_isolates_model_callbacks(wrapper):
 
 
 def test_completion_preserves_source_times_and_retry_timestamp(runtime):
-    runtime.merge_state_history = False
+    runtime.include_state_input = False
     runtime.context_provider = lambda _: {
         "username": "alice",
         "agent_code": "agent-a",
