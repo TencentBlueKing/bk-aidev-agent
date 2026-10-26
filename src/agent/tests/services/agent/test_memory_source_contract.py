@@ -102,11 +102,11 @@ def test_empty_visible_body_is_still_excluded(contract_manager, body):
 @pytest.mark.parametrize(
     "status,code,message,forgotten",
     [
-        (400, "400", ["FORGOTTEN_CONTENT: 重复写入不能恢复已遗忘记忆"], True),
-        (400, "400", "FORGOTTEN_CONTENT: 重复写入不能恢复已遗忘记忆", True),
+        (400, "400", ["INACTIVE_SOURCE: 重复写入不能恢复已遗忘记忆"], True),
+        (400, "400", "INACTIVE_SOURCE: 重复写入不能恢复已遗忘记忆", True),
         (400, "400", ["OTHER: invalid request"], False),
-        (403, "403", "FORGOTTEN_CONTENT: denied", False),
-        (500, "500", "FORGOTTEN_CONTENT: server failure", False),
+        (403, "403", "INACTIVE_SOURCE: denied", False),
+        (500, "500", "INACTIVE_SOURCE: server failure", False),
     ],
 )
 def test_real_client_validation_preserves_forgotten_business_error(
@@ -122,8 +122,8 @@ def test_real_client_validation_preserves_forgotten_business_error(
     result = runtime.make_tools()[0].invoke({})
     if forgotten:
         assert json.loads(result) == {
-            "code": "FORGOTTEN_CONTENT",
-            "message": "该内容已被用户遗忘，本次未保存。",
+            "code": "INACTIVE_SOURCE",
+            "message": "该来源对应的记忆已失效，本次未重复保存；新的表达可以重新记忆。",
             "retryable": False,
         }
     else:
@@ -144,11 +144,11 @@ def test_unknown_validation_envelopes_remain_unavailable(contract_manager, monke
 @pytest.mark.parametrize(
     "error,forgotten",
     [
-        (ValueError("FORGOTTEN_CONTENT: 已遗忘"), True),
+        (ValueError("INACTIVE_SOURCE: 已遗忘"), True),
         (ValueError("OTHER: invalid request"), False),
         (ValueError(), False),
         (ValueError(400), False),
-        (RuntimeError("FORGOTTEN_CONTENT: unrelated"), False),
+        (RuntimeError("INACTIVE_SOURCE: unrelated"), False),
     ],
 )
 def test_internal_manager_preserves_only_forgotten_value_error(contract_manager, error, forgotten):
@@ -157,8 +157,8 @@ def test_internal_manager_preserves_only_forgotten_value_error(contract_manager,
     observed = runtime.make_tools()[0].invoke({})
     if forgotten:
         assert json.loads(observed) == {
-            "code": "FORGOTTEN_CONTENT",
-            "message": "该内容已被用户遗忘，本次未保存。",
+            "code": "INACTIVE_SOURCE",
+            "message": "该来源对应的记忆已失效，本次未重复保存；新的表达可以重新记忆。",
             "retryable": False,
         }
     else:

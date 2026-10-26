@@ -87,14 +87,14 @@ def audit_model(model, *, timeout: float = 2):
     return model
 
 
-def is_forgotten_content_error(error) -> bool:
-    """识别平台“内容已被用户遗忘”（`FORGOTTEN_CONTENT:`）校验错误，不暴露原始错误内容。
+def is_inactive_source_error(error) -> bool:
+    """识别平台“旧来源对应记忆已失效”（`INACTIVE_SOURCE:`）校验错误，不暴露原始错误内容。
 
     支持消息以该前缀开头的 `ValueError`，以及 HTTP 400 且错误包 `error.code == "400"`、
     `error.message`（字符串或列表）含该前缀的 `HTTPResponseError`；响应体无法解析时返回 `False`。
     """
     if isinstance(error, ValueError):
-        return bool(error.args) and isinstance(error.args[0], str) and error.args[0].startswith("FORGOTTEN_CONTENT:")
+        return bool(error.args) and isinstance(error.args[0], str) and error.args[0].startswith("INACTIVE_SOURCE:")
     if not isinstance(error, HTTPResponseError) or error.response_status_code != 400:
         return False
     try:
@@ -106,7 +106,7 @@ def is_forgotten_content_error(error) -> bool:
         return False
     messages = detail.get("message")
     messages = messages if isinstance(messages, list) else [messages]
-    return any(isinstance(item, str) and item.startswith("FORGOTTEN_CONTENT:") for item in messages)
+    return any(isinstance(item, str) and item.startswith("INACTIVE_SOURCE:") for item in messages)
 
 
 def is_complete_ai_message(message) -> bool:
@@ -264,8 +264,8 @@ class PersonalMemoryRuntime:
             """以宿主身份与会话上下文调用平台记忆工具，返回 `(content, artifact)`。
 
             `memory_search` 的命中写入 artifact 的 `personal_memory_hits`，供本轮引用审计使用。
-            记忆已禁用时返回提示文本；`best_effort` 下遇到遗忘内容错误返回不可重试的
-            `FORGOTTEN_CONTENT` 结果，其他异常只记录告警并返回“暂不可用”，非 best-effort 时直接抛出。
+            记忆已禁用时返回提示文本；`best_effort` 下遇到旧来源重放错误返回不可重试的
+            `INACTIVE_SOURCE` 结果，其他异常只记录告警并返回“暂不可用”，非 best-effort 时直接抛出。
             """
             try:
                 username, context = self.context(config)
@@ -278,11 +278,11 @@ class PersonalMemoryRuntime:
             except Exception as error:
                 if not self.best_effort:
                     raise
-                if is_forgotten_content_error(error):
+                if is_inactive_source_error(error):
                     return json.dumps(
                         {
-                            "code": "FORGOTTEN_CONTENT",
-                            "message": "该内容已被用户遗忘，本次未保存。",
+                            "code": "INACTIVE_SOURCE",
+                            "message": "该来源对应的记忆已失效，本次未重复保存；新的表达可以重新记忆。",
                             "retryable": False,
                         },
                         ensure_ascii=False,
