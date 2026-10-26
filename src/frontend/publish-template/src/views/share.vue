@@ -39,6 +39,9 @@
         </div>
         <!-- 数据展示 -->
         <div v-else-if="hasValidData" class="share-data">
+          <div v-if="shareAssetsExpired" class="share-assets-expired" role="status">
+            图片和产物已过期，请分享人重新打开此分享链接签发
+          </div>
           <ChatContainer
             v-model:aside-collapsed="asideCollapsed"
             :messages="messages"
@@ -69,8 +72,8 @@
     session_contents: IMessageApi[]
     session_name: string
     agent_name: string
-    /** 原会话编码；缺省时从消息 session_code 兜底 */
-    session_code?: string
+    /** 图片与产物的访问窗口已关闭：提示分享人重新打开链接签发 */
+    assets_expired?: boolean
   }
 
   interface ApiResponse {
@@ -130,8 +133,8 @@
   const messages = ref<IMessage[]>([])
   const error = ref<string | null>(null)
   const currentShareCode = ref<string>("")
-  /** 产物取链用的原会话编码 */
-  const sessionCode = ref<string>("")
+  /** 图片与产物的访问窗口已关闭 */
+  const shareAssetsExpired = ref<boolean>(false)
 
   const route = useRoute()
 
@@ -171,16 +174,19 @@
    * 未传此回调时侧栏可打开，但预览区会一直为空。
    */
   const handleArtifactClick: OnArtifactClick = async (file: AIFileInfo) => {
-    const code = sessionCode.value || messages.value.find((item) => item.sessionCode)?.sessionCode || ""
-    if (!code) {
-      throw new Error("[Share] Cannot resolve artifact URL: no session code")
+    if (!currentShareCode.value) {
+      throw new Error("[Share] Cannot resolve artifact URL: no share code")
     }
 
+    // 走分享接口：访问者没有会话签发身份，由分享者的访问窗口签发
     const params = new URLSearchParams({ path: file.outputId })
-    const response = await fetch(`${url.value}/session/${encodeURIComponent(code)}/pv_files/download_url/?${params}`, {
-      method: "GET",
-      credentials: "include",
-    })
+    const response = await fetch(
+      `${url.value}/share/${encodeURIComponent(currentShareCode.value)}/pv_files/download_url/?${params}`,
+      {
+        method: "GET",
+        credentials: "include",
+      }
+    )
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -254,7 +260,7 @@
       messages.value = (result.data.session_contents as unknown as IMessageApi[]).map(transferMessageApi2Message)
       title.value = result.data.session_name || "AI 对话分享"
       agentName.value = result.data.agent_name || ""
-      sessionCode.value = result.data.session_code || messages.value.find((item) => item.sessionCode)?.sessionCode || ""
+      shareAssetsExpired.value = result.data.assets_expired === true
     } catch (err) {
       console.error("获取分享数据失败:", err)
 
@@ -405,6 +411,17 @@
           min-height: 0;
           display: flex;
           flex-direction: column;
+
+          .share-assets-expired {
+            flex-shrink: 0;
+            margin: 12px 16px 0;
+            padding: 8px 12px;
+            border-radius: 2px;
+            background: #fff8ec;
+            color: #ff9c01;
+            font-size: 12px;
+            line-height: 20px;
+          }
 
           :deep(.ai-chat-container) {
             flex: 1;
