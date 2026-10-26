@@ -2,8 +2,6 @@
 
 from logging import getLogger
 
-from aidev_agent.enums import ChannelType
-from aidev_agent.packages.resource_manager import resource_manager
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework.decorators import action
@@ -11,6 +9,7 @@ from rest_framework.response import Response
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
+from aidev_agent.enums import ChannelType
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.views.agent import AgentInfoViewSet
 from aidev_bkplugin.views.base import PluginViewSet
@@ -98,13 +97,17 @@ class OpenapiAgentAccessViewSet(OpenapiPluginViewSet):
 
     def list(self, request, *args, **kwargs):
         """查询授权状态：authorized / unauthorized / authorization_pending"""
-        return Response(data=resource_manager().get_agent_access_status(username=request.user.username))
+        result = self.client.api.get_agent_access_status(headers={"X-BKAIDEV-USER": request.user.username})
+        return Response(data=result["data"])
 
     @action(detail=False, methods=["POST"], url_path="apply", url_name="apply")
     def apply(self, request, *args, **kwargs):
         """提交使用权限申请，返回 IAM 审批链接"""
-        return Response(data=resource_manager().apply_agent_access(username=request.user.username))
+        result = self.client.api.apply_agent_access(json={}, headers={"X-BKAIDEV-USER": request.user.username})
+        return Response(data=result["data"])
 
 
 class OpenapiLLMViewSet(OpenapiPluginViewSet, LLMViewSet):
     """应用态 LLM 列表接口：供小鲸等已发布智能体入口拉取空间可用模型。"""
+
+    pass
