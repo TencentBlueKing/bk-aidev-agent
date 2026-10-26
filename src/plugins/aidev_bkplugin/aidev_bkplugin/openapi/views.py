@@ -89,24 +89,6 @@ class OpenapiUserOperationViewSet(OpenapiPluginViewSet, UserOperationViewSet):
     pass
 
 
-class OpenapiAgentAccessViewSet(OpenapiPluginViewSet):
-    """访问者对当前智能体的授权状态与权限申请"""
-
-    # 未授权用户也需要查询状态和提交申请，不能走智能体使用权限校验
-    permission_classes = [ApigwPermission]
-
-    def list(self, request, *args, **kwargs):
-        """查询授权状态：authorized / unauthorized / authorization_pending"""
-        result = self.client.api.get_agent_access_status(headers={"X-BKAIDEV-USER": request.user.username})
-        return Response(data=result["data"])
-
-    @action(detail=False, methods=["POST"], url_path="apply", url_name="apply")
-    def apply(self, request, *args, **kwargs):
-        """提交使用权限申请，返回 IAM 审批链接"""
-        result = self.client.api.apply_agent_access(json={}, headers={"X-BKAIDEV-USER": request.user.username})
-        return Response(data=result["data"])
-
-
 class OpenapiLLMViewSet(OpenapiPluginViewSet, LLMViewSet):
     """应用态 LLM 列表接口：供小鲸等已发布智能体入口拉取空间可用模型。"""
 

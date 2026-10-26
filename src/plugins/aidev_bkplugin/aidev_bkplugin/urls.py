@@ -3,7 +3,7 @@
 from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
-from .views.agent import AgentInfoViewSet
+from .views.agent import AgentAccessViewSet, AgentInfoViewSet
 from .views.chat import ChatCompletionViewSet
 from .views.chat_group import ChatGroupViewSet
 from .views.flow_agent import FlowAgentViewSet
@@ -18,6 +18,7 @@ from .views.user_operation import UserOperationViewSet
 
 _router = DefaultRouter()
 _router.register("agent", AgentInfoViewSet, "agent_info")
+_router.register("agent/access", AgentAccessViewSet, "agent_access")
 _router.register("chat_completion", ChatCompletionViewSet, "chat_completion")
 _router.register("flow_agent", FlowAgentViewSet, "flow_agent")
 _router.register("session", ChatSessionViewSet, "chat_session")
