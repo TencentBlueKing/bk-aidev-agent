@@ -38,11 +38,6 @@ from aidev_agent.api.constants import AUTHORIZATION_HEADER
 from aidev_agent.config import settings
 from aidev_agent.utils.executor_identity import approver_authorization
 
-try:
-    from bkoauth import get_access_token_by_user
-except ImportError:
-    get_access_token_by_user = None
-
 from .enums import FieldType, FuncType
 from .exceptions import ToolValidationError
 

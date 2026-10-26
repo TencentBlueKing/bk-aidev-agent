@@ -180,6 +180,9 @@ BKAI_SECURITY_COMMAND_RULES: list = env.json("BKAI_SECURITY_COMMAND_RULES", [])
 BKAI_TOOL_A2A_ENABLED = env.bool("BKAI_TOOL_A2A_ENABLED", True)
 BKAI_TOOL_TEAM_ENABLED = env.bool("BKAI_TOOL_TEAM_ENABLED", True)
 BKAI_TOOL_TASK_ENABLED = env.bool("BKAI_TOOL_TASK_ENABLED", True)
+# 功能开关：工具装配阶段统一消除重名（同一 MCP 服务多端点合并、跨来源改名）。
+# 关闭时工具名原样进入模型请求，恢复去重引入前的行为（重名可能导致网关 400 duplicate tool name）
+BKAI_TOOL_NAME_DEDUPE_ENABLED = env.bool("BKAI_TOOL_NAME_DEDUPE_ENABLED", True)
 # BKAI 子智能体配置
 BKAI_A2A_SESSION_TEMPORARY = env.bool("BKAI_A2A_SESSION_TEMPORARY", False)
 # LLM 重试策略: "sdk" 由 aidev 自主控制重试, "llm_gw" 由模型网关 Retry-After 头控制重试

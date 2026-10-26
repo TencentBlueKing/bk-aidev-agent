@@ -7,7 +7,6 @@
 """
 
 import pytest
-
 from aidev_agent.core.nodes.model.chat_history_assembly import convert_chat_history_to_messages
 from aidev_agent.enums import PromptRole
 from aidev_agent.exceptions import AgentException
