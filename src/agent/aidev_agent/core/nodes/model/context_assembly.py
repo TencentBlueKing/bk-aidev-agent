@@ -181,7 +181,11 @@ class ContextAssembly:
         # NOTE: make sure we always start from a clean slots object.
         ctx.prompt_slots = PromptSlots()
 
+        # 模板渲染早于变量装配，先注入同一实例缓存，让两条管道共享跨轮次数据。
+        ctx.assembly_cache = self._cache
         self._template_pipeline.execute(ctx)
+        if ctx.assembly_cache is not None:
+            self._cache = ctx.assembly_cache
 
         if ctx.chat_prompt_template is None:
             prompt_mode = ctx.metadata.get("prompt_mode", "tool_calling")

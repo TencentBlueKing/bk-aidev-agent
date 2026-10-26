@@ -2,7 +2,14 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
-from ag_ui.core import EventType, RunFinishedEvent, RunStartedEvent, ToolCallStartEvent
+from ag_ui.core import (
+    EventType,
+    RunFinishedEvent,
+    RunStartedEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
+)
 from aidev_agent.core.ag_ui.agent import LangGraphAGUIAgent
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallStartEvent
@@ -15,6 +22,7 @@ from aidev_agent.core.ag_ui.types import (
     serialize_run_finished_outcome,
 )
 from aidev_agent.packages.interrupt_manager import ApprovalOutcomeBuilder
+from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 
 
@@ -629,3 +637,59 @@ async def test_normal_chat_does_not_emit_auq_resume_finished(monkeypatch):
         EventType.RUN_STARTED.value,
         EventType.RUN_FINISHED.value,
     ], f"普通对话不应有首帧回放，types={types}"
+
+
+def _proxy_stream(call_id: str, args: dict) -> list:
+    """模型流式输出一次 tool_call 代理调用：START + 分片 ARGS + END。"""
+    raw = json.dumps(args)
+    return [
+        _start_event(call_id, "tool_call"),
+        ToolCallArgsEvent(type=EventType.TOOL_CALL_ARGS, tool_call_id=call_id, delta=raw[:5]),
+        ToolCallArgsEvent(type=EventType.TOOL_CALL_ARGS, tool_call_id=call_id, delta=raw[5:]),
+        ToolCallEndEvent(type=EventType.TOOL_CALL_END, tool_call_id=call_id),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target", "expected_types"), [("skill_tool", []), ("normal_tool", ["START", "ARGS", "ARGS", "END"])]
+)
+async def test_proxy_tool_call_judged_by_target(monkeypatch, target, expected_types):
+    """tool_call 代理三元组缓冲到 END，按 args.name 的真实目标做审批抑制与增强。"""
+    stream = _proxy_stream("call-p", {"name": target, "arguments": {"a": 1}})
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        for ev in stream:
+            yield ev
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+    normal = StructuredTool.from_function(coroutine=lambda x: x, name="normal_tool", description="a normal tool")
+    tools = {"skill_tool": _approval_tool(), "normal_tool": normal}
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools=tools)
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_chat_model_stream"}, {})]
+
+    assert [ev.type.value.removeprefix("TOOL_CALL_") for ev in events] == expected_types
+    assert not agent._pending_proxy_calls and not agent._suppressed_tool_call_ids  # noqa: SLF001
+    if events:
+        assert events[0].tool_call_name == "tool_call" and events[0].description == "a normal tool"
+
+
+@pytest.mark.asyncio
+async def test_proxy_ontoolend_restores_model_tool_call(monkeypatch):
+    """OnToolEnd 补发来自解包后的目标工具：名字与参数还原为模型侧 tool_call 原调用。"""
+    model_args = {"name": "skill_tool", "arguments": {"a": 1}}
+
+    async def _fake_super(self, event, state):  # noqa: ARG001
+        yield _start_event("call-p", "skill_tool")
+        yield ToolCallArgsEvent(type=EventType.TOOL_CALL_ARGS, tool_call_id="call-p", delta='{"a": 1}')
+
+    monkeypatch.setattr(LangGraphAGUIAgent, "_handle_single_event", _fake_super)
+    agent = AidevAGUIAgent(name="test-agent", graph=MagicMock(), tools={"skill_tool": _approval_tool()})
+    message = AIMessage(content="", tool_calls=[{"name": "tool_call", "args": model_args, "id": "call-p"}])
+    agent.active_run = {"current_graph_state": {"messages": [message]}}
+
+    events = [ev async for ev in agent._handle_single_event({"event": "on_tool_end"}, {})]
+
+    assert events[0].tool_call_name == "tool_call" and events[0].description == "approval tool"
+    assert json.loads(events[1].delta) == model_args

@@ -6,14 +6,13 @@ Tests cover:
 - TeamPromptMiddleware prompt injection
 - TeamConfig configuration container
 - ReActAgentBuilder.add_subagent_specs integration
+
+工具过滤（tool_deny / tool_allow / spawn_depth）已下沉到装配期，不再属于 Team
+中间件的职责；对应用例见 test_tool_loading_mode.py。
 """
 
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
-from aidev_agent.core.graphs.react.team_middleware import (
-    TeamConfig,
-    TeamInfo,
-    TeamPromptMiddleware,
-)
+from aidev_agent.core.graphs.react.team_middleware import TeamConfig, TeamInfo, TeamPromptMiddleware
 from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext, PromptSlots
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from langchain_core.runnables import RunnableConfig

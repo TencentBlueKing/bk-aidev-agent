@@ -79,46 +79,6 @@ class TeamPromptMiddleware:
         next()
 
 
-@dataclass
-class ToolFilterMiddleware:
-    """工具过滤中间件 — 深度驱动 + 声明驱动双层过滤。
-
-    Pathway 1 (深度驱动 canSpawn): 当 spawn_depth >= max_spawn_depth 时，
-    自动剥离 Agent 类工具（"Agent" 和 "sendMessages"），使 LLM 无法看到/调用。
-
-    Pathway 2 (声明驱动): 父 Agent 通过 tool_deny/tool_allow 声明额外限制。
-    - tool_deny: 黑名单，列表中的工具名被移除
-    - tool_allow: 白名单，非空时仅保留列表内工具名
-    """
-
-    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
-        """Filter tools based on spawn depth and parent-declared deny/allow lists.
-
-        Args:
-            ctx: The processor context containing config and tools.
-            next: Function to call the next middleware in the pipeline.
-        """
-        ek = ctx.config.get("configurable", {}).get("execute_kwargs") if isinstance(ctx.config, dict) else None
-        if ek is None:
-            next()
-            return
-
-        tools = ctx.tools
-
-        # Layer 1: 深度驱动 — canSpawn 检查
-        if ek.spawn_depth >= ek.max_spawn_depth:
-            tools = [t for t in tools if t.name not in ("Agent", "sendMessages")]
-
-        # Layer 2: 声明驱动 — 父 Agent 额外限制
-        if ek.tool_deny:
-            tools = [t for t in tools if t.name not in ek.tool_deny]
-        if ek.tool_allow:
-            tools = [t for t in tools if t.name in ek.tool_allow]
-
-        ctx.tools = tools
-        next()
-
-
 # =============================================================================
 # Configuration Container
 # =============================================================================

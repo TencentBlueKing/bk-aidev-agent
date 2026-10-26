@@ -183,6 +183,13 @@ BKAI_TOOL_TASK_ENABLED = env.bool("BKAI_TOOL_TASK_ENABLED", True)
 # 功能开关：工具装配阶段统一消除重名（同一 MCP 服务多端点合并、跨来源改名）。
 # 关闭时工具名原样进入模型请求，恢复去重引入前的行为（重名可能导致网关 400 duplicate tool name）
 BKAI_TOOL_NAME_DEDUPE_ENABLED = env.bool("BKAI_TOOL_NAME_DEDUPE_ENABLED", True)
+# 工具延迟加载（Tool Search / Lazy Loading）开关与阈值。
+# 非法布尔 / 非整数由 environs 在 import 期抛 EnvValidationError（进程启动失败）；
+# 阈值 < 1 是 environs 表达不了的类型外约束，紧随其后显式校验，同样在 import 期失败。
+BKAI_TOOL_LAZY_LOADING_ENABLED = env.bool("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+BKAI_TOOL_LAZY_LOADING_THRESHOLD = env.int("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 30)
+if BKAI_TOOL_LAZY_LOADING_THRESHOLD < 1:
+    raise ValueError(f"BKAI_TOOL_LAZY_LOADING_THRESHOLD 必须大于等于 1，当前取值: {BKAI_TOOL_LAZY_LOADING_THRESHOLD}")
 # BKAI 子智能体配置
 BKAI_A2A_SESSION_TEMPORARY = env.bool("BKAI_A2A_SESSION_TEMPORARY", False)
 # LLM 重试策略: "sdk" 由 aidev 自主控制重试, "llm_gw" 由模型网关 Retry-After 头控制重试
