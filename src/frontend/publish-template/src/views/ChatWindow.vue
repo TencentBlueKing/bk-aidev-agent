@@ -177,6 +177,12 @@
 
   import { ChatBot } from "@blueking/ai-blueking"
   import "@blueking/ai-blueking/dist/vue3/style.css"
+  import {
+    clearChatAccessDenied,
+    hasChatAccessDenied,
+    invalidateAgentAccess,
+    markChatAccessDenied,
+  } from "../composables/use-agent-access"
   import router from "../router"
 
   import type { ChatBotExpose } from "@blueking/ai-blueking"
@@ -426,6 +432,7 @@
   }
 
   const handleAgentInfoLoaded = (helper: ChatHelper) => {
+    clearChatAccessDenied()
     chatHelperInstance.value = helper
 
     watch(
@@ -449,7 +456,15 @@
   const handleChatBotError = (error: Error) => {
     const status = (error as RequestError).response?.status
     if (status === 403) {
-      router.push("/403")
+      if (hasChatAccessDenied()) {
+        return
+      }
+      markChatAccessDenied()
+      invalidateAgentAccess()
+      router.replace({
+        name: "agent-access",
+        query: router.currentRoute.value.query,
+      })
     }
   }
 </script>
