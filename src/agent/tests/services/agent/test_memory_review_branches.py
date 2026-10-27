@@ -39,7 +39,6 @@ def review_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "child-agent",
-        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")
@@ -249,9 +248,7 @@ def test_chat_build_context_selects_memory_scope_consumed_by_the_real_runtime(
     runtime = executor.get_agent_executor.call_args.kwargs["personal_memory_runtime"]
     assert agent.memory_agent_code == agent_code
     assert runtime.context({})[1]["agent_code"] == agent_code
-    review_manager.memory_schemas.assert_called_once_with(
-        username="alice", agent_code=agent_code, version="1.0.0", timeout=2
-    )
+    review_manager.memory_schemas.assert_called_once_with(username="alice", agent_code=agent_code, timeout=2)
     runtime.complete({"messages": [AIMessage(id="answer-1", content="Answer")]}, {})
     payload = review_manager.complete_memory_round.call_args.args[0]
     assert payload["agent_code"] == agent_code
