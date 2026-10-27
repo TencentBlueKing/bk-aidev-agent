@@ -14,6 +14,7 @@ from aidev_agent.services.messages_handler import ConsumerPreemptedError
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.execution import get_agent_executor
+from aidev_bkplugin.views.base import PluginResourceManager
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -212,6 +213,11 @@ class WxAiBotViewSet(ViewSet):
             # 如果需要立即返回（如提示信息）
             if result is not None:
                 return result, None
+            username = current_context.sender_id
+            if authorize_prompt := AgentHelper.get_authorize_prompt(
+                PluginResourceManager(username=username), username, markdown=True
+            ):
+                return stream_msg(authorize_prompt, True, stream_id), None
             # 处理引用消息
             content = self._process_quote(payload, content)
             return None, WxBotAgentRequest(

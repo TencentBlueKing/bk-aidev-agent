@@ -25,6 +25,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from aidev_agent.exceptions import extract_model_error_message
 from aidev_agent.packages.interrupt_manager import (
+    ASK_USER_QUESTION_TOOL_NAME,
     TOOL_APPROVAL_REASON,
     ApprovalOutcomeBuilder,
     ApproveResultLiteral,
@@ -53,9 +54,6 @@ from .types import (
     serialize_run_finished_outcome,
 )
 from .utils import langchain_messages_to_streaming_events
-
-ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
-
 
 logger = getLogger(__name__)
 

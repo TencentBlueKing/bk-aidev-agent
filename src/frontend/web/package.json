@@ -64,6 +64,9 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
+  "overrides": {
+    "proxy-addr": ">=2.0.8"
+  },
   "type": "module",
   "engines": {
     "node": ">=20.11.1"

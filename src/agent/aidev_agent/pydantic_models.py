@@ -53,6 +53,13 @@ class ExecuteKwargs(BaseModel):
     max_spawn_depth: int = Field(default=1, description="最大嵌套深度")
     tool_deny: list[str] = Field(default_factory=list, description="工具黑名单（工具名）")
     tool_allow: list[str] = Field(default_factory=list, description="工具允许列表（工具名），非空时仅允许列表内工具")
+    mode: Literal["default", "dontInterrupt", "dontAsk"] = Field(
+        default="default",
+        description=(
+            "工具加载模式：default 全量注入；dontInterrupt 剔除 ask 类工具与带审批工具，"
+            "并关闭命令级审批（灰名单命令直接拒绝）；dontAsk 仅剔除 ask 类工具"
+        ),
+    )
 
     # A2A PV 共享
     sandbox_pv_id: str | None = Field(default=None, description="父 Agent 的沙箱 PV ID，子 Agent 通过此字段复用父 PV")

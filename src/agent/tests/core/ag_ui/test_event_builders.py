@@ -419,7 +419,10 @@ class TestToolCallFunctionType:
         assert immediate[0]["function"]["function_type"] is None
 
     @pytest.mark.parametrize("function_type, expected", [("skill", "skill"), (None, None)])
-    def test_tool_call_start_event_serializes_camel_case(self, function_type, expected):
+    def test_tool_call_start_event_function_type_wire_snake(self, function_type, expected):
+        """by_alias 序列化下 function_type 须保持 snake（serialization_alias 覆盖 to_camel），
+        其余字段仍为 camel——前端 handleToolCallStartEvent 读 e.function_type，若被 camel
+        化为 functionType 则 skill 工具被误显示为"调用工具"。"""
         from aidev_agent.core.ag_ui.events import ExtendToolCallStartEvent
 
         event = ExtendToolCallStartEvent(
@@ -428,4 +431,6 @@ class TestToolCallFunctionType:
             tool_call_name="activate_skill",
             function_type=function_type,
         )
-        assert event.model_dump(by_alias=True)["functionType"] == expected
+        dumped = event.model_dump(by_alias=True)
+        assert dumped["toolCallName"] == "activate_skill"
+        assert dumped["function_type"] == expected

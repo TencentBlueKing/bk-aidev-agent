@@ -116,6 +116,30 @@ class TestChatCompletionRequestSerializerExecuteKwargs:
         assert attach.validated_data["execute_kwargs"].stream_mode == "attach"
 
 
+    def test_mode_defaults_to_default_and_legal_values_pass_through(self):
+        """REQ-8 / REQ-9：mode 缺省为 default，合法值原样透传。"""
+        default = ChatCompletionRequestSerializer(data={"input": "hi"}, context={"username": "u"})
+        default.is_valid(raise_exception=True)
+        assert default.validated_data["execute_kwargs"].mode == "default"
+
+        for mode in ("default", "dontInterrupt", "dontAsk"):
+            s = ChatCompletionRequestSerializer(
+                data={"input": "hi", "execute_kwargs": {"mode": mode}},
+                context={"username": "u"},
+            )
+            s.is_valid(raise_exception=True)
+            assert s.validated_data["execute_kwargs"].mode == mode
+
+    def test_illegal_mode_is_rejected_as_400_on_execute_kwargs(self):
+        """AC-10：非法 mode 在参数校验阶段被拒绝（DRF ValidationError 而非 500）。"""
+        s = ChatCompletionRequestSerializer(
+            data={"input": "hi", "execute_kwargs": {"mode": "disabled"}},
+            context={"username": "u"},
+        )
+        assert s.is_valid() is False
+        assert "execute_kwargs" in s.errors
+
+
 class TestChatCompletionRequestSerializerCompatFields:
     """flow / poll / 兼容字段透传校验。"""
 

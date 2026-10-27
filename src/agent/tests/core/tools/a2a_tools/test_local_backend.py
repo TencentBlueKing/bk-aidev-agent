@@ -307,6 +307,24 @@ class TestLocalBackendNestingProtection:
         assert child_ek.spawned_by == "level1-sess"
         assert child_ek.max_spawn_depth == 5
 
+    @pytest.mark.parametrize("mode", ["dontInterrupt", "dontAsk"])
+    def test_execute_inherits_tool_loading_mode(self, mode: str) -> None:
+        """REQ-6 / AC-11：子 Agent 装配工具时使用与父相同的 mode（不回落 default）。"""
+        backend = LocalBackend()
+
+        mock_child = _make_mock_child("result")
+        mock_cls = _make_mock_agent_cls(mock_child)
+
+        spec = _make_spec(params={"agent_cls": mock_cls, "ctx": _FakeCtx()})
+        parent_ek = ExecuteKwargs(spawn_depth=0, max_spawn_depth=1, session_code="parent-sess", mode=mode)
+        config = {"configurable": {"execute_kwargs": parent_ek}}
+        backend.execute(spec, "hello", session_code="sess-mode", config=config)
+
+        call_args = mock_child.execute.call_args
+        child_ek = call_args.args[0] if call_args.args else call_args.kwargs.get("execute_kwargs")
+        assert child_ek is not None
+        assert child_ek.mode == mode
+
     def test_execute_inherits_tool_deny_and_allow(self) -> None:
         """tool_deny 和 tool_allow 由 model_copy 自动继承。"""
         backend = LocalBackend()

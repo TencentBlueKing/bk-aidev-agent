@@ -64,3 +64,21 @@ class AgentInfoViewSet(PluginViewSet):
     def version(self, request, *args, **kwargs):
         """获取所有以 aidev 开头的已安装包及其版本"""
         return Response(data=AgentHelper.get_agent_version())
+
+
+class AgentAccessViewSet(PluginViewSet):
+    """访问者对当前智能体的授权状态与权限申请"""
+
+    # 未授权用户也需要查询状态和提交申请，不能走智能体使用权限校验；用户身份由网关 plugin_api 的用户认证保证
+    permission_classes = []
+
+    def list(self, request, *args, **kwargs):
+        """查询授权状态：authorized / unauthorized / authorization_pending / authorization_rejected"""
+        result = self.client.api.get_agent_access_status(headers={"X-BKAIDEV-USER": request.user.username})
+        return Response(data=result["data"])
+
+    @action(detail=False, methods=["POST"], url_path="apply", url_name="apply")
+    def apply(self, request, *args, **kwargs):
+        """提交使用权限申请（加入智能体使用者用户组的 ITSM 单），返回单据链接"""
+        result = self.client.api.apply_agent_access(json={}, headers={"X-BKAIDEV-USER": request.user.username})
+        return Response(data=result["data"])

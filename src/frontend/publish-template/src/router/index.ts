@@ -6,6 +6,7 @@ const PageDemo = () => import(/* webpackChunkName: "PageDemo" */ "../views/page-
 const ChatWindow = () => import(/* webpackChunkName: "ChatWindow" */ "../views/ChatWindow.vue")
 const Forbidden = () => import(/* webpackChunkName: "Forbidden" */ "../views/403.vue")
 const Share = () => import(/* webpackChunkName: "Share" */ "../views/share.vue")
+const AgentAccess = () => import(/* webpackChunkName: "AgentAccess" */ "../views/agent-access.vue")
 
 export default createRouter({
   history: createWebHistory(window.SITE_URL),
@@ -36,6 +37,11 @@ export default createRouter({
       path: "/share-page/:shareCode",
       name: "share-page",
       component: Share,
+    },
+    {
+      path: "/agent-access",
+      name: "agent-access",
+      component: AgentAccess,
     },
     {
       path: "/403",

@@ -3,6 +3,9 @@
 # AG-UI 协议版本
 AGUI_PROTOCOL_VERSION = "v2"
 
+# 用户授权页参数，拼在智能体访问地址后；页面需请求插件 ping 接口写入 bkoauth access_token
+AUTHORIZE_PAGE_QUERY = "?authorization=success"
+
 # 会话列表默认分页参数
 DEFAULT_SESSION_PAGE = 1
 DEFAULT_SESSION_PAGE_SIZE = 20

@@ -519,7 +519,6 @@ def test_make_mcp_tools_records_list_semantics(mock_mcp_client_class, mock_recor
         kind=CLIENT_SPAN_KIND,
         use_global_tracer=True,
         attributes={
-            "rpc.system": "mcp",
             "mcp.operation.name": "tools/list",
             "mcp.server.name": "tencentcloud-doc-mcp",
             "mcp.transport": "streamable_http",

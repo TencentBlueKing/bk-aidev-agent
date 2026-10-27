@@ -60,6 +60,14 @@ class InterruptStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
+"""ask 类提问工具的唯一名称来源。
+
+工具装配（``core/tools/ask_user_question.py`` 的 ``StructuredTool.name``）、事件识别
+（``core/ag_ui/aidev_agent.py``）与工具加载模式过滤（``filter_tools_by_loading_mode``）
+均经此常量判定，避免多处字面量重复导致判定口径漂移。
+"""
+
 ASK_USER_QUESTION_SKIPPED_CONTENT = "用户未回答本次提问，已跳过；用户改为直接输入了新的消息。"
 """用户跳过提问时的工具返回文案。
 

@@ -303,7 +303,6 @@ def set_tool_request(
     if mcp_name := metadata.get("mcp_name"):
         # MCP 工具：在既有 tool.* 之上补充 MCP 语义键，transport 缺失时兜底 "unknown"
         _set_span_attribute(span, "tool.type", "mcp")
-        _set_span_attribute(span, "rpc.system.name", "jsonrpc")
         _set_span_attribute(span, "mcp.method.name", "tools/call")
         _set_span_attribute(span, "mcp.server.name", str(mcp_name))
         _set_span_attribute(span, "mcp.transport", str(metadata.get("mcp_transport") or "unknown"))

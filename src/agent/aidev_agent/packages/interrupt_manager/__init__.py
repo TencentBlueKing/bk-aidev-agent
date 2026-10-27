@@ -45,6 +45,7 @@ from aidev_agent.packages.interrupt_manager.approval import (
 )
 from aidev_agent.packages.interrupt_manager.ask_user_question import (
     ASK_USER_QUESTION_SKIPPED_CONTENT,
+    ASK_USER_QUESTION_TOOL_NAME,
     AskUserQuestionHandler,
     AskUserQuestionItem,
     AskUserQuestionMetadata,
@@ -110,6 +111,7 @@ __all__ = [
     # 流结束统一处理层（43-06 D-09）
     "ApprovalHandler",
     # ask_user_question 实现（单源落位本包，原 ag_ui 侧实现，shim 已随 43-07 移除）
+    "ASK_USER_QUESTION_TOOL_NAME",
     "ASK_USER_QUESTION_SKIPPED_CONTENT",
     "InterruptStatus",
     "AskUserQuestionHandler",
