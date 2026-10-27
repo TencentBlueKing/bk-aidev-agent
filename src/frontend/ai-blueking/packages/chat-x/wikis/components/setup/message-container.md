@@ -6,7 +6,7 @@ domain: setup
 description: 负责按传入的 `messageGroups` 渲染、过程状态栏、滚动控制、工具栏和消息插槽透传。
 aiSummary: >
   负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
-  每一轮助手组展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，多条消息时默认折叠。
+  每一轮助手组展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认仅折叠最后一条 assistant 之前的消息。
   源码位置：src/components/chat-message/message-container/message-container.vue。
 relatedComponents:
   - slug: message-render
@@ -319,7 +319,7 @@ sinceVersion: 1.0.0
 - **消息分组**：将连续的非用户消息合并为一组，每组共享一个工具栏
 - **Tool 消息关联**：自动将 `role: 'tool'` 消息注入到对应 Assistant 消息的 toolCall 中
 - **Loading 自动注入**：末尾为用户消息时，自动追加 Loading 动画组
-- **过程状态栏**：有内容的助手组在消息上方展示状态。生成中（`streaming` / `stop-loading` / `fetching` / `pending`，且非分享态）最后一组显示「处理中」；终态按组内最后一条显示「失败 / 已停止 / 已禁用」，其余为「已完成」。终态且至少两条消息时默认只渲染最后一条
+- **过程状态栏**：有内容的助手组在消息上方展示状态。生成中（`streaming` / `stop-loading` / `fetching` / `pending`，且非分享态）最后一组显示「处理中」；终态按组内最后一条显示「失败 / 已停止 / 已禁用」，其余为「已完成」。终态默认保留本轮最后一条 `assistant` 及其后全部消息，仅折叠它之前的消息；没有 `assistant` 时全部展示
 - **滚动管理**：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」，过程状态栏也按终态展示。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
 - **多选模式**：支持按消息组勾选，用户消息与 AI 回复联动选中
 
@@ -455,7 +455,7 @@ document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 
 `.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
 
-终态且助手组至少两条消息时，过程状态栏默认折叠，未展开的前序消息不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。
+终态且本轮最后一条 `assistant` 之前存在消息时，过程状态栏默认折叠这些前序消息，它们不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。最后一条 `assistant` 及其后的全部消息始终保留；没有 `assistant` 时全部展示。
 
 ## 等待响应（Loading 自动注入）
 
@@ -606,7 +606,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | 条件 | 文案 | 消息是否折叠 |
 | ---- | ---- | ------------ |
 | 容器仍在生成，且是最后一组；`renderMode` 不是 `Share` | 「处理中」，文字渐变闪动，不显示耗时 | 否，展示全部消息 |
-| 最后一条 `status` 为 `error` | 「失败」 | 至少两条时默认只留最后一条 |
+| 最后一条 `status` 为 `error` | 「失败」 | 默认保留本轮最后一条 `assistant` 及后续消息，仅折叠前序消息；没有 `assistant` 时全部展示 |
 | 最后一条 `status` 为 `stop` | 「已停止」 | 同上 |
 | 最后一条 `status` 为 `disabled` | 「已禁用」 | 同上 |
 | 其余终态 | 「已完成」 | 同上 |
@@ -620,7 +620,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 - 缺少任一端、或间隔为 0 时不显示；不足 1 秒显示 `<1s`；其余先舍去毫秒再格式化
 - 生成中不显示耗时，也不用当前时间刷新
 
-可折叠时点击状态栏展开或收起。从生成中进入终态会自动收回。单条消息只显示文案，没有箭头。
+可折叠时点击状态栏展开或收起。从生成中进入终态会自动收回最后一条 `assistant` 之前的消息。若没有 `assistant`，或最后一条 `assistant` 位于首位，则全部展示且没有折叠箭头。每轮独立计算折叠边界，最后一条 `assistant` 之后追加的消息直接展示。
 
 提供 `#group` 会替换整组默认内容，过程状态栏不再出现。`#default` 仍包在状态栏里面，折叠时只把当前可见消息传给插槽。
 
@@ -669,7 +669,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 </script>
 ```
 
-下面示例终态可折叠，默认只留下最后一条，状态栏为「已完成，耗时 2m2s」。点击状态栏可看到前面的 reasoning。
+下面示例终态可折叠，默认保留最后一条 `assistant`（此例也是最后一条消息），状态栏为「已完成，耗时 2m2s」。点击状态栏可看到前面的 reasoning。
 
 <div class="demo">
   <div style="height: 280px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">

@@ -53,6 +53,13 @@ declare global {
   interface AIBluekingMessageMap {}
 }
 
+export enum FunctionCallType {
+  Function = 'function',
+  Mcp = 'mcp',
+  Skill = 'skill',
+  Subagent = 'subagent',
+}
+
 export interface BaseMessage<T extends MessageType, C = string> {
   content: C;
   /** 消息创建时间，ISO 字符串或毫秒时间戳，由消息层（chat-helper）写入 */
@@ -108,17 +115,10 @@ export type DeveloperMessage = BaseMessage<MessageRole.Developer, string>;
 export type FunctionCall = {
   arguments: string;
   description?: string;
+  function_type?: FunctionCallType;
   mcpName?: string;
   name: string;
-  function_type?: FunctionCallType;
 };
-
-export enum FunctionCallType {
-  Function = 'function',
-  Mcp = 'mcp',
-  Skill = 'skill',
-  Subagent = 'subagent',
-}
 
 export type GuideMessage = BaseMessage<MessageRole.Guide, string>;
 

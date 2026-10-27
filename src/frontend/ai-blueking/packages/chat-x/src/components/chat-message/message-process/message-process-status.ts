@@ -66,6 +66,15 @@ export const resolveProcessLabelKey = (
 export const shouldShowMessageProcess = (group: { messages: readonly unknown[]; type: string }) =>
   group.type === MessageRole.Assistant && group.messages.length > 0;
 
-/** 终态且至少两条消息时才有可折叠的前序过程 */
-export const canCollapseProcess = (messages: readonly unknown[], generating: boolean) =>
-  !generating && messages.length >= 2;
+/** 终态保留最后一条 assistant 及后续消息；生成中或没有 assistant 时不折叠 */
+export const resolveProcessCollapseIndex = (messages: readonly { role: string }[], generating: boolean) => {
+  if (generating) {
+    return 0;
+  }
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index].role === MessageRole.Assistant) {
+      return index;
+    }
+  }
+  return 0;
+};

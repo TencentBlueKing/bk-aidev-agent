@@ -31,7 +31,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MessageRole, MessageStatus } from '../../../ag-ui/types/constants';
 import MessageProcessList from './message-process-list.vue';
 
-import type { Message } from '../../../ag-ui/types';
+import type { AssistantMessage, Message } from '../../../ag-ui/types';
 
 vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
@@ -39,15 +39,14 @@ vi.mock('../../../lang/lang', () => ({
 
 const START = Date.parse('2026-01-01T00:00:00.000Z');
 
-const createMessage = (id: string, content: string, status: MessageStatus, createdAt = START): Message =>
-  ({
-    id,
-    content,
-    createdAt,
-    messageId: id,
-    role: MessageRole.Assistant,
-    status,
-  }) as Message;
+const createMessage = (id: string, content: string, status: MessageStatus, createdAt = START): AssistantMessage => ({
+  id,
+  content,
+  createdAt,
+  messageId: id,
+  role: MessageRole.Assistant,
+  status,
+});
 
 type MountOptions = {
   enabled?: boolean;
@@ -67,25 +66,85 @@ describe('MessageProcessList', () => {
       },
     });
 
-  it('终态后应该只渲染最后一条，点击后展开再收起', async () => {
+  it('终态后应该保留最后一条 assistant 及后续消息，点击后展开再收起', async () => {
     const wrapper = mountList(
       [
         createMessage('1', '过程一', MessageStatus.Complete, START + 1_000),
         createMessage('2', '过程二', MessageStatus.Complete, START + 60_000),
         createMessage('3', '最终回答', MessageStatus.Error, START + 122_000),
+        {
+          ...createMessage('4', '工具结果', MessageStatus.Complete, START + 122_000),
+          role: MessageRole.Tool,
+          toolCallId: 'call-1',
+          duration: 0,
+        },
+        {
+          ...createMessage('5', '补充提示', MessageStatus.Error, START + 122_000),
+          role: MessageRole.Info,
+        },
       ],
       { requestCreatedAt: START },
     );
 
-    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答']);
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答', '工具结果', '补充提示']);
     expect(wrapper.find('.ai-message-process-header-text').text()).toBe('失败，耗时 2m2s');
 
     await wrapper.find('.ai-message-process-header').trigger('click');
-    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['过程一', '过程二', '最终回答']);
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual([
+      '过程一',
+      '过程二',
+      '最终回答',
+      '工具结果',
+      '补充提示',
+    ]);
     expect(wrapper.find('.ai-chevron-right-icon.is-expanded').exists()).toBe(true);
 
     await wrapper.find('.ai-message-process-header').trigger('click');
-    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答']);
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答', '工具结果', '补充提示']);
+    wrapper.unmount();
+  });
+
+  it('没有 assistant 时应该保留全部消息且不能折叠', async () => {
+    const wrapper = mountList([
+      { ...createMessage('1', '', MessageStatus.Complete), role: MessageRole.Reasoning, content: ['思考过程'] },
+      { ...createMessage('2', '补充提示', MessageStatus.Complete), role: MessageRole.Info },
+    ]);
+
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['思考过程', '补充提示']);
+    expect(wrapper.find('.ai-chevron-right-icon').exists()).toBe(false);
+
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('最后一条 assistant 位于首位时应该保留后续消息且不显示折叠箭头', async () => {
+    const wrapper = mountList([
+      createMessage('1', '回答', MessageStatus.Complete),
+      { ...createMessage('2', '补充提示', MessageStatus.Complete), role: MessageRole.Info },
+    ]);
+
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['回答', '补充提示']);
+    expect(wrapper.find('.ai-chevron-right-icon').exists()).toBe(false);
+
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('追加非 assistant 消息应直接展示，追加 assistant 后应更新折叠边界', async () => {
+    const messages = [
+      createMessage('1', '过程', MessageStatus.Complete),
+      createMessage('2', '回答', MessageStatus.Complete),
+    ];
+    const wrapper = mountList(messages);
+    const tip: Message = { ...createMessage('3', '补充提示', MessageStatus.Complete), role: MessageRole.Info };
+
+    await wrapper.setProps({ messages: [...messages, tip] });
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['回答', '补充提示']);
+
+    await wrapper.setProps({ messages: [...messages, tip, createMessage('4', '最新回答', MessageStatus.Complete)] });
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最新回答']);
     wrapper.unmount();
   });
 
@@ -108,11 +167,12 @@ describe('MessageProcessList', () => {
     wrapper.unmount();
   });
 
-  it('生成结束后应该自动折叠，并从用户提问时间算耗时', async () => {
+  it('生成结束后应该自动折叠前序过程，保留回答及后续消息并从用户提问时间算耗时', async () => {
     const wrapper = mountList(
       [
         createMessage('1', '过程', MessageStatus.Streaming, START + 2_000),
         createMessage('2', '正在输出', MessageStatus.Streaming, START + 5_000),
+        { ...createMessage('3', '补充提示', MessageStatus.Complete, START + 6_000), role: MessageRole.Info },
       ],
       { generating: true, requestCreatedAt: START },
     );
@@ -121,8 +181,15 @@ describe('MessageProcessList', () => {
 
     await wrapper.setProps({ generating: false });
 
-    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['正在输出']);
-    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 5s');
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['正在输出', '补充提示']);
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 6s');
+
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(wrapper.findAll('.msg')).toHaveLength(3);
+    await wrapper.setProps({ generating: true });
+    expect(wrapper.findAll('.msg')).toHaveLength(3);
+    await wrapper.setProps({ generating: false });
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['正在输出', '补充提示']);
     wrapper.unmount();
   });
 
