@@ -96,7 +96,6 @@ def source_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")

@@ -29,13 +29,6 @@ def test_naive_message_time_is_explicitly_utc():
     assert message_timestamp(datetime(2026, 10, 1)) == datetime(2026, 10, 1, tzinfo=timezone.utc).isoformat()
 
 
-@pytest.mark.parametrize("version", [None, True, 0, -1, {}])
-def test_invalid_version_rejects_discovery(runtime, version):
-    runtime.manager.memory_schemas.return_value["version"] = version
-    with pytest.raises(ValueError, match="version"):
-        runtime.make_tools()
-
-
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "unknown_enabled"])
 def test_incomplete_discovery_contract_is_rejected(runtime, mutation):
     policy = runtime.manager.memory_schemas.return_value

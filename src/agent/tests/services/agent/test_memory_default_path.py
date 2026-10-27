@@ -255,7 +255,6 @@ def test_enabled_policy_is_probed_every_round(policy_manager, clock):
     policy_manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent-a",
-        "version": "1.0.0",
         "schemas": [
             {"function": {"name": name, "description": "Memory", "parameters": {"type": "object", "properties": {}}}}
             for name in ("memory_write", "memory_update", "memory_search")

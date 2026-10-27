@@ -195,8 +195,8 @@ class PersonalMemoryRuntime:
     def make_tools(self, config: RunnableConfig | None = None) -> list[StructuredTool]:
         """按平台下发的记忆策略构建 `memory_write`/`memory_update`/`memory_search` 三个工具。
 
-        使用预取的 `schemas` 或向平台拉取策略，并缓存到 `self.policy`；策略 `agent_code` 不一致或
-        `version` 不是字符串或与宿主选择不一致时抛 `ValueError`。`enabled is False` 时返回空列表；否则要求恰好
+        使用预取的 `schemas` 或向平台拉取策略，并缓存到 `self.policy`；策略 `agent_code`
+        不一致时抛 `ValueError`。`enabled is False` 时返回空列表；否则要求恰好
         返回三个工具 schema，并预先做一次 OpenAI 工具格式转换，让 schema 问题在自动发现阶段暴露。
         """
         username, context = self.context(config or {})
@@ -205,15 +205,10 @@ class PersonalMemoryRuntime:
             policy = self.manager.memory_schemas(
                 username=username,
                 agent_code=context["agent_code"],
-                version=context.get("version"),
                 **self.request_options(),
             )
         if not isinstance(policy, dict) or policy.get("agent_code") != context["agent_code"]:
             raise ValueError("Platform returned a different memory agent")
-        if not isinstance(policy.get("version"), str):
-            raise ValueError("Platform did not return a memory configuration version")
-        if context.get("version") is not None and context["version"] != policy["version"]:
-            raise ValueError("Platform returned a different memory configuration version")
         self.policy = policy
         if policy.get("enabled") is False:
             return []
@@ -232,11 +227,11 @@ class PersonalMemoryRuntime:
         return tools
 
     def scoped_payload(self, context: dict, payload: dict, config: RunnableConfig) -> dict | None:
-        """把请求体与宿主上下文、当前配置版本组装为平台请求 payload。
+        """把本次请求与宿主会话上下文组装为平台请求 payload。
 
         尚未加载策略时先调用 `make_tools`；记忆未启用时返回 `None`。上下文中的 `agent_code`
-        必须与策略一致，否则抛 `ValueError`（运行时不能切换智能体或版本）。
-        只保留本次触发所需的消息证据，返回附带 `agent_code`、`version`、`context` 的新 dict。
+        必须与策略一致，否则抛 `ValueError`（运行时不能切换智能体）。
+        只保留本次触发所需的消息证据，返回附带 `agent_code`、`context` 的新 dict。
         """
         if self.policy is None:
             self.make_tools(config)
@@ -246,9 +241,6 @@ class PersonalMemoryRuntime:
         agent_code = context.pop("agent_code")
         if agent_code != self.policy["agent_code"]:
             raise ValueError("Memory runtime cannot switch agents")
-        version = context.pop("version", self.policy["version"])
-        if version is not None and version != self.policy["version"]:
-            raise ValueError("Memory runtime cannot switch configuration versions")
         if payload.get("name") in TOOL_NAMES:
             role = (payload.get("call") or {}).get("role")
             if role and self.tool_source_provider is not None:
@@ -259,7 +251,7 @@ class PersonalMemoryRuntime:
                 context["messages"] = [item for item in context["messages"] if latest.get(item["role"]) is item]
             if payload["name"] == "memory_search":
                 context["messages"] = []
-        return {**payload, "agent_code": agent_code, "version": self.policy["version"], "context": context}
+        return {**payload, "agent_code": agent_code, "context": context}
 
     def make_tool(self, schema: dict) -> StructuredTool:
         """根据平台函数 schema 构建单个记忆工具（`content_and_artifact` 响应格式）。

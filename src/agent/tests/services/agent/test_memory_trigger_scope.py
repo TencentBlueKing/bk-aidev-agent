@@ -15,7 +15,6 @@ def scope_manager():
     manager.memory_schemas.return_value = {
         "enabled": True,
         "agent_code": "agent",
-        "version": "draft",
         "schemas": [
             {
                 "function": {
@@ -52,14 +51,15 @@ def test_reenable_only_submits_new_question_and_answer(scope_manager, eligible, 
     history = sum([history_pair(str(i), eligible) for i in range(history_size)], [])
     original = copy.deepcopy(history)
     messages = [HumanMessage(id="new-u", content="New question")]
-    scope_manager.memory_schemas.return_value["enabled"] = False
     assert (
-        automatic_personal_memory(scope_manager, "alice", "s", history, messages, agent_code="agent", version="draft")
+        automatic_personal_memory(
+            scope_manager, "alice", "s", history, messages, agent_code="agent", memory_settings={"enabled": False}
+        )
         is None
     )
-    scope_manager.memory_schemas.return_value["enabled"] = True
+    scope_manager.memory_schemas.assert_not_called()
     runtime = automatic_personal_memory(
-        scope_manager, "alice", "s", history, messages, agent_code="agent", version="draft"
+        scope_manager, "alice", "s", history, messages, agent_code="agent", memory_settings={"enabled": True}
     )
     assert [item["message_id"] for item in runtime.context({})[1]["messages"]] == ["new-u"]
     runtime.complete({"messages": [AIMessage(id="new-a", content="New answer")]}, {})
@@ -78,7 +78,7 @@ def test_explicit_single_trigger_sends_only_selected_original(scope_manager, rol
         history,
         [HumanMessage(id="new-u", content="Save the selected original")],
         agent_code="agent",
-        version="draft",
+        memory_settings={"enabled": True},
     )
     runtime.make_tools()[0].invoke({"role": role})
     payload = scope_manager.memory_tool.call_args.args[0]
@@ -95,7 +95,7 @@ def test_generated_text_trigger_never_sends_history(scope_manager):
         history_pair("old"),
         [HumanMessage(id="new-u", content="Remember Python")],
         agent_code="agent",
-        version="draft",
+        memory_settings={"enabled": True},
     )
     runtime.make_tools()[0].invoke({"text": "The user prefers Python"})
     payload = scope_manager.memory_tool.call_args.args[0]
@@ -107,7 +107,6 @@ def test_custom_runtime_cannot_merge_all_graph_history_into_round(scope_manager)
     context = {
         "username": "alice",
         "agent_code": "agent",
-        "version": "draft",
         "session_id": "s",
         "session_date": "2026-10-26",
         "messages": [],

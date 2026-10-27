@@ -15,7 +15,7 @@ from aidev_agent.utils.message_text import strip_think_blocks
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
-# 平台判定未启用或探测失败后，在该时长内不再为同一智能体与用户重复探测；启用结果不缓存。
+# 平台空间灰度未启用或探测失败后，在该时长内不再为同一智能体与用户重复探测；启用结果不缓存。
 POLICY_DISABLED_TTL = 60
 POLICY_FAILURE_TTL = 30
 POLICY_CACHE_MAX_ENTRIES = 4096
@@ -24,14 +24,13 @@ _policy_suppressed_until: dict[tuple, float] = {}
 _policy_lock = threading.Lock()
 
 
-def _policy_key(manager, username: str, agent_code: str, version=None) -> tuple:
+def _policy_key(manager, username: str, agent_code: str) -> tuple:
     """返回探测抑制的缓存键，包含 manager 类型、租户与应用，避免不同租户的同名智能体互相影响。"""
     return (
         type(manager).__qualname__,
         getattr(manager, "tenant_id", None),
         getattr(manager, "app_code", None),
         agent_code,
-        version,
         username,
     )
 
@@ -126,15 +125,25 @@ def completed_history(history, session_id: str) -> list[dict]:
 
 
 def automatic_personal_memory(
-    manager, username: str, session_id: str, history, messages, *, agent_code: str = "", version: str | None = None
+    manager,
+    username: str,
+    session_id: str,
+    history,
+    messages,
+    *,
+    agent_code: str = "",
+    memory_settings: dict | None = None,
 ):
     """为标准 SDK 对话入口自动构建个人记忆运行时，不可用时返回 `None` 以降级为普通对话。
 
-    要求 `agent_code`、`username`、`session_id` 有效且 `manager` 实现三个记忆接口；平台返回
+    直接使用原配置接口已选好的 `memory_settings`，关闭时不探测、不创建运行时。
+    要求 `agent_code`、`username`、`session_id` 有效且 `manager` 实现三个记忆接口；平台空间灰度返回
     `enabled` 不为 `True` 时不启用。只绑定当前轮用户输入；历史原文只在单次工具明确选择角色时按需读取，并以 best-effort 模式和 `MEMORY_REQUEST_TIMEOUT` 超时创建运行时、预先生成工具。
     平台判定未启用时 `POLICY_DISABLED_TTL` 秒内、探测失败时 `POLICY_FAILURE_TTL` 秒内不再重复探测，
-    因此开启记忆最多延迟该时长生效。任何异常只记录告警并返回 `None`，不阻断对话。
+    因此空间灰度开启最多延迟该时长生效。任何异常只记录告警并返回 `None`，不阻断对话。
     """
+    if not (memory_settings or {}).get("enabled", True):
+        return None
     if not isinstance(agent_code, str) or not agent_code.strip():
         return None
     if not manager or not isinstance(username, str) or not username.strip() or not session_id:
@@ -143,13 +152,11 @@ def automatic_personal_memory(
         callable(getattr(manager, name, None)) for name in ["memory_schemas", "memory_tool", "complete_memory_round"]
     ):
         return None
-    key = _policy_key(manager, username, agent_code, version)
-    if version != "draft" and _policy_suppressed(key):
+    key = _policy_key(manager, username, agent_code)
+    if _policy_suppressed(key):
         return None
     try:
-        schemas = manager.memory_schemas(
-            username=username, agent_code=agent_code, version=version, timeout=MEMORY_REQUEST_TIMEOUT
-        )
+        schemas = manager.memory_schemas(username=username, agent_code=agent_code, timeout=MEMORY_REQUEST_TIMEOUT)
     except Exception as error:
         _suppress_policy(key, POLICY_FAILURE_TTL)
         logger.warning("Personal memory unavailable; continuing chat: %s", type(error).__name__)
@@ -162,7 +169,6 @@ def automatic_personal_memory(
         snapshot = current_input(records, messages, session_id)
         context = {
             "username": username,
-            "version": version,
             "agent_code": agent_code,
             "session_id": session_id,
             "session_date": session_date(records),

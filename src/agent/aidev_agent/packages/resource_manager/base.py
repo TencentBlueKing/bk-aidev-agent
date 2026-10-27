@@ -286,7 +286,7 @@ class BaseResourceManager(abc.ABC):
             raise ValueError("Personal-memory authorization must come from the resource manager")
         return {key: value for key, value in (headers or {}).items() if key.lower() != "x-bkaidev-user"}
 
-    def memory_schemas(self, *, username: str, agent_code: str, version: str | None = None, **kwargs) -> dict:
+    def memory_schemas(self, *, username: str, agent_code: str, **kwargs) -> dict:
         """以用户身份获取智能体的个人记忆策略与工具 schema，返回平台 ``data`` 字段。
 
         `agent_code` 为空时抛 `ValueError`；请求头经 `_memory_headers` 清洗，平台请求异常直接抛出。
@@ -295,7 +295,7 @@ class BaseResourceManager(abc.ABC):
         if not isinstance(agent_code, str) or not agent_code.strip():
             raise ValueError("Personal memory requires an agent code")
         return self._memory_client(username).api.memory_schemas(
-            params={"agent_code": agent_code, **({"version": version} if version is not None else {})},
+            params={"agent_code": agent_code},
             headers=headers,
             **kwargs,
         )["data"]
