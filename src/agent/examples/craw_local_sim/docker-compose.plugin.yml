@@ -1,0 +1,66 @@
+# craw 本地模拟 · 插件集成变体：业务插件（真 AIDEV Proxy/Django）经
+# SDK craw 包接管 CHAT，转发给 OpenClaw。
+#
+# 注入方式（不重建镜像）：
+#   - dev SDK：把 src/agent/aidev_agent 直接挂到 venv site-packages 覆盖已装版本
+#     （plugin entrypoint 硬 export PYTHONPATH=/app，PYTHONPATH 注入不可行）；
+#   - 插件代码：把业务插件的 bk_plugin 目录（含 craw registry 覆盖薄壳，
+#     路径经 PLUGIN_SRC env 提供）挂到 /app/bk_plugin。
+#
+# 启动：./run-plugin.sh
+services:
+  openclaw:
+    image: bkai-openclaw-agent:${OPENCLAW_IMAGE_VERSION:-0.2.1}
+    container_name: craw-sim-openclaw-p
+    environment:
+      - BKAI_OPENCLAW_MODE=paas
+      - BKAI_OPENCLAW_HTTP_API=1
+      # --bind lan 是容器内监听非 loopback 所需（宿主端口映射才可达）；
+      # 对外暴露面由下方 ports 的 127.0.0.1 绑定 + gateway token 双重收敛
+      - OPENCLAW_GATEWAY_ARGS=--bind lan --allow-unconfigured
+      - OPENCLAW_GATEWAY_PORT=18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:?agent.env 需提供 OPENCLAW_GATEWAY_TOKEN（gateway 鉴权 token，自行生成随机值）}
+      - BKAI_AGENT=${BKAI_AGENT:?agent.env 需提供 BKAI_AGENT（AIDEV agent code）}
+      - BKAI_AIDEV_API_KEY=${BKAI_ACCESS_TOKEN:?agent.env 需提供 BKAI_ACCESS_TOKEN}
+    ports:
+      # 只绑宿主 loopback：本地模拟不对外网卡暴露带凭据服务
+      - "127.0.0.1:${OPENCLAW_PORT_HOST:-18789}:18789" # 宿主机直连裸 API / 浏览器开 dashboard
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  plugin:
+    image: ${AGENT_IMAGE:?agent.env 需提供 AGENT_IMAGE（业务插件镜像，含 SDK 运行依赖 /app/.venv）}
+    container_name: craw-sim-plugin
+    depends_on:
+      openclaw:
+        condition: service_healthy
+    environment:
+      # 蓝鲸 PaaS / 网关地址均按部署环境经 agent.env 提供，库内只留占位默认
+      - BKPAAS_ENVIRONMENT=dev
+      - BKPAAS_ENGINE_REGION=${BKPAAS_ENGINE_REGION:-default}
+      - BKPAAS_APP_ID=${APP_CODE:?agent.env 需提供 APP_CODE}
+      - BKPAAS_APP_SECRET=${APP_SECRET:?agent.env 需提供 APP_SECRET}
+      - AIDEV_GATEWAY_NAME=${AIDEV_GATEWAY_NAME:-bkaidev}
+      - BK_APIGW_STAGE=${BK_APIGW_STAGE:-prod}
+      - BK_APIGW_MANAGER_URL_TMPL=${BK_API_URL_TMPL:?agent.env 需提供 BK_API_URL_TMPL（形如 http://<api_name>.apigw.example.com，占位符用花括号）}
+      - BK_API_URL_TMPL=${BK_API_URL_TMPL:?agent.env 需提供 BK_API_URL_TMPL}
+      - BKPAAS_APIGW_OAUTH_API_URL=${BKPAAS_APIGW_OAUTH_API_URL:-http://apigw.example.com}
+      - BKPAAS_BK_DOMAIN=${BKPAAS_BK_DOMAIN:-example.com}
+      - BKPAAS_LOGIN_URL=${BKPAAS_LOGIN_URL:-http://login.example.com}
+      - BKPAAS_URL=${BKPAAS_URL:-http://paas.example.com}
+      # —— craw 接管（extend/craw_registry_override 薄壳读取，SDK 装配连接参数）——
+      - BKAI_CRAW_BACKEND=openclaw
+      - BKAI_CRAW_API_URL=http://openclaw:18789
+      - BKAI_CRAW_API_KEY=${OPENCLAW_GATEWAY_TOKEN:?agent.env 需提供 OPENCLAW_GATEWAY_TOKEN}
+    ports:
+      # 只绑宿主 loopback：本地模拟不对外网卡暴露带凭据服务
+      - "127.0.0.1:${PLUGIN_PORT_HOST:-8000}:8000"
+    volumes:
+      # dev SDK 覆盖 venv 内已装 aidev_agent（含 packages/craw）
+      - ../../aidev_agent:/app/.venv/lib/python3.11/site-packages/aidev_agent:ro
+      # 业务插件代码（含 craw registry 覆盖薄壳），路径由 agent.env 的 PLUGIN_SRC 提供
+      - ${PLUGIN_SRC:?agent.env 需提供 PLUGIN_SRC（业务插件 bk_plugin 目录绝对路径）}:/app/bk_plugin:ro
