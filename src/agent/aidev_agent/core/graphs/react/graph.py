@@ -43,6 +43,7 @@ from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
 from aidev_agent.core.citations import CitationRegistry
+from aidev_agent.core.graphs.react.memory_middleware import PersonalMemoryPromptMiddleware
 from aidev_agent.core.graphs.react.skill_middleware import (
     SkillsPromptMiddleware,
     _extract_e2b_params,
@@ -140,6 +141,7 @@ class DefaultState(TypedDict):
     knowledge_qa_content: list
     with_qa_response: list
     runtime_paas_sbx_pv: Annotated[list[dict], add_pv_info]
+    personal_memory: dict
 
 
 class KnowledgeInputState(TypedDict):
@@ -898,6 +900,8 @@ class ReActAgentBuilder:
         )
         node_options_kwargs.update(node_options_kwargs_override)
         node_options = ModelNodeSettings(**node_options_kwargs)
+        if self._personal_memory is not None:
+            node_options.extra_template_middlewares.append(PersonalMemoryPromptMiddleware(self._personal_memory))
 
         sdk_template_middlewares: List[Any] = []
         if self._enable_skills and self._skill_registry is not None:
@@ -1323,9 +1327,20 @@ class ReActAgentBuilder:
 
         end_node = END
         if self._personal_memory is not None:
+
+            def prepare_memory(state, config: RunnableConfig):
+                update = self._personal_memory.prepare(state, config)
+                return {**state, **update} if state_schema is dict else update
+
+            graph.add_node("memory_prepare", prepare_memory)
             graph.add_node("memory_complete", self._personal_memory.complete)
             graph.add_edge("memory_complete", END)
             end_node = "memory_complete"
+
+        start_node = START
+        if self._personal_memory is not None:
+            graph.add_edge(START, "memory_prepare")
+            start_node = "memory_prepare"
 
         # 如果配置了知识库,添加 knowledge 节点
         if knowledge_node:
@@ -1337,11 +1352,11 @@ class ReActAgentBuilder:
         # 根据是否有知识库节点,连接不同的边
         if knowledge_node:
             # 有知识库: START → knowledge → model
-            graph.add_edge(START, "knowledge")
+            graph.add_edge(start_node, "knowledge")
             graph.add_edge("knowledge", "model")
         else:
             # 无知识库: START → model
-            graph.add_edge(START, "model")
+            graph.add_edge(start_node, "model")
 
         # 如果有工具，添加工具节点和条件路由
         if tool_node:
