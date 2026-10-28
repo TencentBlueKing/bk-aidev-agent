@@ -87,26 +87,30 @@ def audit_model(model, *, timeout: float = 2):
     return model
 
 
-def is_inactive_source_error(error) -> bool:
-    """识别平台“旧来源对应记忆已失效”（`INACTIVE_SOURCE:`）校验错误，不暴露原始错误内容。
-
-    支持消息以该前缀开头的 `ValueError`，以及 HTTP 400 且错误包 `error.code == "400"`、
-    `error.message`（字符串或列表）含该前缀的 `HTTPResponseError`；响应体无法解析时返回 `False`。
-    """
+def memory_validation_code(error) -> str | None:
+    """识别已知记忆业务校验码；仅接受内部 ValueError 或规范的 HTTP 400 错误包。"""
     if isinstance(error, ValueError):
-        return bool(error.args) and isinstance(error.args[0], str) and error.args[0].startswith("INACTIVE_SOURCE:")
-    if not isinstance(error, HTTPResponseError) or error.response_status_code != 400:
-        return False
-    try:
-        envelope = error.response_json()
-    except (TypeError, ValueError):
-        return False
-    detail = envelope.get("error") if isinstance(envelope, dict) else None
-    if not isinstance(detail, dict) or str(detail.get("code")) != "400":
-        return False
-    messages = detail.get("message")
-    messages = messages if isinstance(messages, list) else [messages]
-    return any(isinstance(item, str) and item.startswith("INACTIVE_SOURCE:") for item in messages)
+        messages = list(error.args[:1])
+    elif isinstance(error, HTTPResponseError) and error.response_status_code == 400:
+        try:
+            envelope = error.response_json()
+        except (TypeError, ValueError):
+            return None
+        detail = envelope.get("error") if isinstance(envelope, dict) else None
+        if not isinstance(detail, dict) or str(detail.get("code")) != "400":
+            return None
+        messages = detail.get("message")
+        messages = messages if isinstance(messages, list) else [messages]
+    else:
+        return None
+    return next(
+        (
+            code
+            for code in ("INACTIVE_SOURCE", "INACTIVE_TARGET")
+            if any(isinstance(message, str) and message.startswith(code + ":") for message in messages)
+        ),
+        None,
+    )
 
 
 def is_complete_ai_message(message) -> bool:
@@ -268,8 +272,8 @@ class PersonalMemoryRuntime:
             """以宿主身份与会话上下文调用平台记忆工具，返回 `(content, artifact)`。
 
             `memory_search` 的命中写入 artifact 的 `personal_memory_hits`，供本轮引用审计使用。
-            记忆已禁用时返回提示文本；`best_effort` 下遇到旧来源重放错误返回不可重试的
-            `INACTIVE_SOURCE` 结果，其他异常只记录告警并返回“暂不可用”，非 best-effort 时直接抛出。
+            记忆已禁用时返回提示文本；`best_effort` 下向模型返回已知业务校验错误及处理指引；其他异常只记录告警并返回
+            “暂不可用”，非 best-effort 时直接抛出。
             """
             try:
                 username, context = self.context(config)
@@ -282,15 +286,17 @@ class PersonalMemoryRuntime:
             except Exception as error:
                 if not self.best_effort:
                     raise
-                if is_inactive_source_error(error):
-                    return json.dumps(
-                        {
-                            "code": "INACTIVE_SOURCE",
-                            "message": "该来源对应的记忆已失效，本次未重复保存；新的表达可以重新记忆。",
-                            "retryable": False,
-                        },
-                        ensure_ascii=False,
-                    ), {}
+                if code := memory_validation_code(error):
+                    result = {
+                        "code": code,
+                        "message": "该来源对应的记忆已失效，本次未重复保存；新的表达可以重新记忆。",
+                        "retryable": False,
+                    }
+                    if code == "INACTIVE_TARGET":
+                        result["message"] = (
+                            "目标记忆已失效，本次未更新，不要重试旧 ID。若仍需修改这项事实，请重新调用 memory_search，并根据当前有效记忆决定是否更新。"
+                        )
+                    return json.dumps(result, ensure_ascii=False), {}
                 logger.warning("Personal-memory tool unavailable: %s", type(error).__name__)
                 return "Personal memory is temporarily unavailable.", {}
 
