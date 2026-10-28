@@ -8,12 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aidev_agent.utils.tracing import get_current_trace_id
-from opentelemetry.trace import StatusCode
-
 from aidev_wxbot.api.bkaidev import BkAiDevApi
 from aidev_wxbot.wxaibot import tracing
 from aidev_wxbot.wxaibot.context import ContextGenerator
 from aidev_wxbot.wxaibot.direct_stream import AgentStream
+from opentelemetry.trace import StatusCode
 
 from .test_long_connection import ThreadExecutor, _service, long_connection_module
 
@@ -206,7 +205,7 @@ class TestWxBotSpan:
         assert converted == ["https://download.example.com/1", "https://download.example.com/2"]
         api.api.call_action.assert_called_once()
         args, kwargs = api.api.call_action.call_args
-        assert args == ("openapi/aidev/app/v1/knowledges/image_download_urls", "POST")
+        assert args == ("openapi/aidev/resource/v1/knowledgebase/image_download_urls/", "POST")
         assert kwargs["json"] == {"urls": urls, "expires_in": 120}
         assert "headers" in kwargs
 
