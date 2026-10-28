@@ -4,7 +4,7 @@
     :class="{ 'is-enabled': enabled }"
   >
     <MessageProcessHeader
-      v-if="enabled"
+      v-if="enabled && enableMessageCollapse"
       :collapsible="collapsible"
       :end-at="bounds.endAt"
       :expanded="collapsible && expanded"
@@ -36,6 +36,7 @@
 
   const props = withDefaults(
     defineProps<{
+      enableMessageCollapse?: boolean;
       enabled?: boolean;
       /** 本轮是否仍在生成，由容器按「停止生成」按钮的同一判断传入 */
       generating?: boolean;
@@ -44,6 +45,7 @@
       requestCreatedAt?: number | string;
     }>(),
     {
+      enableMessageCollapse: true,
       enabled: false,
       generating: false,
     },
@@ -55,7 +57,7 @@
 
   const expanded = shallowRef(false);
   const collapseIndex = computed(() => resolveProcessCollapseIndex(props.messages, props.generating));
-  const collapsible = computed(() => collapseIndex.value > 0);
+  const collapsible = computed(() => props.enableMessageCollapse && collapseIndex.value > 0);
   const label = computed(() => t(resolveProcessLabelKey(props.messages, props.generating)));
   // 生成中不算耗时；终态从用户提问算到组内最晚的 createdAt，缺任一端则不显示
   const bounds = computed(() => {
@@ -68,7 +70,7 @@
     };
   });
 
-  // 只折叠最后一条 assistant 之前的过程，其自身和后续消息始终保留
+  // 从最后一条 assistant 或更早的流程 / 第三方审批开始保留，只折叠此前的过程
   const visibleMessages = computed(() => {
     if (!props.enabled || !collapsible.value || expanded.value) {
       return props.messages;

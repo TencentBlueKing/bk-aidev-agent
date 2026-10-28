@@ -37,6 +37,7 @@
           }"
         >
           <MessageProcessList
+            :enable-message-collapse="enableMessageCollapse"
             :enabled="shouldShowMessageProcess(group)"
             :generating="isGenerating && groupIndex === visibleMessageGroups.length - 1"
             :messages="group.messages"
@@ -163,6 +164,8 @@
   };
 
   export type MessageContainerProps = {
+    /** 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息，消息内部的折叠行为不变 */
+    enableMessageCollapse?: boolean;
     enableSelection?: boolean; // 是否启用多选模式
     messageGroups: MessageGroup[]; // 消息分组列表
     messages: Message[];
@@ -209,6 +212,7 @@
   type UserActionCallback = (tool: IToolBtn, message: Message) => Promise<string[] | void>;
 
   const props = withDefaults(defineProps<MessageContainerProps>(), {
+    enableMessageCollapse: true,
     enableSelection: false,
   });
   // 选中的消息

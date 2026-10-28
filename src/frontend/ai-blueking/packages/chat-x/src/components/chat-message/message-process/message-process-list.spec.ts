@@ -28,10 +28,10 @@ import { h } from 'vue';
 import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MessageRole, MessageStatus } from '../../../ag-ui/types/constants';
+import { APPROVAL_STATUS, InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types/constants';
 import MessageProcessList from './message-process-list.vue';
 
-import type { AssistantMessage, Message } from '../../../ag-ui/types';
+import type { ActivityMessage, AssistantMessage, InterruptMessage, Message } from '../../../ag-ui/types';
 
 vi.mock('../../../lang/lang', () => ({
   t: (key: string) => key,
@@ -48,7 +48,25 @@ const createMessage = (id: string, content: string, status: MessageStatus, creat
   status,
 });
 
+const flowMessage: ActivityMessage = {
+  ...createMessage('flow', '', MessageStatus.Complete),
+  role: MessageRole.Activity,
+  activityType: MessageContentType.FlowAgent,
+  content: [],
+};
+const approvalMessage: InterruptMessage = {
+  ...createMessage('approval', '', MessageStatus.Complete),
+  role: MessageRole.Interrupt,
+  content: {
+    outcome: {
+      type: 'interrupt',
+      interrupts: [{ id: 'approval-1', toolCallId: 'call-1', reason: InterruptReason.AIDevToolApproval }],
+    },
+  },
+};
+
 type MountOptions = {
+  enableMessageCollapse?: boolean;
   enabled?: boolean;
   generating?: boolean;
   requestCreatedAt?: number | string;
@@ -57,12 +75,13 @@ type MountOptions = {
 describe('MessageProcessList', () => {
   const mountList = (
     messages: Message[],
-    { enabled = true, generating = false, requestCreatedAt }: MountOptions = {},
+    { enableMessageCollapse, enabled = true, generating = false, requestCreatedAt }: MountOptions = {},
   ) =>
     mount(MessageProcessList, {
-      props: { enabled, generating, messages, requestCreatedAt },
+      props: { enableMessageCollapse, enabled, generating, messages, requestCreatedAt },
       slots: {
-        message: ({ message }: { message: Message }) => h('div', { class: 'msg' }, String(message.content)),
+        message: ({ message }: { message: Message }) =>
+          h('div', { class: 'msg', 'data-message-id': message.id }, String(message.content)),
       },
     });
 
@@ -101,6 +120,35 @@ describe('MessageProcessList', () => {
 
     await wrapper.find('.ai-message-process-header').trigger('click');
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最终回答', '工具结果', '补充提示']);
+    wrapper.unmount();
+  });
+
+  it('关闭顶层折叠应展示全部消息并隐藏状态栏和耗时，重新开启后恢复', async () => {
+    const wrapper = mountList([
+      createMessage('1', '前序过程', MessageStatus.Complete, START + 1_000),
+      createMessage('2', '回答', MessageStatus.Complete, START + 8_000),
+    ], { enableMessageCollapse: false, requestCreatedAt: START });
+
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['前序过程', '回答']);
+    expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+
+    await wrapper.setProps({ generating: true });
+    expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+    await wrapper.setProps({ generating: false });
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+
+    await wrapper.setProps({ enableMessageCollapse: true });
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['回答']);
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 8s');
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    await wrapper.setProps({ enableMessageCollapse: false });
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+    await wrapper.setProps({ enableMessageCollapse: true });
+    expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['回答']);
+    expect(wrapper.find('.ai-message-process-header-text').text()).toBe('已完成，耗时 8s');
     wrapper.unmount();
   });
 
@@ -145,6 +193,73 @@ describe('MessageProcessList', () => {
 
     await wrapper.setProps({ messages: [...messages, tip, createMessage('4', '最新回答', MessageStatus.Complete)] });
     expect(wrapper.findAll('.msg').map(node => node.text())).toEqual(['最新回答']);
+    wrapper.unmount();
+  });
+
+  it.each([
+    { name: 'flow_agent', message: flowMessage },
+    { name: '第三方审批', message: approvalMessage },
+  ])('$name 及后续消息在生成结束、收起和追加回答后都应保持可见', async ({ message }) => {
+    const messages = [
+      createMessage('1', '前序过程', MessageStatus.Complete),
+      message,
+      createMessage('2', '回答', MessageStatus.Complete),
+    ];
+    const wrapper = mountList(messages, { generating: true });
+    const visibleIds = () => wrapper.findAll('.msg').map(node => node.attributes('data-message-id'));
+
+    expect(visibleIds()).toEqual(['1', message.id, '2']);
+    await wrapper.setProps({ generating: false });
+    expect(visibleIds()).toEqual([message.id, '2']);
+
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(visibleIds()).toEqual(['1', message.id, '2']);
+    await wrapper.find('.ai-message-process-header').trigger('click');
+    expect(visibleIds()).toEqual([message.id, '2']);
+
+    await wrapper.setProps({ messages: [...messages, createMessage('3', '后续回答', MessageStatus.Complete)] });
+    expect(visibleIds()).toEqual([message.id, '2', '3']);
+    wrapper.unmount();
+  });
+
+  it('特殊消息位于首位时应全部展示且没有折叠箭头', () => {
+    const wrapper = mountList([flowMessage, createMessage('1', '回答', MessageStatus.Complete)]);
+
+    expect(wrapper.findAll('.msg')).toHaveLength(2);
+    expect(wrapper.find('.ai-chevron-right-icon').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('审批从中断更新为已处理或已取消回显后仍应保持可见', async () => {
+    const process = createMessage('1', '前序过程', MessageStatus.Complete);
+    const answer = createMessage('2', '回答', MessageStatus.Complete);
+    const wrapper = mountList([process, approvalMessage, answer]);
+
+    for (const status of ['resolved', 'cancelled'] as const) {
+      const content: InterruptMessage['content'] = {
+        outcome: { type: 'success' },
+        result: {
+          interruptId: 'approval-1',
+          reason: InterruptReason.AIDevToolApproval,
+          status,
+          payload: {
+            metadata: {
+              ticket: {
+                approvers: [],
+                sn: 'approval-1',
+                status: status === 'resolved' ? APPROVAL_STATUS.APPROVED : APPROVAL_STATUS.CANCELLED,
+                submit_time: '2026-01-01T00:00:00Z',
+                title: '工具审批',
+                url: 'https://example.com/approval-1',
+              },
+            },
+          },
+        },
+      };
+      await wrapper.setProps({ messages: [process, { ...approvalMessage, content }, answer] });
+
+      expect(wrapper.findAll('.msg').map(node => node.attributes('data-message-id'))).toEqual(['approval', '2']);
+    }
     wrapper.unmount();
   });
 

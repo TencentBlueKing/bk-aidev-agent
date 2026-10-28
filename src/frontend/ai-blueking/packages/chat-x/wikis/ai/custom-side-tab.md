@@ -7,7 +7,7 @@ description: >
   覆盖默认的图标 + 文案 + 关闭按钮组合。
 aiSummary: >
   ChatContainer 在 ResizeLayout 侧栏 TabPanel 的 label 插槽中调用 getSideTabRenderComponent(h, tab, { removeCustomTab })。
-  返回 VNode 时完全接管该 Tab 标签 UI；返回 undefined 时走内置 ExecutionIcon/NodeTabIcon + 文案 + CloseIcon。
+  返回 VNode 时完全接管该 Tab 标签 UI；返回 undefined 时使用 tab.icon（缺省 NodeTabIcon）+ 文案，并根据 closable 显示关闭按钮。
   与 addCustomTab 的 name/label 配合；关闭逻辑可复用 events.removeCustomTab 或依赖默认关闭按钮。
 relatedComponents:
   - slug: chat-container
@@ -21,7 +21,7 @@ sinceVersion: '2.1.0'
 
 ## 概述
 
-`ChatContainer` 右侧侧栏顶部为 **Tab 标签栏**：默认包含固定的「执行情况」Tab、「文件产物」常驻 Tab，以及由 `addCustomTab` 动态追加的自定义 Tab。
+`ChatContainer` 右侧侧栏顶部为 **Tab 标签栏**：默认包含常驻的「文件产物」Tab，以及由 `addCustomTab` 动态追加的自定义 Tab。
 
 应用层可通过 **`getSideTabRenderComponent`** 按 Tab 粒度自定义**标签区域**的展示（图标、文案、关闭按钮、徽章等），而不改动 Tab 的 `name` / `label` 数据模型与 `addCustomTab` 流程。
 
@@ -41,8 +41,7 @@ ResizeLayout #aside
 ├── Tab（:active="selectedTab.name"）
 │   └── TabPanel × N
 │        └── label: getSideTabRenderComponent(h, tab, { removeCustomTab }) ?? 默认标签
-├── ExecutionSummary（选中「执行情况」时）
-└── component :is（选中自定义 Tab 时的内容区）
+└── component :is（选中 Tab 的内容区；文件产物默认使用 FileArtifactPanel）
 ```
 
 源码入口（`chat-container.vue`）：`TabPanel` 的 `label` 为函数，内部优先调用 `getSideTabRenderComponent`，未返回有效 VNode 时使用默认实现。
@@ -68,7 +67,7 @@ type GetSideTabRenderComponent = (
 | 返回值 | 行为 |
 | ------ | ---- |
 | `VNode` | **完全替换**该 Tab 的标签 UI（不再自动渲染默认图标、文案、关闭按钮） |
-| `undefined` | 使用内置标签：执行情况 Tab 用 `ExecutionIcon`，其余用 `NodeTabIcon` + `tab.label`（溢出 tooltip）+ `CloseIcon`（非执行情况 Tab 可点关闭） |
+| `undefined` | 使用 `tab.icon ?? NodeTabIcon` + `tab.label`（溢出 tooltip）；`tab.closable !== false` 时显示 `CloseIcon` |
 
 ### 与 CustomTab 的关系
 
@@ -82,15 +81,15 @@ import type { CustomTab } from '@blueking/chat-x';
 // label: node.name
 ```
 
-内置常量 `EXECUTION_TAB_NAME === 'execution'` 对应默认「执行情况」Tab，一般不需要自定义其标签；若返回自定义 VNode，需自行处理「不可关闭」等产品规则。
+内置常量 `FILE_ARTIFACT_TAB_NAME === 'file-artifact'` 对应默认「文件产物」Tab，配置了 `ArtifactTabIcon` 和 `closable: false`；若返回自定义 VNode，需自行遵守 `tab.closable` 规则。
 
 ## 默认标签行为
 
 当 `getSideTabRenderComponent` 返回 `undefined` 时，每个 `TabPanel` 的 `label` 为：
 
-1. **图标**：`tab.name === EXECUTION_TAB_NAME` → `ExecutionIcon`，否则 `NodeTabIcon`
+1. **图标**：使用 Vue 组件 `tab.icon`，未提供时回退到 `NodeTabIcon`
 2. **文案**：`tab.label`，带 `vOverflowTips` 防止过长截断
-3. **关闭**：仅非 `execution` Tab 渲染 `CloseIcon`，`onClick` 调用 `removeCustomTab(tab.name)`
+3. **关闭**：`tab.closable !== false` 时渲染 `CloseIcon`，`onClick` 调用 `removeCustomTab(tab.name)`；该字段控制默认 UI，`removeCustomTab` 本身不拦截移除
 
 选中 Tab 时，若标签已在视口内，会以 `scrollIntoView({ block: 'nearest', inline: 'nearest' })` 把标签滚进 tab 栏；不在视口内则跳过，避免把整页文档拖走。
 
@@ -135,13 +134,13 @@ const getSideTabRenderComponent = (createElement, tab, { removeCustomTab }) => {
 
   return createElement('span', { class: 'custom-tab-label' }, [
     createElement('span', {}, tab.label),
-    createElement('button', {
+    tab.closable !== false ? createElement('button', {
       type: 'button',
       onClick: (e: Event) => {
         e.stopPropagation();
         removeCustomTab(tab.name);
       },
-    }, '×'),
+    }, '×') : null,
   ]);
 };
 ```
@@ -169,8 +168,8 @@ const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Recor
 | ---- | ---- |
 | 1 | 消息内组件（如 `FlowAgentContent`）`addCustomTab({ name, label, data })` |
 | 2 | 可选：`getSideTabRenderComponent` 美化该 Tab 的标签 |
-| 3 | 选中 Tab 时触发 `onCustomTabChange`，合并进 `data.props`（见 [custom-side-content](./custom-side-content.md)） |
-| 4 | 可选：`getSideRenderComponent` 覆盖侧栏内容组件 |
+| 3 | `loadOnSelect !== false` 的 Tab 选中时触发 `onCustomTabChange`，结果写入 `data.props.data`（见 [custom-side-content](./custom-side-content.md)） |
+| 4 | 可选：`getSideRenderComponent` 覆盖侧栏内容组件；`loadOnSelect: false` 的 Tab 直接使用 `data.component` |
 
 标签与内容相互独立：可只定制标签、只定制内容，或两者同时定制。
 
@@ -179,7 +178,7 @@ const getSideTabRenderComponent = (createElement: typeof h, tab: CustomTab<Recor
 - **不要**在 `getSideTabRenderComponent` 内修改 `tabs` 列表；增删 Tab 请用 `addCustomTab` / `removeCustomTab`。
 - 返回的 VNode 应处理好 **点击关闭 vs 切换 Tab** 的事件冒泡（关闭按钮建议 `stopPropagation`）。
 - `tab.label` 为空时默认文案区域仍渲染，业务侧应在 `addCustomTab` 时保证可读 `label`。
-- 分享模式 `RenderMode.Share` 下侧栏不展示，该 Prop 不会生效。
+- 分享模式 `RenderMode.Share` 下仍可查看侧栏详情，标签定制也会生效；业务自定义面板需自行遵守分享态的只读要求。
 
 ## 相关文档
 

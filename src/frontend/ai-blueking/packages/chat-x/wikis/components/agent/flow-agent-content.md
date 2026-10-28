@@ -26,6 +26,7 @@ exportStatus: internal
   // 详情入口依赖自定义 Tab 上下文，文档页统一在此提供，避免 demo 注入失败
   const lastTab = ref('');
   useCustomTabProvider({
+    defaultTab: { name: 'overview', label: '概览', closable: false },
     onTabChange: tab => {
       lastTab.value = tab?.label ?? '';
     },
@@ -80,7 +81,7 @@ exportStatus: internal
 
 渲染 FlowAgent（标准运维 / 流程编排）执行过程的活动组件，以「任务 → 节点」两级结构展示执行状态、耗时统计与详情入口。组件内部消费 `useCustomTabConsumer`，点击节点「详情」会向侧栏的自定义 Tab 注入 `FlowAgentNodeDetail` 渲染节点输入输出。
 
-通常不需要直接使用，`MessageRender` 会根据消息 `content.type === flow_agent` 自动渲染。
+通常不需要直接使用，`MessageRender` 将 `role: 'activity'` 的消息交给 `ActivityMessage`，后者按 `activityType === 'flow_agent'` 分发到此组件。
 
 ## 源码事实
 

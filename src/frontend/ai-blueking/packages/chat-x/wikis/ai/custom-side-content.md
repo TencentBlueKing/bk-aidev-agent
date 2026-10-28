@@ -6,8 +6,8 @@ description: >
   通过 getSideRenderComponent、onCustomTabChange 与 addCustomTab 的 data.component/props
   自定义 ChatContainer 侧栏内容区；支持 locateButton 与主对话定位联动。
 aiSummary: >
-  选中非 execution 的自定义 Tab 时，ChatContainer 用 getSideRenderComponent(h, props) ?? data.component 渲染内容，
-  并 v-bind data.props；切换 Tab 时 onCustomTabChange 拉取数据写入 props.loading/data。
+  loadOnSelect 不为 false 的 Tab 使用 getSideRenderComponent(h, props) ?? data.component 渲染内容，
+  并在切换时通过 onCustomTabChange 加载数据；loadOnSelect 为 false 时直接渲染 data.component。
   子组件需声明 locateButton 插槽以展示「在对话中定位」；messageUid 与 message.uid 对齐。
 relatedComponents:
   - slug: chat-container
@@ -21,12 +21,12 @@ sinceVersion: '2.1.0'
 
 ## 概述
 
-用户选中侧栏某个 **自定义 Tab**（非默认「执行情况」）后，`ChatContainer` 在 Tab 栏下方渲染 **内容面板**。内容来源按优先级：
+用户选中侧栏 Tab 后，`ChatContainer` 在 Tab 栏下方渲染 **内容面板**。对于 `loadOnSelect !== false` 的 Tab，内容来源按优先级：
 
 1. **`getSideRenderComponent(h, props)`** 返回的 VNode（应用层完全接管根组件）
 2. 否则使用 **`addCustomTab` 时传入的 `data.component`**，并 `v-bind="data.props"`
 
-异步数据通过 **`onCustomTabChange`** 在 Tab 切换时拉取，结果写入 `selectedTab.data.props`（含 `loading`、`data` 等字段）。
+异步数据通过 **`onCustomTabChange`** 在 Tab 切换时拉取，结果写入 `selectedTab.data.props.data`，完成后设置 `loading: false`。`loadOnSelect: false` 的 Tab 自行管理数据，跳过该回调和 `getSideRenderComponent`，直接渲染 `data.component` 并绑定 `data.props`；内置「文件产物」Tab 使用此模式。
 
 | 能力 | 入口 |
 | ---- | ---- |
@@ -43,23 +43,29 @@ Tab **标签** UI 见 [自定义侧栏 Tab 标签](./custom-side-tab.md)。
 sequenceDiagram
   participant Msg as FlowAgentContent等
   participant Provider as useCustomTabProvider
+  participant Container as ChatContainer
   participant App as 应用层 onCustomTabChange
   participant UI as 侧栏 component
 
   Msg->>Provider: addCustomTab({ name, label, data: { component, props, messageUid } })
   Provider->>Provider: isCollapse=false, selectCustomTab
-  Provider->>App: onTabChange(tab)
-  Note over Provider: props.loading=true
-  App-->>Provider: 详情数据
-  Note over Provider: props.loading=false, props.data=结果
-  Provider->>UI: getSideRenderComponent(h, props) ?? component + v-bind props
+  Provider->>Container: onTabChange(tab)
+  alt loadOnSelect !== false
+    Note over Container: 保留已有 props；缺省时初始化 loading=true, data={}
+    Container->>App: onCustomTabChange(tab)
+    App-->>Container: 详情数据
+    Note over Container: props.loading=false, props.data=结果
+    Container->>UI: getSideRenderComponent(h, props) ?? component + v-bind props
+  else loadOnSelect === false
+    Container->>UI: data.component + v-bind props
+  end
 ```
 
 ## 类型
 
 ```typescript
 import type { Component } from 'vue';
-import type { CustomTab, CustomTabData } from '@blueking/chat-x';
+import type { NodeDetailData } from '@blueking/chat-x';
 
 // 库内 Flow 场景扩展（custom.ts）
 type CustomBkFlowTabData = CustomTabData<{
@@ -75,13 +81,17 @@ type CustomBkFlowTabData = CustomTabData<{
 type CustomTab<T extends CustomTabData<Record<string, unknown>>> = {
   label: string;
   name: string;
-  icon?: string;
+  icon?: Component;
+  closable?: boolean; // 默认显示关闭按钮，false 时隐藏
+  loadOnSelect?: boolean; // 缺省 true；false 时由组件自行管理数据
+  order?: number; // 升序排列，缺省 100
+  visible?: boolean; // 缺省 true；false 时不展示标签和内容
   data?: T & {
     messageUid?: string; // 与活动消息 message.uid 一致，供「在对话中定位」
   };
 };
 
-type CustomTabData<T> = {
+type CustomTabData<T extends Record<string, unknown>> = {
   component?: Component;
   props?: T;
 };
@@ -130,7 +140,7 @@ type OnCustomTabChange = (tab: CustomTab<CustomBkFlowTabData>) => Promise<unknow
 
 `ChatContainer` 在 `useCustomTabProvider` 的 `onTabChange` 中：
 
-1. 将当前 Tab 的 `data.props` 设为 `{ ...原 props, loading: true, data: {} }`（保留 task_id 等）
+1. 若 `tab.loadOnSelect === false`，直接返回；否则保留已有 `data.props`，仅在未提供时初始化为 `{ loading: true, data: {} }`
 2. `await onCustomTabChange(tab)`
 3. 合并为 `{ ...props, loading: false, data: 返回值 }`
 
@@ -164,7 +174,7 @@ type GetSideRenderComponent = (
 | `VNode` | 使用该 VNode 作为侧栏内容根（**不再**使用 `data.component`） |
 | `undefined` | 使用 `selectedTab.data.component`，并 `v-bind="selectedTab.data.props"` |
 
-模板渲染（`chat-container.vue`）：
+模板渲染（`chat-container.vue`，以下为 `loadOnSelect !== false` 的分支）：
 
 ```vue
 <component
@@ -245,11 +255,11 @@ const getSideRenderComponent = (createElement: typeof h, props?: Record<string, 
   import { h, useTemplateRef } from 'vue';
   import { ChatContainer, type CustomTab } from '@blueking/chat-x';
   import MySidePanel from './MySidePanel.vue';
+  import MyConfidencePanel from './MyConfidencePanel.vue';
 
   const chatContainerRef = useTemplateRef('chatContainerRef');
 
-  const handleCustomTabChange = async (tab: CustomTab) => {
-    if (tab.name === 'execution') return;
+  const handleCustomTabChange = async (tab: CustomTab<Record<string, unknown>>) => {
     const detail = await fetchDetail(tab.name);
     return detail;
   };
@@ -278,20 +288,21 @@ const getSideRenderComponent = (createElement: typeof h, props?: Record<string, 
 
 `MySidePanel.vue` 需处理 `loading` / `data`，并预留 `locateButton` 插槽。
 
-## 与「执行情况」Tab 的区别
+## 内置文件产物与自定义 Tab
 
 | Tab | 内容 |
 | --- | ---- |
-| `EXECUTION_TAB_NAME`（`execution`） | 内置 `ExecutionSummary`，不走 `component` / `getSideRenderComponent` |
-| 自定义 Tab | `getSideRenderComponent` ?? `data.component` + `onCustomTabChange` 数据 |
+| `FILE_ARTIFACT_TAB_NAME`（`file-artifact`） | 常驻、`closable: false`、`loadOnSelect: false`，由 `data.component` 中的 `FileArtifactPanel` 消费文件预览 Provider |
+| 自定义 Tab（默认 `loadOnSelect: true`） | `getSideRenderComponent` ?? `data.component` + `onCustomTabChange` 数据 |
+| 自定义 Tab（`loadOnSelect: false`） | 直接渲染 `data.component`，组件自行管理数据 |
 
-自定义 Tab 的生命周期由调用方掌控：容器**不会**因 `executionGroups` 变空而自动 `resetCustomTab`；仅在组件卸载时重置，避免残留节点详情等 Tab。侧栏展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断。
+自定义 Tab 的生命周期由调用方掌控：容器不会因消息或产物列表变空而自动重置 Tab，容器卸载时调用 `resetCustomTab`。未传 `asideCollapsed` 时由内部管理展开状态；传入后为严格受控模式，应通过 `v-model:asideCollapsed` 接收展开 / 折叠更新。
 
 ## 设计建议
 
 - **组件 + 拉数分离**：`data.component` 负责 UI 结构，`onCustomTabChange` 负责请求；避免在内容组件内重复监听 Tab 切换。
 - **props 命名**：与后端/Flow 协议对齐时用 snake_case 写入 `data.props`，在 `getSideRenderComponent` 内再映射为组件 camelCase，与 Playground 一致。
-- **loading 态**：切换 Tab 时容器会先置 `loading: true`，业务组件应统一骨架样式（可用全局 `.ai-skeleton-element`）。
+- **loading 态**：初次打开时可在 `data.props` 中设置 `loading: true`；容器保留已有 props，加载完成后置 `loading: false`。不要依赖每次切换都自动重置 loading。
 - **key**：容器对内容使用 `:key="selectedTab.name"`，切换 Tab 会 remount，勿在子组件内假设长期挂载。
 
 ## 相关文档

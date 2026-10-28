@@ -33,6 +33,7 @@ yarn add @blueking/chat-x
   <div class="chat-container">
     <MessageContainer
       :messages="messages"
+      :message-groups="messageGroups"
       :message-status="messageStatus"
       :on-agent-action="handleAgentAction"
       :on-user-action="handleUserAction"
@@ -48,18 +49,24 @@ yarn add @blueking/chat-x
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import {
   ChatInput,
   MessageContainer,
   MessageStatus,
   MessageRole,
+  useMessageGroup,
   type Message
 } from '@blueking/chat-x';
 
 const inputValue = ref('');
 const messageStatus = ref(MessageStatus.Complete);
 const messages = ref<Message[]>([]);
+const selectedUserMessages = ref<Message[]>([]);
+const { messageGroups } = useMessageGroup({
+  messages: computed(() => messages.value),
+  selectedUserMessages,
+});
 
 const handleSendMessage = async (value: string) => {
   // 添加用户消息
@@ -77,7 +84,7 @@ const handleSendMessage = async (value: string) => {
   // 调用 AI API...
 };
 
-const handleStopSending = () => {
+const handleStopSending = async () => {
   // 停止发送逻辑
 };
 
@@ -85,11 +92,11 @@ const handleStopStreaming = () => {
   // 停止流式输出
 };
 
-const handleAgentAction = (tool) => {
+const handleAgentAction = async (tool) => {
   // 处理 AI 消息工具操作
 };
 
-const handleUserAction = (tool) => {
+const handleUserAction = async (tool) => {
   // 处理用户消息工具操作
 };
 </script>
@@ -159,7 +166,7 @@ const handleUserAction = (tool) => {
 | 依赖 | 版本 | 说明 |
 |------|------|------|
 | vue | ^3.5.24 | Vue 3 核心库 |
-| bkui-vue | ^2.0.1 | 蓝鲸 UI 组件库 |
+| bkui-vue | 2.0.2-beta.81 | 蓝鲸 UI 组件库（当前运行时依赖） |
 | highlight.js | ^11.11.1 | 代码高亮 |
 | katex | ^0.16.27 | LaTeX 公式渲染 |
 | mermaid | ^11.12.2 | 图表渲染 |

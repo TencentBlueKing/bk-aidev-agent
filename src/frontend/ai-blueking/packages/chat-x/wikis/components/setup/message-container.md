@@ -6,7 +6,7 @@ domain: setup
 description: 负责按传入的 `messageGroups` 渲染、过程状态栏、滚动控制、工具栏和消息插槽透传。
 aiSummary: >
   负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
-  每一轮助手组展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认仅折叠最后一条 assistant 之前的消息。
+  每一轮助手组默认展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认保留最后一条 assistant 或更早的 flow_agent / 第三方审批及后续全部消息。enableMessageCollapse 为 false 时展示全部消息并隐藏过程状态栏和耗时。
   源码位置：src/components/chat-message/message-container/message-container.vue。
 relatedComponents:
   - slug: message-render
@@ -319,7 +319,7 @@ sinceVersion: 1.0.0
 - **消息分组**：将连续的非用户消息合并为一组，每组共享一个工具栏
 - **Tool 消息关联**：自动将 `role: 'tool'` 消息注入到对应 Assistant 消息的 toolCall 中
 - **Loading 自动注入**：末尾为用户消息时，自动追加 Loading 动画组
-- **过程状态栏**：有内容的助手组在消息上方展示状态。生成中（`streaming` / `stop-loading` / `fetching` / `pending`，且非分享态）最后一组显示「处理中」；终态按组内最后一条显示「失败 / 已停止 / 已禁用」，其余为「已完成」。终态默认保留本轮最后一条 `assistant` 及其后全部消息，仅折叠它之前的消息；没有 `assistant` 时全部展示
+- **过程状态栏**：有内容的助手组在消息上方展示状态。生成中（`streaming` / `stop-loading` / `fetching` / `pending`，且非分享态）最后一组显示「处理中」；终态按组内最后一条显示「失败 / 已停止 / 已禁用」，其余为「已完成」。终态默认保留本轮最后一条 `assistant` 或更早的 `flow_agent` / 第三方审批及后续全部消息，仅折叠展示起点之前的消息；没有 `assistant` 时全部展示
 - **滚动管理**：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」，过程状态栏也按终态展示。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
 - **多选模式**：支持按消息组勾选，用户消息与 AI 回复联动选中
 
@@ -424,8 +424,8 @@ sinceVersion: 1.0.0
 
 **关键细节**：
 
-- 每个消息组外层 DOM 的 `id` 为 **`MessageGroup.uid`**（由 `useMessageGroup` 生成），供执行摘要「在对话中定位」、侧栏自定义 Tab 等场景滚动锚定
-- `role: 'tool'` 消息**不会独立渲染**，而是被注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段
+- 每个消息组外层 DOM 的 `id` 为 **`MessageGroup.uid`**（由 `useMessageGroup` 生成），供侧栏自定义 Tab 的「在对话中定位」等场景滚动锚定
+- `role: 'tool'` 消息匹配到工具调用时，注入对应 AssistantMessage 的 `toolCall.toolMessage` 字段；未匹配时保留在 Assistant 组内并独立渲染
 - 若 `toolMessage.error` 存在，AssistantMessage 的 `status` 会被强制设为 `MessageStatus.Error`
 - 当消息组**最后一条**消息的 `role === 'interrupt'` 时，`mouseenter` **不会**设置 `isHover`，避免 AI 工具栏在审批卡片上误显
 - `MessageTools` 工具栏只在 `type === 'assistant'` 的消息组底部渲染（不依赖鼠标悬停，始终可见），且满足以下条件时**不渲染**：
@@ -455,7 +455,7 @@ document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 
 `.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
 
-终态且本轮最后一条 `assistant` 之前存在消息时，过程状态栏默认折叠这些前序消息，它们不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。最后一条 `assistant` 及其后的全部消息始终保留；没有 `assistant` 时全部展示。
+启用顶层折叠时，终态的过程状态栏默认折叠本轮[展示起点](#助手过程状态栏)之前的消息，它们不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。最后一条 `assistant` 或更早的 `flow_agent` / 第三方审批及后续全部消息始终保留；没有 `assistant` 时全部展示。`enableMessageCollapse` 为 `false` 时所有消息都参与渲染。
 
 ## 等待响应（Loading 自动注入）
 
@@ -601,17 +601,27 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 ## 助手过程状态栏
 
-有内容的助手消息组会在消息上方显示过程状态栏（内部组件 `MessageProcessList` / `MessageProcessHeader`，不从包入口导出）。用户消息组和空组不显示。
+启用 `enableMessageCollapse` 时，有内容的助手消息组会在消息上方显示过程状态栏（内部组件 `MessageProcessList` / `MessageProcessHeader`，不从包入口导出）。用户消息组和空组不显示。
+
+`enableMessageCollapse` 默认为 `true`。设为 `false` 时，所有轮次（包括分享模式）的消息均完整展示，整个过程状态栏不再渲染，包括折叠箭头、状态文案（如「已完成」「处理中」）和耗时。工具栏及消息自身的折叠行为不受影响；动态重新开启时恢复过程状态栏、耗时和以下折叠规则。
 
 | 条件 | 文案 | 消息是否折叠 |
 | ---- | ---- | ------------ |
 | 容器仍在生成，且是最后一组；`renderMode` 不是 `Share` | 「处理中」，文字渐变闪动，不显示耗时 | 否，展示全部消息 |
-| 最后一条 `status` 为 `error` | 「失败」 | 默认保留本轮最后一条 `assistant` 及后续消息，仅折叠前序消息；没有 `assistant` 时全部展示 |
+| 最后一条 `status` 为 `error` | 「失败」 | 按本轮展示起点折叠前序消息，见下方规则 |
 | 最后一条 `status` 为 `stop` | 「已停止」 | 同上 |
 | 最后一条 `status` 为 `disabled` | 「已禁用」 | 同上 |
 | 其余终态 | 「已完成」 | 同上 |
 
 生成中与底部「停止生成」使用同一判断：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`。分享态即使容器仍在生成，也按终态展示。更早的助手组在生成中仍按各自终态折叠。
+
+每轮独立计算终态的**展示起点**，起点消息本身及其后全部消息均不折叠：
+
+- 没有 `assistant` 时全部展示。
+- 默认从本轮最后一条 `assistant` 开始展示。
+- 若更早的位置出现 `flow_agent` 或第三方审批，则提前到其中首次出现的位置；后续新增 `assistant` 不会将该位置重新折叠。
+- `flow_agent` 按 `role === 'activity'` 且 `activityType === 'flow_agent'` 识别。
+- 第三方审批按 `role === 'interrupt'` 且审批类型为 `aidev:tool_approval` 识别，同时覆盖 `outcome.type === 'interrupt'` 的 `interrupts` 和 `outcome.type === 'success'` 的 `result`，已处理或取消的审批回显也保留。其他活动和用户提问中断不影响边界。
 
 耗时只在终态、且能同时取到两端时显示，格式为 `，耗时 2m2s`：
 
@@ -620,7 +630,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 - 缺少任一端、或间隔为 0 时不显示；不足 1 秒显示 `<1s`；其余先舍去毫秒再格式化
 - 生成中不显示耗时，也不用当前时间刷新
 
-可折叠时点击状态栏展开或收起。从生成中进入终态会自动收回最后一条 `assistant` 之前的消息。若没有 `assistant`，或最后一条 `assistant` 位于首位，则全部展示且没有折叠箭头。每轮独立计算折叠边界，最后一条 `assistant` 之后追加的消息直接展示。
+可折叠时点击状态栏展开或收起。从生成中进入终态会自动收回展示起点之前的消息。若没有 `assistant`，或展示起点位于首位，则全部展示且没有折叠箭头。
 
 提供 `#group` 会替换整组默认内容，过程状态栏不再出现。`#default` 仍包在状态栏里面，折叠时只把当前可见消息传给插槽。
 
@@ -1166,6 +1176,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | ------------------------ | -------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
 | messageGroups            | `MessageGroup[]`                                                                             | —       | **必填**。本组件不分组；由调用方用 `useMessageGroup` 算好后传入。`ChatContainer` 会代为计算。 |
+| enableMessageCollapse    | `boolean`                                                                                   | `true`  | 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息并隐藏状态栏和耗时，工具栏及消息自身的折叠行为不变 |
 | messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态。为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，并让最后一组助手过程状态显示「处理中」。`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入 |
 | messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
 | updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
@@ -1215,7 +1226,6 @@ interface MessageGroup {
   startTime?: number;
   type: MessageRole;
   uid: string;
-  userMessageTitle?: number | string;
 }
 
 // onAgentAction 回调类型

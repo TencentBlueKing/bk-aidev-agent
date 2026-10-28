@@ -152,6 +152,7 @@
           <MessageContainer
             v-if="messages?.length"
             v-model:selected-user-messages="selectedUserMessages"
+            :enable-message-collapse="enableMessageCollapse"
             :enable-selection="isShareMode"
             :message-groups="messageGroups"
             :message-status="inputStatus"
@@ -398,6 +399,7 @@
     {
       // 显式给 undefined，避免 Boolean 类型 prop 在未传时被 Vue 转成 false，从而无法区分「外部受控」与「内部自持」
       asideCollapsed: undefined,
+      enableMessageCollapse: true,
       size: 'small',
     },
   );

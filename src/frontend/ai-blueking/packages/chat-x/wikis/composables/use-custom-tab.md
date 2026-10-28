@@ -38,7 +38,7 @@ function useCustomTabProvider<T extends Record<string, unknown>>(options: {
 }): {
   tabs: ShallowRef<CustomTab<T>[]>;
   displayTabs: ComputedRef<CustomTab<T>[]>;
-  selectedTab: Ref<CustomTab<T>>;
+  selectedTab: ShallowRef<CustomTab<T>>;
   isCollapse: Ref<boolean>;
   addCustomTab: (tab: CustomTab<T>) => void;
   ensureCustomTab: (tab: CustomTab<T>) => void;
@@ -61,7 +61,6 @@ function useCustomTabConsumer<T extends Record<string, unknown>>():
       ensureCustomTab: (tab: CustomTab<T>) => void;
       removeCustomTab: (tabName: string) => void;
       selectCustomTab: (tab: CustomTab<T>) => void;
-      resetCustomTab: () => void;
     };
 ```
 
@@ -127,11 +126,13 @@ tabManager?.removeCustomTab('node-detail-123');
 
 ## 返回值说明
 
+下表为 Provider 返回值。Consumer 注入类型不包含 `isCollapse` / `resetCustomTab`，后代组件应使用其公开的增删与选中方法。
+
 | 属性/方法名     | 类型                        | 说明                                              |
 | --------------- | --------------------------- | ------------------------------------------------- |
 | tabs            | `ShallowRef<CustomTab[]>`   | 所有 Tab 列表（含容器注入的 defaultTab，保留隐藏项） |
 | displayTabs     | `ComputedRef<CustomTab[]>`  | Tab 栏实际展示列表：过滤 `visible === false`，按 `order` 升序稳定排序 |
-| selectedTab     | `Ref<CustomTab>`            | 当前选中的 Tab；未被主动切换过时跟随 Tab 栏首位，选中项被隐藏时自动回退到首个可见 Tab |
+| selectedTab     | `ShallowRef<CustomTab<T>>` | 当前选中的 Tab；未被主动切换过时跟随 Tab 栏首位，选中项被隐藏时自动回退到首个可见 Tab |
 | isCollapse      | `Ref<boolean>`              | 侧边栏折叠状态；传入 `collapsed` 时即该受控 ref（读写都作用于外部），否则为内部状态；`addCustomTab` 时自动设为 `false` |
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加/合并 Tab，**展开侧栏并选中**目标 Tab |
 | ensureCustomTab | `(tab: CustomTab) => void`  | 添加/合并 Tab，**不展开、不主动切换选中**；用于常驻挂载（如文件产物） |
@@ -142,7 +143,10 @@ tabManager?.removeCustomTab('node-detail-123');
 ## 类型定义
 
 ```typescript
-interface CustomTab<T = Record<string, unknown>> {
+import type { Component } from 'vue';
+import type { CustomTabData } from '@blueking/chat-x';
+
+interface CustomTab<T extends CustomTabData<Record<string, unknown>>> {
   label: string;
   name: string;
   /** Tab 标签图标组件；缺省由容器回退到 NodeTabIcon */
@@ -175,4 +179,4 @@ interface CustomTab<T = Record<string, unknown>> {
 ## 关联组件
 
 - [ChatContainer](../components/setup/chat-container) — 侧栏 Tab 与自定义面板
-- [useArtifactPreview](./use-artifact-preview) — 文件产物 Tab：初始化 `ensureCustomTab` 常驻挂载，点击卡片时 `addCustomTab`
+- [useArtifactPreview](./use-artifact-preview) — 文件产物 Tab：初始化时通过 `defaultTab` 常驻挂载，点击卡片时 `addCustomTab`

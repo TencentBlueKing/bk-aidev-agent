@@ -11,7 +11,7 @@ aiSummary: >
   ContentRender 再按内容类型分发到 MarkdownContent、CodeContent、MermaidContent
   等内容渲染器。最小可用组合为 ChatInput + MessageContainer + useMessageGroup，
   ChatContainer 封装了完整对话界面。扩展自定义消息通过 declare global 类型合并
-  + MessageRender 默认 slot 实现。
+  + ChatContainer 的 message 插槽或 MessageContainer 的 default 插槽实现。
 relatedComponents: []
 sinceVersion: '1.0.0'
 ---
@@ -48,6 +48,7 @@ ChatContainer                          ← 一站式对话布局
 │       │   │   │   ├── KnowledgeRagContent   ← 知识库检索
 │       │   │   │   └── ReferenceDocContent   ← 引用文档列表
 │       │   │   ├── InfoMessage        ← 系统提示
+│       │   │   ├── InterruptMessageRender ← 审批中断 / 已回答问题回显
 │       │   │   ├── ToolMessage        ← 工具结果（通常不独立渲染）
 │       │   │   └── LoadingMessage     ← 等待动画
 │       │   ├── MessageTools           ← 消息组底部工具栏
@@ -62,6 +63,8 @@ ChatContainer                          ← 一站式对话布局
 │       └── SelectionFooter            ← 多选操作栏
 └── AiSelection                        ← 划词选择浮窗（独立于 ChatContainer）
 ```
+
+Assistant 消息组由内部 `MessageProcessList` / `MessageProcessHeader` 管理顶层过程折叠与状态展示。`ChatContainer` 和 `MessageContainer` 的 `enableMessageCollapse` 默认开启；设为 `false` 时展示全部组内消息，同时隐藏“已完成 / 处理中 / 耗时”等过程头部。具体边界见 [MessageContainer 折叠规则](./components/setup/message-container.md)。
 
 ## 数据流
 
@@ -158,9 +161,9 @@ type Message = MessageMap[MessageType];
 | 条件           | 行为                                                                                         |
 | -------------- | -------------------------------------------------------------------------------------------- |
 | 遇到 User 消息 | 将之前累积的非 User 消息打包为一个 Assistant 组，User 消息单独成组                           |
-| 遇到 Tool 消息 | **不进入分组列表**，而是找到对应的 AssistantMessage.toolCalls，注入到 `toolCall.toolMessage` |
+| 遇到 Tool 消息 | 匹配到 AssistantMessage.toolCalls 时注入 `toolCall.toolMessage`，不独立入组；未匹配时保留在 Assistant 组中 |
 | 遇到其他角色   | 累积到当前 Assistant 组缓冲区                                                                |
-| 末尾是 User    | 自动追加一个 Loading 组（显示等待动画）                                                      |
+| 末尾是 User    | 非 `RenderMode.Share` 时自动追加一个 Loading 组（显示等待动画） |
 
 ### ToolCall 关联
 
@@ -187,7 +190,8 @@ ToolMessage (id: 'tool_1', toolCallId: 'tc_1')
 | `reasoning` | ReasoningMessage | 折叠/展开                                                                               |
 | `activity`  | ActivityMessage  | 按 activityType 二次分发到 FlowAgentContent / KnowledgeRagContent / ReferenceDocContent |
 | `info`      | InfoMessage      | 系统提示                                                                                |
-| `tool`      | ToolMessage      | 通常被注入到 AssistantMessage 内，不独立渲染                                            |
+| `tool`      | ToolMessage      | 匹配工具调用时被注入 AssistantMessage；未匹配时独立渲染 |
+| `interrupt` | InterruptMessageRender | 展示审批中断与已回答问题回显，交互通过 `onInterruptResume` 回传 |
 | `loading`   | LoadingMessage   | CSS 骨架屏动画                                                                          |
 | 其他        | `null`           | 不渲染                                                                                  |
 
@@ -225,7 +229,7 @@ ChatInput + MessageContainer + useMessageGroup
 ChatContainer
 ```
 
-内部封装了消息分组、快捷指令、执行摘要、多选分享等全部逻辑。接收 `messages` 即可，推荐大多数场景使用。
+内部封装了消息分组、快捷指令、文件产物侧栏、自定义 Tab、多选分享等逻辑。接收 `messages` 即可，推荐大多数场景使用。
 
 详见 [快速上手](./getting-started.md) 中的代码示例。
 
@@ -233,7 +237,7 @@ ChatContainer
 
 ### 自定义消息类型
 
-通过 TypeScript 声明合并扩展 `AIBluekingMessageMap`，然后在 `MessageRender` 的默认 slot 中按 `contentType` 渲染自定义组件。
+通过 TypeScript 声明合并扩展 `AIBluekingMessageMap`，然后在 `ChatContainer#message` 或 `MessageContainer#default` 中按 `message.role` 渲染自定义组件，其余角色交给 `MessageRender`。`MessageRender` 自身的默认插槽只覆盖 Assistant 正文，不处理新增角色。
 
 ```typescript
 declare global {
@@ -247,7 +251,7 @@ declare global {
 
 ### 自定义内容类型
 
-通过 `AIBluekingContentMap` 声明合并扩展内容块类型，与 `ContentRender` 的 slot 机制配合使用。
+通过 `AIBluekingContentMap` 声明合并扩展内容块类型，与 `ContentRender` 的 slot 机制配合使用。该扩展不会自动修改内置 `AssistantMessage.content` / `ActivityMessage.content` 类型，也不会注册运行时渲染器；结构化业务消息需自行定义消息类型并提供渲染分支。
 
 ### 工具栏定制
 

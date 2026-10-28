@@ -2,11 +2,11 @@
 name: useAnimationText
 slug: use-animation-text
 category: composable
-description: 文本淡入动画的组合式函数。将响应式文本按**增量**拆分为独立 chunk，每个新增 chunk 对应一次淡入动画，适用于 AI 流式输出的逐段渐显效果。
+description: 提供文本分块状态与淡入样式；当前实现只初始化文本，流式更新需调用方直接监听 Ref。
 aiSummary: >
   useAnimationText 接收 MaybeRef<string> 与可选 AnimationConfig（fadeDuration、easing），返回 chunks 与 animationStyle。
-  监听文本变化：前缀追加则增量拆分为新 chunk 并触发动画，否则重置为单 chunk，适合流式输出逐段淡入。
-  全局样式已含 ai-markdown-fade-in。AnimationText 组件内部封装同一逻辑。
+  当前 watch(() => text) 不追踪 Ref.value 更新，流式场景需调用方 watch(text, handler) 更新 chunks。
+  全局样式已含 ai-markdown-fade-in；内部 AnimationText 组件同样只展示初始化文本。
 relatedComponents:
   - slug: animation-text
     relation: 封装 chunks 与样式渲染
@@ -109,11 +109,11 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-文本淡入动画的组合式函数。将响应式文本按**增量**拆分为独立 chunk，每个新增 chunk 对应一次淡入动画，适用于 AI 流式输出的逐段渐显效果。
+文本淡入动画的组合式函数，返回 `chunks` 与 `animationStyle`。当前实现使用 `watch(() => text, ...)`，只初始化文本；即使传入 `Ref<string>`，后续 `.value` 变化也不会更新 chunks。下面的流式示例显式使用 `watch(text, handler)` 补上监听，页面演示也使用该方式。
 
 ## 工作原理
 
-每当 `text` 发生变化时，composable 通过比较新旧文本决定如何更新 chunks：
+分块算法通过比较新旧文本决定如何更新 chunks；要让该算法处理后续文本变化，当前需由调用方直接监听 Ref：
 
 | 变化情况                            | 处理方式                  |
 | ----------------------------------- | ------------------------- |
@@ -127,7 +127,7 @@ sinceVersion: 1.0.0
 
 ## 基础用法
 
-将 `Ref<string>` 传入 composable，配合 `v-for` + `:style` 渲染各 chunk。
+将 `Ref<string>` 传入 composable 获得初始状态和样式，再显式监听文本更新 chunks，配合 `v-for` + `:style` 渲染。
 
 ```vue
 <template>
@@ -142,11 +142,20 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import { ref, watch } from 'vue';
   import { useAnimationText } from '@blueking/chat-x';
 
   const text = ref('');
   const { chunks, animationStyle } = useAnimationText(text);
+
+  // 当前版本需调用方直接监听 Ref，补上流式更新
+  watch(text, (value, previous) => {
+    if (!previous || !value.startsWith(previous)) {
+      chunks.value = [value];
+    } else if (value !== previous) {
+      chunks.value = [...chunks.value, value.slice(previous.length)];
+    }
+  });
 
   // 模拟流式追加
   async function startStreaming() {
@@ -179,7 +188,7 @@ sinceVersion: 1.0.0
 
 ## 自定义动画配置
 
-通过 `options` 调整淡入动画的持续时间和缓动函数。
+通过 `options` 调整淡入动画的持续时间和缓动函数；这不改变监听行为，流式更新仍需沿用上例的 `watch`。
 
 ```vue
 <script setup lang="ts">
@@ -212,25 +221,18 @@ sinceVersion: 1.0.0
 
 ## 文本重置行为
 
-当 `text` 被完全替换（新值不以旧值为前缀）时，chunks 会重置为单一片段，之前积累的 chunks 清空。这适用于多轮对话中切换消息的场景。
+沿用基础用法中的 `watch` 时，完全替换 `text`（新值不以旧值为前缀）会将 chunks 重置为单一片段，清空之前的 chunks。这适用于多轮对话中切换消息的场景。
 
-```vue
-<script setup lang="ts">
-  import { ref } from 'vue';
-  import { useAnimationText } from '@blueking/chat-x';
-
-  const text = ref('');
-  const { chunks, animationStyle } = useAnimationText(text);
-
-  async function nextMessage(newContent: string) {
-    // 直接替换整个 text，chunks 自动重置
-    text.value = '';
-    for (const char of newContent) {
-      text.value += char;
-      await new Promise(r => setTimeout(r, 50));
-    }
+```typescript
+// 接在基础用法的 text / chunks / watch 定义之后
+async function nextMessage(newContent: string) {
+  text.value = '';
+  chunks.value = [];
+  for (const char of newContent) {
+    text.value += char;
+    await new Promise(r => setTimeout(r, 50));
   }
-</script>
+}
 ```
 
 **渲染效果**（两条消息依次播放，第二条时 chunks 重置）
@@ -251,7 +253,7 @@ sinceVersion: 1.0.0
 
 ## 使用 AnimationText 组件
 
-如无需定制渲染逻辑，可直接使用封装好的 `AnimationText` 组件，内部已集成 `useAnimationText`：
+内部 `AnimationText` 组件使用初始化时的 `props.text` 调用 composable，适合一次性文本淡入，不响应后续 prop 变化；它未从包入口导出。仓库内调试时可使用源码组件：
 
 ```vue
 <template>
@@ -259,8 +261,10 @@ sinceVersion: 1.0.0
 </template>
 
 <script setup lang="ts">
-  // AnimationText 未从包入口导出，见内部组件文档
-  // import { useAnimationText } from '@blueking/chat-x' 才是公开 API
+  import { ref } from 'vue';
+  import AnimationText from '../../src/components/animation-text/animation-text.vue';
+
+  const text = ref('一次性淡入文本');
 </script>
 ```
 
@@ -284,7 +288,7 @@ function useAnimationText(
 
 | 参数      | 类型               | 必填 | 说明                                      |
 | --------- | ------------------ | ---- | ----------------------------------------- |
-| `text`    | `MaybeRef<string>` | 是   | 响应式文本，传入 `Ref<string>` 可追踪变化 |
+| `text`    | `MaybeRef<string>` | 是   | 初始化文本；当前不会自动追踪 Ref.value 变化，流式用法见上文 |
 | `options` | `AnimationConfig`  | 否   | 动画配置                                  |
 
 ### AnimationConfig
@@ -328,7 +332,7 @@ function useAnimationText(
 
 3. **内置 CSS 关键帧**：引入 `@blueking/chat-x` 的全局样式后，`@keyframes ai-markdown-fade-in` 自动可用，无需手动定义。
 
-4. **性能**：长时间流式输出会积累大量 chunk 节点，动画完成后（`forwards`）这些节点保持 `opacity: 1`，对性能影响可接受；如有需要可在流式结束后将 `text` 合并为单次赋值以归并 chunk
+4. **性能**：长时间流式输出会积累大量 chunk 节点；如需在流式结束后合并，可设置 `chunks.value = [text.value]`。将相同文本再次赋给 `text` 不会触发监听或自动合并。
 
 ## 关联组件
 

@@ -44,7 +44,7 @@ exportStatus: internal
 
 ```typescript
 import MarkdownIt from 'markdown-it';
-import { markdownItContainer } from '../../../src/plugins/markdown-container';
+import { markdownItContainer } from '../../src/plugins/markdown-container';
 
 const md = new MarkdownIt({ html: true }).use(markdownItContainer, /^hljs-(left|center|right)$/);
 ```

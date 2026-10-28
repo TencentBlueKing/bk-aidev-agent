@@ -31,12 +31,12 @@ chat-x 的消息渲染是 **由外到内的插槽链 + 按 role 分发**，而�
 
 ```text
 ChatContainer
-├── #aside … 侧栏 Tab / ExecutionSummary（见侧栏专题文档）
+├── #aside … 文件产物 / 自定义侧栏 Tab（见侧栏专题文档）
 └── #main
      ├── #default（整块主区域，可替换整个 MessageContainer）
      └── MessageContainer
           └── #default（每条 message）← 库内默认挂 MessageRender
-               └── [#message] ← ChatContainer 透出；无内容时该条不渲染
+               └── [#message] ← ChatContainer 透出；未提供有效内容时回退到内置 MessageRender
                     └── MessageRender（按 message.role 分发）
                          ├── UserMessage / ToolMessage / …
                          ├── AssistantMessage
@@ -88,7 +88,7 @@ declare global {
 
 ### 内容块：`AIBluekingContentMap`
 
-用于扩展 `ContentMap`（Assistant 的 `content`、Activity 的 `content` 结构等）：
+用于扩展 `ContentMap`，供 `ContentRender` 或业务自定义消息类型引用：
 
 ```typescript
 // 库内 contents.ts
@@ -103,7 +103,7 @@ export type ContentMap = AIBluekingContentMap & {
 };
 ```
 
-扩展后可在类型层面约束 `ActivityMessage['content']` 或业务 props，但 **Activity 子组件映射表仍在库内**（见下文 Activity 一节）。
+扩展可用于业务 props 或自定义 `BaseMessage` 的内容类型；不会自动修改内置 `AssistantMessage.content`（字符串）和 `ActivityMessage.content`（内置活动联合类型）。**Activity 子组件映射表仍在库内**（见下文 Activity 一节），类型合并不会自动注册渲染器。
 
 ### `BaseMessage` 常用字段
 
@@ -123,16 +123,13 @@ export type ContentMap = AIBluekingContentMap & {
 ```vue
 <!-- chat-container.vue -->
 <MessageContainer ...>
-  <template #default="{ message, messageToolsStatus }">
-    <slot name="message" v-bind="{ message, messageToolsStatus }" />
+  <template #default="{ message, messageToolsStatus, onInterruptResume }">
+    <slot name="message" v-bind="{ message, messageToolsStatus, onInterruptResume }" />
   </template>
 </MessageContainer>
 ```
 
-**重要**：chat-x 的 `ChatContainer` **没有**为 `#message` 提供默认回退；插槽为空时该条消息区域不渲染。使用 `ChatContainer` 时应：
-
-- 在 `#message` 内渲染 `MessageRender`（并透传必要 props），或
-- 使用 `@blueking/ai-blueking` 的 `ChatBot`（内部在未提供外层 `#message` 时自动回退 `MessageRender`）
+未提供 `#message`，或该插槽没有有效内容时，会使用 `MessageContainer` 默认的 `MessageRender`。普通接入无需声明此插槽；需要定制渲染时，在插槽中提供组件并透传交互回调。
 
 ### 推荐写法（含 `codeHeader`）
 
@@ -140,10 +137,11 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 
 ```vue
 <ChatContainer :messages="messages" ...>
-  <template #message="{ message, messageToolsStatus }">
+  <template #message="{ message, messageToolsStatus, onInterruptResume }">
     <MessageRender
       :message="message"
       :message-tools-status="messageToolsStatus"
+      :on-interrupt-resume="onInterruptResume"
       :on-action="tool => handleUserAction(tool, message)"
       :on-input-confirm="(content, docSchema) => handleUserInputConfirm(message, content, docSchema)"
       :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
@@ -160,12 +158,13 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 自定义整条消息时，在 `#message` 内分支 `message.role`，**其余 role 仍交给 `MessageRender`**，避免漏掉用户消息工具链（删除/编辑/复制等）：
 
 ```vue
-<template #message="{ message, messageToolsStatus }">
+<template #message="{ message, messageToolsStatus, onInterruptResume }">
   <ChartMessage v-if="message.role === 'chart'" :message="message" />
   <MessageRender
     v-else
     :message="message"
     :message-tools-status="messageToolsStatus"
+    :on-interrupt-resume="onInterruptResume"
     :on-action="..."
     :on-input-confirm="..."
     :on-shortcut-confirm="..."
@@ -173,7 +172,7 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 </template>
 ```
 
-> 若自定义 `#message` 却未向 `MessageRender` 传递 `on-action` / `on-input-confirm` / `on-shortcut-confirm`，用户消息工具栏会失效；AI 消息工具栏在 `MessageContainer` 内独立渲染，不受影响。
+> 自定义 `#message` 后，需向 `MessageRender` 传递 `on-action` / `on-input-confirm` / `on-shortcut-confirm` 以保留用户消息操作，并透传 `on-interrupt-resume` 以保留审批和 Flow 节点交互。AI 消息工具栏在 `MessageContainer` 内独立渲染，不受影响。
 
 更复杂的「Markdown 内嵌自定义块」可参考 ai-blueking Playground `CustomMessageSlotView`：解析 ` ```custom-component ` 等 fence 后，在 `#message` 内混合 `MessageRender` 与业务组件。
 
@@ -183,12 +182,13 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 
 ```vue
 <MessageContainer :message-groups="messageGroups" :messages="messages" ...>
-  <template #default="{ message, messageToolsStatus }">
+  <template #default="{ message, messageToolsStatus, onInterruptResume }">
     <ApprovalCard v-if="message.role === 'approval'" :message="message" />
     <MessageRender
       v-else
       :message="message"
       :message-tools-status="messageToolsStatus"
+      :on-interrupt-resume="onInterruptResume"
       ...
     />
   </template>
@@ -210,12 +210,15 @@ Playground `playground/chat-bot-new.vue` 与 ai-blueking `ChatBot` 均采用此�
 | `reasoning` | `ReasoningMessage` |
 | `info` | `InfoMessage` |
 | `loading` | `LoadingMessage` |
+| `interrupt` | `InterruptMessageRender`（审批中断 / 已回答问题回显） |
 | 其他 / 扩展 role | `null`（不渲染） |
 
 ### 插槽
 
 ```typescript
 defineSlots<{
+  /** 中断消息的已回答内容，item 类型为 UserQuestionAnswerItem */
+  answeredQuestion: (props: { item: UserQuestionAnswerItem; index: number; status: 'cancelled' | 'resolved' }) => VNode | null | undefined;
   /** 仅 Assistant 链路：替换正文 */
   default: (props: { content: string; status: MessageStatus }) => VNode;
   /** Markdown 代码块头部，透传至 ContentRender → MarkdownContent */
@@ -355,7 +358,7 @@ Activity（尤其 FlowAgent）可在对话区点击「详情」等操作，通�
 | 仅直接使用 MessageContainer | `#default` slot + 同上 |
 | 新增 Activity 子类型（flow 同类） | 改库 `activity-message.vue` 的 map，或改用自定义 role |
 | Flow 节点/任务详情 + 侧栏 | 使用内置 FlowAgent + `onCustomTabChange` / `getSideRenderComponent` |
-| 扩展 Assistant 结构化 content 类型 | `AIBluekingContentMap` + `ContentRender` slot / 自定义渲染 |
+| 渲染结构化业务内容 | `AIBluekingContentMap` + 自定义消息类型，在容器插槽中使用 `ContentRender` / 业务组件 |
 
 ## 相关文档
 

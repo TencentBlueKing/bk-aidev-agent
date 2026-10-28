@@ -32,7 +32,7 @@ exportStatus: internal
 
 ```typescript
 function useFlowNodeActions(options: {
-  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态、侧栏执行情况面板等只读场景，仅保留「详情」查看入口） */
+  /** 隐藏重试 / 跳过等交互式 resume 操作（分享态等只读场景，仅保留「详情」查看入口） */
   hideResumeActions?: Ref<boolean>;
   /** resume 回调（与第三方审批取消同一回调，按 payload.operation 分流） */
   onInterruptResume: Ref<OnInterruptResume | undefined>;
