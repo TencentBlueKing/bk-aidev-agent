@@ -423,12 +423,12 @@ const blocks = parseCustomBlocks(`
 
 至此，当 AI 回复中出现 ` ```custom-component ` 代码块时，就会被自动识别并渲染为对应组件。可交互示例见 [示例 · 消息自定义渲染](/demos/custom-message)。
 
-::: warning 2.4.x 实际行为
+::: warning 当前行为
 `#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在作用域内，自定义渲染时这些操作不可用；AI 消息工具栏在插槽外渲染，不受影响。
 :::
 
-::: info 源码 3.1 过程折叠
-终态且助手组至少有两条消息时，[过程状态栏](/guide/core-features/chat-interaction#助手过程状态栏)默认折叠，`#message` 只收到当前可见的最后一条。展开后，前面的思考和工具消息才会进入插槽。文档站示例仍是 2.4.x，没有这层折叠。
+::: info 过程折叠
+终态时 [过程状态栏](/guide/core-features/chat-interaction#助手过程状态栏) 默认折叠展示起点之前的过程消息，`#message` 只收到当前可见的消息。展开后，被折起的思考和工具消息才会进入插槽。`enableMessageCollapse` 设为 `false` 时不折叠。
 :::
 
 ---

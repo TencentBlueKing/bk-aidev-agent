@@ -207,17 +207,17 @@ aiBluekingRef.value.stopGeneration();
 
 ## 助手过程状态栏 {#助手过程状态栏}
 
-每一轮有内容的助手消息组，会在消息上方显示过程状态栏（chat-x 内部组件，不从包入口导出）。`ChatBot` / `AIBlueking` 默认带上，没有新的 prop。用户消息组和空组不显示。
+每一轮有内容的助手消息组，会在消息上方显示过程状态栏（chat-x 内部组件，不从包入口导出）。是否显示由 [消息折叠](#消息折叠) 的 `enableMessageCollapse` 决定，默认开启。用户消息组和空组不显示。设为 `false` 后，状态栏、箭头和耗时一起隐藏。
 
-| 条件 | 文案 | 消息 |
-| --- | --- | --- |
-| 容器 `messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`，且是最后一组；`renderMode` 不是分享 | 「处理中」，文字闪动，不显示耗时 | 展示全部 |
-| 组内最后一条 `status` 为 `error` | 「失败」 | 至少两条时默认只留最后一条 |
-| 最后一条为 `stop` | 「已停止」 | 同上 |
-| 最后一条为 `disabled` | 「已禁用」 | 同上 |
-| 其余终态 | 「已完成」 | 同上 |
+| 条件 | 文案 |
+| --- | --- |
+| 容器 `messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`，且是最后一组；`renderMode` 不是分享 | 「处理中」，文字闪动，不显示耗时 |
+| 组内最后一条 `status` 为 `error` | 「失败」 |
+| 最后一条为 `stop` | 「已停止」 |
+| 最后一条为 `disabled` | 「已禁用」 |
+| 其余终态 | 「已完成」 |
 
-生成中更早的助手组仍按各自终态折叠。分享态不显示「处理中」，按终态展示。
+生成中不折叠，展示全部消息。终态从最后一条 assistant 起保留；若更早出现流程卡片或第三方审批，则从该条起保留，包括它后面的消息。分享态不显示「处理中」，按终态展示。
 
 耗时只在终态、且两端时间都有时出现，形如「已完成，耗时 2m2s」（状态与「耗时」之间是中文逗号，「耗时」与时长之间是空格）：
 
@@ -225,13 +225,9 @@ aiBluekingRef.value.stopGeneration();
 - 终点：本组内最晚的 `createdAt`
 - 缺任一端，或间隔为 0，不显示耗时；不足 1 秒显示 `<1s`
 
-可折叠时点击状态栏展开或收起。从生成中进入可折叠终态会自动收回。只有一条消息时没有箭头。
+可折叠时点击状态栏展开或收起。从生成中进入可折叠终态会自动收回。没有可折叠的前序过程时没有箭头。
 
-自定义整组的 `#group` 会换掉这栏。`#message`（以及 `MessageContainer` 的默认插槽）在折叠时只收到当前可见的消息，未展开的前序消息不进入 DOM。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
-
-::: warning 文档站示例仍是 2.4.x
-交互示例运行已发布的 `@blueking/ai-blueking@2.4.1`，示例对话里还没有过程状态栏。
-:::
+自定义整组的 `#group` 会换掉这栏。`#message`（以及 `MessageContainer` 的默认插槽）在折叠时只收到当前可见的消息。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
 
 ## 删除一轮消息
 

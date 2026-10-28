@@ -4,7 +4,7 @@ import type { IRequestOptions } from '@blueking/ai-blueking';
 export interface ResolvedRequestOptions {
   headers: () => Record<string, string>;
   data: () => Record<string, unknown>;
-  /** 必须是值（getter 属性）：2.4.x 不解析函数 / ref 形态的 context，会被静默丢弃 */
+  /** 必须是值（getter 属性）：函数 / ref 形态的 context 会被静默丢弃 */
   readonly context?: IRequestOptions['context'];
 }
 

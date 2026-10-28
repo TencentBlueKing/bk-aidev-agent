@@ -80,10 +80,6 @@ const models: ILlmItem[] = [
 
 气泡复用外层 tippy 的 `appendTo`、`placement`、`zIndex`。未传时分别是 `document.body`、`auto`、`10001`。经 `ChatContainer` 使用时，这三项来自 `commonTippyOptions`（全屏会把 `appendTo` 改到全屏容器）。
 
-::: warning 文档站示例仍是 2.4.x
-交互示例运行已发布的 2.4.x，模型描述仍可能是原生 `title`，还没有这层气泡。
-:::
-
 ## 数据流
 
 ```

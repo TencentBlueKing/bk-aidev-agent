@@ -115,7 +115,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `handleShow(sessionCode?)` | `(sessionCode?: string) => Promise<void>` | 展开面板（内部方法） |
 | `handleClose()` | `() => void` | 收起面板（内部方法） |
 
-::: warning 2.4.x 实际行为
+::: warning 当前行为
 `show(sessionCode, { isTemporary: true })` 的 `isTemporary` 目前**不会生效**，不会创建临时会话。需要临时会话时，先 `await show()`，再调用 `addNewSession({ name: '临时会话', isTemporary: true })`。
 :::
 
@@ -152,7 +152,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `updateSize(w, h)` | `(w: number, h: number) => void` | 更新面板尺寸 |
 | `updatePositionAndSize(x, y, w, h)` | `(x: number, y: number, w: number, h: number) => void` | 同时更新位置和尺寸 |
 
-::: warning 2.4.x 实际行为
+::: warning 当前行为
 `updatePosition` / `updateSize` / `updatePositionAndSize` 目前调用后面板**不会移动或改变尺寸**（组件内部状态未同步到拖拽容器）。如需控制位置与尺寸，请在挂载时通过 `default-left` / `default-top` / `default-width` / `default-height` 指定，示例见 [AIBlueking 浮窗 · 面板位置与尺寸](/demos/full-panel)。
 :::
 

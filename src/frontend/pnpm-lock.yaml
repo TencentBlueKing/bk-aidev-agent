@@ -455,14 +455,14 @@ importers:
   web:
     dependencies:
       '@blueking/ai-blueking':
-        specifier: 2.4.1
-        version: 2.4.1(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
+        specifier: 3.1.0-beta.5
+        version: 3.1.0-beta.5(@blueking/chat-x@3.1.0-beta.5(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-helper':
-        specifier: 2.4.0
-        version: 2.4.0(vue@3.5.27(typescript@5.9.3))
+        specifier: 3.1.0-beta.5
+        version: 3.1.0-beta.5(vue@3.5.27(typescript@5.9.3))
       '@blueking/chat-x':
-        specifier: 2.4.0
-        version: 2.4.0(typescript@5.9.3)
+        specifier: 3.1.0-beta.5
+        version: 3.1.0-beta.5(typescript@5.9.3)
       bkui-vue:
         specifier: ^2.0.2-beta.81
         version: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
@@ -678,8 +678,8 @@ packages:
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
 
-  '@blueking/ai-blueking@2.4.1':
-    resolution: {integrity: sha512-+SgQY/O3tQfzJZ4ossVaLMPAkdwfuQlidruL/3rpyUAhF4buFBwuiAqZGY2DKrCG8QcId1kdlLD+HmVqeb0nhw==}
+  '@blueking/ai-blueking@3.1.0-beta.5':
+    resolution: {integrity: sha512-cCqNyVEImUngwUSmNWHGpwdXMbe8PlCQ4/jugpgervPjYDjdEsYs+PK/2EXFHrdI+El9/afmLo04I/SDq2cy4Q==}
     peerDependencies:
       '@blueking/chat-x': '>=0.0.52-beta.1'
       vue: ^3.5.24
@@ -687,13 +687,13 @@ packages:
   '@blueking/bkui-library@0.0.0-beta.6':
     resolution: {integrity: sha512-1M6pNDIOQYWzOu3uVRxo0h67d+huTbBQYDjj8+QF4Ka3HSe/mLgSrIkaZhhUVlJJl5zP8HK+UwXpkWcjL8zIsw==}
 
-  '@blueking/chat-helper@2.4.0':
-    resolution: {integrity: sha512-gbh6uL+I/VPrhKhRV60CGef45kSWFxbqv2wKhqTALSVjbyOj4+MxPwZPeBYS0yeoCoKQ4XC0G4tSLKiaaHLiqA==}
+  '@blueking/chat-helper@3.1.0-beta.5':
+    resolution: {integrity: sha512-FLnvVZt/rV6habyyJjD9cKW2Q/O1Wtah3VnPF8cVnNGQ9wEtffuIIquXXgJO0VYW2j0tb7GFvCeVL3lVfWNF1Q==}
     peerDependencies:
       vue: ^3.5.24
 
-  '@blueking/chat-x@2.4.0':
-    resolution: {integrity: sha512-R54FrvJ8tGakLzGVNm0RXc9+4uZE7XODkz1nixCdvBcvHPT96HRLsDfyJgxBLJcTRaADjuBcZVjYxQnxz0vsMQ==}
+  '@blueking/chat-x@3.1.0-beta.5':
+    resolution: {integrity: sha512-6xabUNbHgVLUHT5AIaDJ4kW7k5VlhH98QRLsRH4+0yubncTFS8uyetmFxDtP3zab0QlcDbOqDm6qG+aUri83IQ==}
     hasBin: true
 
   '@blueking/cli-service@0.1.0-beta.31':
@@ -2315,19 +2315,16 @@ packages:
     resolution: {integrity: sha512-VSvgvQeIcsEvY4bKDHEDWcpW4Yw7BtlKG1GUT4FzBUlEKQK0rWHYBqQt6Fm2taXS+1bXvJT6kICu5ZwqKCnvlQ==}
     cpu: [loong64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.60.1':
     resolution: {integrity: sha512-4LqhUomJqwe641gsPp6xLfhqWMbQV04KtPp7/dIp0nzPxAkNY1AbwL5W0MQpcalLYk07vaW9Kp1PBhdpZYYcEw==}
     cpu: [loong64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.60.1':
     resolution: {integrity: sha512-tLQQ9aPvkBxOc/EUT6j3pyeMD6Hb8QF2BTBnCQWP/uu1lhc9AIrIjKnLYMEroIz/JvtGYgI9dF3AxHZNaEH0rw==}
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.60.1':
     resolution: {integrity: sha512-RMxFhJwc9fSXP6PqmAz4cbv3kAyvD1etJFjTx4ONqFP9DkTkXsAMU4v3Vyc5BgzC+anz7nS/9tp4obsKfqkDHg==}
@@ -2338,7 +2335,6 @@ packages:
     resolution: {integrity: sha512-QKgFl+Yc1eEk6MmOBfRHYF6lTxiiiV3/z/BRrbSiW2I7AFTXoBFvdMEyglohPj//2mZS4hDOqeB0H1ACh3sBbg==}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.60.1':
     resolution: {integrity: sha512-RAjXjP/8c6ZtzatZcA1RaQr6O1TRhzC+adn8YZDnChliZHviqIjmvFwHcxi4JKPSDAt6Uhf/7vqcBzQJy0PDJg==}
@@ -8611,10 +8607,10 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@blueking/ai-blueking@2.4.1(@blueking/chat-x@2.4.0(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/ai-blueking@3.1.0-beta.5(@blueking/chat-x@3.1.0-beta.5(typescript@5.9.3))(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))':
     dependencies:
-      '@blueking/chat-helper': 2.4.0(vue@3.5.27(typescript@5.9.3))
-      '@blueking/chat-x': 2.4.0(typescript@5.9.3)
+      '@blueking/chat-helper': 3.1.0-beta.5(vue@3.5.27(typescript@5.9.3))
+      '@blueking/chat-x': 3.1.0-beta.5(typescript@5.9.3)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.27(typescript@5.9.3))
       tippy.js: 6.3.7
       vue: 3.5.27(typescript@5.9.3)
@@ -8627,12 +8623,12 @@ snapshots:
     dependencies:
       '@vue/runtime-dom': 3.5.32
 
-  '@blueking/chat-helper@2.4.0(vue@3.5.27(typescript@5.9.3))':
+  '@blueking/chat-helper@3.1.0-beta.5(vue@3.5.27(typescript@5.9.3))':
     dependencies:
       '@types/json-schema': 7.0.15
       vue: 3.5.27(typescript@5.9.3)
 
-  '@blueking/chat-x@2.4.0(typescript@5.9.3)':
+  '@blueking/chat-x@3.1.0-beta.5(typescript@5.9.3)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
       bkui-vue: 2.0.2-beta.81(highlight.js@11.11.1)(vue@3.5.32(typescript@5.9.3))

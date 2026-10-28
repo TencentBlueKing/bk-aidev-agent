@@ -5,8 +5,8 @@
     instance="embedded"
     kicker="配方 1"
     :source="source"
-    title="运行一个流程智能体，查看执行情况"
-    when="适用：接入 BKFlow 流程智能体，需要了解默认的执行情况、节点详情与重试 / 跳过"
+    title="运行一个流程智能体，查看流程卡片"
+    when="适用：接入 BKFlow 流程智能体，需要了解流程卡片、侧栏文件产物、节点详情与重试 / 跳过"
   >
     <DemoStage
       app="蓝鲸监控"
@@ -34,11 +34,11 @@
           </bk-button>
           <label class="fr-switch">
             <input
-              v-model="executionTabVisible"
+              v-model="enableMessageCollapse"
               type="checkbox"
               @change="runtime.selectStep(RECIPE_ID, '③')"
             >
-            <code>execution-tab-visible</code>
+            <code>enable-message-collapse</code>
           </label>
           <DemoFeedback
             :feedback="feedback"
@@ -49,7 +49,7 @@
           :key="embedded.key.value"
           :ref="embedded.bindRef"
           v-model:aside-collapsed="asideCollapsed"
-          :execution-tab-visible="executionTabVisible"
+          :enable-message-collapse="enableMessageCollapse"
           height="100%"
           :request-options="embedded.requestOptions"
           :url="embedded.url.value"
@@ -82,7 +82,7 @@
   const isReal = computed(() => runtime.state.backendMode === 'real');
   const embedded = useEmbeddedInstance(RECIPE_ID, { url: computed(() => `${runtime.apiUrl.value}${isReal.value ? '' : FLOW_AGENT_PATH}`) });
   const asideCollapsed = ref(true);
-  const executionTabVisible = ref(true);
+  const enableMessageCollapse = ref(true);
   const feedback = ref<FeedbackState | null>(null);
 
   /** 用户在流程卡片上点「重试 / 跳过」时，代码页签定位到说明 */

@@ -22,8 +22,8 @@ aside: false
 
 `context` 适合传「用户此刻在看什么」：它不会出现在用户看到的消息里，但会随消息一起交给智能体。Mock 回复的第一句会回显收到的上下文。
 
-::: warning
-2.4.x 只解析值形态的 `context`（对象或数组），函数形态会被静默忽略；像下面的片段一样把整个 `requestOptions` 写成 `computed` 即可。
+::: warning 当前行为
+`context` 只解析值形态（对象或数组），函数形态会被静默忽略；像下面的片段一样把整个 `requestOptions` 写成 `computed` 即可。
 :::
 
 <ClientOnly>

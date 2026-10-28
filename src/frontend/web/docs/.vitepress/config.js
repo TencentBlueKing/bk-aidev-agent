@@ -8,7 +8,7 @@ const base = process.env.VITEPRESS_BASE || '/__DOCS_BASE__/'
 
 export default defineConfig({
   title: "AI 小鲸",
-  description: "智能对话组件文档 — v2.4",
+  description: "智能对话组件文档 — v3.1",
   lang: "zh-CN",
   base,
   /** 文档内嵌 bkui-vue / chat-x 等组件仅针对浅色主题调优，固定浅色避免深色模式样式错乱 */

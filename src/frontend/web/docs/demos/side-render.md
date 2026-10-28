@@ -4,17 +4,13 @@ aside: false
 
 # 侧栏 Tab 自定义
 
-::: warning 本页示例仍是已发布的 2.4.x
-配方使用文档站依赖的 `@blueking/ai-blueking@2.4.1`，侧栏仍有内建「执行情况」Tab。当前源码（chat-x 3.0.0 起）已去掉该 Tab，常驻默认 Tab 是「文件产物」，`executionTabVisible` 不再生效。按源码集成请看 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
-:::
-
-流程智能体（BKFlow）运行时，ChatBot 会在对话中渲染流程卡片。本页示例的右侧侧栏提供「执行情况」Tab；点击节点的「详情」会打开该节点的详情 Tab。下面两个配方连接文档站内置的**巡检流程 Mock**（4 个节点，「磁盘检查」首次运行失败），事件格式与真实流程智能体一致。
+流程智能体（BKFlow）运行时，ChatBot 会在对话中渲染流程卡片。卡片上保留执行统计；失败节点的「重试 / 跳过」也在卡片上，不在侧栏。侧栏常驻默认 Tab 是「文件产物」。点击节点的「详情」会打开该节点的详情 Tab。下面两个配方连接文档站内置的**巡检流程 Mock**（4 个节点，「磁盘检查」首次运行失败），组件版本为 `3.1.0-beta.5`。
 
 <ClientOnly>
   <DemoEnvBar />
 </ClientOnly>
 
-## 执行情况与节点详情
+## 流程卡片与节点详情
 
 <ClientOnly>
   <RecipeFlowRun />
@@ -47,9 +43,10 @@ data: {"type":"CUSTOM","name":"flow_agent_end","value":[{"task_id":87748,"task_o
 </ClientOnly>
 
 ::: tip 注意
-- 本页 2.4.x 示例里，`getSideRenderComponent` 对**所有** Tab（含「执行情况」）都会调用，参数是 `tab.data.props`；不处理的 Tab 返回 `undefined` 才会走默认渲染。当前源码的「文件产物」Tab（`loadOnSelect: false`）不走这个回调。
+- 「文件产物」Tab 自持内容（`loadOnSelect: false`），不会调用 `getSideRenderComponent`。节点详情 Tab 会调用，参数是 `tab.data.props`；不处理时返回 `undefined`，走 Tab 自己的 `data.component`。
 - 侧栏会给你的组件注入 `locateButton` 插槽（「在对话中定位」），在组件里放 `<slot name="locateButton" />` 即可保留。
 - 节点 Tab 的 `name` 为 `` `${task_id}|${node_id}|${node_name}` ``，`getSideTabRenderComponent` 可据此区分节点 Tab。
+- 配方 1 的开关是 `enableMessageCollapse`：默认折叠过程消息并显示过程状态栏，关掉后完整展示并隐藏状态栏。
 :::
 
 ## 相关文档

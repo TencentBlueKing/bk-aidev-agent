@@ -40,7 +40,7 @@
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；上传入口常驻，不跟 `support_vision`；`description` hover 气泡（3.1.0-beta.1） |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
-| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；chat-x 3.0.0 起内建「执行情况」Tab 已下线，`executionTabVisible` 不再生效；常驻默认 Tab 为「文件产物」（`loadOnSelect: false` 不走业务渲染器）；侧栏固定右侧 + 嵌入模式须业务 Header。文档站示例仍是 2.4.x，页面上还有执行情况 Tab |
+| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；chat-x 3.0.0 起内建「执行情况」Tab 已下线，`executionTabVisible` 不再生效；常驻默认 Tab 为「文件产物」（`loadOnSelect: false` 不走业务渲染器）；侧栏固定右侧 + 嵌入模式须业务 Header。示例页按 3.1.0-beta.5，用 `enableMessageCollapse` |
 | `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`（≥ v2.2.4）、`messageTools`/`updateTools`；动态 placeholder（≥ v2.2.4）；`size` / `timezone`（≥ v2.2.3） |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
@@ -102,11 +102,11 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 | 界面与渲染 | `demos/header-slots.md` | `#headerLeft` / `#headerActions` / `showHistoryIcon` 配置台（浮窗配置含插槽）、renderMode 三种模式 |
 | 界面与渲染 | `demos/custom-message.md` | `#message` + `parseCustomBlocks` 渲染图表 / 表单 / iframe（`CustomMessageRenderer.vue`）、`#codeHeader` 插入编辑器（`CodeToEditor.vue`）；iframe 静态页 `public/demo-assets/mini-dashboard.html` |
 
-| 界面与渲染 | `demos/side-render.md` | 流程智能体节点详情 / 重试跳过（示例仍是 npm 2.4.x，侧栏还有「执行情况」Tab；源码 3.0 已下线）、`getSideRenderComponent` / `getSideTabRenderComponent` / `onCustomTabChange`；Mock 档案 `~flow/`（`src/mock-flow.ts`），页面含真实 SSE 事件序列 |
+| 界面与渲染 | `demos/side-render.md` | 流程智能体流程卡片、文件产物侧栏、节点详情 / 重试跳过、`enableMessageCollapse`、`getSideRenderComponent` / `getSideTabRenderComponent` / `onCustomTabChange`；Mock 档案 `~flow/`（`src/mock-flow.ts`） |
 
 目录中已无 planned 条目；新增示例页时先在 `demos-catalog.ts` 登记。
 
-**2.4.x 已知行为（文档已用 `::: warning 2.4.x 实际行为` 标注，修复后需同步删除）**：`updatePosition` / `updateSize` / `updatePositionAndSize` 不生效；`show(…, { isTemporary })` 不生效；`requestOptions.context` 只解析值形态；`@sdk-error` 的 `code` 恒为 -1（HTTP 状态在 `data.response.status`）；RUN_ERROR 不经过 `@sdk-error`；`updateSessionName` 不触发 `@rename`。
+**当前仍成立的限制（文档用 `::: warning 当前行为` 标注，修复后删除）**：`updatePosition` / `updateSize` / `updatePositionAndSize` 不带动面板；`show(…, { isTemporary })` 不生效；`requestOptions.context` 只解析值形态；`@sdk-error` 的 `code` 恒为 -1（HTTP 状态在 `data.response.status`）；RUN_ERROR 不经过 `@sdk-error`；`updateSessionName` 不触发 `@rename`。已发布 `3.1.0-beta.5` 的 `#message` 作用域仍不含用户消息工具回调。
 
 `#message` 作用域已在组件源码补齐 `MessageSlotProps`（含用户消息工具回调）以及 ChatBot / AIBlueking 的 `renderDefault`。主站演示跑的是 npm 已发布版本，**等包含该修复的 @blueking/ai-blueking / chat-x 发版并升级 `web/package.json` 后**，再把下列 warning 改成新作用域（含 `renderDefault()` 示例）并删掉：`docs/demos/custom-message.md`、`docs/guide/core-features/custom-message-rendering.md`，以及 `docs/api/ai-blueking/chatbot.md`、`docs/api/ai-blueking/aiblueking.md` 里的 message 插槽表。
 
@@ -125,7 +125,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 - `themeConfig.sidebar["/guide/"]` 等 — 侧栏（**新指南页必改**）
 - 顶栏版本下拉读 `changelog.md` 首条 `## vX.Y.Z`（`utils/resolve-changelog-version.js`）
 
-演示依赖（npm 已发布后再改）：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 应对齐该正式版及其配套子包（当前 2.4.0 / 2.4.0 / 2.4.0）。
+演示依赖：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 对齐已发布的 `3.1.0-beta.5`。交互示例按这个版本描述。
 
 ## 源码对照（写文档前建议阅读）
 

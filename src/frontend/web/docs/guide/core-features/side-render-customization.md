@@ -233,7 +233,7 @@ import type {
 
 ## 参考示例
 
-[示例 · 侧栏 Tab 自定义](/demos/side-render) 连接文档站内置的巡检流程 Mock。该示例跑的是已发布 2.4.x，侧栏仍有「执行情况」Tab，可体验节点详情、重试 / 跳过和三个自定义 Props。当前源码没有这个内建 Tab。页面还列出了流程智能体的 SSE 事件序列（`flow_agent_*` 的 `value` 为任务数组、状态为 BKFlow 大写）。
+[示例 · 侧栏 Tab 自定义](/demos/side-render) 连接文档站内置的巡检流程 Mock，使用 `3.1.0-beta.5`。侧栏常驻「文件产物」，节点「详情」打开自定义 Tab；失败节点的重试 / 跳过在对话里的流程卡片上。页面还列出了流程智能体的 SSE 事件序列（`flow_agent_*` 的 `value` 为任务数组、状态为 BKFlow 大写）。
 
 仓库内 Playground（`packages/ai-blueking/playground`）也提供完整示例（其中 SSE 示例将 `value` 简写为对象，实际协议为数组）：
 

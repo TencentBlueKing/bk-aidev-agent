@@ -1,6 +1,8 @@
 # 更新日志
 
-## Unreleased
+## v3.1.0-beta.5
+
+文档站交互示例使用已发布的 `@blueking/ai-blueking` / `chat-x` / `chat-helper` `3.1.0-beta.5`。
 
 ### 新功能
 

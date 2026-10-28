@@ -20,7 +20,7 @@ AIBlueking 把初始化、会话、消息、分享等接口错误统一通过 `@
 
 ::: tip 观察要点
 - 事件页签中 `@sdk-error` 的 `apiName` 区分了出错阶段（初始化 / 发送），业务可以据此给出不同提示。
-- 2.4.x 中 `code` 恒为 `-1`；HTTP 状态码要从原始错误 `data.response.status` 读取（片段中的 `httpStatusOf`）。
+- `@sdk-error` 的 `code` 恒为 `-1`；HTTP 状态码要从原始错误 `data.response.status` 读取（片段中的 `httpStatusOf`）。
 - 打开请求页签可以看到故障头 `x-mock-fault` 与返回的状态码。
 - 流中途的 `RUN_ERROR` 属于 AG-UI 协议事件，由协议层渲染为一条失败的助手消息，**不经过** `@sdk-error`；需要感知时监听 `receive-end` 并检查最后一条消息的状态。
 :::

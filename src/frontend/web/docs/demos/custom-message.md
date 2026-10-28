@@ -29,8 +29,8 @@ aside: false
   <RecipeCustomMessage />
 </ClientOnly>
 
-::: warning 2.4.x 实际行为
-`#message` 插槽会接管**全部**消息（包括用户消息），而作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在作用域内，自定义渲染时这些操作不可用；AI 消息工具栏在插槽外渲染，不受影响。
+::: warning 当前行为
+文档站示例使用已发布的 `3.1.0-beta.5`。`#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在这个已发布包的作用域内。终态过程折叠时，插槽只收到当前可见的消息。
 :::
 
 ## 代码块头部按钮

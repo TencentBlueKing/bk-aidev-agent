@@ -4,7 +4,7 @@ import NodeDetailCard from '../NodeDetailCard.vue';
 
 type NodeDetailCardProps = InstanceType<typeof NodeDetailCard>['$props'];
 
-// ① Tab 内容：只接管节点详情 Tab（带 node_id），「执行情况」等其余 Tab 返回 undefined 走默认渲染
+// ① Tab 内容：只接管节点详情 Tab（带 node_id）。「文件产物」不走这个回调
 export const getSideRenderComponent: GetSideRenderComponent = (h, props = {}) =>
   props.node_id
     ? h(NodeDetailCard, {

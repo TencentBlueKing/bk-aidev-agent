@@ -346,4 +346,4 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 
 chat-x 3.0.0 起，侧栏不再内建「执行情况」Tab。常驻默认 Tab 是「文件产物」。`executionTabVisible` 还在 `ChatBot` / `AIBlueking` 的类型里，也会被传下去，但 `ChatContainer` 已经不读它，所以 `true` / `false` 都看不到那个 Tab。
 
-文档站的[侧栏示例](/demos/side-render)若仍跑已发布 2.4.x，示例里会有「执行情况」Tab。按当前源码集成见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
+文档站的[侧栏示例](/demos/side-render)使用 `3.1.0-beta.5`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
