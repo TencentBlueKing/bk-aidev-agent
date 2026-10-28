@@ -62,6 +62,8 @@ agent, config = CommonQAAgent.get_agent_executor(
 
 也可使用 `ReActAgentBuilder.enable_personal_memory(runtime)`。运行时上下文在每次工具调用时读取。默认构建工具时会拉取一次 schema，因此 context_provider 必须在构建时能解析认证用户。动态用户身份的宿主可以先拉取完整发现结果，通过 runtime 的 `schemas` 参数传入，随后从 RunnableConfig 解析每次调用的用户和会话；同一运行时的 Agent 身份固定。
 
+默认 `best_effort` 模式下，失效更新目标返回 `INACTIVE_TARGET`（`retryable=false`），表示本次未更新，应停止重试旧 ID。若仍需修改这项事实，先重新检索当前有效记忆，再决定是否更新；不会自动恢复旧记录或转写其后继记录。来源重放返回 `INACTIVE_SOURCE`，基础设施异常仍返回暂不可用提示；关闭 `best_effort` 时异常由宿主处理。
+
 成功完成模型回答后，图进入 memory_complete 节点：收集完成的消息、识别本轮实际引用并调用平台 complete_round。工具调用中断、异常退出或没有最终回答时，不提交完成事件。最终回答 ID 为空也不会提交，宿主必须确保消息身份完整。
 
 标准入口接收本轮用户输入时即生成消息 ID 和带时区的接收时间，账本与模型输入共用该身份；不会为缺少时间戳的旧历史补写当前时间。最终回答的 `finish_reason` 为 `length`、`max_tokens`、`content_filter` 或 `incomplete` 时，不提交完成事件；这些未完成助手片段也不会从图历史补入完整快照。正常结束及未提供结束原因的既有模型响应保持兼容。
