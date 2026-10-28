@@ -103,6 +103,9 @@ def test_empty_visible_body_is_still_excluded(contract_manager, body):
         (400, "400", ["OTHER: invalid request"], False),
         (403, "403", "INACTIVE_SOURCE: denied", False),
         (500, "500", "INACTIVE_SOURCE: server failure", False),
+        (403, "403", "INACTIVE_TARGET: denied", False),
+        (500, "500", "INACTIVE_TARGET: server failure", False),
+        (400, "403", "INACTIVE_TARGET: wrong envelope", False),
     ],
 )
 def test_real_client_validation_preserves_forgotten_business_error(
@@ -145,6 +148,7 @@ def test_unknown_validation_envelopes_remain_unavailable(contract_manager, monke
         (ValueError(), False),
         (ValueError(400), False),
         (RuntimeError("INACTIVE_SOURCE: unrelated"), False),
+        (RuntimeError("INACTIVE_TARGET: unrelated"), False),
     ],
 )
 def test_internal_manager_preserves_only_forgotten_value_error(contract_manager, error, forgotten):
@@ -159,3 +163,24 @@ def test_internal_manager_preserves_only_forgotten_value_error(contract_manager,
         }
     else:
         assert observed == "Personal memory is temporarily unavailable."
+
+
+@pytest.mark.parametrize("message", ["INACTIVE_TARGET: merged", ["INACTIVE_TARGET: promoted"]])
+@pytest.mark.parametrize("transport", ["internal", "http"])
+def test_inactive_update_target_returns_actionable_business_result(contract_manager, monkeypatch, message, transport):
+    if transport == "internal":
+        contract_manager.memory_tool.side_effect = ValueError(message if isinstance(message, str) else message[0])
+    else:
+        client = Client(endpoint="http://127.0.0.1:45678/")
+        response = Response()
+        response.status_code = 400
+        response._content = json.dumps({"error": {"code": "400", "message": message}}).encode()
+        monkeypatch.setattr(client.session, "request", lambda **kwargs: response)
+        contract_manager.memory_tool.side_effect = lambda payload, **kwargs: client.api.memory_tool(json=payload)
+    runtime = automatic_personal_memory(contract_manager, "alice", "s", [], [], agent_code="agent")
+    tool = next(tool for tool in runtime.make_tools() if tool.name == "memory_update")
+    result = json.loads(tool.invoke({"action": "SUPERSEDE", "memory_id": "old", "text": "Correction"}))
+    assert result["code"] == "INACTIVE_TARGET"
+    assert result["retryable"] is False
+    assert "本次未更新" in result["message"] and "memory_search" in result["message"]
+    assert contract_manager.memory_tool.call_count == 1
