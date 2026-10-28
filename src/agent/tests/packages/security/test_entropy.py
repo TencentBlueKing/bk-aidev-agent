@@ -6,7 +6,8 @@ from __future__ import annotations
 import pytest
 from aidev_agent.packages.security.redaction import RedactionPurpose, scan_text
 from aidev_agent.packages.security.redaction.detectors import EntropyDetector
-from aidev_agent.pydantic_models import SecurityRedactionSettings
+from aidev_agent.packages.security.redaction.operations import _detectors_for_scan
+from aidev_agent.pydantic_models import SecurityRedactionSettings, SecuritySettings
 
 _GPG = "QGBZvSrgJ0hZOs9KHJV4jhw4hKFPGI6G"  # len=32 ent=4.4528 cls=3
 _B64 = "aUpG7zPe+f6z49nJyz8K8NlHG3mpcvgPUTEPiTUv"  # len=40 ent=4.7153 cls=4 (base64(30B random))
@@ -207,22 +208,93 @@ class TestBareEntropyGating:
 
 
 class TestBareEntropyIndependentCounting:
-    """独立计数是校准精度的前提（DESIGN §3.6 / T-06-22）。"""
+    """独立计数是校准精度的前提（DESIGN §3.6 / T-06-22）。
+
+    裸熵默认关闭，故下列用例显式开启 ``enable_redact_bare_entropy`` 后断言原命中结果。
+    """
+
+    @staticmethod
+    def _on_settings() -> SecurityRedactionSettings:
+        return SecurityRedactionSettings(enable_redact_bare_entropy=True)
 
     def test_rule_id_counted_in_raw_rule_hits(self):
-        result = scan_text(f"v {_B64}", purpose=RedactionPurpose.MODEL_OUTPUT)
+        result = scan_text(f"v {_B64}", purpose=RedactionPurpose.MODEL_OUTPUT, settings=self._on_settings())
         assert result.raw_rule_hits.get("entropy.bare_base64") == 1
         assert result.unique_findings == 1
 
     def test_overlap_with_assignment_counts_both(self):
         """`GPG_KEY=<32-char>` 同时被 assignment 与 entropy 命中：两键并存、cluster 只有 1。"""
-        result = scan_text(f"GPG_KEY={_GPG}", purpose=RedactionPurpose.MODEL_OUTPUT)
+        result = scan_text(f"GPG_KEY={_GPG}", purpose=RedactionPurpose.MODEL_OUTPUT, settings=self._on_settings())
         # assignment rule_id 用归一化字段名（去分隔符小写）：gpg_key -> gpgkey
         assert result.raw_rule_hits.get("assignment.gpgkey") == 1
         assert result.raw_rule_hits.get("entropy.bare_alnum") == 1
         assert result.unique_findings == 1  # span overlap merged
 
-    def test_end_to_end_redaction_default_on(self):
-        """默认真实生效（T-06-19）：MODEL_OUTPUT 下裸值被替换（不依赖字段上下文）。"""
-        out = scan_text(f"tool returned {_GPG} from vault", purpose=RedactionPurpose.MODEL_OUTPUT).redacted_text
-        assert _GPG not in out
+    def test_end_to_end_redaction_when_explicitly_enabled(self):
+        """显式开启后真实生效（T-06-19）：MODEL_OUTPUT 下裸值被替换（不依赖字段上下文）。"""
+        result = scan_text(
+            f"tool returned {_GPG} from vault",
+            purpose=RedactionPurpose.MODEL_OUTPUT,
+            settings=self._on_settings(),
+        )
+        assert _GPG not in result.redacted_text
+
+
+def _explicit_on_settings(monkeypatch, source: str) -> SecurityRedactionSettings:
+    """取一份「裸熵显式开启」的配置：``platform`` 走平台下发，``env`` 走环境变量。"""
+    if source == "platform":
+        return SecuritySettings(redaction={"enable_redact_bare_entropy": True}).redaction
+    monkeypatch.setenv("BKAI_ENABLE_REDACT_BARE_ENTROPY", "true")
+    return SecurityRedactionSettings()
+
+
+class TestBareEntropyDefaultOff:
+    """REQ-3：env 未设置且平台未下发时，裸熵兜底不参与扫描。"""
+
+    def test_default_settings_exclude_entropy_detector(self, monkeypatch):
+        """ACC-4：默认字段为 False，且组装列表不含 ``EntropyDetector``。"""
+        monkeypatch.delenv("BKAI_ENABLE_REDACT_BARE_ENTROPY", raising=False)
+        redaction = SecuritySettings().redaction
+        assert redaction.enable_redact_bare_entropy is False
+        detectors = _detectors_for_scan(settings=redaction)
+        assert not any(isinstance(detector, EntropyDetector) for detector in detectors)
+
+    def test_default_scan_leaves_bare_entropy_text_untouched(self, monkeypatch):
+        """ACC-5：纯高熵串（len=32 / ent=4.4528）零 ``entropy.bare_*`` 命中且原样返回。"""
+        monkeypatch.delenv("BKAI_ENABLE_REDACT_BARE_ENTROPY", raising=False)
+        result = scan_text(_GPG, purpose=RedactionPurpose.MODEL_OUTPUT, settings=SecuritySettings().redaction)
+        assert [rule for rule in result.raw_rule_hits if rule.startswith("entropy.bare_")] == []
+        assert result.redacted_text == _GPG
+
+
+class TestBareEntropyExplicitEnableEquivalence:
+    """REQ-4：显式开启后与改动前逐项一致（rule_id / span / 32 边界 / 4.2 阈值）。"""
+
+    @pytest.mark.parametrize("source", ["platform", "env"])
+    def test_explicit_enable_enters_scan_list(self, monkeypatch, source):
+        settings = _explicit_on_settings(monkeypatch, source)
+        assert settings.enable_redact_bare_entropy is True
+        assert any(isinstance(detector, EntropyDetector) for detector in _detectors_for_scan(settings=settings))
+
+    @pytest.mark.parametrize("source", ["platform", "env"])
+    @pytest.mark.parametrize(
+        "text, expected_rule",
+        [
+            (f"v {_GPG}", "entropy.bare_alnum"),  # len=32 边界命中
+            (f"v {_B64}", "entropy.bare_base64"),
+            ("v " + "A" * 31, None),  # len=31 低于 min_length，不命中
+        ],
+    )
+    def test_hits_match_detector_baseline(self, monkeypatch, source, text, expected_rule):
+        """显式开启后的命中与裸 detectors 基线逐项一致（规则名 + 命中 span）。"""
+        settings = _explicit_on_settings(monkeypatch, source)
+        baseline = EntropyDetector(
+            min_length=settings.redact_secrets_min_length,
+            alnum_threshold=settings.redact_secrets_entropy_threshold,
+        ).scan(text)
+        result = scan_text(text, purpose=RedactionPurpose.MODEL_OUTPUT, settings=settings)
+        expected_hits = [expected_rule] if expected_rule else []
+        assert [finding.rule_id for finding in baseline] == expected_hits
+        assert [rule for rule in result.raw_rule_hits if rule.startswith("entropy.bare_")] == expected_hits
+        for finding in baseline:
+            assert text[finding.start : finding.end] not in result.redacted_text

@@ -454,58 +454,59 @@ class SecurityRedactionSettings(BaseModel):
       False 时静默归 True，D-06），该层已删除 —— 它让总开关无法真正断开全部能力，
       与「所有功能都需要有开关」冲突。
     - 分项开关 `False` **不代表该能力彻底失效**：脱敏是分层兜底的多 detector 管线，
-      同一份文本可能被更高层的 detector 命中（例如关闭 ``enable_redact_structured_fields``
-      后，`password=<高熵值>` 仍可能由裸熵兜底遮掉）。要**彻底**关闭脱敏，用总开关。
+      同一份文本可能被更高层的 detector 命中（例如裸熵兜底已显式开启时，关闭
+      ``enable_redact_structured_fields`` 后，`password=<高熵值>` 仍可能由裸熵兜底遮掉；
+      裸熵兜底默认关闭，未显式开启时不参与兜底）。要**彻底**关闭脱敏，用总开关。
     """
 
     model_config = ConfigDict(extra="ignore")
 
     # ---- 脱敏总开关（硬熔断：置 False 时引擎完全不跑，无任何子项可绕过）----
     enable_redact_secrets: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_SECRETS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_SECRETS", True),
         description="脱敏总开关；置 False 时全部 detector 均不参与扫描（硬熔断）",
     )
     # ---- 脱敏分项开关（全字段平等，均可被平台 / 环境变量关闭）----
     enable_redact_registered_secrets: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_REGISTERED_SECRETS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_REGISTERED_SECRETS", True),
         description="已知 secret 精确值脱敏（可逐项关闭）",
     )
     enable_redact_authorization_headers: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_AUTHORIZATION_HEADERS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_AUTHORIZATION_HEADERS", True),
         description="Authorization / API key header 脱敏（可逐项关闭）",
     )
     enable_redact_private_keys: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_PRIVATE_KEYS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_PRIVATE_KEYS", True),
         description="PEM/PGP private key 脱敏（可逐项关闭）",
     )
     enable_redact_jwt: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_JWT", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_JWT", True),
         description="JWT 脱敏（可逐项关闭）",
     )
     enable_redact_vendor_tokens: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_VENDOR_TOKENS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_VENDOR_TOKENS", True),
         description="厂商前缀 Token 脱敏（optional，可逐项关闭）",
     )
     enable_redact_structured_fields: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_STRUCTURED_FIELDS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_STRUCTURED_FIELDS", True),
         description="结构化凭据字段脱敏（optional，可逐项关闭）",
     )
     enable_redact_url_credentials: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_URL_CREDENTIALS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_URL_CREDENTIALS", True),
         description="URL 凭据脱敏（optional，可逐项关闭）",
     )
     enable_redact_dsn_passwords: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_DSN_PASSWORDS", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_DSN_PASSWORDS", True),
         description="DSN 密码脱敏（optional，可逐项关闭）",
     )
     enable_redact_cookies: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_COOKIES", True),
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_COOKIES", True),
         description="Cookie 脱敏（optional，可逐项关闭）",
     )
     # ---- 裸熵兜底（heuristic 层，可按 sink 关闭）----
     enable_redact_bare_entropy: bool = Field(
-        default_factory=lambda: _env_bool("BKAI_ENAVLE_REDACT_BARE_ENTROPY", True),
-        description="裸高熵兜底检测（全 purpose 默认开启，可按 sink 关闭；非 mandatory）",
+        default_factory=lambda: _env_bool("BKAI_ENABLE_REDACT_BARE_ENTROPY", False),
+        description="裸高熵兜底检测（默认关闭，可经平台下发或环境变量显式开启；非 mandatory）",
     )
     redact_secrets_min_length: int = Field(
         default=int(os.getenv("BKAI_REDACT_SECRETS_MIN_LENGTH", "32")),
