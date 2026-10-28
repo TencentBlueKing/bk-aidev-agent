@@ -109,6 +109,12 @@ describe('message-process-status', () => {
     expect(resolveProcessCollapseIndex(messages, true)).toBe(0);
   });
 
+  it('中断消息缺少 content 时不应抛错，且不影响折叠边界', () => {
+    const emptyInterrupt = { ...approval, content: undefined } as unknown as InterruptMessage;
+
+    expect(resolveProcessCollapseIndex([reasoning, emptyInterrupt, tool, assistant], false)).toBe(3);
+  });
+
   it('空组、没有 assistant 或最后一条 assistant 位于首位时不应折叠', () => {
     expect(resolveProcessCollapseIndex([], false)).toBe(0);
     expect(resolveProcessCollapseIndex([assistant], false)).toBe(0);
