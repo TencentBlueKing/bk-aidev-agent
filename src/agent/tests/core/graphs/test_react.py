@@ -1737,6 +1737,7 @@ class TestReActAgentBuilder:
     def test_extract_paas_params_from_skill_and_config(self, monkeypatch):
         """_extract_paas_params 应从 skill metadata 与 config 中提取参数"""
         monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
+        monkeypatch.delenv("TENANT_ID", raising=False)
         skill = {
             "metadata": {
                 "bkai_paas_sandbox": {
@@ -1745,26 +1746,32 @@ class TestReActAgentBuilder:
                 }
             }
         }
-        config = {"access_token": "token123", "executor": "admin"}
+        config = {"access_token": "token123", "executor": "admin", "tenant_id": "tenant-x"}
 
         result = _extract_paas_params(skill=skill, config=config)
         assert result["app_code"] == settings.APP_CODE
         assert result["bk_username"] == "admin"
         assert result["snapshot"] == "snap1"
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"KEY": "VAL", "ACCESS_TOKEN": "token123", "BKAI_USERNAME": "admin"}
+        assert result["env_vars"] == {
+            "KEY": "VAL",
+            "ACCESS_TOKEN": "token123",
+            "BKAI_USERNAME": "admin",
+            "TENANT_ID": "tenant-x",
+        }
 
     def test_extract_paas_params_defaults(self, monkeypatch):
         """skill=None 且 config 为空时应返回带 settings.APP_CODE 的默认值"""
         monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
         monkeypatch.delenv("BKAI_USERNAME", raising=False)
+        monkeypatch.delenv("TENANT_ID", raising=False)
 
         result = _extract_paas_params(skill=None, config={})
         assert result["app_code"] == settings.APP_CODE
         assert result["bk_username"] is None
         assert result["snapshot"] == ""
         assert result["snapshot_entrypoint"] == []
-        assert result["env_vars"] == {"ACCESS_TOKEN": "", "BKAI_USERNAME": ""}
+        assert result["env_vars"] == {"ACCESS_TOKEN": "", "BKAI_USERNAME": "", "TENANT_ID": ""}
 
     def test_extract_paas_params_access_token_from_env(self, monkeypatch):
         """config 未提供 access_token 时应从环境变量 SANDBOX_BP_ACCESS_TOKEN 读取"""
@@ -1779,6 +1786,59 @@ class TestReActAgentBuilder:
 
         result = _extract_paas_params(skill=None, config={"executor": "admin"})
         assert result["env_vars"]["BKAI_USERNAME"] == "admin"
+
+    def test_extract_paas_params_tenant_id_from_executor_info(self, monkeypatch):
+        """沙箱环境变量应注入 TENANT_ID，优先使用 executor_info 中的 tenant_id。"""
+        monkeypatch.setenv("TENANT_ID", "env-tenant")
+
+        result = _extract_paas_params(skill=None, config={"tenant_id": "tenant-x"})
+        assert result["env_vars"]["TENANT_ID"] == "tenant-x"
+
+    def test_extract_paas_params_tenant_id_from_env(self, monkeypatch):
+        """config 未提供 tenant_id 时应回退到环境变量 TENANT_ID。"""
+        monkeypatch.setenv("TENANT_ID", "env-tenant")
+
+        result = _extract_paas_params(skill=None, config={})
+        assert result["env_vars"]["TENANT_ID"] == "env-tenant"
+
+    def test_extract_paas_params_tenant_id_empty_when_unresolved(self, monkeypatch):
+        """单租户/解析不到租户时 TENANT_ID 为空串（与 ACCESS_TOKEN/BKAI_USERNAME 一致）。"""
+        monkeypatch.delenv("TENANT_ID", raising=False)
+
+        result = _extract_paas_params(skill=None, config={"executor": "admin"})
+        assert result["env_vars"]["TENANT_ID"] == ""
+
+    def test_extract_paas_params_does_not_mutate_skill_metadata(self, monkeypatch):
+        """``env_vars`` 须为 metadata 的副本，避免请求级凭证/租户写回 metadata 造成跨请求残留。"""
+        monkeypatch.delenv("SANDBOX_BP_ACCESS_TOKEN", raising=False)
+        monkeypatch.setenv("FROM_ENV", "env-value")
+        skill = {
+            "metadata": {
+                "bkai_paas_sandbox": {
+                    "image": "snap1",
+                    "envs": {"KEY": "VAL", "FROM_ENV": None},
+                }
+            }
+        }
+        original_envs = skill["metadata"]["bkai_paas_sandbox"]["envs"]
+
+        result = _extract_paas_params(
+            skill=skill, config={"access_token": "tok-a", "executor": "alice", "tenant_id": "tenant-a"}
+        )
+
+        assert result["env_vars"]["FROM_ENV"] == "env-value"
+        assert result["env_vars"]["TENANT_ID"] == "tenant-a"
+        assert result["env_vars"]["ACCESS_TOKEN"] == "tok-a"
+        # metadata 保持原样：不新增凭证键、不擦写 None 标记
+        assert original_envs == {"KEY": "VAL", "FROM_ENV": None}
+        assert result["env_vars"] is not original_envs
+
+        # 复用同一 skill 处理第二个租户，不得读到上一次的残留
+        monkeypatch.delenv("TENANT_ID", raising=False)
+        second = _extract_paas_params(skill=skill, config={"executor": "bob"})
+        assert second["env_vars"]["TENANT_ID"] == ""
+        assert second["env_vars"]["ACCESS_TOKEN"] == ""
+        assert second["env_vars"]["BKAI_USERNAME"] == "bob"
 
     # ----------------------------------------------------------------
     # C. build 返回值测试

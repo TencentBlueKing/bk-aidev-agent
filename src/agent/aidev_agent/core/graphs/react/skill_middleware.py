@@ -53,7 +53,7 @@ def _extract_paas_params(skill: SkillOptions, config: dict) -> dict:
         - client: 由 ReActAgentBuilder._prepare_skills() 通过 resource_manager.get_paas_sbx_client 注入
         - snapshot / env_vars: 从 skill metadata 的 bkai_paas_sandbox 字段获取
 
-    env_vars 中的 ACCESS_TOKEN / BKAI_USERNAME 由本函数根据 executor_info 和平台环境解析，
+    env_vars 中的 ACCESS_TOKEN / BKAI_USERNAME / TENANT_ID 由本函数根据 executor_info 和平台环境解析，
     避免调用全局 resource_manager()（app_code=bkaidev）导致凭证不一致。
     """
     # 由平台测试页传入 app_code
@@ -64,7 +64,9 @@ def _extract_paas_params(skill: SkillOptions, config: dict) -> dict:
     env_vars: dict[Any, Any] = {}
     if skill:
         paas_sandbox = skill.get("metadata", {}).get("bkai_paas_sandbox", {})
-        env_vars = paas_sandbox.get("envs", {})
+        # 必须拷贝：下面会写入请求级凭证，直接引用会写回 skill metadata，
+        # 复用 SkillProviderBackend 时造成跨请求/跨租户残留
+        env_vars = dict(paas_sandbox.get("envs") or {})
 
     # 特殊规则：如果值是 None，则从环境变量中获取
     for key, value in env_vars.items():
@@ -81,11 +83,14 @@ def _extract_paas_params(skill: SkillOptions, config: dict) -> dict:
 
     env_vars["ACCESS_TOKEN"] = access_token or os.getenv("SANDBOX_BP_ACCESS_TOKEN", "")
     env_vars["BKAI_USERNAME"] = config.get("executor") or os.getenv("BKAI_USERNAME", "")
+    # 多租户：沙箱内调用蓝鲸网关需租户 ID，由 plugin 层解析后经 executor_info 透传
+    env_vars["TENANT_ID"] = config.get("tenant_id") or os.getenv("TENANT_ID", "")
     logger.info(
         f"[credential] _extract_paas_params: "
         f"app_code={app_code}, "
         f"token_source={'config' if _token_from_config else 'env' if _token_from_env else 'empty'}, "
-        f"executor={config.get('executor')}"
+        f"executor={config.get('executor')}, "
+        f"tenant_id={env_vars['TENANT_ID'] or 'empty'}"
     )
 
     # 从 envs_mask 提取需要脱敏的 env 值

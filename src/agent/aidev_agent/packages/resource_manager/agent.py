@@ -31,4 +31,5 @@ class AgentResourceManager(BaseResourceManager):
         )
         access_token = self.resolve_access_token(self.username) or None
         client.update_bkapi_authorization(access_token=access_token, bk_username=self.username or "")
+        self._inject_tenant_header(client)
         return client
