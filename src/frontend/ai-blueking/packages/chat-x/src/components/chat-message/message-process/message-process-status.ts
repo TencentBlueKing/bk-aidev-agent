@@ -87,7 +87,8 @@ export const resolveProcessCollapseIndex = (messages: readonly Message[], genera
       return index;
     }
     if (message.role === MessageRole.Interrupt) {
-      const { outcome, result } = message.content;
+      const outcome = message.content?.outcome;
+      const result = message.content?.result;
       if (
         (outcome?.type === 'interrupt' &&
           outcome.interrupts.some(item => item.reason === InterruptReason.AIDevToolApproval)) ||
