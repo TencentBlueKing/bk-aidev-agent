@@ -41,6 +41,8 @@ class ChatBuildExtras:
     default_headers: Optional[dict[str, str]] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    # 仅作用于本轮主模型；子智能体不继承，由网关按模型配置翻译为上游参数
+    reasoning_effort: Optional[str] = None
     retry_strategy: Optional[str] = None
     checkpointer: Optional["BaseCheckpointSaver"] = None
 

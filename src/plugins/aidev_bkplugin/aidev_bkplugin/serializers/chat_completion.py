@@ -16,6 +16,7 @@
 
 import uuid
 
+from aidev_agent.enums import ReasoningEffort
 from aidev_agent.pydantic_models import ExecuteKwargs
 from pydantic import ValidationError
 from rest_framework import serializers
@@ -72,6 +73,14 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
     # 模型热更新：覆盖智能体原配置的 chat_model / non_thinking_llm，需在当前空间可用模型列表内
     model = serializers.CharField(
         required=False, allow_blank=True, default="", help_text="热切换模型 llm_code，需在当前空间可用模型列表内"
+    )
+    # 思考深度只作用于本轮，不写回会话；超出模型支持范围时由网关降级到模型默认档
+    reasoning_effort = serializers.ChoiceField(
+        choices=[each.value for each in ReasoningEffort],
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="本轮思考深度；不传时使用模型默认档",
     )
 
     # 流程智能体
