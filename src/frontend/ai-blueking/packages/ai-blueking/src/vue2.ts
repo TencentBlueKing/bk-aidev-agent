@@ -45,10 +45,12 @@ export { h } from 'vue';
 // 如果 TS 报错，说明 exposeKeys 缺少或多余了字段，需与 types.ts / components/types.ts 同步
 // 正向：exposeKeys 中的每一项必须是接口的 key
 // 反向：接口的每一个 key 必须出现在 exposeKeys 中
-type AssertKeysMatch<TKeys extends string, TInterface> = TKeys extends keyof TInterface
-  ? keyof TInterface extends TKeys
-    ? true
-    : never
+/** 用元组包住联合类型，避免条件类型按单个 key 分配后把「接口还有其它 key」误判成失败。 */
+type AssertKeysMatch<TKeys extends string, TInterface> = [
+  Exclude<TKeys, keyof TInterface>,
+  Exclude<keyof TInterface, TKeys>,
+] extends [never, never]
+  ? true
   : never;
 
 const aiBluekingEmitNames = [
@@ -93,15 +95,16 @@ const aiBluekingExposeKeys = [
   'updateSize',
   'updatePositionAndSize',
   'setCiteText',
+  'setInputContent',
   'focusInput',
   'getChatHelper',
   'selectShortcut',
   'sendShortcut',
+  'updateAgentInfo',
 ] as const;
 
 // 编译时断言：aiBluekingExposeKeys 与 AIBluekingExpose 的 keys 完全一致
-type AiBluekingKeyCheck = AssertKeysMatch<(typeof aiBluekingExposeKeys)[number], AIBluekingExpose>;
-const aiBluekingKeyGuard: AiBluekingKeyCheck = true as AiBluekingKeyCheck;
+const aiBluekingKeyGuard: AssertKeysMatch<(typeof aiBluekingExposeKeys)[number], AIBluekingExpose> = true;
 void aiBluekingKeyGuard;
 
 /**
@@ -295,6 +298,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: Boolean,
       default: true,
     },
+    enableMessageCollapse: {
+      type: Boolean,
+      default: true,
+    },
     resizeProps: {
       type: Object,
       default: undefined,
@@ -358,6 +365,13 @@ export default createVue2Wrapper(AIBlueking, {
     setCiteText() {
       console.warn('AIBluekingV2: setCiteText method not ready');
     },
+    setInputContent() {
+      console.warn('AIBluekingV2: setInputContent method not ready');
+    },
+    updateAgentInfo(): Promise<null> {
+      console.warn('AIBluekingV2: updateAgentInfo method not ready');
+      return Promise.resolve(null);
+    },
     focusInput() {
       console.warn('AIBluekingV2: focusInput method not ready');
     },
@@ -400,6 +414,7 @@ const chatBotExposeKeys = [
   'stopGeneration',
   'focusInput',
   'setCiteText',
+  'setInputContent',
   'switchSession',
   'selectShortcut',
   'sendShortcut',
@@ -411,11 +426,12 @@ const chatBotExposeKeys = [
   'messages',
   'isReady',
   'whenReady',
+  'selectedLlmCode',
+  'updateAgentInfo',
 ] as const;
 
 // 编译时断言：chatBotExposeKeys 与 ChatBotExpose 的 keys 完全一致
-type ChatBotKeyCheck = AssertKeysMatch<(typeof chatBotExposeKeys)[number], ChatBotExpose>;
-const chatBotKeyGuard: ChatBotKeyCheck = true as ChatBotKeyCheck;
+const chatBotKeyGuard: AssertKeysMatch<(typeof chatBotExposeKeys)[number], ChatBotExpose> = true;
 void chatBotKeyGuard;
 
 /**
@@ -530,6 +546,10 @@ export const ChatBotV2 = createVue2Wrapper(ChatBot, {
       default: undefined,
     },
     executionTabVisible: {
+      type: Boolean,
+      default: true,
+    },
+    enableMessageCollapse: {
       type: Boolean,
       default: true,
     },

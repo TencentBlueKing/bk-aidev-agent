@@ -140,7 +140,7 @@ declare function useFullScreen(target?: MaybeRef<HTMLElement | null>): UseFullSc
 
 ## 使用场景
 
-- `ChatContainer` 侧栏执行情况 / 自定义 Tab 区域全屏查看
+- `ChatContainer` 侧栏文件产物 / 自定义 Tab 区域全屏查看
 - 任意需要将局部 DOM 区域以浏览器原生全屏展示的交互面板
 
 ## 关联组件

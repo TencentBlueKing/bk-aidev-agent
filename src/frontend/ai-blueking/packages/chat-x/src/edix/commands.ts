@@ -44,8 +44,13 @@ export const InsertText: EditorCommand<[text: string]> = (_doc, selection, text)
   return new Transaction().delete(start, end).insert(start, stringToDoc(text));
 };
 
-export const ReplaceAll: EditorCommand<[text: string]> = (doc, _selection, text) => {
+/** 用文档片段整篇替换，void 节点（如标签）原样保留 */
+export const ReplaceFragment: EditorCommand<[fragment: DocFragment]> = (doc, _selection, fragment) => {
   return new Transaction()
     .delete([0, 0], [doc.length - 1, getLineSize(doc[doc.length - 1]!)])
-    .insert([0, 0], stringToDoc(text));
+    .insert([0, 0], fragment);
+};
+
+export const ReplaceAll: EditorCommand<[text: string]> = (doc, selection, text) => {
+  return ReplaceFragment(doc, selection, stringToDoc(text));
 };

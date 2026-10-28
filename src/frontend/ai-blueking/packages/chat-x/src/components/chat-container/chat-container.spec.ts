@@ -481,6 +481,7 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       messageStatus: String,
       messageToolsStatus: String,
       messageToolsTippyOptions: Object,
+      enableMessageCollapse: Boolean,
       enableSelection: Boolean,
       selectedUserMessages: Array,
       onAgentAction: Function,
@@ -848,6 +849,18 @@ describe('ChatContainer', () => {
       const ci = wrapper.findComponent({ name: 'ChatInput' });
       expect(mc.props('messageStatus')).toBe(MessageStatus.Streaming);
       expect(ci.props('messageStatus')).toBe(MessageStatus.Streaming);
+    });
+
+    it('消息顶层折叠应默认开启，并将动态开关透传给 MessageContainer', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      const messageContainer = wrapper.findComponent({ name: 'MessageContainer' });
+
+      expect(messageContainer.props('enableMessageCollapse')).toBe(true);
+      await wrapper.setProps({ enableMessageCollapse: false });
+      expect(messageContainer.props('enableMessageCollapse')).toBe(false);
+      await wrapper.setProps({ enableMessageCollapse: true });
+      expect(messageContainer.props('enableMessageCollapse')).toBe(true);
     });
 
     it('应该将 menuSources 属性透传给 ChatInput', () => {

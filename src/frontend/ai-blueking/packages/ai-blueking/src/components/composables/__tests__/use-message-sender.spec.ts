@@ -484,6 +484,61 @@ describe('useMessageSender', () => {
     });
   });
 
+  describe('setInputContent', () => {
+    const hostDoc = () => [
+      [
+        { type: 'text' as const, text: '帮我分析 ' },
+        {
+          type: 'tag' as const,
+          data: {
+            description: '上海机房',
+            icon: '',
+            label: '生产服务器',
+            type: 'hostxxx',
+            value: 'host-001',
+          },
+        },
+      ],
+    ];
+
+    it('writes a clone so later edits to the caller document do not change the input', () => {
+      const params = createParams();
+      const { setInputContent, userInput } = useMessageSender(params);
+      const doc = hostDoc();
+
+      setInputContent(doc);
+      doc[0].push({ type: 'text', text: '尾部' });
+
+      expect(userInput.value).toEqual(hostDoc());
+      expect(userInput.value).not.toBe(doc);
+    });
+
+    it('updates again when the same document reference is mutated and passed back', () => {
+      const params = createParams();
+      const { setInputContent, userInput } = useMessageSender(params);
+      const doc = hostDoc();
+
+      setInputContent(doc);
+      doc[0].push({ type: 'text', text: '尾部' });
+      setInputContent(doc);
+
+      expect(userInput.value).toEqual(doc);
+      expect(userInput.value).not.toBe(doc);
+    });
+
+    it('still clears the input after send', async () => {
+      const params = createParams();
+      (params.chatHelper.value!.session.current as any).value = { sessionCode: 'session-1' };
+      const { doSendMessage, setInputContent, userInput } = useMessageSender(params);
+
+      setInputContent(hostDoc());
+
+      await doSendMessage('帮我分析');
+
+      expect(userInput.value).toEqual([[]]);
+    });
+  });
+
   describe('stopGeneration', () => {
     it('should call chatBusinessManager.stopGeneration and emit stop', async () => {
       const params = createParams();

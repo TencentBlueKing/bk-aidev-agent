@@ -40,11 +40,12 @@
 
   import { isEn } from '../../../common';
   import { useCommandSelection } from '../../../composables';
-  import { type KeyboardPayload, createEditor, docToString, ReplaceAll, stringToDoc } from '../../../edix';
+  import { type KeyboardPayload, createEditor, ReplaceAll, ReplaceFragment, stringToDoc } from '../../../edix';
   import { MentionTag } from '../../mention';
   import { CHAR_TRIGGERS } from '../input-menu/constants';
   import { DeleteAdjacentTag, DeleteTag, InsertMenuTag, InsertText } from './command';
   import { tagSchema } from './constants';
+  import { isSameTagDoc } from './is-same-tag-doc';
   import { useMenuTrigger } from './use-menu-trigger';
 
   import type { TagSchema } from '../../../types/input';
@@ -107,10 +108,12 @@
   watch(
     () => props.modelValue,
     () => {
-      // 处理上层 modelValue 变化时，编辑器内容与 modelValue 不一致的情况，同步编辑器内容
+      // 上层改了 modelValue（回填、重置、外部写入）时，把编辑器文档对齐过去。
+      // 编辑器自己 onChange 回写的文档内容相同，会在这里跳过，不打断输入。
       editor.command(GetDocSnapshot);
-      if (docToString(docSnapshot.value || []) !== docToString(text.value || [])) {
-        editor.command(ReplaceAll, docToString(text.value || []) as unknown as string);
+      const next = text.value;
+      if (!isSameTagDoc(tagSchema.js(docSnapshot.value), next)) {
+        editor.command(ReplaceFragment, tagSchema.doc(next));
       }
     },
     {

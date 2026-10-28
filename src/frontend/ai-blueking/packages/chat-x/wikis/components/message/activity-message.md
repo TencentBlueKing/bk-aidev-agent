@@ -275,7 +275,7 @@ const collapsed = ref(false); // false = 展开，true = 折叠
 - **默认激活**：当 `MessageContainer` 已注入滚动上下文（`useContainerScrollProvider`，供 `FlowAgentContent` 内 `useContainerScrollConsumer` 读取）时，组件挂载后若存在 `task.is_active === true` 且 `task.has_confidence === true` 的任务，会自动在侧栏打开该任务的「有效证据」Tab；无滚动 Provider（例如独立演示）时不做自动打开。用户手动切换 Tab 后不再沿用 `is_active` 默认高亮
 - **选中态**：当前侧栏 Tab 与任务行 / 节点行联动高亮（`is-selected`）；任务 Tab 与「有效证据」Tab 均视为该任务的选中态
 - **节点列表**：每个节点显示状态圆点、名称和耗时；`REVOKED` 叶子节点使用已终止圆点（`#F55B0E` 描边 / `#FEE8DD` 浅底）；hover 时出现行尾操作按钮组
-- **失败节点操作**：失败且 `retryable` / `skippable` 为 `true` 的节点，hover 时额外展示「重试」「跳过」按钮，点击后通过 `onInterruptResume` 回传 Agent（不传 `interrupt`）。仅在对话流内出现：侧栏「执行情况」面板（`ExecutionSummary`）内渲染的同一消息只保留「详情」
+- **失败节点操作**：失败且 `retryable` / `skippable` 为 `true` 的节点，hover 时额外展示「重试」「跳过」按钮，点击后通过 `onInterruptResume` 回传 Agent（不传 `interrupt`）。`RenderMode.Share` 下隐藏这两个操作，只保留「详情」
 - **节点详情**：点击「详情」会通过 `useCustomTabConsumer` 在 `ChatContainer` 侧边栏新增自定义 Tab，展示节点配置（基础信息、输入参数、输出参数）
 
 > `FlowAgentContent` 会读取 `ChatContainer` 注入的 `renderMode`。当 `renderMode === RenderMode.Share` 时，任务行不展示总耗时与「有效证据」，节点列表不展示耗时与「详情」按钮，避免分享预览中出现可交互入口。独立使用 `ActivityMessage` 且没有上层 Provider 时，默认按 `Chat` 模式渲染。
@@ -300,8 +300,8 @@ FlowAgentContent（activityType = 'flow_agent'）
                 ├── node.name（HighlightKeyword 支持搜索高亮）
                 ├── node.elapsed_time
                 └── 行尾操作按钮组（hover 显示）
-                    ├── 重试（失败 + retryable；侧栏执行情况面板内隐藏）→ onInterruptResume
-                    ├── 跳过（失败 + skippable；侧栏执行情况面板内隐藏）→ onInterruptResume
+                    ├── 重试（失败 + retryable；分享态隐藏）→ onInterruptResume
+                    ├── 跳过（失败 + skippable；分享态隐藏）→ onInterruptResume
                     └── 详情 → 打开节点详情 Tab
 ```
 
@@ -444,7 +444,7 @@ const messages = [
 | 场景       | `tab.name` 格式                          |
 | ---------- | ---------------------------------------- |
 | 任务详情   | `{task_id}`                              |
-| 有效证据   | `{task_id}`（与任务 Tab 同名，label 为「有效证据」，`order: 10` 固定排在「执行情况」之后、节点详情之前） |
+| 有效证据   | `{task_id}`（与任务 Tab 同名，label 为「有效证据」，`order: 10` 排在「文件产物」之后、默认权重的节点详情之前） |
 | 节点详情   | `{task_id}\|{node.id}\|{node.name}`      |
 
 `CustomBkFlowTabData` 支持 `has_confidence?: boolean`，用于侧栏详情组件区分证据视图与节点视图。应用层可通过 `ChatContainer` 的 `getSideRenderComponent` 覆盖渲染组件。

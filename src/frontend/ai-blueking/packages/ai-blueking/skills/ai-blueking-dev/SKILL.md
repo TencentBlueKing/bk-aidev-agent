@@ -1,9 +1,9 @@
 ---
 name: ai-blueking-dev
-description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
+description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、消息折叠（enableMessageCollapse）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
 metadata:
   author: blueking
-  version: '5.45'
+  version: '5.46'
   packages:
     ai-blueking: 3.1.0-beta.1
     chat-x: 3.1.0-beta.1
@@ -26,6 +26,7 @@ metadata:
 - 非 Vue 宿主挂载（`mountAIBlueking` / `mountChatBot`）
 - 嵌入式 ChatBot 业务 Header（会话名称 + `v-model:asideCollapsed` 侧栏开关）
 - 消息时间展示（`timezone`、`MessageTime` 四档格式、`createdAt` 来源）
+- 消息顶层折叠（`enableMessageCollapse`，默认折叠并展示过程状态栏）
 
 ## 架构概览
 
@@ -434,6 +435,21 @@ Agent 可在流式执行中**中断**，把控制权交回用户，处理后再*
 - **数据**：历史消息 REST `created_at` → `IMessage.createdAt`；本轮流式用 `RUN_FINISHED.timestamp` 转 ISO 后补上（已有时间不覆盖）；无值不渲染
 
 详见 [ChatBot API](references/chatbot-api.md) 与 [chat-x 组件 API](references/chat-x-api.md)。
+
+### 消息顶层折叠（`enableMessageCollapse`）
+
+`AIBlueking` / `ChatBot` 透传至 `ChatContainer`，默认 `true`，与 chat-x 一致：
+
+- `true`：终态折叠本轮展示起点之前的过程消息，并展示过程状态栏（处理中 / 已完成 / 失败 / 已停止 / 已禁用及耗时）
+- `false`：所有轮次（含分享模式）完整展示，整个过程状态栏不渲染
+- 工具栏、思考块等消息内部折叠不受影响；动态改回 `true` 会恢复折叠、状态栏和耗时
+
+```vue
+<AIBlueking url="/api/" :enable-message-collapse="false" />
+<ChatBot url="/api/" :enable-message-collapse="false" />
+```
+
+Vue2 的 `AIBluekingV2` / `ChatBotV2` 均已注册该 prop，默认 `true`。
 
 ### 模型选择（Model Select，≥ v2.2.2）
 

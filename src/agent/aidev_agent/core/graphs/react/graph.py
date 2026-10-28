@@ -76,6 +76,7 @@ from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools, merge_ta
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
+from aidev_agent.packages.langchain_core.tools.dedupe import dedupe_tool_names
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.security.command import CommandRiskAssessor
 from aidev_agent.pydantic_models import (
@@ -974,6 +975,11 @@ class ReActAgentBuilder:
 
         if self._personal_memory is not None:
             tools.extend(self._personal_memory.make_tools())
+
+        # 所有来源的工具收集完毕后统一消除重名（同一服务多端点合并、跨来源改名），
+        # 保证进入模型请求的工具名唯一，tool_node 也能按名路由到正确实例
+        if settings.BKAI_TOOL_NAME_DEDUPE_ENABLED:
+            tools = dedupe_tool_names(tools)
 
         # 为所有工具添加忽略错误表示
         if ignore_errors:

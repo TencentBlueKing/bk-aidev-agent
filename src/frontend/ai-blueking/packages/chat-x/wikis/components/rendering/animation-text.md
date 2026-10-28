@@ -5,9 +5,10 @@ kind: component
 domain: rendering
 # 组件本身不导出，包入口只导出同名 composable useAnimationText
 exportSymbol: false
-description: 按文本增量播放流式动画。
+description: 内部文本淡入组件，当前只展示初始化文本。
 aiSummary: >
-  按文本增量播放流式动画。
+  内部封装 useAnimationText，以初始化时的 props.text 生成淡入文本；不响应后续 prop 变化。
+  流式演示由页面直接 watch Ref 实现，并非组件自身支持流式更新。
   源码位置：src/components/animation-text/animation-text.vue。
 relatedComponents:
   - slug: use-animation-text
@@ -58,19 +59,19 @@ exportStatus: internal
 # AnimationText 动画文本
 
 > **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
-> 流式场景请使用公开的 [useAnimationText](/composables/use-animation-text)。
+> 流式场景需直接监听文本 Ref，见下方示例与 [useAnimationText 当前限制](/composables/use-animation-text)。
 > 文档站 demo 使用相对路径引入源码；不要写 `import { AnimationText } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/animation-text/animation-text.vue`
 - **能力域**：内容渲染
-- **能力说明**：按文本增量播放流式动画。
+- **能力说明**：初始化文本淡入；流式变化需调用方自行监听和更新 chunks。
 
 
 
 > **能力域**：内容渲染
 
-动画文本基础组件，将文本以**淡入（fade-in）**方式渐显。内部由 `useAnimationText` composable 驱动，核心能力是将增量文本拆分为独立 chunk，每个 chunk 单独触发一次淡入动画，适用于流式文本的逐段渐显效果。
+动画文本基础组件，将初始化文本以**淡入（fade-in）**方式渐显。内部由 `useAnimationText` composable 驱动，每个 chunk 对应一个淡入节点；当前组件自身不会随流式文本更新。
 
 ## 组件结构
 
@@ -91,7 +92,7 @@ animationStyle = {
 }
 ```
 
-> **注意**：`AnimationText` 组件将 `props.text`（字符串原始值）传给 `useAnimationText`，watch 只触发一次（挂载时），**prop 变化后不会触发新动画**。若需响应式流式效果，请直接使用 `useAnimationText` composable，并传入 `Ref<string>`。
+> **注意**：`AnimationText` 将 `props.text`（字符串原始值）传给 `useAnimationText`，watch 只在初始化时触发，prop 变化后不会更新文本。直接给 composable 传入 Ref 也无法绕过其当前监听限制；流式效果需使用下例的 `watch(streamText, ...)`。
 
 ## 基础用法
 
@@ -103,7 +104,8 @@ animationStyle = {
 </template>
 
 <script setup lang="ts">
-  // AnimationText 组件未导出；公开 API 是 useAnimationText
+  // 仅限本仓库文档 / 调试使用，组件未从包入口导出
+  import AnimationText from '../../../src/components/animation-text/animation-text.vue';
 </script>
 ```
 
@@ -111,9 +113,9 @@ animationStyle = {
   <AnimationText text="这是一段带动画效果的文本" />
 </div>
 
-## 流式文本（推荐使用 composable）
+## 流式文本（直接监听 Ref）
 
-对于流式输出场景，需直接使用 `useAnimationText` 并传入响应式 `Ref<string>`：
+对于流式输出场景，直接监听 `Ref<string>` 并维护 chunks；以下示例与页面演示均采用此方式：
 
 ```vue
 <template>

@@ -83,6 +83,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `enableModelSelect` | `boolean` | `true` | 是否启用模型选择（**≥ v2.2.2**）；为 `true` 时拉取 `GET llms/`，列表非空才展示 ModelSelector |
+| `enableMessageCollapse` | `boolean` | `true` | 是否启用所有轮次消息的顶层折叠及过程状态栏，透传至 ChatContainer。默认折叠；置 `false` 时完整展示每组消息并隐藏过程状态栏（箭头、状态文案与耗时），工具栏及消息内部折叠不变。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
 | `models` | `ILlmItem[] \| IModelOption[]` | — | 外部模型列表（**≥ v2.2.2**）；有值时跳过内部拉取，优先使用 |
 
 ::: tip 模型选择

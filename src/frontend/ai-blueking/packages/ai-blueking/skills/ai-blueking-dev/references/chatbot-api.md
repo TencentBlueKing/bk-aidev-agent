@@ -22,6 +22,7 @@
 | enableSelection | `boolean`            | `false` | 是否启用多选模式（分享用；新代码推荐用 `renderMode="share"`） |
 | shareLoading    | `boolean`            | `false` | 分享加载状态                                   |
 | enableModelSelect | `boolean`          | `true`  | 是否启用模型选择（≥ v2.2.2）；拉取 `GET llms/`，列表非空才展示 |
+| enableMessageCollapse | `boolean` | `true` | 是否启用所有轮次消息的顶层折叠及过程状态栏，透传至 ChatContainer。默认折叠；`false` 时完整展示并隐藏过程状态栏（箭头、状态文案、耗时），工具栏及消息内部折叠不变 |
 | models          | `ILlmItem[] \| IModelOption[]` | - | 外部模型列表（≥ v2.2.2）；有值时跳过内部拉取 |
 | modelSelectionManager | `ModelSelectionManager` | - | 集成模式注入共享实例（AIBlueking → ChatBot）；独立模式内部自建 |
 | errorToast      | `boolean`            | `true`  | 接口/业务错误时是否自动弹 Message（展示 `error.message`）；设为 `false` 可自行通过 `@error` 处理。AIBlueking 内嵌时会传 `false` 以免与父层双弹 |
@@ -166,6 +167,7 @@
 | stopGeneration | `() => void`                             | 停止生成                 |
 | switchSession  | `(sessionCode: string) => Promise<void>` | 切换会话                 |
 | setCiteText    | `(text: string) => void`                 | 设置引用文本             |
+| setInputContent | `(value: string \| TagSchema) => void` | 整篇替换输入框。不发送、不清引用、不聚焦。字符串是纯文本，`TagSchema` 是文本加标签，标签按芯片显示；写入前会克隆。替换会进入编辑器撤销历史 |
 | focusInput     | `() => void`                             | 聚焦输入框               |
 | selectShortcut | `(shortcut, text?) => void`              | 选择快捷指令并显示表单   |
 | sendShortcut   | `(shortcut, text?) => Promise<void>`     | 直接发送快捷指令（跳过表单） |
@@ -299,6 +301,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | resizeProps | `ResizeProps` | - | 执行情况侧面板拖拽配置 |
 | size | `AiSizeMode`（`'normal' \| 'small'`） | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | timezone | `string` | - | 消息时间展示所用的 IANA 时区名（≥ v2.2.3，如 `Asia/Shanghai`），透传至 ChatBot → ChatContainer；未配置时按浏览器时区展示 |
+| enableMessageCollapse | `boolean` | `true` | 是否启用所有轮次消息的顶层折叠及过程状态栏（透传 ChatBot → ChatContainer）。默认折叠；`false` 时完整展示并隐藏过程状态栏 |
 | beforeNimbusClick | `() => boolean \| Promise<boolean \| void> \| void` | - | Nimbus 点击前钩子，返回 `false` 阻止默认 showPanel（见 [beforeNimbusClick](integration-patterns.md#nimbus-点击自定义beforenimbusclick)） |
 | **会话** |||
 | enableChatSession | `boolean` | `true` | 是否展示历史/新建会话入口；与 info `conversationSettings.enableChatSession` 联动，任一为 `false` 则隐藏 Header 历史/新建会话 icon。不阻断 `createSession` / `loadRecentSession`，初始化仍会建立当前会话 |
@@ -360,6 +363,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | switchToSession | `(sessionCode: string) => Promise<void>` | 切换会话 |
 | updateSessionName | `(sessionCode, newName) => Promise<void>` | 更新会话名 |
 | setCiteText | `(text: string) => void` | 设置引用文本 |
+| setInputContent | `(value: string \| TagSchema) => void` | 整篇替换输入框。不发送、不清引用、不聚焦。与 `ChatBot.setInputContent` 相同 |
 | focusInput | `() => void` | 聚焦输入框 |
 | updatePosition | `(x, y) => void` | 更新位置 |
 | updateSize | `(w, h) => void` | 更新尺寸 |

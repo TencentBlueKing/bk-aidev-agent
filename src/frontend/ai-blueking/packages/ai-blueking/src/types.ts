@@ -52,6 +52,7 @@ import type {
   IToolBtn,
   Message,
   RenderMode,
+  TagSchema,
 } from '@blueking/chat-x';
 
 /**
@@ -193,6 +194,11 @@ export interface AIBluekingExpose {
 
   // 其他
   setCiteText: (text: string) => void;
+  /**
+   * 整篇替换输入框内容。字符串是纯文本，TagSchema 保留标签。
+   * 不发送、不清引用、不聚焦。替换会进入编辑器撤销历史。
+   */
+  setInputContent: (value: string | TagSchema) => void;
   // 面板控制
   show: (sessionCode?: string, options?: { isTemporary?: boolean }) => Promise<void>;
   stopGeneration: () => void;
@@ -259,6 +265,12 @@ export interface AIBluekingProps {
   errorToast?: boolean;
   /** 「执行情况」Tab 是否展示，缺省 true；为 false 时从 Tab 栏隐藏（该 Tab order 固定 0 且不可关闭） */
   executionTabVisible?: boolean;
+  /**
+   * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，与 chat-x 一致）
+   * 为 false 时完整展示每组消息，并隐藏过程状态栏（折叠箭头、状态文案与耗时）
+   * 工具栏及消息内部的折叠行为不受影响；分享模式同样遵循此配置
+   */
+  enableMessageCollapse?: boolean;
   /** 自定义 CSS 类名 */
   extCls?: string;
   /** 自定义侧栏内容区渲染 */

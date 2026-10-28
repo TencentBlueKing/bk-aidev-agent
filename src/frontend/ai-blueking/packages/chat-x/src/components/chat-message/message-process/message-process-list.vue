@@ -4,7 +4,7 @@
     :class="{ 'is-enabled': enabled }"
   >
     <MessageProcessHeader
-      v-if="enabled"
+      v-if="enabled && enableMessageCollapse"
       :collapsible="collapsible"
       :end-at="bounds.endAt"
       :expanded="collapsible && expanded"
@@ -29,13 +29,14 @@
 
   import { t } from '../../../lang/lang';
   import MessageProcessHeader from './message-process-header.vue';
-  import { canCollapseProcess, resolveProcessLabelKey } from './message-process-status';
+  import { resolveProcessCollapseIndex, resolveProcessLabelKey } from './message-process-status';
   import { resolveLatestCreatedAt, toTimestamp } from './resolve-process-elapsed';
 
   import type { Message } from '../../../ag-ui/types';
 
   const props = withDefaults(
     defineProps<{
+      enableMessageCollapse?: boolean;
       enabled?: boolean;
       /** 本轮是否仍在生成，由容器按「停止生成」按钮的同一判断传入 */
       generating?: boolean;
@@ -44,6 +45,7 @@
       requestCreatedAt?: number | string;
     }>(),
     {
+      enableMessageCollapse: true,
       enabled: false,
       generating: false,
     },
@@ -54,7 +56,8 @@
   }>();
 
   const expanded = shallowRef(false);
-  const collapsible = computed(() => canCollapseProcess(props.messages, props.generating));
+  const collapseIndex = computed(() => resolveProcessCollapseIndex(props.messages, props.generating));
+  const collapsible = computed(() => props.enableMessageCollapse && collapseIndex.value > 0);
   const label = computed(() => t(resolveProcessLabelKey(props.messages, props.generating)));
   // 生成中不算耗时；终态从用户提问算到组内最晚的 createdAt，缺任一端则不显示
   const bounds = computed(() => {
@@ -67,13 +70,12 @@
     };
   });
 
-  // 可折叠时默认只留最后一条；生成中、单条或用户展开后展示全部
+  // 从最后一条 assistant 或更早的流程 / 第三方审批开始保留，只折叠此前的过程
   const visibleMessages = computed(() => {
     if (!props.enabled || !collapsible.value || expanded.value) {
       return props.messages;
     }
-    const lastMessage = props.messages.at(-1);
-    return lastMessage ? [lastMessage] : [];
+    return props.messages.slice(collapseIndex.value);
   });
 
   // 再次进入可折叠状态时收回过程，例如本轮中途展开后又继续生成

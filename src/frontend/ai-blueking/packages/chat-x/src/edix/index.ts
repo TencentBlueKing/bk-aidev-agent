@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 export type { EditorCommand } from './commands';
-export { Delete, InsertText, ReplaceAll } from './commands';
+export { Delete, InsertText, ReplaceAll, ReplaceFragment } from './commands';
 export * from './doc/utils';
 export * from './editor';
 export * from './schema';

@@ -33,8 +33,8 @@ import AiSlashInput from './ai-slash-input.vue';
 import type { IInputMenuItem, TagSchema } from '../../../types';
 
 /** 与 edix Editor.command 行为对齐：执行命令函数并传入伪造的 doc / selection，供 GetDocSnapshot 等逻辑使用 */
-const { deleteAdjacentTagMock, editorCommand, editorOptions } = vi.hoisted(() => {
-  const fakeDoc = [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[];
+const { deleteAdjacentTagMock, editorCommand, editorOptions, editorState } = vi.hoisted(() => {
+  const editorState = { doc: [[{ type: 'text', text: 'internal-snapshot' }]] as unknown[] };
   const options: {
     onKeyDown?: (event: {
       altKey?: boolean;
@@ -49,10 +49,11 @@ const { deleteAdjacentTagMock, editorCommand, editorOptions } = vi.hoisted(() =>
     deleteAdjacentTagMock: vi.fn(() => undefined as unknown),
     editorCommand: vi.fn((fn: unknown, ...args: unknown[]) => {
       if (typeof fn === 'function') {
-        (fn as (...params: unknown[]) => unknown)(fakeDoc, [], ...args);
+        (fn as (...params: unknown[]) => unknown)(editorState.doc, [], ...args);
       }
     }),
     editorOptions: options,
+    editorState,
   };
 });
 
@@ -89,13 +90,8 @@ vi.mock('../../../edix', () => ({
     };
   },
   ReplaceAll: 'ReplaceAll',
+  ReplaceFragment: 'ReplaceFragment',
   stringToDoc: (str: string) => [[{ type: 'text', text: str }]],
-  docToString: (doc: unknown) => {
-    if (!Array.isArray(doc) || doc.length === 0) return '';
-    const line = doc[0];
-    if (!Array.isArray(line)) return '';
-    return line.map((n: { text?: string }) => n?.text ?? '').join('');
-  },
 }));
 
 const { stubIcon } = vi.hoisted(() => {
@@ -136,8 +132,12 @@ vi.mock('./command', () => ({
   InsertText: 'InsertText',
 }));
 
+// edix 已被 mock，这里让 schema 两向转换透传；真实往返见 is-same-tag-doc.spec.ts
 vi.mock('./constants', () => ({
-  tagSchema: {},
+  tagSchema: {
+    doc: (value: unknown) => value,
+    js: (doc: unknown) => doc,
+  },
 }));
 
 const buildDoc = (icon = ''): TagSchema =>
@@ -154,6 +154,7 @@ describe('AiSlashInput', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     deleteAdjacentTagMock.mockReturnValue(undefined);
+    editorState.doc = [[{ type: 'text', text: 'internal-snapshot' }]];
   });
 
   afterEach(() => {
@@ -302,6 +303,45 @@ describe('AiSlashInput', () => {
       wrapper.find('.ai-slash-input').element.dispatchEvent(event);
       await nextTick();
       expect(wrapper.emitted('upload')?.[0]).toEqual([[file]]);
+    });
+  });
+
+  describe('外部 modelValue 同步', () => {
+    const hostTag = {
+      type: 'tag',
+      data: { type: 'hostxxx', value: 'host-001', label: '生产服务器', icon: '', description: '上海机房' },
+    };
+    const hostDoc = () => [[{ type: 'text', text: '帮我分析 ' }, { ...hostTag }]] as unknown as TagSchema;
+    const syncCommands = () =>
+      editorCommand.mock.calls.filter(([fn]) => fn === 'ReplaceFragment' || fn === 'ReplaceAll');
+
+    it('挂载后写入标签文档时按文档替换，标签不会被收成 @名称', async () => {
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      editorCommand.mockClear();
+
+      await wrapper.setProps({ modelValue: hostDoc() });
+
+      expect(syncCommands()).toEqual([['ReplaceFragment', hostDoc()]]);
+    });
+
+    it('编辑器回写内容相同的新文档时不再替换，避免打断输入', async () => {
+      editorState.doc = hostDoc() as unknown[];
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      editorCommand.mockClear();
+
+      await wrapper.setProps({ modelValue: hostDoc() });
+
+      expect(syncCommands()).toEqual([]);
+    });
+
+    it('纯文本 @名称 与同名标签视为不同内容', async () => {
+      editorState.doc = [[{ ...hostTag }]];
+      wrapper = mount(AiSlashInput, { props: { modelValue: '' } });
+      editorCommand.mockClear();
+
+      await wrapper.setProps({ modelValue: '@生产服务器' });
+
+      expect(syncCommands()).toEqual([['ReplaceFragment', [[{ type: 'text', text: '@生产服务器' }]]]]);
     });
   });
 });

@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 | --- | --- |
 | `changelog.md` | 版本更新记录，新版本插在文首 |
-| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4） |
+| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）；`enableMessageCollapse` 关闭消息折叠与过程状态栏 |
 
 ## 指南 `/guide/`
 
@@ -31,7 +31,7 @@
 
 | 链接 | 文件 | 典型更新场景 |
 | --- | --- | --- |
-| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、刷新后以服务端为准）；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
+| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、刷新后以服务端为准）；消息折叠 `enableMessageCollapse`（默认折叠 + 过程状态栏）；消息时间展示（≥ v2.2.3）：四档格式、`timezone`、`createdAt` 来源；文件上传（≥ v2.2.4）：通用附件、上限 9、`pv_files`；`stream_mode` 续流 |
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
@@ -66,11 +66,15 @@
 
 组件行为变更时：更新对应 API 表 + 在指南中加交叉链接。
 
+`setInputContent` 落点：API `api/ai-blueking/chatbot.md`、`aiblueking.md` 的 Expose 表。整篇替换输入框（`string | TagSchema`），不发送、不清引用，标签按芯片显示。挂载后给 `ChatInput` 的 `v-model` 赋带标签的文档同样保留芯片（chat-x `AiSlashInput` 按节点同步），如需说明落在 `api/chat-x/components.md` 的 `ChatInput`。
+
 欢迎区 / 消息工具栏扩展落点：指南 `ui-customization.md`（`#welcome`、`messageTools`/`updateTools`）、`sharing.md`（`confirm-share` + `source`、`agent-action`）；API 同步 `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`。
 
 Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization.md`；API `api/ai-blueking/aiblueking.md` Slots 表（仅 AIBlueking）。
 
 消息时间时区 `timezone` 落点（≥ v2.2.3）：指南 `chat-interaction.md`（四档格式 / `createdAt` 来源）+ `ui-customization.md`（`timezone` prop）；FAQ「如何让消息时间按指定时区显示」；API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`，以及 `api/chat-x/components.md` `MessageTime`。未配置时按浏览器时区。
+
+消息折叠 `enableMessageCollapse` 落点：指南 `chat-interaction.md`「消息折叠」、`chatbot-embedded.md` Props；FAQ「如何关闭消息折叠和过程状态栏」；API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`，以及 `api/chat-x/components.md` `MessageContainer`。默认 `true`，与 chat-x 一致。
 
 模型选择相关落点（≥ v2.2.2）：指南 `model-selection.md`；API 同步 `aiblueking` / `chatbot` / `managers`（含 `ModelSelectionManager`） / `types`、`chat-helper/sdk`、`chat-x/components`；FAQ「如何关闭或自定义模型选择」。
 

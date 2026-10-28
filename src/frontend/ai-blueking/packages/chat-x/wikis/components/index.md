@@ -34,7 +34,7 @@ aiSummary: >
 
 | 组件 | 说明 |
 | ---- | ---- |
-| [ChatContainer](./setup/chat-container.md) | 完整对话容器，组合消息列表、输入区、快捷指令、执行摘要、选择分享与自定义 Tab。 |
+| [ChatContainer](./setup/chat-container.md) | 完整对话容器，组合消息列表、输入区、快捷指令、文件产物预览、选择分享与自定义 Tab。 |
 | [MessageContainer](./setup/message-container.md) | 消息列表容器，负责消息分组、滚动、工具栏与消息插槽透传。 |
 
 ### 消息系统

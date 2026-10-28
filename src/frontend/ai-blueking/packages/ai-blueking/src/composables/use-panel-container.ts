@@ -14,6 +14,7 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { ComponentManager } from '../manager/component-manager';
 import type { PositionAndSize } from '../manager/types';
 import type { IShortcut } from '../types';
+import type { TagSchema } from '@blueking/chat-x';
 import type { EventForwarders, ForwardToManagerFn } from './use-ai-blueking-init';
 
 const SIDE_PANEL_EXTRA_WIDTH = 560;
@@ -191,6 +192,10 @@ export function usePanelContainer(params: UsePanelContainerParams) {
     }
   };
 
+  const setInputContent = (value: string | TagSchema) => {
+    chatBotRef.value?.setInputContent(value);
+  };
+
   const focusInput = () => {
     if (chatBotRef.value) {
       chatBotRef.value.focusInput();
@@ -259,6 +264,7 @@ export function usePanelContainer(params: UsePanelContainerParams) {
     updateSize,
     updatePositionAndSize,
     setCiteText,
+    setInputContent,
     focusInput,
     selectShortcut,
     sendShortcut,

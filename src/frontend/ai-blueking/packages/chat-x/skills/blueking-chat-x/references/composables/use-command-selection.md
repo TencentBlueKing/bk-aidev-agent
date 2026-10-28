@@ -37,7 +37,7 @@ editor.command(GetDocSnapshot)
 **使用时机**：
 
 - 在 `@` 资源插入流程中，先执行 `GetCursorPosition` 快照当前光标，再据此计算删除范围和插入位置。
-- 在外部 `modelValue` 变化时，先执行 `GetDocSnapshot` 取得编辑器当前文档，与 `docToString(modelValue)` 比对，决定是否 `ReplaceAll` 同步。
+- 在外部 `modelValue` 变化时，先执行 `GetDocSnapshot` 取得编辑器当前文档，按节点与 `modelValue` 比对，内容不同才用 `ReplaceFragment` 整篇替换（标签原样保留）。
 
 ## 概念演示
 
@@ -60,13 +60,14 @@ const insertTagAtCursor = (tag: IInputMenuItem) => {
   editor.command(InsertTag, [line, column], tag);
 };
 
-// 外部 modelValue 变化时，与编辑器文档对齐（简化示意；需已存在 editor、props、text、docToString）
+// 外部 modelValue 变化时，与编辑器文档对齐（简化示意；需已存在 editor、props、text、tagSchema）
 watch(
   () => props.modelValue,
   () => {
     editor.command(GetDocSnapshot);
-    if (docToString(docSnapshot.value || []) !== docToString(text.value || [])) {
-      editor.command(ReplaceAll, docToString(text.value || []) as unknown as string);
+    // 按节点比较，字符串比较会把标签拼成 @名称，与同名纯文本混淆
+    if (!isSameTagDoc(tagSchema.js(docSnapshot.value), text.value)) {
+      editor.command(ReplaceFragment, tagSchema.doc(text.value));
     }
   },
   { deep: false },

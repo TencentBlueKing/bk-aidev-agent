@@ -332,6 +332,7 @@ function voidNode<D>(options: {
 | `InsertText` | `EditorCommand<[text: string]>` | 先删除当前选区，再在起始位置插入文本 |
 | `Delete`     | `EditorCommand<[]>`             | 删除当前选区                         |
 | `ReplaceAll` | `EditorCommand<[text: string]>` | 清空全文并替换为新内容               |
+| `ReplaceFragment` | `EditorCommand<[fragment: DocFragment]>` | 清空全文并替换为文档片段，void 节点（如标签）原样保留 |
 
 <div class="demo">
   <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">

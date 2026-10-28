@@ -93,6 +93,7 @@
 | `messageStatus` | `MessageStatus` | - | 当前消息状态 |
 | `messageToolsStatus` | `MessageToolsStatus` | - | 消息工具栏状态 |
 | `enableSelection` | `boolean` | `false` | 是否启用多选模式 |
+| `enableMessageCollapse` | `boolean` | `true` | 是否启用消息组顶层折叠及过程状态栏。`ChatContainer` 同样透传此 prop。置 `false` 时展示全部消息并隐藏状态栏和耗时；工具栏及消息内部折叠不变。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
 | `onAgentAction` | `(tool, message) => void` | - | Agent 消息工具栏点击回调 |
 | `onAgentFeedback` | `(tool, message, reasons, other) => void` | - | Agent 反馈回调 |
 | `onUserAction` | `(tool, message) => void` | - | 用户消息工具栏点击回调 |

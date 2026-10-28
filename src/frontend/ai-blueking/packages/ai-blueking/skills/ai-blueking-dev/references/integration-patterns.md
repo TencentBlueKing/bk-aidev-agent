@@ -238,6 +238,7 @@ aiBluekingRef.value.updatePositionAndSize(x, y, w, h);
 
 // 输入控制
 aiBluekingRef.value.setCiteText(text);        // 设置引用文本
+aiBluekingRef.value.setInputContent(value);   // 整篇替换输入框，value: string | TagSchema
 aiBluekingRef.value.focusInput();             // 聚焦输入框
 ```
 

@@ -326,3 +326,16 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 ```
 
 若宿主保持默认 `true`，仍可能被智能体配置关掉。自 **v2.4.1** 起，`enableChatSession` 只隐藏入口，不阻断建会话：调试页即使带 `alwaysCreateNewSession`，初始化仍会创建当前会话。shortcut 为空时划词弹窗回退内置「问问小鲸」。详见 [会话管理 · 历史会话开关](/guide/core-features/session-management#历史会话开关)、[内容引用](/guide/core-features/content-referencing)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)。
+
+---
+
+## 如何关闭消息折叠和过程状态栏？
+
+默认开启（`enableMessageCollapse: true`），与 chat-x 一致：终态折叠本轮过程消息，并显示「处理中 / 已完成」等状态栏。需要完整展开时关掉即可：
+
+```vue
+<AIBlueking url="/api/" :enable-message-collapse="false" />
+<ChatBot url="/api/" :enable-message-collapse="false" />
+```
+
+关闭后过程状态栏（折叠箭头、状态文案、耗时）不再渲染。工具栏，以及思考块等消息内部的折叠，仍然保留。改回 `true` 会恢复折叠和状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠)。

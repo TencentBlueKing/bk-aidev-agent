@@ -45,6 +45,8 @@ export interface UseMessageSenderReturn {
   handleStopSending: () => Promise<void>;
   handleUpdateModelValue: (value: string | TagSchema) => void;
   handleUpload: (files: File[]) => Promise<IUploadFileResult[]>;
+  /** 替换整个输入框。结构化文档会克隆后再写入，避免 shallowRef 吃掉同一引用上的后续修改。 */
+  setInputContent: (value: string | TagSchema) => void;
   stopGeneration: () => Promise<void>;
 }
 
@@ -74,6 +76,28 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
 
   const handleUpdateModelValue = (value: string | TagSchema) => {
     userInput.value = value;
+  };
+
+  const cloneInputContent = (value: string | TagSchema): string | TagSchema => {
+    if (typeof value === 'string') {
+      return value;
+    }
+    return value.map(line =>
+      line.map(node => {
+        if (node.type === 'text') {
+          return { type: 'text' as const, text: node.text };
+        }
+        return { type: 'tag' as const, data: { ...node.data } };
+      }),
+    );
+  };
+
+  /**
+   * 整篇替换输入框。不发送、不清引用。
+   * 每次都写入新数组，调用方改完同一个文档再调一次也能更新。
+   */
+  const setInputContent = (value: string | TagSchema) => {
+    userInput.value = cloneInputContent(value);
   };
 
   /** 上传未完成时点了取消：等回包拿到 path 再 DELETE */
@@ -262,6 +286,7 @@ export function useMessageSender(params: UseMessageSenderParams): UseMessageSend
     userInput,
     cite,
     handleUpdateModelValue,
+    setInputContent,
     doSendMessage,
     handleSendMessage,
     handleArtifactClick,

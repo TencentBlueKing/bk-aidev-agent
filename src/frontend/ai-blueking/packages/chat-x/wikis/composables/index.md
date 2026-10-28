@@ -12,7 +12,7 @@
 | `useContainerScrollProvider` | 消息容器滚动控制 Provider；基于 IntersectionObserver + wheel 事件管理 `isScrollBottom`、`scrollBottomHeight`、`autoScrollEnabled` | [查看](./use-container-scroll.md) |
 | `useContainerScrollConsumer` | 获取父级 Provider 共享的滚动控制；在后代组件中调用 `toScrollBottom`                                                               | [查看](./use-container-scroll.md) |
 | `useAnimationText`           | 流式文本动画；将文本拆分为块并逐块渐显，适用于 AI 打字机效果                                                                      | [查看](./use-animation-text.md)   |
-| `useMessageGroup`            | 消息分组逻辑；将 `Message[]` 转为 `MessageGroup[]`，处理 Tool 合并、Loading 注入、执行摘要过滤和分享模式                          | [查看](./use-message-group.md)    |
+| `useMessageGroup`            | 消息分组逻辑；将 `Message[]` 转为 `MessageGroup[]`，处理 Tool 合并、Loading 注入、文件收集、中断状态和分享模式 | [查看](./use-message-group.md)    |
 | `useCustomTabProvider`       | 自定义 Tab 管理 Provider；用于 `ChatContainer` 侧边栏的 Tab 动态增删和切换                                                        | [查看](./use-custom-tab.md)       |
 | `useCustomTabConsumer`       | 自定义 Tab 管理 Consumer；在后代组件中注入并操作 Tab（添加/移除/选中）                                                            | [查看](./use-custom-tab.md)       |
 | `useArtifactPreviewProvider` | 文件产物预览 Provider；维护命中文件 `outputId`，通过 `onOpen` 触发侧栏「文件产物」Tab                                               | [查看](./use-artifact-preview.md) |
@@ -117,15 +117,15 @@ containerScroll?.value?.toScrollBottom?.();
 ### useAnimationText
 
 ```typescript
-const { chunks, animStyle } = useAnimationText(textRef, { immediate: false });
-// chunks：分块后的文本数组；animStyle：CSS animation 样式对象
+const { chunks, animationStyle } = useAnimationText(textRef, { fadeDuration: 200, easing: 'ease-in-out' });
+// chunks：分块后的文本数组；animationStyle：CSS animation 样式对象
 ```
 
 ### useMessageGroup
 
 ```typescript
 const { messageGroups, isShareMode, isAllSelected, onToggleShareAll, onCancelShare, onConfirmShare } =
-  useMessageGroup({ keyword, messages: computed(() => props.messages), selectedUserMessages });
+  useMessageGroup({ messages: computed(() => props.messages), selectedUserMessages });
 // messageGroups：完整消息分组
 ```
 
@@ -135,6 +135,7 @@ const { messageGroups, isShareMode, isAllSelected, onToggleShareAll, onCancelSha
 // Provider（容器组件）
 const { tabs, selectedTab, isCollapse, addCustomTab, ensureCustomTab, removeCustomTab, selectCustomTab } =
   useCustomTabProvider({
+    defaultTab: { name: 'overview', label: '概览', closable: false },
     onTabChange: async tab => fetchData(tab.name),
   });
 
@@ -149,9 +150,12 @@ tabManager?.ensureCustomTab({ name: 'file-artifact', label: '文件产物', clos
 ### useArtifactPreviewProvider / Consumer
 
 ```typescript
-// Provider（ChatContainer）
+// Provider（容器接线示意；FILE_ARTIFACT_TAB 为包含 data.component 的完整 Tab 配置，
+// 详见 useArtifactPreview 专页；ChatContainer 已内置此接线）
 const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
-  onOpen: () => addCustomTab({ name: FILE_ARTIFACT_TAB_NAME, label: '文件产物', closable: false, order: -1 }),
+  artifacts: sessionArtifacts,
+  getOnArtifactClick: () => props.onArtifactClick,
+  onOpen: () => addCustomTab(FILE_ARTIFACT_TAB),
 });
 
 // Consumer（文件卡片）

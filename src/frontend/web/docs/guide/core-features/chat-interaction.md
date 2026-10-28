@@ -127,6 +127,29 @@ AI 小鲸支持多种内容渲染格式：
 
 所有 Markdown 内容都经过安全处理，防止 XSS 攻击。**不解析任意 HTML 标签**；若需彩色标题、背景高亮等，请让模型使用蓝鲸行内富文本语法，并在 AIDev Agent 系统提示词中约定格式（参见上文链接中的 LLM 配置示例）。
 
+## 消息折叠 {#消息折叠}
+
+助手每一轮默认折叠过程消息，并在消息上方显示过程状态栏（处理中 / 已完成 / 失败 / 已停止 / 已禁用，以及终态耗时）。最后一条助手回复，以及更早出现的流程节点、第三方审批和它们之后的消息会保留展示。
+
+`AIBlueking` 与 `ChatBot` 通过 `enableMessageCollapse` 控制该行为，透传至 `ChatContainer` / `MessageContainer`，默认 `true`，与 chat-x 一致：
+
+```vue
+<!-- 默认：折叠过程消息，展示过程状态栏 -->
+<AIBlueking url="/api/" />
+<ChatBot url="/api/" />
+
+<!-- 关闭：完整展示每组消息，并隐藏过程状态栏（含箭头、状态文案与耗时） -->
+<AIBlueking url="/api/" :enable-message-collapse="false" />
+<ChatBot url="/api/" :enable-message-collapse="false" />
+```
+
+| `enableMessageCollapse` | 消息展示 | 过程状态栏 |
+| --- | --- | --- |
+| `true`（默认） | 终态折叠本轮展示起点之前的过程消息 | 展示 |
+| `false` | 所有轮次完整展示，分享模式同样不折叠 | 不渲染（箭头、状态文案、耗时一并隐藏） |
+
+工具栏，以及思考块、代码块等消息内部的折叠，不受此开关影响。运行中把该值改回 `true` 会恢复折叠、状态栏和耗时。
+
 ## 消息时间展示 {#消息时间展示}
 
 自 **v2.2.3** 起，对话区会在消息工具栏旁展示创建时间，无需额外配置即可生效。时区可通过 `timezone` 统一指定，详见 [UI 定制 · 字号与消息时间](/guide/core-features/ui-customization#字号与消息时间)。

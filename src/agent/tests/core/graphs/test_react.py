@@ -50,6 +50,13 @@ def multiplier(a: int, b: int) -> int:
     return a * b
 
 
+def _tool_mock(name: str) -> MagicMock:
+    """构造带合法工具名的 BaseTool mock：去重按 name 索引，mock 必须显式给出 name。"""
+    mock = MagicMock(spec=BaseTool)
+    mock.name = name
+    return mock
+
+
 # ============================================================================
 # 自定义 Middleware 用于测试
 # ============================================================================
@@ -509,6 +516,7 @@ class TestReActAgentBuilder:
     def test_prepare_agent_tools_uses_self_enable_agentic_rag_tool(self):
         """_prepare_agent_tools 应根据 self._enable_agentic_rag_tool 决定是否添加知识工具"""
         sentinel = MagicMock(spec=BaseTool)
+        sentinel.name = "knowledge_retrieval"
         builder = ReActAgentBuilder()
         builder._knowledge_llm = MagicMock()
         builder._knowledge_query_options = KnowledgeSettings(enable_agentic_rag_tool=True)
@@ -1297,7 +1305,7 @@ class TestReActAgentBuilder:
         """enable_task=True 时应注入 Task 工具"""
         builder = ReActAgentBuilder().enable_task(True)
         with patch(
-            "aidev_agent.core.graphs.react.graph.get_task_tools", return_value=[MagicMock(spec=BaseTool)]
+            "aidev_agent.core.graphs.react.graph.get_task_tools", return_value=[_tool_mock("TaskCreate")]
         ) as mock:
             tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
         assert mock.called
@@ -1315,7 +1323,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_tools_injects_a2a_tools_when_specs_and_resolver(self):
         """配置了 a2a_specs 和 a2a_resolver 时应注入 A2A 工具"""
-        sentinel_tool = MagicMock(spec=BaseTool)
+        sentinel_tool = _tool_mock("helper")
         builder = ReActAgentBuilder()
         builder._enable_ask_user_question_tool = False
         builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
@@ -1341,8 +1349,8 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_tools_sets_handle_error_when_ignore_errors(self):
         """ignore_errors=True 时应为所有工具设置 handle_validation_error/handle_tool_error"""
-        t1 = MagicMock(spec=BaseTool)
-        t2 = MagicMock(spec=BaseTool)
+        t1 = _tool_mock("tool_a")
+        t2 = _tool_mock("tool_b")
         builder = ReActAgentBuilder()
         # ask_user_question 是模块级单例，_prepare_agent_tools(ignore_errors=True)
         # 会就地改写列表内所有工具的 handle_* 标志；不关闭会把污染泄漏给后续测试
@@ -1355,7 +1363,7 @@ class TestReActAgentBuilder:
 
     def test_prepare_agent_tools_no_handle_error_when_ignore_errors_false(self):
         """ignore_errors=False 时不应修改工具的 handle_error 属性"""
-        t1 = MagicMock(spec=BaseTool)
+        t1 = _tool_mock("tool_a")
         t1.handle_validation_error = "original"
         t1.handle_tool_error = "original"
         builder = ReActAgentBuilder()

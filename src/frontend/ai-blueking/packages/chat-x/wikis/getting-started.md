@@ -216,7 +216,7 @@ const assistantMessage: Message = {
 - 消息分组（内部使用 `useMessageGroup`）
 - 空对话时展示快捷指令按钮
 - 快捷指令表单渲染
-- 执行摘要侧边面板
+- 文件产物预览侧栏与自定义 Tab
 - 多选与分享模式
 
 ### 方式二：自定义组合（进阶）

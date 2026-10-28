@@ -10,6 +10,10 @@ ChatInput 内部富文本编辑区，基于 edix 编辑器渲染「文本 + 资�
 
 # AiSlashInput 富文本命令输入
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ChatInput](/components/input/chat-input) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { AiSlashInput } from '@blueking/chat-x'`。
+
 > **能力域**：输入交互
 
 ## 源码事实
@@ -47,13 +51,26 @@ ChatInput 内部富文本编辑区，基于 edix 编辑器渲染「文本 + 资�
 
 ## 与 modelValue 的同步
 
-`modelValue` 支持 `string` 与 `TagSchema` 两种形态：传字符串时经 `stringToDoc` 转成文档。当 `modelValue` 由外部异步更新（历史会话回填、父组件重置、编辑态回填）且与编辑器当前内容不一致时，组件通过 `GetDocSnapshot` 读取快照并与 `docToString(modelValue)` 比对，必要时执行 `ReplaceAll` 同步，避免内外状态脱节。
+`modelValue` 支持 `string` 与 `TagSchema` 两种形态：传字符串时经 `stringToDoc` 转成文档。当 `modelValue` 由外部更新（历史会话回填、父组件重置、编辑态回填、业务写入）时，组件通过 `GetDocSnapshot` 读取编辑器快照，按节点与 `modelValue` 比对：文本比文字，标签比全部字段。内容不同才执行 `ReplaceFragment` 整篇替换，标签原样保留。
+
+- 挂载后再给 `v-model` 赋带标签的文档，标签照常显示，不会变成 `@名称`。
+- 纯文本 `@名称` 与同名标签视为不同内容，会互相替换。
+- 编辑器自身输入回写的文档内容相同，不会重复替换，光标不受影响。
+- 外部替换会进入编辑器撤销历史；与随后 500ms 内的输入可能合并为一步。
 
 ## 粘贴与换行
 
 - 粘贴内容中包含文件时阻止默认行为并 emit `upload`，交由上层走上传流程；纯文本粘贴保持编辑器默认行为。
 - `Enter` 阻止编辑器默认换行（发送与否由上层判断），`Shift + Enter` 正常换行。
 - 编辑区默认保持 4 行高度，避免输入后 placeholder 消失导致高度抖动；父级触达 `max-height` 后由本组件内部滚动。
+
+## 删除标签
+
+标签没有单独的删除按钮。光标折叠且紧挨标签时，`Backspace` 删除光标前的标签，`Delete` 删除光标后的标签。
+
+行首标签是 `contenteditable="false"`。浏览器回删给出的范围经常落在标签两侧的空白文本节点上，序列化后长度为 0，标签会删不掉。因此按文档位置直接删除，不依赖 `beforeinput` 的目标范围。旁边是普通文字、已有选区，或按住 Ctrl / Alt / Shift 时，仍走编辑器原来的删除。
+
+插入标签时会在后面补一个空格，删掉行首标签通常要按两次回删：第一次删空格，第二次删标签。
 
 ## API
 

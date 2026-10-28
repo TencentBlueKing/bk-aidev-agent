@@ -45,6 +45,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
         asideCollapsed: { type: Boolean, default: undefined },
         placement: { type: String, default: undefined },
         timezone: { type: String, default: undefined },
+        enableMessageCollapse: { type: Boolean, default: undefined },
         getSideRenderComponent: { type: Function, default: undefined },
         getSideTabRenderComponent: { type: Function, default: undefined },
         onCustomTabChange: { type: Function, default: undefined },
@@ -208,5 +209,37 @@ describe('ChatBot timezone', () => {
 
     await wrapper.setProps({ timezone: 'UTC' });
     expect(chatContainerPropsRef.current.timezone).toBe('UTC');
+  });
+});
+
+describe('ChatBot enableMessageCollapse', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatHelperRef.value = createMockChatHelper();
+    chatContainerPropsRef.current = {};
+  });
+
+  it('未传时应默认开启，与 ChatContainer 一致（折叠 + 过程状态栏）', () => {
+    mount(ChatBot, {
+      props: {
+        url: 'https://api.example.com/',
+      },
+    });
+
+    expect(chatContainerPropsRef.current.enableMessageCollapse).toBe(true);
+  });
+
+  it('应将 enableMessageCollapse 透传给 ChatContainer', async () => {
+    const wrapper = mount(ChatBot, {
+      props: {
+        url: 'https://api.example.com/',
+        enableMessageCollapse: false,
+      },
+    });
+
+    expect(chatContainerPropsRef.current.enableMessageCollapse).toBe(false);
+
+    await wrapper.setProps({ enableMessageCollapse: true });
+    expect(chatContainerPropsRef.current.enableMessageCollapse).toBe(true);
   });
 });

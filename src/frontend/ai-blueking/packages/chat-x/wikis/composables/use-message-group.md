@@ -32,6 +32,7 @@ function useMessageGroup(options: {
   selectedUserMessages: Ref<Message[] | undefined>;
 }): {
   messageGroups: Ref<MessageGroup[]>;
+  activeUserQuestionInterrupt: ComputedRef<UserQuestionInterrupt | undefined>;
   sessionArtifacts: ComputedRef<SessionArtifact[]>;
   pendingApprovalCount: ComputedRef<number>;
   pendingApprovalTipText: ComputedRef<string>;
@@ -72,7 +73,7 @@ role=user  role=tool     其他 role
 
 ### Tool 消息处理
 
-`role: 'tool'` 消息不会独立渲染，而是通过 `toolCallId` 注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段：
+`role: 'tool'` 消息通过 `toolCallId` 匹配 AssistantMessage 的工具调用；匹配成功时注入 `toolCall.toolMessage`，不再独立渲染：
 
 ```typescript
 const assistantToolMessage = messages.find(
@@ -90,7 +91,7 @@ if (assistantToolMessage) {
 }
 ```
 
-若找不到对应 `toolCall`（例如数据不一致），**跳过注入**，避免非空断言导致的运行时异常。
+若找不到对应 `toolCall`（例如数据不一致），跳过注入，并将该 Tool 消息保留在当前 Assistant 组中，由 `MessageRender` 独立渲染。
 
 ### pause 字段
 
@@ -125,6 +126,10 @@ const sessionArtifacts = computed(() => {
 > `SessionArtifact` 即为 `AIFileInfo` 别名；文件名可能重复，不可作唯一键。
 
 预览命中与取链见 [useArtifactPreview](./use-artifact-preview)；侧栏列表与分类型预览（`ArtifactPreviewHost`）见 [FileArtifactPanel](../components/message/file-artifact-panel)。
+
+## 待回答问题
+
+`activeUserQuestionInterrupt` 从消息列表末尾向前查找 `outcome.type === 'interrupt'` 且包含 `reason === InterruptReason.UserQuestion` 的中断，返回最新匹配消息中的首个用户问题；没有时返回 `undefined`。`ChatContainer` 消费它，在输入区上方展示问题卡片。
 
 ## 待审批统计
 
@@ -192,6 +197,7 @@ const {
 | 属性/方法名      | 类型                          | 说明                                                                        |
 | ---------------- | ----------------------------- | --------------------------------------------------------------------------- |
 | messageGroups    | `Ref<MessageGroup[]>`         | 完整消息分组列表                                                            |
+| activeUserQuestionInterrupt | `ComputedRef<UserQuestionInterrupt \| undefined>` | 最新仍待回答的用户问题中断，供输入区问题卡片使用 |
 | sessionArtifacts | `ComputedRef<SessionArtifact[]>` | 收集助手产物与具有 `outputId` 的上传附件，按 `outputId` 去重（保留最后一次） |
 | pendingApprovalCount | `ComputedRef<number>`      | 当前消息中待审批 AI Dev 审批中断的数量                                      |
 | pendingApprovalTipText | `ComputedRef<string>`    | 待审批阻塞发送提示文案；无待审批时为空字符串                                |
@@ -204,7 +210,7 @@ const {
 ## 类型定义
 
 ```typescript
-import { type MessageGroup } from '@blueking/chat-x';
+import type { Message, MessageRole } from '@blueking/chat-x';
 
 interface MessageGroup {
   uid: string;
@@ -214,7 +220,6 @@ interface MessageGroup {
   isHover: boolean;
   pause?: boolean;
   startTime?: number;
-  userMessageTitle?: number | string;
 }
 ```
 

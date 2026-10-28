@@ -62,7 +62,12 @@ exportStatus: internal
 
 ## 与 modelValue 的同步
 
-`modelValue` 支持 `string` 与 `TagSchema` 两种形态：传字符串时经 `stringToDoc` 转成文档。当 `modelValue` 由外部异步更新（历史会话回填、父组件重置、编辑态回填）且与编辑器当前内容不一致时，组件通过 `GetDocSnapshot` 读取快照并与 `docToString(modelValue)` 比对，必要时执行 `ReplaceAll` 同步，避免内外状态脱节。
+`modelValue` 支持 `string` 与 `TagSchema` 两种形态：传字符串时经 `stringToDoc` 转成文档。当 `modelValue` 由外部更新（历史会话回填、父组件重置、编辑态回填、业务写入）时，组件通过 `GetDocSnapshot` 读取编辑器快照，按节点与 `modelValue` 比对：文本比文字，标签比全部字段。内容不同才执行 `ReplaceFragment` 整篇替换，标签原样保留。
+
+- 挂载后再给 `v-model` 赋带标签的文档，标签照常显示，不会变成 `@名称`。
+- 纯文本 `@名称` 与同名标签视为不同内容，会互相替换。
+- 编辑器自身输入回写的文档内容相同，不会重复替换，光标不受影响。
+- 外部替换会进入编辑器撤销历史；与随后 500ms 内的输入可能合并为一步。
 
 ## 粘贴与换行
 

@@ -155,7 +155,6 @@ type Key = ToolIcons;
 | `BkFlowSuccessIcon`   | `ai-bk-flow-success-icon`   | `0 0 16 16`     | 硬编码 `#18B456` + 白 | 流程成功 |
 | `BkFlowFailedIcon`    | `ai-bk-flow-failed-icon`    | `0 0 16 16`     | 硬编码 `#EA3636` + 白 | 流程失败 |
 | `BkFlowSuspendedIcon` | `ai-bk-flow-suspended-icon` | `0 0 16 16`     | 硬编码 `#F59500` + 白 | 流程暂停 |
-| `ExecutionIcon`       | `ai-execution-icon`         | `0 0 1024 1024` | currentColor          | 执行时钟 |
 | `NodeOutputIcon`      | `ai-node-output-icon`       | `0 0 1024 1024` | currentColor          | 节点输出 |
 | `NodeTabIcon`         | `ai-node-tab-icon`          | `0 0 1024 1024` | currentColor          | 节点 Tab |
 | `ToolCallIcon`        | `ai-toolcall-icon`          | `0 0 16 16`     | currentColor          | 工具调用（ToolcallRender 头部，16×16） |

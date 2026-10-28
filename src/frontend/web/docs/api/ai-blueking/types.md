@@ -156,6 +156,11 @@ interface AIBluekingProps {
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传内层 ChatBot）；该 Tab order 固定 0 且不可关闭 */
   executionTabVisible?: boolean;
+  /**
+   * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，透传内层 ChatBot）
+   * 为 false 时完整展示每组消息，并隐藏过程状态栏
+   */
+  enableMessageCollapse?: boolean;
 
   /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传内层 ChatBot） */
   getSideRenderComponent?: GetSideRenderComponent;
@@ -403,6 +408,11 @@ interface ChatBotProps {
 
   /** 「执行情况」Tab 是否展示，缺省 true（≥ v2.2.0-beta.11，透传 ChatContainer）；该 Tab order 固定 0 且不可关闭 */
   executionTabVisible?: boolean;
+  /**
+   * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，透传 ChatContainer）
+   * 为 false 时完整展示每组消息，并隐藏过程状态栏
+   */
+  enableMessageCollapse?: boolean;
 
   /** 自定义侧栏内容区渲染（≥ v2.1.4-beta.7，透传 ChatContainer） */
   getSideRenderComponent?: GetSideRenderComponent;

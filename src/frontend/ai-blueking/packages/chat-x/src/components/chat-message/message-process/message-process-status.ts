@@ -23,7 +23,9 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { MessageRole, MessageStatus } from '../../../ag-ui/types/constants';
+import { InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types/constants';
+
+import type { Message } from '../../../ag-ui/types';
 
 /** 会话仍在生成；「停止生成」按钮与过程状态栏共用这一判断 */
 const GENERATING_MESSAGE_STATUSES = new Set<MessageStatus>([
@@ -66,6 +68,35 @@ export const resolveProcessLabelKey = (
 export const shouldShowMessageProcess = (group: { messages: readonly unknown[]; type: string }) =>
   group.type === MessageRole.Assistant && group.messages.length > 0;
 
-/** 终态且至少两条消息时才有可折叠的前序过程 */
-export const canCollapseProcess = (messages: readonly unknown[], generating: boolean) =>
-  !generating && messages.length >= 2;
+/** 终态从最后一条 assistant 或更早的流程 / 第三方审批开始保留；生成中或没有 assistant 时不折叠 */
+export const resolveProcessCollapseIndex = (messages: readonly Message[], generating: boolean) => {
+  if (generating) {
+    return 0;
+  }
+  let collapseIndex = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index].role === MessageRole.Assistant) {
+      collapseIndex = index;
+      break;
+    }
+  }
+  // 前序出现流程或审批时，从首次出现的位置起全部保留，包括审批处理后的回显。
+  for (let index = 0; index < collapseIndex; index++) {
+    const message = messages[index];
+    if (message.role === MessageRole.Activity && message.activityType === MessageContentType.FlowAgent) {
+      return index;
+    }
+    if (message.role === MessageRole.Interrupt) {
+      const outcome = message.content?.outcome;
+      const result = message.content?.result;
+      if (
+        (outcome?.type === 'interrupt' &&
+          outcome.interrupts.some(item => item.reason === InterruptReason.AIDevToolApproval)) ||
+        (outcome?.type === 'success' && result?.reason === InterruptReason.AIDevToolApproval)
+      ) {
+        return index;
+      }
+    }
+  }
+  return collapseIndex;
+};

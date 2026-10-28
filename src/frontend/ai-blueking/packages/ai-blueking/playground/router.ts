@@ -97,6 +97,12 @@ const router = createRouter({
       component: () => import('./views/RenameEventView.vue'),
       meta: { title: 'rename 事件', group: 'example' },
     },
+    {
+      path: '/examples/set-input-content',
+      name: 'SetInputContent',
+      component: () => import('./views/SetInputContentView.vue'),
+      meta: { title: 'setInputContent 写入输入', group: 'example' },
+    },
   ],
 });
 

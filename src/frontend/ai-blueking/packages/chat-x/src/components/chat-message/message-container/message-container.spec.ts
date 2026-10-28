@@ -29,7 +29,7 @@ import { defineComponent, h, nextTick } from 'vue';
 import { type VueWrapper, flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types';
+import { InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../../common';
 import { MessageToolsStatus } from '../../../types/tool';
 import MessageContainer from './message-container.vue';
@@ -1669,8 +1669,8 @@ describe('MessageContainer', () => {
   });
 
   describe('助手过程折叠', () => {
-    const createProcessMessage = (id: string, content: string, status: MessageStatus, createdAt: string) =>
-      ({ ...createAssistantMessage(id, content, Number(id)), status, createdAt }) as Message;
+    const createProcessMessage = (id: string, content: string, status: MessageStatus, createdAt: string): AssistantMessage =>
+      ({ ...createAssistantMessage(id, content, Number(id)), status, createdAt });
 
     it('单条助手消息应该显示状态栏但不显示箭头；前面没有用户提问时不显示耗时', async () => {
       const messages = [createAssistantMessage('1', '只有回答', 1)];
@@ -1763,13 +1763,26 @@ describe('MessageContainer', () => {
       expect(wrapper.findAll('.mock-message-render')).toHaveLength(2);
     });
 
-    it('生成中只有最后一组显示处理中，之前的组按已完成折叠', async () => {
+    it('每轮分别保留最后一条 assistant 及后续消息，当前轮生成中时全部展示', async () => {
       const messages: Message[] = [
         { ...createUserMessage('1', '第一问', 1), createdAt: '2026-01-01T00:00:00.000Z' },
         createProcessMessage('2', '历史过程', MessageStatus.Complete, '2026-01-01T00:00:02.000Z'),
         createProcessMessage('3', '历史回答', MessageStatus.Complete, '2026-01-01T00:00:04.000Z'),
+        {
+          ...createProcessMessage('6', '历史提示', MessageStatus.Complete, '2026-01-01T00:00:04.000Z'),
+          role: MessageRole.Tool,
+          toolCallId: 'history-call',
+          duration: 0,
+        },
         { ...createUserMessage('4', '第二问', 4), createdAt: '2026-01-01T00:01:00.000Z' },
+        createProcessMessage('7', '当前过程', MessageStatus.Complete, '2026-01-01T00:01:00.500Z'),
         createProcessMessage('5', '当前输出', MessageStatus.Streaming, '2026-01-01T00:01:01.000Z'),
+        {
+          ...createProcessMessage('8', '当前提示', MessageStatus.Complete, '2026-01-01T00:01:02.000Z'),
+          role: MessageRole.Tool,
+          toolCallId: 'current-call',
+          duration: 0,
+        },
       ];
 
       wrapper = mount(MessageContainer, {
@@ -1784,7 +1797,69 @@ describe('MessageContainer', () => {
 
       const headers = wrapper.findAll('.ai-message-process-header-text').map(node => node.text());
       expect(headers).toEqual(['已完成，耗时 4s', '处理中']);
-      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).not.toContain('历史过程');
+      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).toEqual([
+        '第一问', '历史回答', '历史提示', '第二问', '当前过程', '当前输出', '当前提示',
+      ]);
+
+      await wrapper.setProps({ messageStatus: MessageStatus.Complete });
+      expect(wrapper.findAll('.mock-message-render').map(node => node.text())).toEqual([
+        '第一问', '历史回答', '历史提示', '第二问', '当前输出', '当前提示',
+      ]);
+    });
+
+    it.each([RenderMode.Chat, RenderMode.Share])('%s 模式下每轮应分别保留流程或审批起的全部消息', async renderMode => {
+      const messageGroups = buildGroups([
+        createUserMessage('1', '第一问'),
+        createAssistantMessage('2', '历史过程'),
+        createAssistantMessage('3', '历史回答'),
+        createUserMessage('4', '第二问'),
+        createAssistantMessage('5', '当前过程'),
+        createAssistantMessage('6', '当前回答'),
+      ]);
+      messageGroups[1].messages.splice(1, 0, {
+        ...createAssistantMessage('flow', ''),
+        role: MessageRole.Activity,
+        activityType: MessageContentType.FlowAgent,
+        content: [],
+      });
+      messageGroups[3].messages.splice(1, 0, {
+        ...createAssistantMessage('approval', ''),
+        role: MessageRole.Interrupt,
+        content: {
+          outcome: {
+            type: 'interrupt',
+            interrupts: [{ id: 'approval-1', toolCallId: 'call-1', reason: InterruptReason.AIDevToolApproval }],
+          },
+        },
+      });
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: messageGroups.flatMap(group => group.messages),
+          messageGroups,
+          messageStatus: renderMode === RenderMode.Share ? MessageStatus.Streaming : MessageStatus.Complete,
+          renderMode,
+        },
+        slots: { default: ({ message }: { message: Message }) => h('span', { class: 'process-message' }, String(message.id)) },
+      });
+      await nextTick();
+
+      const visibleIds = () => wrapper.findAll('.process-message').map(node => node.text());
+      expect(visibleIds()).toEqual(['1', 'flow', '3', '4', 'approval', '6']);
+
+      await wrapper.findAll('.ai-message-process-header')[0].trigger('click');
+      expect(visibleIds()).toEqual(['1', '2', 'flow', '3', '4', 'approval', '6']);
+      await wrapper.findAll('.ai-message-process-header')[0].trigger('click');
+      expect(visibleIds()).toEqual(['1', 'flow', '3', '4', 'approval', '6']);
+
+      await wrapper.setProps({ enableMessageCollapse: false });
+      expect(visibleIds()).toEqual(['1', '2', 'flow', '3', '4', '5', 'approval', '6']);
+      expect(wrapper.find('.ai-message-process-header').exists()).toBe(false);
+      expect(wrapper.findAll('.mock-message-tools')).toHaveLength(renderMode === RenderMode.Share ? 0 : 2);
+
+      await wrapper.setProps({ enableMessageCollapse: true });
+      expect(visibleIds()).toEqual(['1', 'flow', '3', '4', 'approval', '6']);
+      expect(wrapper.findAll('.ai-message-process-header')).toHaveLength(2);
     });
 
     it('Share 模式下即使 messageStatus 为生成中也应该按终态展示', async () => {

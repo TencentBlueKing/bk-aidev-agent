@@ -21,7 +21,7 @@ import type {
   OnCustomTabChange,
 } from '../types';
 import type { IAgentInfo, ILlmItem, ISession } from '@blueking/chat-helper';
-import type { RenderMode } from '@blueking/chat-x';
+import type { RenderMode, TagSchema } from '@blueking/chat-x';
 import type { AiSizeMode, IModelOption, IToolBtn, Message } from '@blueking/chat-x';
 import type { TippyOptions } from 'vue-tippy';
 
@@ -108,6 +108,11 @@ export interface ChatBotExpose {
   sendShortcut: (shortcut: IShortcut, selectedText?: string) => Promise<void>;
   // 其他
   setCiteText: (text: string) => void;
+  /**
+   * 整篇替换输入框内容。字符串是纯文本，TagSchema 保留标签。
+   * 不发送、不清引用、不聚焦。替换会进入编辑器撤销历史。
+   */
+  setInputContent: (value: string | TagSchema) => void;
 
   stopGeneration: () => void;
 
@@ -153,6 +158,12 @@ export interface ChatBotProps {
   // === 功能开关 ===
   /** 是否启用消息选择 */
   enableSelection?: boolean;
+  /**
+   * 是否启用所有轮次消息的顶层折叠及过程状态栏（默认 true，与 ChatContainer 一致）
+   * 为 false 时完整展示每组消息，并隐藏过程状态栏（折叠箭头、状态文案与耗时）
+   * 工具栏及消息内部的折叠行为不受影响；分享模式同样遵循此配置
+   */
+  enableMessageCollapse?: boolean;
   /**
    * 接口/业务错误时是否自动弹出 Message 提示（默认 true）
    * 设为 false 可自行通过 @error 事件处理；AIBlueking 内嵌时会关闭以免双弹

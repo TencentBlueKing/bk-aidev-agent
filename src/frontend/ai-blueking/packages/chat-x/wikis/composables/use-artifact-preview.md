@@ -29,7 +29,7 @@ Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatCo
 
 **职责边界**：
 
-- **本 composable**：维护「命中文件」与「URL 解析」（每次重新取链 + 并发去重）；打开侧栏 Tab（`addCustomTab`）由容器通过 `onOpen` 注入
+- **本 composable**：向后代提供传入的 `artifacts` 列表，维护「命中文件」与「URL 解析」（每次重新取链 + 并发去重）；打开侧栏 Tab（`addCustomTab`）由容器通过 `onOpen` 注入
 - **不在本 composable**：聚合会话文件列表、渲染预览面板、按类型 fetch 正文 / iframe 展示 —— 分别由 `useMessageGroup.sessionArtifacts`、`FileArtifactPanel`、内部 `ArtifactPreviewHost` + `useArtifactPreviewLoader` 承担（预览重载键为 `outputId:type`）
 
 ## 函数签名
@@ -38,12 +38,15 @@ Provider/Consumer 模式的文件产物预览状态管理。Provider 在 `ChatCo
 
 ```typescript
 function useArtifactPreviewProvider(options: {
+  /** 向面板提供的文件列表；未传时为空列表 */
+  artifacts?: ComputedRef<SessionArtifact[]>;
   /** 读取业务侧异步取链回调（getter 保持对 props 变更敏感） */
   getOnArtifactClick?: () => OnArtifactClick | undefined;
   /** 命中文件后触发：由容器负责 addCustomTab + 展开侧栏 + 选中 Tab */
   onOpen: (outputId: string) => void;
 }): {
   activeArtifactId: ShallowRef<string>;
+  artifacts: ComputedRef<SessionArtifact[]>;
   canResolveArtifactUrl: ComputedRef<boolean>;
   openPreview: (payload: OpenArtifactPreviewPayload) => void;
   resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
@@ -58,6 +61,7 @@ function useArtifactPreviewConsumer():
   | undefined
   | {
       activeArtifactId: Ref<string>;
+      artifacts: ComputedRef<SessionArtifact[]>;
       canResolveArtifactUrl: ComputedRef<boolean>;
       openPreview: (payload: OpenArtifactPreviewPayload) => void;
       resolveArtifactUrls: (file: AIFileInfo) => Promise<ArtifactUrlResult>;
@@ -69,9 +73,10 @@ function useArtifactPreviewConsumer():
 
 ### Provider（ChatContainer）
 
-会话级文件产物由 [`useMessageGroup`](./use-message-group) 统一聚合（`sessionArtifacts`），Provider 只负责命中与打开侧栏 Tab：
+会话文件由 [`useMessageGroup`](./use-message-group) 聚合（`sessionArtifacts`，包含助手产物与用户附件），并通过 Provider 的 `artifacts` 传给面板。以下为容器内部接线示意；实际 `ChatContainer` 还会合并输入区已上传待发送文件。业务使用容器时无需重复挂 Provider，内部面板的相对路径仅用于本仓库文档 / 调试。
 
 ```typescript
+import { watch } from 'vue';
 import {
   useArtifactPreviewProvider,
   useCustomTabProvider,
@@ -79,23 +84,25 @@ import {
   FILE_ARTIFACT_TAB_NAME,
   t,
 } from '@blueking/chat-x';
-
-const { addCustomTab, ensureCustomTab, removeCustomTab } = useCustomTabProvider({ /* ... */ });
+import FileArtifactPanel from '../../src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue';
 
 // 会话级文件产物聚合已内聚在 useMessageGroup，直接消费
-const { sessionArtifacts } = useMessageGroup({ keyword, messages, selectedUserMessages });
+const { sessionArtifacts } = useMessageGroup({ messages, selectedUserMessages });
 
 const FILE_ARTIFACT_TAB = {
   closable: false,
+  data: { component: FileArtifactPanel },
   label: t('文件产物'),
+  loadOnSelect: false,
   name: FILE_ARTIFACT_TAB_NAME,
   order: -1,
 };
 
 // 常驻挂载：不随产物有无增删，无产物时由面板展示空态
-ensureCustomTab(FILE_ARTIFACT_TAB);
+const { addCustomTab } = useCustomTabProvider({ defaultTab: FILE_ARTIFACT_TAB });
 
 const { activeArtifactId, setActiveArtifactId } = useArtifactPreviewProvider({
+  artifacts: sessionArtifacts,
   getOnArtifactClick: () => props.onArtifactClick,
   // 点击文件卡片：展开侧栏并选中「文件产物」Tab
   onOpen: () => {
@@ -118,6 +125,7 @@ watch(sessionArtifacts, list => {
 ### Consumer（ArtifactFileCard）
 
 ```typescript
+import { computed } from 'vue';
 import { useArtifactPreviewConsumer } from '@blueking/chat-x';
 
 const artifactPreview = useArtifactPreviewConsumer();
@@ -136,9 +144,9 @@ const handleCardClick = () => {
 
 ### 侧栏列表内切换命中文件
 
-```typescript
-// FileArtifactPanel 从 ARTIFACT_PREVIEW_TOKEN 注入 artifacts / activeArtifactId
-// 列表点击直接 setActiveArtifactId；右侧预览由 ArtifactPreviewHost 自行取链
+```vue
+<!-- FileArtifactPanel 从 Provider 注入 artifacts / activeArtifactId，无需传入 props。
+     列表点击直接 setActiveArtifactId；右侧预览由 ArtifactPreviewHost 自行取链。 -->
 <FileArtifactPanel />
 ```
 
@@ -178,6 +186,7 @@ triggerArtifactDownload(downloadUrl, file.name);
 | 属性/方法名         | 类型                                      | 说明                                                                 |
 | ------------------- | ----------------------------------------- | -------------------------------------------------------------------- |
 | activeArtifactId    | `ShallowRef<string>`                      | 当前命中的文件 `outputId`                                            |
+| artifacts           | `ComputedRef<SessionArtifact[]>`          | 向面板提供的文件列表；未传入时为空数组 |
 | canResolveArtifactUrl | `ComputedRef<boolean>`                  | 是否具备异步取链能力（有 `onArtifactClick` 时为 true，下载按钮据此显隐） |
 | openPreview         | `(payload: OpenArtifactPreviewPayload) => void` | 由文件卡片或 `artifact` 资源标签触发：以 `file.outputId` 更新命中态、调用 `onOpen`；入参只需 `{ file: { outputId } }` |
 | resolveArtifactUrls | `(file: AIFileInfo) => Promise<ArtifactUrlResult>` | 调用 `onArtifactClick` 取链；每次重新获取，不缓存；同文件并发去重 |
@@ -186,7 +195,7 @@ triggerArtifactDownload(downloadUrl, file.name);
 ## 类型定义
 
 ```typescript
-import type { AIFileInfo, ArtifactUrlResult, OnArtifactClick } from '@blueking/chat-x';
+import type { AIFileInfo } from '@blueking/chat-x';
 
 /**
  * 打开预览时的入参。
@@ -214,8 +223,8 @@ type ArtifactUrlResult = {
 
 会话内以 **`outputId`** 作为文件产物唯一键：
 
-- 同一 `outputId` 在多条 `AssistantMessage` 中出现时，`sessionArtifacts` 去重并保留**最后一次**出现的文件信息
-- `activeArtifactId`、列表 `:key`、`select` 事件参数均使用 `outputId`
+- 同一 `outputId` 在助手产物或用户附件中重复出现时，`sessionArtifacts` 去重并保留**最后一次**出现的文件信息
+- `activeArtifactId`、列表 `:key`、`setActiveArtifactId` 参数均使用 `outputId`
 - 文件名可能重复，**不可**作为唯一键
 
 ## 完整触发链路
@@ -225,12 +234,12 @@ ArtifactFileCard（点击）
   └─ useArtifactPreviewConsumer().openPreview({ file })
        └─ useArtifactPreviewProvider（ChatContainer）
             ├─ activeArtifactId = file.outputId
-            └─ onOpen(outputId) → addCustomTab(FILE_ARTIFACT_TAB_NAME) 展开并选中
-                 └─ FileArtifactPanel（列表 + 下载头，@select → setActiveArtifactId）
+            └─ onOpen(outputId) → addCustomTab(FILE_ARTIFACT_TAB) 展开并选中
+                 └─ FileArtifactPanel（列表 + 下载头，点击列表 → setActiveArtifactId）
                       └─ ArtifactPreviewHost（loader + 分类型 renderer）
 
 容器初始化
-  └─ ensureCustomTab(FILE_ARTIFACT_TAB_NAME) 常驻挂上（不展开侧栏）；因 order:-1 排在首位，
+  └─ useCustomTabProvider({ defaultTab: FILE_ARTIFACT_TAB }) 常驻挂载（不展开侧栏）；因 order:-1 排在首位，
      未主动切换过 Tab 时会成为默认选中面板；无产物时由面板展示整块空态
 
 sessionArtifacts 变化
@@ -244,7 +253,7 @@ sessionArtifacts 变化
 - **职责单一**：composable 不直接调用 `useCustomTab`，侧栏 Tab 打开逻辑由 `onOpen` 注入；也不做正文 fetch / iframe 渲染
 - **ShallowRef 优先**：`activeArtifactId` 使用 `shallowRef`，避免不必要的深层响应式开销
 - **Consumer 兜底**：`useArtifactPreviewConsumer` 无 Provider 时返回 `undefined`，文件卡片在无容器上下文时自动不可点击
-- **与 useCustomTab 协作**：点击卡片走 `addCustomTab`（展开 + 选中）；容器初始化时走 `ensureCustomTab` 常驻挂载（不展开；因 `order: -1` 在未主动切换前会成为默认选中），无产物也不移除，由面板展示空态
+- **与 useCustomTab 协作**：点击卡片走 `addCustomTab`（展开 + 选中）；容器初始化时通过 `defaultTab` 常驻挂载（不展开；`order: -1` 排在首位），无产物也不移除，由面板展示空态
 
 ## 关联组件
 
