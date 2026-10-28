@@ -88,6 +88,7 @@ class AgentBuilder:
         model: str = "",
         temperature: float | None = None,
         retry_strategy: str | None = None,
+        reasoning_effort: str | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -101,6 +102,7 @@ class AgentBuilder:
         self.model = model or ""
         self.temperature = temperature
         self.retry_strategy = retry_strategy
+        self.reasoning_effort = reasoning_effort
 
     def by_session_code(
         self,
@@ -219,4 +221,5 @@ class AgentBuilder:
             channel_type=channel_type,
             temperature=self.temperature,
             retry_strategy=self.retry_strategy,
+            reasoning_effort=self.reasoning_effort,
         )
