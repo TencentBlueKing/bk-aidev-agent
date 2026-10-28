@@ -223,6 +223,7 @@ function openAI() {
 | `sendMessage` | `(message: string) => Promise<void>` | 编程式发送消息 |
 | `stopGeneration` | `() => void` | 停止当前生成 |
 | `setCiteText` | `(text: string) => void` | 设置引用文本 |
+| `setInputContent` | `(value: string \| TagSchema) => void` | 整篇替换输入框，不发送、不清引用。与 ChatBot 相同。浮窗需先 `await show()`。自定义 `data.type` 见 [写入输入框标签](/demos/set-input-content) |
 | `focusInput` | `() => void` | 聚焦输入框 |
 
 ### 快捷方式操作

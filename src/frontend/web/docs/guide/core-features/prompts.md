@@ -101,3 +101,5 @@ const resources: IHostResourceItem[] = [
 | `artifact` | PV 相对路径 |
 
 整段 cite 工具栏已移除，但 `v-model:cite` / `setCiteText` 仍可用。
+
+也可以不经过菜单，用 [`setInputContent`](/demos/set-input-content) 把一份 `TagSchema` 直接写进输入框。官方 Agent 装配时只接受 `tool`、`mcp`、`doc`、`knowledgebase`、`artifact`、`file`；`skill`、`shortcut` 会被忽略。其它 `data.type`（例如业务自己的 `host`）会报 `docSchema tag type 非法`。这类标签必须在自己的 Agent 里解析 `property.docSchema`，不能直接接到官方 Agent。`tool` 的 `value` 还必须是已注册工具的 `code`，随便写一个名字同样会在后续装配失败。

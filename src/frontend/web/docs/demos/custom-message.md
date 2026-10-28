@@ -30,7 +30,7 @@ aside: false
 </ClientOnly>
 
 ::: warning 当前行为
-文档站示例使用已发布的 `3.1.0-beta.5`。`#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在这个已发布包的作用域内。终态过程折叠时，插槽只收到当前可见的消息。
+文档站示例使用已发布的 `3.1.0-beta.6`。`#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在这个已发布包的作用域内。终态过程折叠时，插槽只收到当前可见的消息。
 :::
 
 ## 代码块头部按钮

@@ -125,6 +125,17 @@ export const DEMO_ENTRIES: DemoEntry[] = [
     status: 'available',
   },
   {
+    id: 'set-input-content',
+    title: '写入输入框标签',
+    link: '/demos/set-input-content',
+    group: 'business',
+    summary: '用 setInputContent 写入自定义标签。自定义类型必须由自己的 Agent 解析，官方 Agent 会报错。',
+    modes: ['嵌入'],
+    recipes: 1,
+    mockReady: true,
+    status: 'available',
+  },
+  {
     id: 'error-handling',
     title: '错误处理与环境切换',
     link: '/demos/error-handling',

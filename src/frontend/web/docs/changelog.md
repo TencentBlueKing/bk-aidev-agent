@@ -1,13 +1,14 @@
 # 更新日志
 
-## v3.1.0-beta.5
+## v3.1.0-beta.6
 
-文档站交互示例使用已发布的 `@blueking/ai-blueking` / `chat-x` / `chat-helper` `3.1.0-beta.5`。
+文档站交互示例使用已发布的 `@blueking/ai-blueking` / `chat-x` / `chat-helper` `3.1.0-beta.6`。这一版包含 `setInputContent`。
 
 ### 新功能
 
 - **消息顶层折叠可关闭**（`enableMessageCollapse`）：`AIBlueking` / `ChatBot` 透传 chat-x `ChatContainer`。默认 `true`，终态折叠本轮过程消息并展示过程状态栏（处理中 / 已完成 / 失败 / 已停止 / 已禁用及耗时）。设为 `false` 后完整展示每组消息，并隐藏整个过程状态栏；工具栏和消息内部的折叠不变。分享模式同样遵循此配置。详见 [聊天交互 · 消息折叠](/guide/core-features/chat-interaction#消息折叠)
 - **模型描述气泡**：模型 `description` 去空白后非空时，选项悬停约 300ms 后用气泡展示纯文本，不再用原生 `title`。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)
+- **`setInputContent` 写入标签**：`ChatBot` / `AIBlueking` 可用一份 `TagSchema` 整篇替换输入框，标签显示为芯片，不发送。自定义 `data.type` 必须由自己的 Agent 解析；官方 Agent 遇到不认识的类型会报 `docSchema tag type 非法`。详见 [写入输入框标签](/demos/set-input-content)
 
 ### 优化
 

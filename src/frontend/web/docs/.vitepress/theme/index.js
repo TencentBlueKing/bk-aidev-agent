@@ -34,6 +34,7 @@ const RECIPES = {
   RecipeCustomMessage: () => import('./recipes/messages/RecipeCustomMessage.vue'),
   RecipeCodeHeader: () => import('./recipes/messages/RecipeCodeHeader.vue'),
   RecipeFlowRun: () => import('./recipes/side-render/RecipeFlowRun.vue'),
+  RecipeSetInputContent: () => import('./recipes/input/RecipeSetInputContent.vue'),
   RecipeSideRenderCustom: () => import('./recipes/side-render/RecipeSideRenderCustom.vue'),
 }
 
