@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import (
@@ -239,7 +241,7 @@ class TestBareEntropyConfig:
     @pytest.mark.parametrize(
         "mapping, expected",
         [
-            (None, True),  # 默认开启（全 purpose，默认真实生效）
+            (None, False),  # 默认关闭（env 未设置且平台未下发）
             ({"enable_redact_bare_entropy": False}, False),  # heuristic 层可关
             ({"enable_redact_bare_entropy": True}, True),
         ],
@@ -273,6 +275,48 @@ class TestBareEntropyConfig:
     def test_not_mandatory(self):
         """裸熵是 heuristic 层，本就按 design 可关 —— 与全字段平等模型一致。"""
         assert SecurityRedactionSettings(enable_redact_bare_entropy=False).enable_redact_bare_entropy is False
+
+
+# 11 个 ``enable_redact_*`` 字段与其环境变量后缀（REQ-1 契约表）
+_REDACTION_ENV_VAR_FIELDS = (
+    ("enable_redact_secrets", "SECRETS"),
+    ("enable_redact_registered_secrets", "REGISTERED_SECRETS"),
+    ("enable_redact_authorization_headers", "AUTHORIZATION_HEADERS"),
+    ("enable_redact_private_keys", "PRIVATE_KEYS"),
+    ("enable_redact_jwt", "JWT"),
+    ("enable_redact_vendor_tokens", "VENDOR_TOKENS"),
+    ("enable_redact_structured_fields", "STRUCTURED_FIELDS"),
+    ("enable_redact_url_credentials", "URL_CREDENTIALS"),
+    ("enable_redact_dsn_passwords", "DSN_PASSWORDS"),
+    ("enable_redact_cookies", "COOKIES"),
+    ("enable_redact_bare_entropy", "BARE_ENTROPY"),
+)
+
+
+class TestRedactionEnvVarNames:
+    """环境变量契约：新名逐个生效、未设时的默认矩阵、旧拼写名静默无效。"""
+
+    @pytest.mark.parametrize("field, suffix", _REDACTION_ENV_VAR_FIELDS)
+    def test_new_name_disables_switch(self, monkeypatch, field, suffix):
+        """ACC-2：设置 ``BKAI_ENABLE_REDACT_<后缀>=false`` 时对应字段为 False。"""
+        monkeypatch.setenv(f"BKAI_ENABLE_REDACT_{suffix}", "false")
+        assert getattr(SecurityRedactionSettings(), field) is False
+
+    @pytest.mark.parametrize("field, suffix", _REDACTION_ENV_VAR_FIELDS)
+    def test_default_when_env_absent(self, monkeypatch, field, suffix):
+        """ACC-7：仅裸熵默认 False，其余 10 个开关默认 True。"""
+        monkeypatch.delenv(f"BKAI_ENABLE_REDACT_{suffix}", raising=False)
+        expected = field != "enable_redact_bare_entropy"
+        assert getattr(SecurityRedactionSettings(), field) is expected
+
+    def test_legacy_misspelled_name_is_ignored(self, monkeypatch, caplog):
+        """ACC-3：旧拼写名不生效、不抛异常、不产生 warning 及以上日志。"""
+        monkeypatch.delenv("BKAI_ENABLE_REDACT_SECRETS", raising=False)
+        monkeypatch.setenv("BKAI_ENAVLE_REDACT_SECRETS", "false")
+        with caplog.at_level(logging.WARNING):
+            settings = SecurityRedactionSettings()
+        assert settings.enable_redact_secrets is True
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 _REDACTION_FIELD_NAMES = {
@@ -365,7 +409,7 @@ class TestRedactionEnvAndPlatformPriority:
     """env 兜底与平台优先：布尔/字符串走工厂，缺失回落 env，显式覆盖 env。"""
 
     def test_bool_and_string_env_fallback(self, monkeypatch):
-        monkeypatch.setenv("BKAI_ENAVLE_REDACT_BARE_ENTROPY", "false")
+        monkeypatch.setenv("BKAI_ENABLE_REDACT_BARE_ENTROPY", "false")
         monkeypatch.setenv("BKAI_KNOWN_SENSITIVE_VALUES", "env-value")
         s = SecurityRedactionSettings()
         assert s.enable_redact_bare_entropy is False
@@ -376,7 +420,7 @@ class TestRedactionEnvAndPlatformPriority:
         assert SecuritySettings().redaction.known_sensitive_values == "env-value"
 
     def test_platform_value_overrides_env(self, monkeypatch):
-        monkeypatch.setenv("BKAI_ENAVLE_REDACT_BARE_ENTROPY", "true")
+        monkeypatch.setenv("BKAI_ENABLE_REDACT_BARE_ENTROPY", "true")
         settings = SecuritySettings(redaction={"enable_redact_bare_entropy": False})
         assert settings.redaction.enable_redact_bare_entropy is False
 

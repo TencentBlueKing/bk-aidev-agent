@@ -1746,13 +1746,13 @@ class TestPrefilterReDoSProtection:
     def test_all_detectors_expose_cheap_prefilter(self):
         """每个已接入 detector 均暴露可调用的 could_match（协议契约，Detector 非 runtime_checkable）。
 
-        注：``_detectors_for_scan`` 实际注册 **11** 个实例（`Detector` 协议本身在
+        注：``_detectors_for_scan`` 在**显式开启裸熵**时注册 **11** 个实例（`Detector` 协议本身在
         ``base.py``，不是 detector）。本计数于 2026-09-15 由 10 变 11——
         新增 ``DsnJdbcDetector``（JDBC 属性串，带 ``jdbc:`` 上下文）。
-        **该计数前提是默认 settings 下全部开关为 True**：门控关闭时该 detector 整项
-        不入列表（长度随之变化），故任何需要固定长度的断言都须显式使用默认 settings。
+        **该计数前提是显式开启裸熵后全部开关为 True**：门控关闭时该 detector 整项
+        不入列表（长度随之变化，裸熵默认关闭时默认为 10 个）。
         """
-        detectors = _detectors_for_scan(settings=SecurityRedactionSettings())
+        detectors = _detectors_for_scan(settings=_bare_entropy_on_settings())
         assert len(detectors) == 11
         for detector in detectors:
             assert callable(detector.could_match)
@@ -1803,12 +1803,14 @@ class TestPemNonSecretNotMasked:
     def test_label_followed_by_space_not_excluded(self):
         """反例：`CERTIFICATE AUTHORITY=<value>` 是普通文本，不得被 PEM 排除放过。"""
         src = "CERTIFICATE AUTHORITY=" + _GPG_SAMPLE
-        assert _GPG_SAMPLE not in redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT)
+        assert _GPG_SAMPLE not in redact_text(
+            src, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings()
+        )
 
     def test_entropy_after_end_of_non_secret_block_still_hits(self):
         """反例：块结束之后的裸高熵串仍须命中（排除仅限块内）。"""
         src = _PEM_PUBLIC_KEY + "\n" + _GPG_SAMPLE
-        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT)
+        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
         assert _GPG_SAMPLE not in out
         assert "-----BEGIN PUBLIC KEY-----" in out
 
@@ -1909,7 +1911,7 @@ class TestPemNonSecretLabelFamily:
     def test_private_label_family_still_masked(self, label):
         """正对照：private key 家族绝不可被排除集放过（泄露后果远重于原缺陷）。"""
         block = f"-----BEGIN {label}-----\n{_PEM_WRAPPED_BODY}\n-----END {label}-----"
-        out = redact_text(block, purpose=RedactionPurpose.MODEL_OUTPUT)
+        out = redact_text(block, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
         assert out != block
         assert _PEM_WRAPPED_BODY not in out
 
@@ -2037,9 +2039,14 @@ _SAME_LINE_WS_VARIANTS = (
 )
 
 
+def _bare_entropy_on_settings() -> SecurityRedactionSettings:
+    """显式开启裸熵兜底的配置（裸熵默认关闭，断言兜底能力时必须显式开启）。"""
+    return SecurityRedactionSettings(enable_redact_bare_entropy=True)
+
+
 def _assert_body_masked(text: str) -> None:
     """断言给定 PEM-ish 文本的 body **不可能**原样存活（fail-closed 验收）。"""
-    out = redact_text(text, purpose=RedactionPurpose.MODEL_OUTPUT)
+    out = redact_text(text, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
     assert _PEM_LEAK_BODY not in out, f"body leaked verbatim: {out!r}"
 
 
@@ -2127,7 +2134,7 @@ class TestPemBoundaryRobustness:
     def test_secret_after_public_block_still_masked(self):
         """公钥块结束之后紧跟的裸密文仍须命中（排除仅限块内）。"""
         src = f"-----BEGIN PUBLIC KEY-----\n{_PEM_LEAK_BODY_B64}\n-----END PUBLIC KEY-----\n{_PEM_LEAK_BODY_ALNUM}"
-        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT)
+        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
         assert _PEM_LEAK_BODY_ALNUM not in out
         assert "-----BEGIN PUBLIC KEY-----" in out
 
@@ -2567,7 +2574,7 @@ class TestPemLabelNormalization:
     def test_canonical_secret_labels_remain_masked(self, label):
         """规范私钥 label 必须仍被遮 —— 指向性 sweep（正对照的另一半）。"""
         block = f"-----BEGIN {label}-----\n{_PEM_WRAPPED_BODY}\n-----END {label}-----"
-        out = redact_text(block, purpose=RedactionPurpose.MODEL_OUTPUT)
+        out = redact_text(block, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
         assert _PEM_WRAPPED_BODY not in out
 
 
@@ -3550,7 +3557,7 @@ class TestPemSameLineBodyExcluded:
     def test_bare_entropy_after_block_still_hits(self):
         """排除**仅限块内**：块结束之后的裸高熵串仍须命中。"""
         src = f"-----BEGIN PUBLIC KEY-----\n{_PEM_LEAK_BODY}\n-----END PUBLIC KEY-----\n{_HIGH_ENTROPY}"
-        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT)
+        out = redact_text(src, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings())
         assert _HIGH_ENTROPY not in out
 
     # --- (c) 正对照：同行语境下不得放宽 fail-closed 与私钥整块遮 ---
@@ -3649,7 +3656,9 @@ class TestNonSecretFieldValuesRetained:
     def test_credential_field_still_masked(self, key):
         """反向：真实凭据字段（含「含 nonce 但不等于 nonce」的名字）仍须脱敏。"""
         sample = f"{key}={_HIGH_ENTROPY}"
-        assert redact_text(sample, purpose=RedactionPurpose.MODEL_OUTPUT) != sample
+        assert (
+            redact_text(sample, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings()) != sample
+        )
 
 
 class TestPemEmptyBodyAndCsr:
@@ -3714,7 +3723,9 @@ class TestPublicKeyPrefixExemption:
         ],
     )
     def test_prefixed_absent_still_masked(self, sample):
-        assert redact_text(sample, purpose=RedactionPurpose.MODEL_OUTPUT) != sample
+        assert (
+            redact_text(sample, purpose=RedactionPurpose.MODEL_OUTPUT, settings=_bare_entropy_on_settings()) != sample
+        )
 
 
 # ---------------------------------------------------------------------------

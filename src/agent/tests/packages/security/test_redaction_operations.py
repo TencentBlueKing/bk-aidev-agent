@@ -7,6 +7,7 @@ import inspect
 
 import pytest
 from aidev_agent.packages.security.redaction import operations
+from aidev_agent.packages.security.redaction.detectors import EntropyDetector
 from aidev_agent.packages.security.redaction.operations import (
     _detectors_for_scan,
     count_sensitive_hits,
@@ -465,7 +466,14 @@ class TestRedactionLayerSwitches:
 
         assert _detectors_for_scan(settings=self._settings(enable_redact_secrets=False)) == []
 
-    def test_default_settings_still_register_all_eleven(self):
-        """默认全开时列表仍为 11 个（本次改动不改默认检测集合）。"""
+    def test_default_settings_register_ten_detectors(self):
+        """默认（裸熵关闭）时列表为 10 个：裸熵兜底不参与扫描。"""
 
-        assert len(_detectors_for_scan(settings=self._settings())) == 11
+        detectors = _detectors_for_scan(settings=self._settings())
+        assert len(detectors) == 10
+        assert not any(isinstance(detector, EntropyDetector) for detector in detectors)
+
+    def test_explicit_bare_entropy_registers_all_eleven(self):
+        """显式开启裸熵后列表为 11 个：默认集合只少了裸熵一项。"""
+
+        assert len(_detectors_for_scan(settings=self._settings(enable_redact_bare_entropy=True))) == 11
