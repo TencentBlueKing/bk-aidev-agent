@@ -9,7 +9,9 @@ from bkapi_client_core.property import bind_property
 from bkapi_client_core.utils import generic_type_partial as _partial
 
 from aidev_agent.api.base import ApiProtocol
+from aidev_agent.api.constants import TENANT_HEADER
 from aidev_agent.api.domains import BKAIDEV_URL
+from aidev_agent.api.utils import resolve_app_tenant_id
 from aidev_agent.config import settings
 
 
@@ -411,17 +413,31 @@ class Client(BaseClient):
 
 class BKAidevApi(ApiProtocol):
     @classmethod
+    def _with_tenant(cls, client: Client) -> Client:
+        """注入应用租户兜底头。
+
+        网关对全租户应用强校验该头非空，不带头会 403。持有更精确租户的调用方
+        （如 ``ResourceManager``）随后 ``update_headers`` 覆盖即可。
+        """
+        client.update_headers({TENANT_HEADER: resolve_app_tenant_id()})
+        return client
+
+    @classmethod
     def get_client(cls, app_code=settings.APP_CODE, app_secret=settings.SECRET_KEY) -> Client:
-        return _get_client_by_settings(Client, endpoint=BKAIDEV_URL, bk_app_code=app_code, bk_app_secret=app_secret)
+        client = _get_client_by_settings(Client, endpoint=BKAIDEV_URL, bk_app_code=app_code, bk_app_secret=app_secret)
+        return cls._with_tenant(client)
 
     @classmethod
     def get_client_by_request(cls, request):
-        return _partial(Client, _get_client_by_request)(request, endpoint=BKAIDEV_URL)
+        return cls._with_tenant(_partial(Client, _get_client_by_request)(request, endpoint=BKAIDEV_URL))
 
     @classmethod
     def get_client_by_username(cls, username, app_code=None, app_secret=None, **kwargs):
-        return _partial(Client, _get_client_by_username)(
-            username, endpoint=BKAIDEV_URL,
-            bk_app_code=app_code, bk_app_secret=app_secret,
+        client = _partial(Client, _get_client_by_username)(
+            username,
+            endpoint=BKAIDEV_URL,
+            bk_app_code=app_code,
+            bk_app_secret=app_secret,
             **kwargs,
         )
+        return cls._with_tenant(client)

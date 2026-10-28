@@ -23,6 +23,8 @@ def _make_builder_ctx(agent_info: dict | None = None, non_thinking_llm: str | No
     ctx.agent_config.non_thinking_llm = non_thinking_llm
     ctx.agent_config.temperature = None
     ctx.agent_config.max_tokens = None
+    # build_chat_model* 会透传 resource_manager.tenant_id 给 LLM 网关，需给真实字符串
+    ctx.resource_manager = MagicMock(tenant_id="default")
     ctx.chat = ChatBuildExtras()
     return ctx
 

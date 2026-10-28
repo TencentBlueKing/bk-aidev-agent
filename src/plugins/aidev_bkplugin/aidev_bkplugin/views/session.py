@@ -26,7 +26,7 @@ from aidev_bkplugin.constants import AGUI_PROTOCOL_VERSION, DEFAULT_SESSION_PAGE
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.session_images import sign_history_markdown_images
 from aidev_bkplugin.utils import is_local_dev
-from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger
+from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet, logger, resolve_tenant_id
 
 
 def _parse_positive_int(value, default):
@@ -176,7 +176,8 @@ class ChatSessionViewSet(PluginViewSet):
         username = request.user.username if hasattr(request, "user") else ""
         if not username:
             username = request.META.get("HTTP_X_BKAIDEV_USER", "")
-        rm = PluginResourceManager(username=username)
+        tenant_id = resolve_tenant_id(request)
+        rm = PluginResourceManager(username=username, tenant_id=tenant_id)
 
         # 用户ticket获取优先级：
         # 1) cookie[BKAUTH_BACKEND_TYPE]：前端浏览器同域直调场景
@@ -190,6 +191,9 @@ class ChatSessionViewSet(PluginViewSet):
             "bk_ticket_key": ticket_key,
             "bk_ticket_value": bk_ticket,
         }
+        # 多租户：供 get_paas_sbx_client 注入 X-Bk-Tenant-Id
+        if tenant_id:
+            executor_info["tenant_id"] = tenant_id
         if not bk_ticket:
             if username:
                 access_token = rm.resolve_access_token(username)
@@ -324,7 +328,9 @@ class ChatSessionViewSet(PluginViewSet):
             self._raise_pv_exc(exc)
 
         svc = self._make_pv_file_service(request)
-        snapshot = self._resolve_upload_snapshot(PluginResourceManager(username=request.user.username))
+        snapshot = self._resolve_upload_snapshot(
+            PluginResourceManager(username=request.user.username, tenant_id=resolve_tenant_id(request))
+        )
         if snapshot:
             svc._executor_info["snapshot"] = snapshot
         try:

@@ -41,7 +41,9 @@ from langchain_openai.chat_models.base import _convert_message_to_dict
 from langchain_openai.embeddings import OpenAIEmbeddings as RawOpenAIEmbeddings
 from pydantic import BaseModel, PrivateAttr, model_validator
 
+from aidev_agent.api.constants import TENANT_HEADER
 from aidev_agent.api.domains import BKAIDEV_URL
+from aidev_agent.api.utils import resolve_app_tenant_id
 from aidev_agent.config import settings
 from aidev_agent.exceptions import AIDevException
 from aidev_agent.utils.datetimes import get_current_timestamp_in_milliseconds
@@ -247,6 +249,7 @@ class ApiGwMixin(BaseModel):
         kwargs["base_url"] = base_url
         auth_headers = kwargs.pop("auth_headers", {})
         session_code = kwargs.pop("session_code", None)
+        tenant_id = kwargs.pop("tenant_id", None)
         if not auth_headers:
             auth_headers = {
                 "bk_app_code": settings.APP_CODE,
@@ -256,6 +259,12 @@ class ApiGwMixin(BaseModel):
             kwargs["default_headers"].update({"X-Bkapi-Authorization": json.dumps(auth_headers)})
         else:
             kwargs["default_headers"] = {"X-Bkapi-Authorization": json.dumps(auth_headers)}
+        # 多租户：网关按租户记账/隔离且强校验非空（LLM 补全与 token_check 共用 default_headers）。
+        # 优先级对齐平台侧：显式业务租户 > 调用方已置头 > 应用租户兜底。
+        if tenant_id:
+            kwargs["default_headers"][TENANT_HEADER] = tenant_id
+        else:
+            kwargs["default_headers"].setdefault(TENANT_HEADER, resolve_app_tenant_id())
         # 调用方显式提供 X-Session-ID 时不覆盖
         if session_code:
             kwargs["default_headers"].setdefault("X-Session-ID", session_code)

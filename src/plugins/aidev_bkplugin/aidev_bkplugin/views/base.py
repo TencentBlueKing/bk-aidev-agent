@@ -25,6 +25,35 @@ from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 
 
+def resolve_tenant_id(request) -> str:
+    """用框架（apigw-manager / blueapps）注入的身份解析租户 ID，供出站请求透传 ``X-Bk-Tenant-Id``。
+
+    优先级：``request.user.tenant_id`` → ``request.app.tenant_id``（应用态）
+    → ``request.jwt.payload[user/app].tenant_id``。解析不到返回空串，下游按「空则不带头」处理。
+    """
+    try:
+        user = getattr(request, "user", None)
+        tenant_id = getattr(user, "tenant_id", "") if user is not None else ""
+        if tenant_id:
+            return tenant_id
+
+        app = getattr(request, "app", None)
+        tenant_id = getattr(app, "tenant_id", "") if app is not None else ""
+        if tenant_id:
+            return tenant_id
+
+        jwt_obj = getattr(request, "jwt", None)
+        payload = getattr(jwt_obj, "payload", None) if jwt_obj is not None else None
+        if isinstance(payload, dict):
+            for key in ("user", "app"):
+                section = payload.get(key) or {}
+                if isinstance(section, dict) and section.get("tenant_id"):
+                    return section["tenant_id"]
+    except Exception:  # pragma: no cover - 防御：任何异常都退化为不带租户头
+        return ""
+    return ""
+
+
 class PluginResourceManager(LLMOverrideResourceManager):
     """带用户态认证注入的资源管理器。
 
@@ -37,8 +66,10 @@ class PluginResourceManager(LLMOverrideResourceManager):
     由 ``AgentBuilder`` 在装配 agent 时按请求补上，使模型热更新与用户态认证共存于同一个 rm。
     """
 
-    def __init__(self, username: str, model: str = "", *, app_code: str = "", app_secret: str = ""):
-        super().__init__(username=username, model=model, app_code=app_code, app_secret=app_secret)
+    def __init__(
+        self, username: str, model: str = "", *, app_code: str = "", app_secret: str = "", tenant_id: str = ""
+    ):
+        super().__init__(username=username, model=model, app_code=app_code, app_secret=app_secret, tenant_id=tenant_id)
         self._cached_client = None
 
     def get_client(self, **kwargs: Any):
@@ -84,7 +115,7 @@ class PluginViewSet(ViewSetMixin, APIView):
 
     def get_resource_manager(self) -> Optional[ResourceManagerProtocol]:
         """子类可覆盖，返回自定义的 ``resource_manager``。"""
-        return PluginResourceManager(username=self.get_username())
+        return PluginResourceManager(username=self.get_username(), tenant_id=resolve_tenant_id(self.request))
 
     def get_client(self, **kwargs: Any):
         """View 层取 ``client`` 的统一入口。

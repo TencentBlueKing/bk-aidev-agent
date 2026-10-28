@@ -1829,6 +1829,8 @@ class ChatAgentBuilder:
         if self.ctx.session_code:
             kwargs["session_code"] = self.ctx.session_code
 
+        kwargs["tenant_id"] = getattr(self.ctx.resource_manager, "tenant_id", "")
+
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
         if retry_strategy == "sdk":
@@ -1850,6 +1852,8 @@ class ChatAgentBuilder:
             kwargs["auth_headers"] = chat.auth_headers
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
+
+        kwargs["tenant_id"] = getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -1879,6 +1883,8 @@ class ChatAgentBuilder:
             kwargs["auth_headers"] = chat.auth_headers
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
+
+        kwargs["tenant_id"] = getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -1917,6 +1923,8 @@ class ChatAgentBuilder:
             kwargs["auth_headers"] = chat.auth_headers
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
+
+        kwargs["tenant_id"] = getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -2209,6 +2217,7 @@ class ChatAgentBuilder:
             # api_url 有值时传入 endpoint，否则由 get_client 自动构建
             # validate_endpoint=True：若平台提供的 url 不含环境，则由 get_client 自动补全
             access_token = (self._executor_info or {}).get("access_token", "")
+            tenant_id = (self._executor_info or {}).get("tenant_id", "")
             api_url: Any = agent.get("api_url", "")
 
             bkai_client = BkAgentApi.get_client(
@@ -2216,6 +2225,7 @@ class ChatAgentBuilder:
                 access_token=access_token,
                 endpoint=api_url,
                 validate_endpoint=True,
+                tenant_id=tenant_id,
             )
             try:
                 bkai_client.ping()
@@ -2359,11 +2369,16 @@ class ChatAgentBuilder:
             info["app_code"] = self.ctx.resource_manager.app_code
         if self.ctx.resource_manager.app_secret:
             info["app_secret"] = self.ctx.resource_manager.app_secret
+        # 多租户：tenant_id 作为进程内租户单一事实源，供子 Agent / PaaS 沙箱等下游共享
+        tenant_id = getattr(self.ctx.resource_manager, "tenant_id", "")
+        if tenant_id:
+            info["tenant_id"] = tenant_id
         logger.info(
             f"[credential] build_executor_info: username={self.ctx.username}, "
             f"access_token={'***' if access_token else 'empty'}, "
             f"app_code={info.get('app_code', 'empty')}, "
             f"has_app_secret={bool(info.get('app_secret'))}, "
+            f"tenant_id={info.get('tenant_id', 'empty')}, "
             f"rm_type={type(self.ctx.resource_manager).__name__}"
         )
         self._executor_info = info

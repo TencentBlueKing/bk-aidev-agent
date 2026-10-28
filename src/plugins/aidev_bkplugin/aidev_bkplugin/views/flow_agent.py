@@ -13,7 +13,12 @@ from rest_framework.views import Response
 
 from aidev_bkplugin.services.agent_execution import build_execute_kwargs
 from aidev_bkplugin.services.agent_helpers import AgentHelper
-from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginResourceManager, PluginViewSet
+from aidev_bkplugin.views.base import (
+    IgnoreClientContentNegotiation,
+    PluginResourceManager,
+    PluginViewSet,
+    resolve_tenant_id,
+)
 
 logger = getLogger(__name__)
 
@@ -57,7 +62,7 @@ class FlowAgentViewSet(PluginViewSet):
         session_code = request.data.get("session_code", "")
 
         try:
-            rm = PluginResourceManager(username=username)
+            rm = PluginResourceManager(username=username, tenant_id=resolve_tenant_id(request))
             method = getattr(rm, client_method_name)
             result = method(session_code=session_code)
             return Response(data=result)
@@ -107,7 +112,7 @@ class FlowAgentViewSet(PluginViewSet):
                 if execute_kwargs_data.get("timeout"):
                     flow_start_params["execute_kwargs"]["timeout"] = execute_kwargs_data["timeout"]
 
-            rm = PluginResourceManager(username=username)
+            rm = PluginResourceManager(username=username, tenant_id=resolve_tenant_id(request))
             result = rm.start_flow_agent(data=flow_start_params)
             return Response(data=result)
         except Exception as err:
@@ -136,7 +141,7 @@ class FlowAgentViewSet(PluginViewSet):
         username = self.get_username()
 
         try:
-            rm = PluginResourceManager(username=username)
+            rm = PluginResourceManager(username=username, tenant_id=resolve_tenant_id(request))
             result = rm.get_flow_agent_task_info(task_id=task_id)
             return Response(data=result)
         except Exception as err:
@@ -166,7 +171,7 @@ class FlowAgentViewSet(PluginViewSet):
         username = self.get_username()
 
         try:
-            rm = PluginResourceManager(username=username)
+            rm = PluginResourceManager(username=username, tenant_id=resolve_tenant_id(request))
             result = rm.get_flow_agent_task_node_info(task_id=task_id, node_id=node_id)
             return Response(data=result)
         except Exception as err:
@@ -249,7 +254,7 @@ class FlowAgentViewSet(PluginViewSet):
 
         try:
             # 1. 调用平台 API 执行节点操作（通过 PluginResourceManager 走 resource_manager 协议）
-            resource_manager = PluginResourceManager(username=username)
+            resource_manager = PluginResourceManager(username=username, tenant_id=resolve_tenant_id(request))
             method = getattr(resource_manager, client_method_name)
             result = method(session_code=session_code, node_id=node_id)
             logger.info(

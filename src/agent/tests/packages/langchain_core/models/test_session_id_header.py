@@ -98,7 +98,7 @@ def _make_chat_ctx(session_code: str | None) -> AgentBuildContext:
         agent_code="agent-x",
         agent_type=AgentType.CHAT,
         agent_config=_make_agent_config(),
-        resource_manager=MagicMock(name="rm"),
+        resource_manager=MagicMock(name="rm", tenant_id="default"),
         session_code=session_code,
         username="alice",
         session_context_data=[],

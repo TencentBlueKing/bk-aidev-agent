@@ -28,8 +28,9 @@ from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.interceptors import MCPToolCallRequest, MCPToolCallResult
 
-from aidev_agent.api.constants import AUTHORIZATION_HEADER
+from aidev_agent.api.constants import AUTHORIZATION_HEADER, MCP_ALLOWED_HEADERS_HEADER, TENANT_HEADER
 from aidev_agent.api.paas_client import BkPaaSSandboxApi
+from aidev_agent.api.utils import resolve_app_tenant_id
 from aidev_agent.config import settings
 from aidev_agent.enums import CredentialType
 from aidev_agent.packages.langchain_core.tools import Tool, ToolExtra, make_structured_tool
@@ -158,17 +159,24 @@ class BaseResourceManager(abc.ABC):
         app_secret: str = "",
         access_token: str = "",
         username: str = "",
+        tenant_id: str = "",
         **kwargs: Any,
     ) -> None:
         self.app_code = app_code or settings.APP_CODE
         self.app_secret = app_secret or settings.SECRET_KEY
         self.access_token = access_token
         self.username = username
+        self.tenant_id = tenant_id or resolve_app_tenant_id()
         self._extra = kwargs
 
     def get_client(self, **kwargs: Any) -> Client:
         """获取已完成认证信息注入的 API Client。子类必须实现。"""
         raise NotImplementedError
+
+    def _inject_tenant_header(self, client: Any) -> None:
+        """为 bkapi client 注入 ``X-Bk-Tenant-Id``（网关对全租户应用强校验该头非空）。"""
+        if self.tenant_id:
+            client.update_headers({TENANT_HEADER: self.tenant_id})
 
     def get_agent_code(self, **kwargs: Any) -> str:
         """获取resource manager的agent code。子类可覆写按照其他场景获取agent code"""
@@ -211,6 +219,7 @@ class BaseResourceManager(abc.ABC):
         access_token = executor_info.get("access_token", "")
         bk_ticket_key = executor_info.get("bk_ticket_key", "")
         bk_ticket_value = executor_info.get("bk_ticket_value", "")
+        tenant_id = executor_info.get("tenant_id", "")
 
         if app_code and app_secret:
             client = BkPaaSSandboxApi.get_client(app_code=app_code, app_secret=app_secret)
@@ -224,6 +233,8 @@ class BaseResourceManager(abc.ABC):
         if bk_ticket_key and bk_ticket_value:
             auth_kwargs[bk_ticket_key] = bk_ticket_value
         client.update_bkapi_authorization(**auth_kwargs)
+        if tenant_id:
+            client.update_headers({TENANT_HEADER: tenant_id})
         return client
 
     # ---------- 资源方法 (7) ----------
@@ -642,6 +653,7 @@ class BaseResourceManager(abc.ABC):
                 app_code = (executor_info or {}).get("app_code") or self.app_code
                 app_secret = (executor_info or {}).get("app_secret") or self.app_secret
                 access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(username)
+                tenant_id = (executor_info or {}).get("tenant_id") or self.tenant_id
                 # 根据是否拿到 access_token 决定认证方式
                 if access_token:
                     auth_info = {"access_token": access_token}
@@ -655,6 +667,12 @@ class BaseResourceManager(abc.ABC):
                     auth_info = {"bk_app_code": app_code, "bk_app_secret": app_secret}
                 _server_config["headers"] = {AUTHORIZATION_HEADER: json.dumps(auth_info)}
                 _server_config["headers"]["X-Bkapi-Timeout"] = str(settings.BKAI_MCP_TIMEOUT)
+                # 多租户：链路为 SDK → 网关 → mcp-proxy → 业务网关。
+                # X-Bk-Tenant-Id 仅作用于第一跳；需用 X-Bkapi-Allowed-Headers 声明，
+                # 网关才会把它透传给后端业务网关（否则第二跳缺租户头，全租户应用被 403）。
+                if tenant_id:
+                    _server_config["headers"][TENANT_HEADER] = tenant_id
+                    _server_config["headers"][MCP_ALLOWED_HEADERS_HEADER] = TENANT_HEADER
             else:
                 _non_blueapps_servers.append(_server_config)
 
