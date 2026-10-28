@@ -1,11 +1,12 @@
 """Personal-memory tools and completed-answer integration.
 
 The host supplies identity and session metadata. No model argument can change
-these. References are selected from this round's returned tool artifacts, never
+these. References are selected from this round's prefetched hits and tool artifacts, never
 inferred from a search hit counter or previous-round artifacts.
 """
 
 import copy
+import hashlib
 import json
 import logging
 import math
@@ -300,13 +301,88 @@ class PersonalMemoryRuntime:
                 logger.warning("Personal-memory tool unavailable: %s", type(error).__name__)
                 return "Personal memory is temporarily unavailable.", {}
 
+        description = schema["description"]
+        if name == "memory_search":
+            description += "\n当问题涉及历史约定、用户偏好、身份、约束或进行中的事项，而已提供的记忆不足时，先检索再回答；不要仅凭检索命中认定回答已引用。"
         return StructuredTool.from_function(
             func=invoke_memory,
             name=name,
-            description=schema["description"],
+            description=description,
             args_schema=parameters,
             response_format="content_and_artifact",
         )
+
+    def input_scope(self, state: dict, config: RunnableConfig) -> tuple[list, str]:
+        """用认证上下文与本轮消息身份绑定注入内容，拒绝跨用户、会话或轮次复用。"""
+        username, context = self.context(config)
+        message = next((item for item in reversed(state.get("messages", [])) if isinstance(item, HumanMessage)), None)
+        if message is None or not message.id or not isinstance(message.content, str):
+            return [], ""
+        scope = [
+            context.get("tenant_id"),
+            username,
+            context["agent_code"],
+            context["session_id"],
+            message.id,
+            hashlib.sha256(message.content.encode()).hexdigest(),
+        ]
+        current = next((item for item in reversed(context["messages"]) if item["role"] == "user"), None)
+        return scope, current["text"] if current else message.content
+
+    def prepare(self, state: dict, config: RunnableConfig) -> dict:
+        """回答前检索一次，最多注入三个正分候选及 4000 字符；失败覆盖旧状态并降级。"""
+        prepared = {"scope": [], "hits": []}
+        try:
+            scope, query = self.input_scope(state, config)
+            if not scope or not query.strip():
+                return {"personal_memory": prepared}
+            username, context = self.context(config)
+            payload = self.scoped_payload(
+                context, {"name": "memory_search", "call": {"query": query[:4000], "disclosure": "chunk"}}, config
+            )
+            if payload is None:
+                return {"personal_memory": prepared}
+            options = {**self.request_options(), "timeout": min(self.request_timeout or 2, 2)}
+            result = self.manager.memory_tool(payload, username=username, **options)
+            prepared["scope"] = scope
+            remaining, seen = 4000, set()
+            for hit in result.get("hits", []):
+                score = hit.get("score")
+                if (
+                    not isinstance(hit.get("memory_id"), str)
+                    or not hit["memory_id"]
+                    or hit["memory_id"] in seen
+                    or not isinstance(hit.get("text"), str)
+                    or not hit["text"].strip()
+                    or type(score) not in (int, float)
+                    or not math.isfinite(score)
+                    or score <= 0
+                ):
+                    continue
+                text = hit["text"][:remaining]
+                prepared["hits"].append({"memory_id": hit["memory_id"], "text": text, "score": score})
+                seen.add(hit["memory_id"])
+                remaining -= len(text)
+                if len(prepared["hits"]) == 3 or remaining == 0:
+                    break
+        except Exception as error:
+            if not self.best_effort:
+                raise
+            logger.warning("Personal-memory prefetch unavailable: %s", type(error).__name__)
+            prepared = {"scope": [], "hits": []}
+        return {"personal_memory": prepared}
+
+    def prepared_hits(self, state: dict, config: RunnableConfig) -> list[dict]:
+        try:
+            if self.policy is not None and self.policy.get("enabled") is not True:
+                return []
+            scope, _ = self.input_scope(state, config)
+            prepared = state.get("personal_memory") or {}
+            return prepared.get("hits", []) if scope and prepared.get("scope") == scope else []
+        except Exception:
+            if not self.best_effort:
+                raise
+            return []
 
     @staticmethod
     def round_hits(messages: list) -> list[dict]:
@@ -421,7 +497,7 @@ class PersonalMemoryRuntime:
                 by_id[message.id] = record
         context["messages"] = list(by_id.values())
         try:
-            ids = self.referenced_ids(answer, self.round_hits(messages))
+            ids = self.referenced_ids(answer, [*self.prepared_hits(state, config), *self.round_hits(messages)])
         except Exception:
             # Failed auditing must not falsely renew TTL or lose session extraction.
             logger.exception("Personal-memory reference audit failed")
