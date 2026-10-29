@@ -165,6 +165,16 @@ def automatic_personal_memory(
         _suppress_policy(key, POLICY_DISABLED_TTL)
         return None
     try:
+        overrides = {
+            field: memory_settings[field]
+            for field in ("max_memories", "max_context_chars")
+            if memory_settings is not None and memory_settings.get(field) is not None
+        }
+        if any(type(value) is not int or value <= 0 for value in overrides.values()):
+            raise ValueError("Personal-memory agent limits must be positive integers")
+        if overrides:
+            # 使用宿主已选定的草稿/发布快照；不修改 manager 可能复用的空间策略对象。
+            schemas = {**schemas, "prefetch": {**schemas.get("prefetch", {}), **overrides}}
         records = [record.model_dump() if hasattr(record, "model_dump") else record for record in history or []]
         snapshot = current_input(records, messages, session_id)
         context = {
