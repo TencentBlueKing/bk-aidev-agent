@@ -39,6 +39,51 @@ def make_runtime(manager, history=None):
     )
 
 
+@pytest.mark.parametrize(
+    "limits,count,chars",
+    [
+        ({"max_memories": 5}, 5, 20),
+        ({"max_context_chars": 9}, 3, 9),
+        ({"max_memories": 1, "max_context_chars": 9}, 1, 4),
+        ({"max_memories": None, "max_context_chars": None}, 3, 12),
+    ],
+)
+def test_selected_agent_budget_controls_actual_injection(manager, limits, count, chars):
+    platform_limits = {"max_memories": 3, "max_context_chars": 4000, "max_query_chars": 10}
+    manager.memory_schemas.return_value["prefetch"] = platform_limits
+    manager.memory_tool.return_value = {"hits": [{"memory_id": str(i), "text": "fact", "score": 0.1} for i in range(6)]}
+    message = HumanMessage(content="A longer question", id="user-1")
+    runtime = automatic_personal_memory(
+        manager, "alice", "session-1", [], [message], agent_code="agent-a", memory_settings=limits
+    )
+    hits = runtime.prepare({"messages": [message]}, {})["personal_memory"]["hits"]
+    assert len(hits) == count and sum(len(hit["text"]) for hit in hits) == chars
+    assert manager.memory_tool.call_args.args[0]["call"]["query"] == message.content[:10]
+    assert platform_limits == {"max_memories": 3, "max_context_chars": 4000, "max_query_chars": 10}
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5, "5"])
+def test_invalid_selected_agent_budget_fails_open(manager, value):
+    runtime = automatic_personal_memory(
+        manager, "alice", "session-1", [], [], agent_code="agent-a", memory_settings={"max_memories": value}
+    )
+    assert runtime is None
+    manager.memory_tool.assert_not_called()
+
+
+def test_draft_and_released_limits_do_not_share_runtime_policy(manager):
+    policy = manager.memory_schemas.return_value
+    first = automatic_personal_memory(
+        manager, "alice", "s", [], [], agent_code="agent-a", memory_settings={"max_memories": 1}
+    )
+    second = automatic_personal_memory(
+        manager, "alice", "s", [], [], agent_code="agent-a", memory_settings={"max_memories": 6}
+    )
+    assert first.policy["prefetch"]["max_memories"] == 1
+    assert second.policy["prefetch"]["max_memories"] == 6
+    assert "prefetch" not in policy
+
+
 @pytest.mark.parametrize("username", [None, "", "   "])
 def test_missing_user_skips_discovery(manager, username):
     assert automatic_personal_memory(manager, username, "s", [], [], agent_code="agent-a") is None
