@@ -1,6 +1,6 @@
 [project]
 name = "ai-plugin"
-version = "3.0.0"
+version = "3.1.0rc166"
 description = ""
 readme = "readme.md"
 authors = [{ name = "blueking" }]
