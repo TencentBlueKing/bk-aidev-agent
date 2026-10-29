@@ -130,7 +130,9 @@ class LlmChunkMsg(BaseModel):
             if self.is_finish and not self.msg_items:
                 from .image_reply import prepare_callback_image_reply
 
-                self.content, self.msg_items = prepare_callback_image_reply(self.content)
+                self.content, self.msg_items = prepare_callback_image_reply(
+                    self.content, BkAiDevApi().convert_knowledge_image_urls
+                )
 
             # 准备消息数据，包含 cached_think_content 以支持跨实例读取
             message_data = {

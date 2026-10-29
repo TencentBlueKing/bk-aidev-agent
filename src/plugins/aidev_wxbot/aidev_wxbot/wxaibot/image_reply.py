@@ -45,9 +45,11 @@ class PreparedCollageReply:
     image_count: int
 
 
-def prepare_callback_image_reply(content: str) -> tuple[str, list[dict]]:
+def prepare_callback_image_reply(
+    content: str, convert_urls: Callable[[list[str]], list[str]] | None = None
+) -> tuple[str, list[dict]]:
     """将 Markdown 图片转换为回调模式终帧支持的 ``msg_item``。"""
-    prepared_content, images = _prepare_images(content)
+    prepared_content, images = _prepare_images(content, convert_urls)
     return prepared_content, build_image_msg_items(images)
 
 
@@ -160,20 +162,40 @@ def _placeholder_block(placeholder: str) -> str:
     return f"> **图片占位符 [{placeholder}]**  \n> 对应回复末尾合成长图中的 **[{placeholder}]** 区域。"
 
 
-def _prepare_images(content: str) -> tuple[str, list[PreparedImage]]:
+def _prepare_images(
+    content: str, convert_urls: Callable[[list[str]], list[str]] | None = None
+) -> tuple[str, list[PreparedImage]]:
+    all_matches = list(_MARKDOWN_IMAGE.finditer(content))
+    matches = all_matches[:MAX_IMAGE_ITEMS]
+    if not all_matches:
+        return content, []
+
+    download_urls = [match.group("url") for match in matches]
+    if convert_urls is not None:
+        try:
+            download_urls = convert_urls(download_urls)
+            if len(download_urls) != len(matches):
+                raise ValueError("知识库图片链接转换结果数量不一致")
+        except Exception as error:
+            logger.warning("event=wxbot_callback_image_urls_failed kind=%s", type(error).__name__)
+            download_urls = []
+
     images: list[PreparedImage] = []
-
-    def replace(match: re.Match) -> str:
-        alt, url = match.group("alt").strip(), match.group("url")
-        if len(images) >= MAX_IMAGE_ITEMS:
-            return _fallback_link(alt, url)
-        image = _download_image(alt, url)
+    replacements: dict[tuple[int, int], str] = {}
+    for match in all_matches[MAX_IMAGE_ITEMS:]:
+        replacements[match.span()] = _fallback_link(match.group("alt").strip(), match.group("url"))
+    for match in matches[len(download_urls) :]:
+        replacements[match.span()] = _fallback_link(match.group("alt").strip(), match.group("url"))
+    for match, download_url in zip(matches, download_urls):
+        alt, source_url = match.group("alt").strip(), match.group("url")
+        image = _download_image(alt, download_url)
         if image is None or not _is_supported_image(image.data):
-            return _fallback_link(alt, url)
+            replacements[match.span()] = _fallback_link(alt, source_url)
+            continue
         images.append(image)
-        return ""
+        replacements[match.span()] = ""
 
-    return _MARKDOWN_IMAGE.sub(replace, content), images
+    return _replace_matches(content, all_matches, replacements), images
 
 
 def _fallback_link(alt: str, url: str) -> str:

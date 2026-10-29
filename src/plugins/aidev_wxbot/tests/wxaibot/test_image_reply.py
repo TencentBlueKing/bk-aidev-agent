@@ -8,8 +8,6 @@ import io
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
-
 from aidev_wxbot.wxaibot import image_reply
 from aidev_wxbot.wxaibot.image_reply import (
     PreparedImage,
@@ -19,6 +17,7 @@ from aidev_wxbot.wxaibot.image_reply import (
     render_long_connection_stream_content,
     upload_collage,
 )
+from PIL import Image
 
 
 def _png(color: str = "red", size: tuple[int, int] = (8, 6)) -> bytes:
@@ -41,6 +40,36 @@ def test_callback_reply_removes_valid_images_and_builds_base64_items(monkeypatch
     assert items == build_image_msg_items([image])
     assert base64.b64decode(items[0]["image"]["base64"]) == image.data
     assert items[0]["image"]["md5"] == hashlib.md5(image.data).hexdigest()
+
+
+def test_callback_reply_converts_knowledge_url_before_download(monkeypatch):
+    source_url = "https://knowledge.example.com/image.png"
+    download_url = "https://bkfile.example.com/signed-image"
+    downloaded = []
+
+    def download(alt, url):
+        downloaded.append(url)
+        return _prepared(alt, url)
+
+    monkeypatch.setattr(image_reply, "_download_image", download)
+    rendered, items = prepare_callback_image_reply(
+        f"结果 ![图片]({source_url})", lambda urls: [download_url] if urls == [source_url] else []
+    )
+
+    assert rendered == "结果 "
+    assert downloaded == [download_url]
+    assert len(items) == 1
+
+
+def test_callback_reply_keeps_source_link_when_conversion_fails(monkeypatch):
+    def fail(_urls):
+        raise RuntimeError("conversion unavailable")
+
+    monkeypatch.setattr(image_reply, "_download_image", lambda *_args: pytest.fail("不应下载原始链接"))
+    rendered, items = prepare_callback_image_reply("![图片](https://knowledge.example.com/image.png)", fail)
+
+    assert rendered == "[查看图片：图片](https://knowledge.example.com/image.png)"
+    assert items == []
 
 
 @pytest.mark.parametrize("downloaded", [None, PreparedImage("伪图片", "https://example.com/a.png", b"<html>")])
