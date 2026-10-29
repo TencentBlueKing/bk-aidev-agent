@@ -330,22 +330,37 @@ class PersonalMemoryRuntime:
         return scope, current["text"] if current else message.content
 
     def prepare(self, state: dict, config: RunnableConfig) -> dict:
-        """回答前检索一次，最多注入三个正分候选及 4000 字符；失败覆盖旧状态并降级。"""
+        """按平台策略限制预检索的查询长度、不同记忆条数和注入正文字符数；失败覆盖旧状态并降级。"""
         prepared = {"scope": [], "hits": []}
         try:
             scope, query = self.input_scope(state, config)
             if not scope or not query.strip():
                 return {"personal_memory": prepared}
             username, context = self.context(config)
+            if self.policy is None:
+                self.make_tools(config)
+            limits = self.policy.get("prefetch", {})
+            if not isinstance(limits, dict):
+                raise ValueError("Personal-memory prefetch settings must be an object")
+            # 旧平台没有 prefetch 字段时沿用已发布的默认值，保持独立 SDK 的升级兼容。
+            max_memories = limits.get("max_memories", 3)
+            max_context_chars = limits.get("max_context_chars", 4000)
+            max_query_chars = limits.get("max_query_chars", 4000)
+            if any(
+                type(value) is not int or value <= 0 for value in (max_memories, max_context_chars, max_query_chars)
+            ):
+                raise ValueError("Personal-memory prefetch limits must be positive integers")
             payload = self.scoped_payload(
-                context, {"name": "memory_search", "call": {"query": query[:4000], "disclosure": "chunk"}}, config
+                context,
+                {"name": "memory_search", "call": {"query": query[:max_query_chars], "disclosure": "chunk"}},
+                config,
             )
             if payload is None:
                 return {"personal_memory": prepared}
             options = {**self.request_options(), "timeout": min(self.request_timeout or 2, 2)}
             result = self.manager.memory_tool(payload, username=username, **options)
             prepared["scope"] = scope
-            remaining, seen = 4000, set()
+            remaining, seen = max_context_chars, set()
             for hit in result.get("hits", []):
                 score = hit.get("score")
                 if (
@@ -363,7 +378,7 @@ class PersonalMemoryRuntime:
                 prepared["hits"].append({"memory_id": hit["memory_id"], "text": text, "score": score})
                 seen.add(hit["memory_id"])
                 remaining -= len(text)
-                if len(prepared["hits"]) == 3 or remaining == 0:
+                if len(prepared["hits"]) == max_memories or remaining == 0:
                     break
         except Exception as error:
             if not self.best_effort:

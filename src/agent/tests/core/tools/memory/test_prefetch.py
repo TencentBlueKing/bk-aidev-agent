@@ -77,6 +77,43 @@ def test_prefetch_limits_content_and_rejects_nonpositive_scores(runtime, prepare
     assert all(hit["memory_id"] != "bad" for hit in result)
 
 
+@pytest.mark.parametrize(
+    "limit,budget,length,count,chars", [(1, 4000, 20, 1, 20), (6, 8000, 1000, 6, 6000), (6, 2500, 1000, 3, 2500)]
+)
+def test_platform_limits_control_actual_prefetch_injection(runtime, prepared, limit, budget, length, count, chars):
+    runtime.policy["prefetch"] = {"max_memories": limit, "max_context_chars": budget, "max_query_chars": 4000}
+    runtime.manager.memory_tool.return_value = {
+        "hits": [{"memory_id": str(i), "text": "x" * length, "score": 0.01} for i in range(10)]
+    }
+    hits = runtime.prepare(prepared, {})["personal_memory"]["hits"]
+    assert len(hits) == count and sum(len(hit["text"]) for hit in hits) == chars
+
+
+def test_platform_query_limit_is_independent_from_context_budget(runtime, prepared):
+    runtime.policy["prefetch"] = {"max_memories": 3, "max_context_chars": 4000, "max_query_chars": 7}
+    runtime.prepare(prepared, {})
+    assert runtime.manager.memory_tool.call_args.args[0]["call"]["query"] == "How sho"
+
+
+@pytest.mark.parametrize("field", ["max_memories", "max_context_chars", "max_query_chars"])
+@pytest.mark.parametrize("value", [0, -1, True, "3"])
+def test_invalid_platform_budget_clears_previous_prefetch(runtime, prepared, field, value):
+    runtime.best_effort = True
+    runtime.policy["prefetch"] = {field: value}
+    runtime.manager.memory_tool.reset_mock()
+    prepared.update(runtime.prepare(prepared, {}))
+    assert runtime.prepared_hits(prepared, {}) == []
+    runtime.manager.memory_tool.assert_not_called()
+
+
+@pytest.mark.parametrize("value", [None, [], "invalid"])
+def test_invalid_prefetch_policy_object_clears_previous_prefetch(runtime, prepared, value):
+    runtime.best_effort = True
+    runtime.policy["prefetch"] = value
+    prepared.update(runtime.prepare(prepared, {}))
+    assert runtime.prepared_hits(prepared, {}) == []
+
+
 def test_memory_text_is_template_data_not_template_source(runtime, prepared):
     prepared["personal_memory"]["hits"][0]["text"] = "Keep {{ 7 * 7 }} literally"
     ctx = ProcessorContext(state=prepared, config={})
