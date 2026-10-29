@@ -90,7 +90,8 @@ class AgentInstanceFactory:
         :param username: 用户名
         :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）。
             命令切换出去的子 agent_code 各有独立版本语义，统一走最新版，不继承本字段。
-        :param reasoning_effort: 本轮主模型思考深度（none/low/medium/high/max）；为 None 时不传，网关用模型默认档
+        :param reasoning_effort: 本轮主模型思考深度（none/minimal/low/medium/high/xhigh/max）；为 None 时回落
+            智能体默认档（仅默认模型），仍为空则不传，上游按模板默认
         :param _token: 私有构造凭证；仅 ``build_agent`` 与同包测试持有。
         """
         if _token is not _FACTORY_TOKEN:
@@ -163,7 +164,8 @@ class AgentInstanceFactory:
         :param checkpointer: Checkpoint 存储后端，用于会话状态持久化
         :param username: 用户名
         :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）
-        :param reasoning_effort: 本轮主模型思考深度（none/low/medium/high/max）；为 None 时不传，网关用模型默认档
+        :param reasoning_effort: 本轮主模型思考深度（none/minimal/low/medium/high/xhigh/max）；为 None 时回落
+            智能体默认档（仅默认模型），仍为空则不传，上游按模板默认
         :param extra: 透传到 ``AgentBuildContext.extra``，由各 Agent 类的 ``build`` 自取
             （如 FlowAgent 的 ``task_id`` / ``flow_start_params`` / ``poll_interval`` /
             ``poll_timeout`` / ``flow_resource_manager`` 等）

@@ -1123,6 +1123,7 @@ class AgentConfig(BaseModel):
     # 超参数配置
     temperature: float | None = Field(None, description="模型温度")
     max_tokens: int | None = Field(None, description="最大回复长度")
+    reasoning_effort: str | None = Field(None, description="智能体默认思考深度，只对默认模型 chat_model 生效")
     related_agents: list[dict] = Field(
         default_factory=list,
         description="关联子智能体列表，从 API 响应顶层 related_agents 读取，每条含 agent_code/agent_name/description/api_url",

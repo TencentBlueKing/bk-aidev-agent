@@ -46,6 +46,9 @@ class LLMOverrideResourceManager(AgentResourceManager):
     def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:
         config = super().get_agent_config(agent_code, version=version, **kwargs)
         if self.model:
+            # 智能体默认思考深度只属于默认模型，切到其它模型后不再携带
+            if self.model != config.chat_model:
+                config.reasoning_effort = None
             config.chat_model = self.model
             config.support_vision = self._resolve_model_support_vision()
         return config

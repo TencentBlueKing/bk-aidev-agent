@@ -1821,8 +1821,9 @@ class ChatAgentBuilder:
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
 
-        if chat.reasoning_effort:
-            kwargs["reasoning_effort"] = chat.reasoning_effort
+        reasoning_effort = chat.reasoning_effort or config.reasoning_effort
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         if chat.auth_headers:
             kwargs["auth_headers"] = chat.auth_headers
