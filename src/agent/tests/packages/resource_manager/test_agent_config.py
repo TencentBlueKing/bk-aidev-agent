@@ -90,6 +90,7 @@ def _build_full_raw(prompt_type: str = "collection", **overrides) -> dict:
             "context_window": 16,
             "llm_token_limit": 28000,
             "max_tokens": 20480,
+            "reasoning_effort": "high",
             "tool_output_compress_thrd": 20480,
             "support_upload": {"vision": False},
         },
@@ -374,7 +375,7 @@ def test_tool_and_skill_fields_from_full_data(prompt_type):
 
 @pytest.mark.parametrize("prompt_type", ["collection", "user_define"])
 def test_conversation_and_hyperparams_from_full_data(prompt_type):
-    """opening_mark / command_agent_mapping / temperature / max_tokens"""
+    """opening_mark / command_agent_mapping / temperature / max_tokens / reasoning_effort"""
     raw = _build_full_raw(prompt_type=prompt_type)
     rm = _StubResourceManager(raw_factory=lambda *_: raw)
     cfg = rm.get_agent_config("test-agent")
@@ -383,6 +384,7 @@ def test_conversation_and_hyperparams_from_full_data(prompt_type):
     assert cfg.command_agent_mapping == {}
     assert cfg.temperature == 0.7
     assert cfg.max_tokens == 20480
+    assert cfg.reasoning_effort == "high"
 
 
 def test_knowledge_query_options_data_merges_intent_recognition():
