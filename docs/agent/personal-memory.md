@@ -106,3 +106,5 @@ agent, config = CommonQAAgent.get_agent_executor(
 ## 自动预检索预算配置
 
 平台在记忆策略响应的 `prefetch` 字段下发 `max_memories`（不同记忆条数）、`max_context_chars`（候选正文总字符数）及 `max_query_chars`（查询字符数），均须为正整数。SDK 使用平台配置控制本轮查询及实际注入，模型仍可调用检索工具补查。旧平台未下发时沿用已发布的 3 条、4000 正文字符和 4000 查询字符默认值；这些是待实测的工程初值。
+
+记忆正文始终作为变量值注入，兼容 `PromptSlots` 支持的 `jinja2` 与 `f-string` 模板格式；正文中的模板符号保留为数据。
