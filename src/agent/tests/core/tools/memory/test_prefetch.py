@@ -114,11 +114,27 @@ def test_invalid_prefetch_policy_object_clears_previous_prefetch(runtime, prepar
     assert runtime.prepared_hits(prepared, {}) == []
 
 
-def test_memory_text_is_template_data_not_template_source(runtime, prepared):
+@pytest.mark.parametrize("method", ["prepare", "prepared_hits"])
+def test_strict_runtime_propagates_invalid_context(runtime, prepared, method):
+    runtime.best_effort = False
+    runtime.context_provider = lambda config: {}
+    with pytest.raises(ValueError, match="authenticated"):
+        getattr(runtime, method)(prepared, {})
+
+
+def test_best_effort_prepared_hits_rejects_invalid_context(runtime, prepared):
+    runtime.best_effort = True
+    runtime.context_provider = lambda config: {}
+    assert runtime.prepared_hits(prepared, {}) == []
+
+
+@pytest.mark.parametrize("template_format", ["jinja2", "f-string"])
+def test_memory_text_is_template_data_not_template_source(runtime, prepared, template_format):
     prepared["personal_memory"]["hits"][0]["text"] = "Keep {{ 7 * 7 }} literally"
     ctx = ProcessorContext(state=prepared, config={})
+    ctx.prompt_slots.template_format = template_format
     PersonalMemoryPromptMiddleware(runtime)(ctx, MagicMock())
-    prompt = ChatPromptTemplate.from_messages([("system", ctx.prompt_slots.system)], template_format="jinja2")
+    prompt = ChatPromptTemplate.from_messages([("system", ctx.prompt_slots.system)], template_format=template_format)
     rendered = prompt.format_messages(**ctx.variables)[0].content
     assert "{{ 7 * 7 }}" in rendered and "Keep 49" not in rendered
 
