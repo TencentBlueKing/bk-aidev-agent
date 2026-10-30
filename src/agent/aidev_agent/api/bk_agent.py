@@ -18,7 +18,7 @@ from bkapi_client_core.django_helper import _get_client_by_settings
 from bkapi_client_core.property import bind_property
 
 from aidev_agent.api.base import ApiProtocol
-from aidev_agent.api.constants import APIGW_URL_FORMAT
+from aidev_agent.api.constants import APIGW_URL_FORMAT, TENANT_HEADER
 from aidev_agent.api.utils import get_endpoint
 from aidev_agent.config import settings
 
@@ -95,6 +95,7 @@ class BkAgentApi(ApiProtocol):
         access_token: str = "",
         endpoint: str = "",
         validate_endpoint: bool = False,
+        tenant_id: str = "",
         **kwargs,
     ) -> Client:
         """获取指定 agent_code 的 Client 实例。
@@ -108,6 +109,7 @@ class BkAgentApi(ApiProtocol):
             validate_endpoint: 是否校验 endpoint；为 True 时，若 endpoint 是不含环境的
                 默认平台 URL（如 ``http://host/bp-{agent_code}/``），则清空并由
                 ``get_endpoint`` 自动补全环境阶段
+            tenant_id: 租户 ID；非空时通过 X-Bk-Tenant-Id header 透传，由父智能体经 executor_info 传入
             **kwargs: 传递给 _get_client_by_settings 的额外参数
 
         Returns:
@@ -134,4 +136,6 @@ class BkAgentApi(ApiProtocol):
                 access_token=access_token or None,
                 # bk_username=bk_username or ""
             )
+        if tenant_id:
+            client.update_headers({TENANT_HEADER: tenant_id})
         return client

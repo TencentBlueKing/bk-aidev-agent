@@ -1,10 +1,20 @@
 # -*- coding: utf-8 -*-
 import logging
+import os
 
-from aidev_agent.api.constants import APIGW_URL_FORMAT, PAGE_SIZE
+from aidev_agent.api.constants import APIGW_URL_FORMAT, DEFAULT_TENANT_ID, PAGE_SIZE
 from aidev_agent.config import settings
 
 logger = logging.getLogger("component")
+
+
+def resolve_app_tenant_id() -> str:
+    """应用自身的租户 ID，用于无 request 上下文的出站请求（启动、后台任务等）。
+
+    网关对全租户应用强校验 ``X-Bk-Tenant-Id`` 非空，故读 PaaS 注入的
+    ``BKPAAS_APP_TENANT_ID``，未注入时兜底默认租户（对齐 blueapps）。
+    """
+    return os.getenv("BKPAAS_APP_TENANT_ID") or DEFAULT_TENANT_ID
 
 
 def get_endpoint(api_name, stage=None):

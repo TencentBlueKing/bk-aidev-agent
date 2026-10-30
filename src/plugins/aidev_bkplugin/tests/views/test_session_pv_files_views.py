@@ -44,6 +44,8 @@ base_mod.PluginResourceManager = MagicMock()
 base_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
 base_mod.PluginViewSet = object
 base_mod.logger = MagicMock()
+# session.py 从 base 导入 resolve_tenant_id；此处 stub 返回空串（不改变既有 executor_info 断言）
+base_mod.resolve_tenant_id = lambda request: ""
 sys.modules["aidev_bkplugin.views.base"] = base_mod
 
 # view 层已改为按请求取 ``self.client``，不再有模块级 client 可 patch；
@@ -127,8 +129,8 @@ class TestMakePvFileService:
         instance, svc_cls = mock_svc
         result = view._make_pv_file_service(_request())
         assert result is instance
-        # PluginResourceManager 应以 username 构造
-        session_mod.PluginResourceManager.assert_called_with(username="alice")
+        # PluginResourceManager 应以 username + tenant_id 构造（tenant_id 由 resolve_tenant_id 解析，此处 stub 返回空串）
+        session_mod.PluginResourceManager.assert_called_with(username="alice", tenant_id="")
         # 沙箱文件 Service 构造参数验证
         call_kwargs = svc_cls.call_args.kwargs
         assert call_kwargs["resource_manager"] is session_mod.PluginResourceManager.return_value

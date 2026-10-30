@@ -725,9 +725,9 @@ class TestCommonAgentChatStreaming:
 
     def test_knowledge_base(self):
         """case 8: 知识库"""
-        with open("tests/mock_data/knowledgebase.json") as fi:
+        with open("tests/mock_data/knowledgebase.json", encoding="utf-8") as fi:
             knowledgebase = json.load(fi)
-        with open("tests/mock_data/knowledge_query.json") as fi:
+        with open("tests/mock_data/knowledge_query.json", encoding="utf-8") as fi:
             knowledge_query_result = json.load(fi)
 
         # Mock _query_instance 属性以返回固定的知识库查询结果
@@ -1079,7 +1079,7 @@ class TestCommonAgentChatStreamingReal:
 
     def test_knowledge_base(self):
         """case 1: 知识库"""
-        with open("tests/mock_data/knowledgebase.json") as fi:
+        with open("tests/mock_data/knowledgebase.json", encoding="utf-8") as fi:
             knowledgebase = json.load(fi)
         agent = ChatCompletionAgent(
             chat_model=self.llm,
@@ -1116,7 +1116,7 @@ class TestCommonAgentChatStreamingReal:
 
     def test_knowledge_base_legacy(self):
         """case 3: 知识库 legacy streaming"""
-        with open("tests/mock_data/knowledgebase.json") as fi:
+        with open("tests/mock_data/knowledgebase.json", encoding="utf-8") as fi:
             knowledgebase = json.load(fi)
         agent = ChatCompletionAgent(
             chat_model=self.llm,
@@ -1759,6 +1759,7 @@ class TestBuildChatModelFast:
         ctx = MagicMock(spec=AgentBuildContext)
         ctx.session_context_data = []
         ctx.agent_config.fast_llm = fast_llm
+        ctx.resource_manager = MagicMock(tenant_id="default")
         ctx.chat = ChatBuildExtras()
         return ctx
 
