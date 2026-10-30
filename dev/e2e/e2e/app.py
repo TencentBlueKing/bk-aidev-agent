@@ -154,11 +154,14 @@ class ManagedApp:
             stderr=subprocess.STDOUT,
         )
         deadline = time.monotonic() + 60
+        ready_url = self.config.app_url + "/bk_plugin/meta/"
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 raise RuntimeError(f"Django exited with {self.process.returncode}; see {runtime / 'app.log'}")
             try:
-                if request("GET", self.config.app_url + "/bk_plugin/meta/", timeout=2).status < 500:
+                # Polling attempts before runserver listens are expected; only the readiness proof is traced.
+                if request("GET", ready_url, timeout=2, trace=False).status < 500:
+                    request("GET", ready_url, timeout=2)
                     return
             except OSError:
                 pass
