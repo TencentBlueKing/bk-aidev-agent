@@ -35,7 +35,7 @@ class TestKnowledgeResourceManager:
                 knowledge_llm=object(), knowledge_query_options=options, chat_history=[]
             )
             return lambda: node({"query": "question"}, {}, store=None)["knowledge_content"]
-        tools = builder._prepare_agent_tools(langchain_middleware=())
+        tools, _, _ = builder._prepare_agent_tools(langchain_middleware=())
         tool = next(tool for tool in tools if tool.name == "knowledge_retrieval")
         return lambda: tool.invoke({"query": "question"})
 
@@ -85,7 +85,7 @@ class TestKnowledgeResourceManager:
         else:
             tool = next(
                 tool
-                for tool in builder._prepare_agent_tools(langchain_middleware=())
+                for tool in builder._prepare_agent_tools(langchain_middleware=())[0]
                 if tool.name == "knowledge_retrieval"
             )
             tool.invoke({"query": "question"})

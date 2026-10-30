@@ -7,16 +7,21 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+from pathlib import Path
 from typing import List
 
 import pytest
+from aidev_agent.core.graphs.react import team_middleware
 from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
-from aidev_agent.core.graphs.react.team_middleware import ToolFilterMiddleware
 from aidev_agent.core.graphs.react.tool_loading_mode import (
     command_approval_allowed,
     filter_tools_by_loading_mode,
+    filter_tools_by_request,
 )
-from aidev_agent.core.nodes.model.pydantic_models import ProcessorContext
+from aidev_agent.core.nodes.tool import build_tool_node
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
 from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_TOOL_NAME
 from aidev_agent.pydantic_models import (
@@ -25,7 +30,6 @@ from aidev_agent.pydantic_models import (
     SecurityCommandSettings,
     SecuritySettings,
 )
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 
 APPROVAL_TOOL_NAME = "itsm_tool"
@@ -106,8 +110,9 @@ class TestFilterToolsByLoadingMode:
 # ============================================================================
 
 
-def _builder(mode: str | None) -> ReActAgentBuilder:
+def _builder(mode: str | None = None, **request_filters) -> ReActAgentBuilder:
     execute_kwargs = ExecuteKwargs() if mode is None else ExecuteKwargs(mode=mode)
+    execute_kwargs = execute_kwargs.model_copy(update=request_filters)
     return ReActAgentBuilder().set_bkai_options(
         AgentExecutorKwargs(security_settings=SecuritySettings(), execute_kwargs=execute_kwargs)
     )
@@ -115,8 +120,14 @@ def _builder(mode: str | None) -> ReActAgentBuilder:
 
 def _assemble(mode: str | None, extra_tools: List[BaseTool]) -> set[str]:
     builder = _builder(mode)
-    tools = builder._prepare_agent_tools(extra_tools=extra_tools, langchain_middleware=[])
+    tools, _, _ = builder._prepare_agent_tools(extra_tools=extra_tools, langchain_middleware=[])
     return _names(tools)
+
+
+def _assemble_with_request(extra_tools: List[BaseTool], **request_filters) -> List[BaseTool]:
+    """请求级过滤（tool_deny / tool_allow / spawn_depth）在装配期一次完成。"""
+    builder = _builder(**request_filters)
+    return builder._prepare_agent_tools(extra_tools=extra_tools, langchain_middleware=[])[0]
 
 
 class TestAssemblyToolSets:
@@ -185,37 +196,123 @@ class TestAssemblyToolSets:
 
     @pytest.mark.parametrize("mode", ["dontInterrupt", "dontAsk"])
     def test_mode_intersects_tool_allow(self, mode):
-        """AC-12：mode 裁剪与 tool_allow 叠加，结果为两者交集。"""
+        """AC-12：mode 裁剪与 tool_allow 同在装配期完成，结果为两者交集。"""
         extra = [_approval_tool(), _execute_tool(), _plain_tool()]
-        builder = _builder(mode)
-        mode_filtered = builder._prepare_agent_tools(extra_tools=extra, langchain_middleware=[])
-
-        allow = [APPROVAL_TOOL_NAME, PLAIN_TOOL_NAME]
-        ctx = ProcessorContext(
-            state={},
-            config=RunnableConfig(configurable={"execute_kwargs": ExecuteKwargs(mode=mode, tool_allow=allow)}),
-            tools=list(mode_filtered),
-        )
-        ToolFilterMiddleware()(ctx, lambda: None)
+        names = _names(_assemble_with_request(extra, mode=mode, tool_allow=[APPROVAL_TOOL_NAME, PLAIN_TOOL_NAME]))
 
         expected = {PLAIN_TOOL_NAME} if mode == "dontInterrupt" else {APPROVAL_TOOL_NAME, PLAIN_TOOL_NAME}
-        assert _names(ctx.tools) == expected
+        assert names == expected
 
     @pytest.mark.parametrize("mode", ["dontInterrupt", "dontAsk"])
     def test_mode_intersects_tool_deny(self, mode):
         """AC-12：mode 与 tool_deny 叠加后黑名单工具也缺失。"""
         extra = [_approval_tool(), _execute_tool(), _plain_tool()]
-        builder = _builder(mode)
-        mode_filtered = builder._prepare_agent_tools(extra_tools=extra, langchain_middleware=[])
+        names = _names(_assemble_with_request(extra, mode=mode, tool_deny=[PLAIN_TOOL_NAME]))
 
-        ctx = ProcessorContext(
-            state={},
-            config=RunnableConfig(
-                configurable={"execute_kwargs": ExecuteKwargs(mode=mode, tool_deny=[PLAIN_TOOL_NAME])}
-            ),
-            tools=list(mode_filtered),
-        )
-        ToolFilterMiddleware()(ctx, lambda: None)
+        assert PLAIN_TOOL_NAME not in names
+        assert EXECUTE_TOOL_NAME in names
 
-        assert PLAIN_TOOL_NAME not in _names(ctx.tools)
-        assert EXECUTE_TOOL_NAME in _names(ctx.tools)
+
+class TestAssemblyRequestFilters:
+    """请求级过滤（深度 / 允许 / 拒绝）全部在装配期完成，不再有绑定期中间件。"""
+
+    @pytest.mark.parametrize(
+        "request_filters, expected",
+        [
+            ({"tool_deny": [EXECUTE_TOOL_NAME]}, {APPROVAL_TOOL_NAME, PLAIN_TOOL_NAME}),
+            ({"tool_allow": [EXECUTE_TOOL_NAME, ASK_USER_QUESTION_TOOL_NAME]}, {EXECUTE_TOOL_NAME}),
+            ({}, {APPROVAL_TOOL_NAME, EXECUTE_TOOL_NAME, PLAIN_TOOL_NAME}),
+        ],
+    )
+    def test_request_filters_trim_assembly(self, request_filters, expected):
+        extra = [_approval_tool(), _execute_tool(), _plain_tool()]
+        names = _names(_assemble_with_request(extra, **request_filters))
+        assert names == {ASK_USER_QUESTION_TOOL_NAME, *expected}
+
+    def test_deny_then_allow_order(self):
+        """deny 先于 allow：先被 deny 掉的名字不会再被 allow 列表捞回来。"""
+        extra = [_approval_tool(), _execute_tool(), _plain_tool()]
+        both = (PLAIN_TOOL_NAME, APPROVAL_TOOL_NAME)
+        names = _names(_assemble_with_request(extra, tool_deny=[PLAIN_TOOL_NAME], tool_allow=both))
+        assert names == {APPROVAL_TOOL_NAME}
+        assert _names(filter_tools_by_request(list(extra), ExecuteKwargs(tool_deny=[APPROVAL_TOOL_NAME]))) == {
+            EXECUTE_TOOL_NAME,
+            PLAIN_TOOL_NAME,
+        }
+
+    @pytest.mark.parametrize("spawn_depth", [0, 1])
+    def test_spawn_depth_drops_agent_tools(self, spawn_depth):
+        """spawn_depth >= max_spawn_depth 时 Agent / sendMessages 在装配期即被移除。"""
+        extra = [_plain_tool(), _plain_tool(name="Agent"), _plain_tool(name="sendMessages")]
+        names = _names(_assemble_with_request(extra, spawn_depth=spawn_depth, max_spawn_depth=1))
+        assert ("Agent" not in names and "sendMessages" not in names) is (spawn_depth >= 1)
+        assert PLAIN_TOOL_NAME in names
+
+
+class TestAssemblyStructure:
+    def test_tools_package_has_no_graphs_import(self):
+        package_root = Path(inspect.getfile(ReActAgentBuilder)).parents[3]
+        tools_root = package_root / "core" / "tools"
+        assert tools_root.is_dir()
+        files = list(tools_root.rglob("*.py"))
+        assert files
+        offenders = []
+        for path in files:
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    modules = [node.module]
+                else:
+                    continue
+                offenders.extend((str(path), module) for module in modules if "graphs" in module.split("."))
+        assert offenders == []
+
+    def test_build_tool_node_signature_is_pre_feature(self):
+        assert list(inspect.signature(build_tool_node).parameters) == [
+            "tools",
+            "name",
+            "tags",
+            "handle_tool_errors",
+            "messages_key",
+            "node_options",
+            "security_settings",
+            "wrappers",
+            "async_wrappers",
+        ]
+
+    def test_filter_runs_once_at_assembly_without_builder_catalog_cache(self):
+        assert not hasattr(ReActAgentBuilder(), "_lazy_catalog")
+        source = textwrap.dedent(inspect.getsource(ReActAgentBuilder._prepare_agent_tools))
+        calls = [
+            node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "filter_tools_by_request"
+        ]
+        assert len(calls) == 2  # 外部与内置集合分别过滤，随后共享定型结果。
+        assert not hasattr(team_middleware, "ToolFilterMiddleware")
+        assert not hasattr(team_middleware, "apply_tool_filters")
+
+    def test_builder_has_no_source_tracking_fields(self):
+        builder = ReActAgentBuilder()
+        for name in ("_builtin_tool_names", "_tool_source_order", "_lazy_catalog"):
+            assert not hasattr(builder, name)
+        module_source = inspect.getsource(inspect.getmodule(ReActAgentBuilder))
+        for name in ("source_ids", "builtin_ids", "_remap_tools_named"):
+            assert name not in module_source
+
+    def test_lazy_loading_is_prepared_only_by_tool_preparation(self):
+        def called_methods(method):
+            tree = ast.parse(textwrap.dedent(inspect.getsource(method)))
+            return [
+                node.func.attr
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            ]
+
+        assert "_prepare_agent_tools" in called_methods(ReActAgentBuilder.build)
+        assert "make_meta_tools(" not in inspect.getsource(ReActAgentBuilder.build)
+        assert "make_meta_tools(" in inspect.getsource(ReActAgentBuilder._prepare_agent_tools)
+        assert not hasattr(ReActAgentBuilder, "_prepare_lazy_loading")

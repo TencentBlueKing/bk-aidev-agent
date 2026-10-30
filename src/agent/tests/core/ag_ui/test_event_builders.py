@@ -434,3 +434,16 @@ class TestToolCallFunctionType:
         dumped = event.model_dump(by_alias=True)
         assert dumped["toolCallName"] == "activate_skill"
         assert dumped["function_type"] == expected
+
+
+class TestProxyToolCallTarget:
+    """tool_call 代理按 args.name 的真实目标判定审批延迟与快照过滤。"""
+
+    @pytest.mark.parametrize(("approval", "deferred"), [({"enabled": True}, True), (None, False)])
+    def test_proxy_resolved_to_target(self, approval, deferred):
+        tool_call = {"id": "c1", "name": "tool_call", "args": {"name": "biz", "arguments": {}}, "type": "tool_call"}
+        tools = {"biz": _make_tool(approval=approval)}
+        immediate, delayed = build_tool_calls_with_approval_filter(AIMessage(content="", tool_calls=[tool_call]), tools)
+        assert (len(delayed), len(immediate)) == ((1, 0) if deferred else (0, 1))
+        assert (delayed or immediate)[0]["function"]["name"] == "tool_call"
+        assert should_suppress_approval_tool_call(tool_call, [], tools) is deferred

@@ -11,6 +11,7 @@ from typing import Any
 from ag_ui.core import EventType
 from langchain_core.messages import ToolMessage
 
+from aidev_agent.core.tools.tool_lazy_loading.meta_tools import CALL_TOOL_NAME
 from aidev_agent.packages.interrupt_manager import is_approval_configured
 
 from .events import ExtendToolCallResultEvent
@@ -39,6 +40,17 @@ def _resolve_function_type(tool_call_name: str, _tool: Any) -> str | None:
     if tool_call_name == "activate_skill":
         return "skill"
     return None
+
+
+# 延迟加载单工具代理名：其真实目标在 args.name，审批 / 展示判定须解包后按目标工具查表
+PROXY_TOOL_CALL_NAME = CALL_TOOL_NAME
+
+
+def resolve_tool_call_target(tool_call_name: str, args: Any, tools: dict[str, Any]) -> tuple[str, Any]:
+    """返回 (目标工具名, 目标工具对象)；``tool_call`` 代理按 ``args.name`` 解包，其余原样查表。"""
+    if tool_call_name == PROXY_TOOL_CALL_NAME and isinstance(args, dict) and isinstance(args.get("name"), str):
+        tool_call_name = args["name"]
+    return tool_call_name, tools.get(tool_call_name)
 
 
 def is_tool_approval_required(tool_call_name: str, tools: dict[str, Any]) -> bool:
@@ -159,7 +171,7 @@ def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: di
     immediate_tool_calls = []
     deferred_tool_calls = []
     for each in output_message.tool_calls or []:
-        _tool = tools_mapping.get(each["name"])
+        target_name, _tool = resolve_tool_call_target(each["name"], each.get("args"), tools_mapping)
         tool_call_dict = ExtendToolCall(
             id=each["id"],
             function=ExtendFunctionCall(
@@ -167,7 +179,7 @@ def build_tool_calls_with_approval_filter(output_message: Any, tools_mapping: di
                 arguments=json.dumps(each["args"]),
                 description=_tool.description if _tool else "",
                 mcp_name=_tool.metadata.get("mcp_name", "") if _tool and _tool.metadata else "",
-                function_type=_resolve_function_type(each["name"], _tool),
+                function_type=_resolve_function_type(target_name, _tool),
             ),
         ).model_dump()
 
@@ -203,7 +215,7 @@ def should_suppress_approval_tool_call(
     Returns:
         True 表示该 tool_call 应被过滤（deferred pending 且无对应 ToolMessage）
     """
-    _tool = tools_mapping.get(tool_call.get("name"))
+    _, _tool = resolve_tool_call_target(tool_call.get("name"), tool_call.get("args"), tools_mapping)
     if not _is_deferred_tool(_tool):
         return False
     tool_call_id = tool_call.get("id")
