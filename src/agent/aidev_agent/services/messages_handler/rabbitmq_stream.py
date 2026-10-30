@@ -21,7 +21,7 @@ from environs import Env
 from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo, Producer
 from rstream.connection import ConnectionClosed
 
-from .constants import EOD_CHUNK, HEARTBEAT_TIMEOUT, EnvVarNames
+from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
 from .telemetry import record_message_publish_metrics
 
@@ -32,6 +32,10 @@ env = Env()
 _RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (OSError, ConnectionClosed)
 # stream 删除等元数据变化也会触发 on_close_handler，但连接本身仍可用。
 _METADATA_UPDATE_REASON = "Metadata Update"
+# 生产者每个心跳周期至少写入一条消息；订阅连续两个周期没有投递，说明订阅连接可能已失效。
+_SUBSCRIPTION_IDLE_TIMEOUT = HEARTBEAT_INTERVAL * 2
+# rstream 关闭时每个内部请求最多等 5 秒；后台关闭再加总上限，避免卡住的 socket 长期占用任务。
+_STALE_CLIENT_CLOSE_TIMEOUT = 30.0
 
 
 @dataclass
@@ -43,6 +47,26 @@ class _StreamSubscription:
     stream: str
     next_offset: int
     messages: queue.Queue[tuple[int, Any]] = field(default_factory=queue.Queue)
+    connection_closed: bool = False
+    stream_changed: bool = False
+    last_delivery_at: float = field(default_factory=time.monotonic)
+
+    def rebuild_reason(self) -> str | None:
+        """返回订阅需要重建的原因。
+
+        stream 被删除或变更后不重建，避免接到新一轮重新创建的同名 stream；
+        本地还有未读消息时不算空闲。
+        """
+        if self.stream_changed:
+            return None
+        if self.connection_closed:
+            return "connection_closed"
+        if self.messages.empty() and time.monotonic() - self.last_delivery_at > _SUBSCRIPTION_IDLE_TIMEOUT:
+            return "idle"
+        return None
+
+    def may_be_broken(self) -> bool:
+        return self.stream_changed or self.rebuild_reason() is not None
 
     def read(self, offset: int, timeout: float | None) -> tuple[list[Any], int]:
         """等待第一条消息，再一次性取走当前已到达的连续批次。"""
@@ -89,6 +113,7 @@ class _RabbitMQStreamRuntime:
         self._producer_generation = 0
         self._producer_stale = False
         self._reconnect_lock = threading.Lock()
+        self._background_closes: set[asyncio.Task[None]] = set()
         self._startup_event = threading.Event()
         self._startup_error: BaseException | None = None
         self.ensure_alive()
@@ -103,6 +128,7 @@ class _RabbitMQStreamRuntime:
             self._pid = current_pid
             self._subscriptions = {}
             self._known_streams = set()
+            self._background_closes = set()
             self._startup_event = threading.Event()
             self._startup_error = None
             self._loop = asyncio.new_event_loop()
@@ -135,38 +161,72 @@ class _RabbitMQStreamRuntime:
         self._loop.close()
 
     async def _start_producer(self) -> None:
-        self._producer = Producer(
+        async def on_close(info: OnClosedErrorInfo) -> None:
+            await self._on_producer_closed(producer, info)
+
+        producer = Producer(
             **self._connection_kwargs,
             connection_name="aidev-agent-stream-producer",
-            on_close_handler=self._on_producer_closed,
+            on_close_handler=on_close,
         )
-        await self._producer.start()
+        self._producer = producer
+        await producer.start()
         self._known_streams = set()
         self._producer_stale = False
         self._producer_generation += 1
 
-    async def _on_producer_closed(self, info: OnClosedErrorInfo) -> None:
-        if info.reason == _METADATA_UPDATE_REASON:
+    async def _on_producer_closed(self, producer: Producer, info: OnClosedErrorInfo) -> None:
+        # 旧 producer 在后台关闭时也可能回调，只处理当前 producer。
+        if producer is not self._producer or info.reason == _METADATA_UPDATE_REASON:
             return
         logger.warning("RabbitMQ Stream producer connection closed reason=%s", info.reason)
         self._producer_stale = True
+
+    def _close_in_background(self, client: Producer | Consumer) -> None:
+        """后台关闭旧连接；失效连接的关闭会等满 rstream 内部超时，不应阻塞当前请求。"""
+        task = asyncio.get_running_loop().create_task(self._close_quietly(client))
+        self._background_closes.add(task)
+        task.add_done_callback(self._background_closes.discard)
+
+    async def _close_quietly(self, client: Producer | Consumer) -> None:
+        try:
+            await asyncio.wait_for(client.close(), timeout=_STALE_CLIENT_CLOSE_TIMEOUT)
+        except Exception as error:
+            logger.warning("Failed to close stale RabbitMQ Stream %s error=%r", type(client).__name__, error)
 
     async def _restart_producer(self) -> None:
         # 重建失败时保持失效标记，下一次操作会再次尝试重建。
         self._producer_stale = True
         old_producer, self._producer = self._producer, None
         if old_producer is not None:
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(old_producer.close(), timeout=self._operation_timeout)
+            self._close_in_background(old_producer)
         await self._start_producer()
 
-    def _reconnect(self, failed_generation: int) -> None:
-        """重建 producer；并发失败时只由第一个线程重建。"""
-        with self._reconnect_lock:
+    def _reconnect(self, failed_generation: int, deadline: float | None = None) -> None:
+        """重建 producer；并发失败时只由第一个线程重建。
+
+        旧连接在后台关闭；等待锁和新连接建立合计不超过一次操作超时，也不超过调用方的 deadline。
+        """
+        reconnect_deadline = time.monotonic() + self._operation_timeout
+        if deadline is not None:
+            reconnect_deadline = min(reconnect_deadline, deadline)
+        if not self._reconnect_lock.acquire(timeout=self._remaining(reconnect_deadline)):
+            raise TimeoutError("Timed out waiting for RabbitMQ Stream reconnect")
+        try:
             if self._producer_generation != failed_generation:
                 return
             logger.warning("Reconnecting RabbitMQ Stream producer generation=%s", failed_generation)
-            self._submit(self._restart_producer(), timeout=self._operation_timeout * 2)
+            timeout = self._remaining(reconnect_deadline)
+            self._submit(self._restart_producer(), timeout=timeout)
+        finally:
+            self._reconnect_lock.release()
+
+    @staticmethod
+    def _remaining(deadline: float, cap: float | None = None) -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("RabbitMQ Stream operation budget exhausted")
+        return remaining if cap is None else min(remaining, cap)
 
     def _submit_with_reconnect(
         self,
@@ -175,19 +235,34 @@ class _RabbitMQStreamRuntime:
         timeout: float | None = None,
         retry: bool = True,
     ) -> Any:
-        """超时或断连时重建连接；幂等操作再用新协程重试一次。"""
+        """超时或断连时重建连接；幂等操作再用新协程重试一次。
+
+        整体耗时不超过两倍操作超时：首次操作、重建、重试各自最多一倍，并共享同一个 deadline。
+        """
+        operation_timeout = timeout or self._operation_timeout
+        deadline = time.monotonic() + operation_timeout * 2
         if self._producer_stale:
-            self._reconnect(self._producer_generation)
+            self._reconnect(self._producer_generation, deadline)
         generation = self._producer_generation
         try:
-            return self._submit(coro_factory(), timeout)
+            return self._submit_before_deadline(coro_factory, deadline, operation_timeout)
         except _RECONNECTABLE_ERRORS as error:
             logger.warning("RabbitMQ Stream operation failed retry=%s error=%r", retry, error)
             if not retry:
                 self._producer_stale = True
                 raise
-            self._reconnect(generation)
-            return self._submit(coro_factory(), timeout)
+            self._reconnect(generation, deadline)
+            return self._submit_before_deadline(coro_factory, deadline, operation_timeout)
+
+    def _submit_before_deadline(
+        self,
+        coro_factory: Callable[[], Coroutine[Any, Any, Any]],
+        deadline: float,
+        operation_timeout: float,
+    ) -> Any:
+        # 先检查剩余时间再创建协程，预算耗尽时不留下未执行的协程。
+        timeout = self._remaining(deadline, operation_timeout)
+        return self._submit(coro_factory(), timeout)
 
     def _submit(self, coro: Any, timeout: float | None = None) -> Any:
         self.ensure_alive()
@@ -274,22 +349,31 @@ class _RabbitMQStreamRuntime:
         stream: str,
         offset: int,
     ) -> _StreamSubscription:
+        async def on_close(info: OnClosedErrorInfo) -> None:
+            if info.reason == _METADATA_UPDATE_REASON:
+                subscription.stream_changed = True
+                return
+            logger.warning("RabbitMQ Stream consumer connection closed stream=%s reason=%s", stream, info.reason)
+            subscription.connection_closed = True
+
+        async def on_message(message: Any, context: Any) -> None:
+            subscription.last_delivery_at = time.monotonic()
+            subscription.messages.put((context.offset, message))
+
         consumer = Consumer(
             **self._connection_kwargs,
             connection_name=f"aidev-agent-stream-consumer-{key[0]}",
+            on_close_handler=on_close,
         )
-        await consumer.start()
+        # 回调只会在 start 之后触发，此时 subscription 已经创建。
         subscription = _StreamSubscription(
             consumer=consumer,
             subscriber_id=-1,
             stream=stream,
             next_offset=offset,
         )
-
-        async def on_message(message: Any, context: Any) -> None:
-            subscription.messages.put((context.offset, message))
-
         try:
+            await consumer.start()
             subscription.subscriber_id = await consumer.subscribe(
                 stream,
                 on_message,
@@ -297,11 +381,19 @@ class _RabbitMQStreamRuntime:
                 offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
                 initial_credit=10,
             )
-        except Exception:
-            await consumer.close()
+        except BaseException:
+            # 包括操作超时后的任务取消，避免半建立的 consumer 连接泄漏。
+            self._close_in_background(consumer)
             raise
         self._subscriptions[key] = subscription
         return subscription
+
+    async def _discard_subscription(self, subscription: _StreamSubscription) -> None:
+        # 失效连接的关闭会等满 rstream 内部超时，改为后台关闭，避免阻塞读取和释放。
+        if subscription.may_be_broken():
+            self._close_in_background(subscription.consumer)
+        else:
+            await subscription.consumer.close()
 
     async def _replace_subscription(
         self,
@@ -311,7 +403,7 @@ class _RabbitMQStreamRuntime:
     ) -> _StreamSubscription:
         old_subscription = self._subscriptions.pop(key, None)
         if old_subscription is not None:
-            await old_subscription.consumer.close()
+            await self._discard_subscription(old_subscription)
         # producer 与 consumer 并发启动时，先创建空 stream，consumer 才能安全等待首条 SSE。
         await self._ensure_stream(stream, self._max_age_seconds)
         return await self._create_subscription(key, stream, offset)
@@ -324,6 +416,21 @@ class _RabbitMQStreamRuntime:
     ) -> _StreamSubscription:
         subscription = self._subscriptions.get(key)
         if subscription is None or subscription.stream != stream or subscription.next_offset != offset:
+            return await self._replace_subscription(key, stream, offset)
+        reason = subscription.rebuild_reason()
+        if reason is not None:
+            assert self._producer is not None
+            if not await self._producer.stream_exists(stream):
+                # stream 已被清理时不重新创建空 stream，交给消费循环按心跳超时处理。
+                subscription.stream_changed = True
+                return subscription
+            # 订阅连接断开或长时间没有投递时，从当前 offset 重新订阅，不丢也不重复消息。
+            logger.warning(
+                "Rebuilding RabbitMQ Stream subscription stream=%s offset=%s reason=%s",
+                stream,
+                offset,
+                reason,
+            )
             return await self._replace_subscription(key, stream, offset)
         return subscription
 
@@ -340,7 +447,7 @@ class _RabbitMQStreamRuntime:
     async def _close_subscription(self, key: tuple[int, str]) -> None:
         subscription = self._subscriptions.pop(key, None)
         if subscription is not None:
-            await subscription.consumer.close()
+            await self._discard_subscription(subscription)
 
     def close_subscription(self, key: tuple[int, str]) -> None:
         self._submit(self._close_subscription(key))
@@ -374,6 +481,10 @@ class _RabbitMQStreamRuntime:
             with contextlib.suppress(Exception):
                 await self._producer.close()
         self._producer = None
+        background_closes = list(self._background_closes)
+        for task in background_closes:
+            task.cancel()
+        await asyncio.gather(*background_closes, return_exceptions=True)
 
     def close(self) -> None:
         with self._state_lock:
