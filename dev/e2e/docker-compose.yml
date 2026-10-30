@@ -54,16 +54,22 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: aidev
       RABBITMQ_DEFAULT_PASS: aidev-e2e
+      # Stream clients reconnect to the advertised address, so publish the host-side port.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: >-
+        -rabbitmq_stream advertised_host "127.0.0.1"
+        -rabbitmq_stream advertised_port 25552
     ports:
       - "25672:5672"
+      - "25552:5552"
       - "15673:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_listener", "5552"]
       interval: 2s
       timeout: 5s
       retries: 30
     volumes:
       - e2e-rabbitmq-v2:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
 
 volumes:
   e2e-mysql57-v2:

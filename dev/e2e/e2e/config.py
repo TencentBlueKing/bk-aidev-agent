@@ -8,6 +8,10 @@ from urllib.parse import urlparse
 TRUTHY = {"1", "true", "yes", "on", "y"}
 SUPPORTED_MODULES = ("api", "ai-blueking", "metrics", "wxbot")
 DEFAULT_MODULES = SUPPORTED_MODULES
+# Independent WeCom sender used by the /stop scenario.
+WECOM_STOP_USER = "e2e-stop-user"
+MYSQL_ENV_NAMES = ("MYSQL_HOST", "MYSQL_PORT", "MYSQL_NAME", "MYSQL_USER", "MYSQL_PASSWORD")
+DEFAULT_RABBITMQ_STREAM_PORT = "25552"
 
 
 def load_env_file(path: Path) -> None:
@@ -34,6 +38,11 @@ def env_bool(name: str, default: bool = False) -> bool:
     return default if value is None else value.strip().lower() in TRUTHY
 
 
+def rabbitmq_stream_port() -> str:
+    """Stream port is on by default; an explicit empty value keeps the classic AMQP data plane."""
+    return os.getenv("RABBITMQ_STREAM_PORT", DEFAULT_RABBITMQ_STREAM_PORT).strip()
+
+
 @dataclass(frozen=True)
 class Identity:
     username: str
@@ -43,6 +52,11 @@ class Identity:
     @property
     def headers(self) -> dict[str, str]:
         return {"X-BKAIDEV-USER": self.username}
+
+    @property
+    def oauth_users(self) -> tuple[str, ...]:
+        """Users that talk to the agent and therefore need a local bkoauth token."""
+        return tuple(dict.fromkeys((self.username, WECOM_STOP_USER)))
 
 
 @dataclass(frozen=True)

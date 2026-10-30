@@ -8,10 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from e2e.app import ManagedApp
+from e2e.app import OAUTH_SEED_SCRIPT, ManagedApp
 from e2e.checks import (
     Checks,
     assistant_text,
+    message_handler_label,
     parse_sse_events,
     run_finished,
     validate_resumed_run,
@@ -20,6 +21,7 @@ from e2e.checks import (
 from e2e.config import (
     DEFAULT_MODULES,
     SUPPORTED_MODULES,
+    WECOM_STOP_USER,
     Config,
     Identity,
     configured_identity,
@@ -276,6 +278,85 @@ class MysqlConfigTests(unittest.TestCase):
             env = ManagedApp(config, Identity("alice", "username")).environment()
         self.assertEqual(env["MYSQL_PORT"], "13318")
         self.assertEqual(env["BK_PLUGIN_RUNTIME_DB_PORT"], "13318")
+
+    def test_sqlite_ignores_inherited_mysql_variables(self):
+        inherited = {"MYSQL_HOST": "127.0.0.1", "MYSQL_NAME": "shared", "MYSQL_USER": "u", "MYSQL_PASSWORD": "p"}
+        with patch.dict(os.environ, {"E2E_ENV_FILE": "/nonexistent-e2e-env", **inherited}, clear=True):
+            env = ManagedApp(Config.from_env("api"), Identity("alice", "username")).environment()
+        self.assertFalse(set(inherited) & set(env))
+        self.assertEqual(env["BK_PLUGIN_DEV_USE_MYSQL"], "0")
+
+
+class RabbitMQStreamConfigTests(unittest.TestCase):
+    def test_stream_port_is_enabled_by_default(self):
+        with patch.dict(
+            os.environ, {"E2E_ENV_FILE": "/nonexistent-e2e-env", "MESSAGE_HANDLER_TYPE": "rabbitmq"}, clear=True
+        ):
+            env = ManagedApp(Config.from_env("api"), Identity("alice", "username")).environment()
+            label = message_handler_label()
+        self.assertEqual(env["RABBITMQ_STREAM_PORT"], "25552")
+        self.assertEqual(label, "rabbitmq_stream")
+
+    def test_empty_stream_port_keeps_classic_amqp(self):
+        with patch.dict(
+            os.environ,
+            {"E2E_ENV_FILE": "/nonexistent-e2e-env", "MESSAGE_HANDLER_TYPE": "rabbitmq", "RABBITMQ_STREAM_PORT": ""},
+            clear=True,
+        ):
+            env = ManagedApp(Config.from_env("api"), Identity("alice", "username")).environment()
+            label = message_handler_label()
+        self.assertNotIn("RABBITMQ_STREAM_PORT", env)
+        self.assertEqual(label, "rabbitmq")
+
+    def test_compose_enables_stream_plugin_and_advertises_host_port(self):
+        e2e_dir = Path(__file__).resolve().parents[1]
+        compose = (e2e_dir / "docker-compose.yml").read_text(encoding="utf-8")
+        plugins = (e2e_dir / "rabbitmq/enabled_plugins").read_text(encoding="utf-8")
+        self.assertIn("rabbitmq_stream", plugins)
+        self.assertIn('"25552:5552"', compose)
+        self.assertIn("advertised_port 25552", compose)
+
+
+class OAuthSeedTests(unittest.TestCase):
+    def test_chat_users_include_independent_wecom_stop_user(self):
+        self.assertEqual(Identity("alice", "username").oauth_users, ("alice", WECOM_STOP_USER))
+        self.assertEqual(Identity(WECOM_STOP_USER, "username").oauth_users, (WECOM_STOP_USER,))
+
+    def test_tokens_are_seeded_after_migration_for_every_chat_user(self):
+        config = MagicMock(app_url="http://127.0.0.1:18000")
+        with tempfile.TemporaryDirectory() as directory:
+            config.root = Path(directory)
+            app = ManagedApp(config, Identity("alice", "username"))
+            app.python.parent.mkdir(parents=True)
+            app.python.touch()
+            completed = MagicMock(returncode=0)
+            with (
+                patch.object(ManagedApp, "environment", return_value={"PATH": "/bin"}),
+                patch("e2e.app.subprocess.run", return_value=completed) as run,
+                patch("e2e.app.subprocess.Popen", side_effect=RuntimeError("stop after seed")),
+                self.assertRaisesRegex(RuntimeError, "stop after seed"),
+            ):
+                app.start()
+            app.log_handle.close()
+        migrate, seed = run.call_args_list
+        self.assertIn("migrate", migrate.args[0])
+        self.assertEqual(seed.args[0][-3:], ["shell", "-c", OAUTH_SEED_SCRIPT])
+        self.assertEqual(seed.kwargs["env"]["E2E_OAUTH_USERS"], f"alice,{WECOM_STOP_USER}")
+
+    def test_seed_failure_stops_startup(self):
+        config = MagicMock(app_url="http://127.0.0.1:18000")
+        with tempfile.TemporaryDirectory() as directory:
+            config.root = Path(directory)
+            app = ManagedApp(config, Identity("alice", "username"))
+            app.python.parent.mkdir(parents=True)
+            app.python.touch()
+            with (
+                patch.object(ManagedApp, "environment", return_value={}),
+                patch("e2e.app.subprocess.run", side_effect=[MagicMock(returncode=0), MagicMock(returncode=1)]),
+                self.assertRaisesRegex(RuntimeError, "bkoauth token seeding failed"),
+            ):
+                app.start()
+            app.log_handle.close()
 
 
 class ResumeOrderTests(unittest.TestCase):

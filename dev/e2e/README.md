@@ -34,6 +34,10 @@ make e2e db=mysql80
 
 `.env` 同时配置了 access token 和 username 时，测试先向本地登录 mock 校验 access token，再使用其解析出的 username 调用本地应用；不会把 token 写入日志、JSON 或 HTML。两者都没配置时本次执行失败，但仍生成报告。
 
+对话入口会校验用户是否已有 bkoauth 授权。应用启动时，执行迁移后会给本次测试身份和企微 `/stop` 专用用户写入本地长期有效的 bkoauth 令牌，所以对话不会被“尚未授权”拦截。令牌只写入 E2E 本地数据库，不访问真实 OAuth 服务。
+
+`E2E_DB=sqlite` 时，执行器会忽略外部的 `MYSQL_*` 变量，防止 blueapps 因检测到 `MYSQL_NAME` 而改连 MySQL。
+
 ## 分模块执行
 
 ```bash
@@ -53,6 +57,14 @@ make e2e-browser modules=api     # 也可指定模块
 ```bash
 MESSAGE_HANDLER_TYPE=rabbitmq make e2e-ai-blueking
 ```
+
+本地 RabbitMQ 默认启用 `rabbitmq_stream` 插件，Stream 端口为 25552，对外通告地址为 `127.0.0.1:25552`。`RABBITMQ_STREAM_PORT` 默认值也是 25552，因此 `MESSAGE_HANDLER_TYPE=rabbitmq` 默认走 RabbitMQ Stream 数据面，报告里的 `message_handler` 显示为 `rabbitmq_stream`。需要验证传统 AMQP 队列时，可以设置 `RABBITMQ_STREAM_PORT=` 关闭 Stream：
+
+```bash
+MESSAGE_HANDLER_TYPE=rabbitmq RABBITMQ_STREAM_PORT= make e2e-ai-blueking
+```
+
+已有的 `e2e-rabbitmq-v2` 数据卷可以直接复用；修改插件配置后，执行一次 `make e2e-down && make e2e-up`，让容器按新配置重建。
 
 完整 `make e2e` 已包含 `wxbot` 模块；该模块在本机启动一个只模拟企微远端协议的 WebSocket 服务，被测侧仍使用官方企微 SDK、Django、SQLite、Redis 和 RabbitMQ。它验证渠道配置读取、长连接认证、心跳、首包响应、RabbitMQ 轮询转发，以及 `/help`、`/new`、生成中的 `/stop`。只需快速复验企业微信时可执行：
 

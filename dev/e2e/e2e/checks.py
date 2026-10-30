@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from .app import ManagedApp
-from .config import Config, Identity
+from .config import WECOM_STOP_USER, Config, Identity, rabbitmq_stream_port
 from .http import request, stream_request, with_query
 from .report import CaseResult, RunReport
 from .trace import API_TRACE
@@ -71,6 +71,12 @@ def wait_for_stop_generation(mock_url: str, timeout: float = 30) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("stop scenario never reached the model; the request may have been rejected")
+
+
+def message_handler_label() -> str:
+    """Name the data plane actually under test, distinguishing RabbitMQ Stream from classic queues."""
+    handler = os.getenv("MESSAGE_HANDLER_TYPE", "redis")
+    return "rabbitmq_stream" if handler == "rabbitmq" and rabbitmq_stream_port() else handler
 
 
 class Checks:
@@ -556,7 +562,7 @@ class Checks:
             detail.update(
                 {
                     "session_code": session_code,
-                    "message_handler": os.getenv("MESSAGE_HANDLER_TYPE", "redis"),
+                    "message_handler": message_handler_label(),
                     "event_types": event_types,
                     "terminal": run_finished(events, outcome="success"),
                 }
@@ -1394,7 +1400,7 @@ print(json.dumps(json.loads(payload)))
             ) as detail:
                 prompt = "[E2E_STOP_BARRIER] [E2E_SLOW_STREAM] 企业微信停止生成测试"
                 # Use an independent conversation; a previous terminal may still be draining.
-                stop_user = "e2e-stop-user"
+                stop_user = WECOM_STOP_USER
                 self.require(request("POST", self.config.mock_url + "/e2e/stop-generation", json_body={}))
                 stream_ws_call, stream_started = start_ws_exchange("aibot_msg_callback")
                 stream_req_id, stream_callback = ws_mock.send_text(prompt, userid=stop_user)
