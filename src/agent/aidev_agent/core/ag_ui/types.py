@@ -50,6 +50,7 @@ class SessionPersistenceEventNames(str, Enum):
     """会话回写用 CustomEvent.name；ChatModelEnd 默认不进入 SSE。"""
 
     ChatModelEnd = "aidev_session_chat_model_end"
+    MemorySourceFinalized = "aidev_memory_source_finalized"
     ArtifactsGenerated = "artifacts_generated"
     AskUserQuestionFinalized = "ask_user_question_finalized"
     UserInputSaved = "user_input_saved"

@@ -14,6 +14,16 @@ from aidev_agent.config import settings
 
 
 class OpenApiGroup(OperationGroup):
+    memory_schemas = bind_property(
+        Operation, name="memory_schemas", method="GET", path="/openapi/aidev/agents/v1/memory/schemas/"
+    )
+    memory_tool = bind_property(
+        Operation, name="memory_tool", method="POST", path="/openapi/aidev/agents/v1/memory/tool/"
+    )
+    complete_memory_round = bind_property(
+        Operation, name="complete_memory_round", method="POST", path="/openapi/aidev/agents/v1/memory/complete_round/"
+    )
+
     create_knowledgebase_query = bind_property(
         Operation,
         name="create_knowledgebase_query",

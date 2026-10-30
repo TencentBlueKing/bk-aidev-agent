@@ -83,6 +83,8 @@ class AGUISessionWriter(BaseSessionWriter):
 
     _SESSION_STATUS_MAX_ATTEMPTS = 3
     _SESSION_STATUS_RETRY_BASE_DELAY = 0.2
+    _MEMORY_SOURCE_UPDATE_TIMEOUT = 2
+    _update_timeout: float | None = None
 
     def __init__(
         self,
@@ -518,21 +520,68 @@ class AGUISessionWriter(BaseSessionWriter):
         logger.info("开始创建会话内容: session_code=%s, payload=%s, headers=%s", self.session_code, payload, headers)
         result = self.client.api.create_chat_session_content(json=payload, headers=headers)
         data = result.get("data", {})
-        if isinstance(data, dict) and payload.get("role") == PromptRole.ASSISTANT.value:
-            self._last_assistant_created_at_ms = created_at_to_ms(data.get("created_at"))
         content_id = data.get("id") if isinstance(data, dict) else None
+        if content_id is not None and payload.get("role") == PromptRole.ASSISTANT.value:
+            self._last_assistant_created_at_ms = created_at_to_ms(data.get("created_at"))
+            message_id = payload["property"]["builtin_property"]["message_id"]
+            prop = data.get("property")
+            self._assistant_message_properties[message_id] = {
+                **payload["property"],
+                **(prop if isinstance(prop, dict) else {}),
+            }
         if content_id is not None:
             logger.info("创建会话内容成功: content_id=%s", content_id)
         return content_id
 
+    def _do_update_memory_source(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """回写记忆来源结算结果，仍经 `_do_update_content`（保留子类重写），HTTP 等待限制为固定秒数。
+
+        超时标记只在持有 `_memory_source_lock` 期间生效，其他更新需等锁释放，不会继承该超时。
+        """
+        with self._memory_source_lock:
+            self._update_timeout = self._MEMORY_SOURCE_UPDATE_TIMEOUT
+            try:
+                self._do_update_content(content_id=content_id, payload=payload, headers=headers)
+            finally:
+                self._update_timeout = None
+
     def _do_update_content(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
         """通过 API 更新已有的会话内容"""
         logger.info("开始更新会话内容: content_id=%s, payload=%s, headers=%s", content_id, payload, headers)
-        self.client.api.update_chat_session_content(
-            path_params={"id": content_id},
-            json=payload,
-            headers=headers,
-        )
+        with self._memory_source_lock:
+            prop = payload.get("property")
+            message_id = None
+            if isinstance(prop, dict):
+                message_id = (prop.get("builtin_property") or {}).get("message_id")
+                if message_id is None:
+                    message_id = next(
+                        (key for key, value in self._content_ids_by_message_id.items() if value == content_id), None
+                    )
+            if message_id not in self._assistant_message_properties:
+                message_id = None
+            if message_id is not None and isinstance(prop, dict):
+                previous = self._assistant_message_properties.get(message_id, {})
+                prop = {**previous, **prop}
+                builtin = {**(previous.get("builtin_property") or {}), **(prop.get("builtin_property") or {})}
+                current = self._assistant_builtin_properties.get(message_id, {})
+                if current.get("memory_source_complete") is True:
+                    builtin.update(
+                        {
+                            key: current[key]
+                            for key in ("memory_source_complete", "source_text", "source_timestamp")
+                            if key in current
+                        }
+                    )
+                if "tool_calls" in current:
+                    builtin["tool_calls"] = current["tool_calls"]
+                prop["builtin_property"] = builtin
+                payload = {**payload, "property": prop}
+            options = {"timeout": self._update_timeout} if self._update_timeout is not None else {}
+            self.client.api.update_chat_session_content(
+                path_params={"id": content_id}, json=payload, headers=headers, **options
+            )
+            if message_id is not None and isinstance(prop, dict):
+                self._assistant_message_properties[message_id] = dict(prop)
 
     def set_streaming_started(self) -> None:
         """标记流式传输开始（会话状态设为 running）"""
