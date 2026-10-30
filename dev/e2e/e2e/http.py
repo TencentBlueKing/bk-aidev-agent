@@ -96,27 +96,35 @@ def request(
     headers: dict[str, str] | None = None,
     json_body: Any = None,
     timeout: float = 15,
+    trace: bool = True,
 ) -> HttpResult:
+    """Send a JSON request; ``trace=False`` keeps polling probes out of the report."""
+
     payload = None if json_body is None else json.dumps(json_body, ensure_ascii=False).encode()
     request_headers = {"Accept": "application/json", **(headers or {})}
     if payload is not None:
         request_headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=payload, headers=request_headers, method=method.upper())
     started = time.monotonic()
-    trace_call = API_TRACE.start_call(
-        source="test-runner",
-        method=method,
-        url=url,
-        request_headers=request_headers,
-        request_body=json_body,
+    trace_call = (
+        API_TRACE.start_call(
+            source="test-runner",
+            method=method,
+            url=url,
+            request_headers=request_headers,
+            request_body=json_body,
+        )
+        if trace
+        else None
     )
     try:
         response = urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as error:
         response = error
     except Exception as error:
-        elapsed = round((time.monotonic() - started) * 1000)
-        API_TRACE.finish_call(trace_call, duration_ms=elapsed, error=str(error))
+        if trace_call is not None:
+            elapsed = round((time.monotonic() - started) * 1000)
+            API_TRACE.finish_call(trace_call, duration_ms=elapsed, error=str(error))
         raise
     try:
         raw = response.read()
@@ -129,13 +137,14 @@ def request(
             body = json.loads(text) if "json" in content_type or text[:1] in "[{" else text
         except json.JSONDecodeError:
             body = text
-        API_TRACE.finish_call(
-            trace_call,
-            status=status,
-            response_headers=response_headers,
-            response_body=body,
-            duration_ms=elapsed,
-        )
+        if trace_call is not None:
+            API_TRACE.finish_call(
+                trace_call,
+                status=status,
+                response_headers=response_headers,
+                response_body=body,
+                duration_ms=elapsed,
+            )
         return HttpResult(status, response_headers, body, elapsed)
     finally:
         response.close()

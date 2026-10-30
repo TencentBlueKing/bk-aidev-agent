@@ -136,6 +136,17 @@ def _group_api_chains(api_calls: list[dict[str, Any]]) -> list[list[dict[str, An
     return list(chains.values())
 
 
+def _call_state(call: dict[str, Any]) -> str:
+    """Classify a traced call; a call without status or error was still open when the report was written."""
+
+    status = call.get("status")
+    if call.get("error"):
+        return "failed"
+    if status is None:
+        return "pending"
+    return "passed" if isinstance(status, int) and status < 400 else "failed"
+
+
 def _render_capability_overview(
     cases: list[dict[str, Any]], conversations: list[dict[str, Any]], api_calls: list[dict[str, Any]]
 ) -> str:
@@ -190,9 +201,8 @@ def _render_api_calls(api_calls: list[dict[str, Any]]) -> str:
     for call in api_calls:
         status = call.get("status")
         error = call.get("error", "")
-        passed = isinstance(status, int) and status < 400 and not error
-        css_class = "passed" if passed else "failed"
-        status_text = str(status) if status is not None else "ERROR"
+        css_class = _call_state(call)
+        status_text = "未结束" if css_class == "pending" else ("ERROR" if status is None else str(status))
         source = source_names.get(str(call.get("source", "")), str(call.get("source", "unknown")))
         request_body = _complete_json(call.get("request_body"))
         request_headers = _complete_json(call.get("request_headers", {}))
@@ -224,12 +234,13 @@ def _render_api_chains(api_calls: list[dict[str, Any]]) -> str:
         parent = next((call for call in calls if call.get("source") == "test-runner"), None)
         lead = parent or calls[0]
         remote_count = sum(call.get("source") == "agent-to-remote-mock" for call in calls)
-        failed = any(
-            call.get("error") or not isinstance(call.get("status"), int) or call.get("status", 500) >= 400
-            for call in calls
-        )
-        css_class = "failed" if failed else "passed"
-        chain_status = "链路异常" if failed else "链路通过"
+        states = {_call_state(call) for call in calls}
+        if "failed" in states:
+            css_class, chain_status = "failed", "链路异常"
+        elif "pending" in states:
+            css_class, chain_status = "pending", "含未结束调用"
+        else:
+            css_class, chain_status = "passed", "链路通过"
         relation = f"测试端请求 + {remote_count} 次远端 mock" if parent else f"独立远端 mock · {remote_count} 次调用"
         rows.append(
             f'<details class="call-chain {css_class}"><summary><span class="chain-marker">链路 {index}</span>'
@@ -346,7 +357,8 @@ def write_report(report: RunReport, report_dir: Path, secrets: tuple[str, ...] =
 <title>bk-aidev-agent E2E report</title><style>
 body{{font:14px/1.5 system-ui;margin:0;background:#f5f7fa;color:#17233d}}main{{max-width:1100px;margin:32px auto;padding:0 20px}}
 .card,details,.component-card{{background:white;border:1px solid #e5e7eb;border-radius:8px;margin:10px 0;padding:14px}}summary{{cursor:pointer;font-weight:600}}
-.passed summary span{{color:#169c51}}.failed summary span,.error{{color:#d4380d}}small{{float:right;color:#7a869a;font-weight:400}}
+.passed summary span{{color:#169c51}}.failed summary span,.error{{color:#d4380d}}.pending>summary .status{{color:#667085}}
+small{{float:right;color:#7a869a;font-weight:400}}
 pre{{overflow:auto;background:#0b1020;color:#d9e2f2;padding:14px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}}
 code{{font-family:ui-monospace}}h2{{margin:28px 0 10px}}h3,h4{{margin:0 0 8px}}.meta,.empty{{color:#667085}}
 .conversation .message{{max-width:82%;margin:12px 0;padding:12px 14px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere}}

@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -90,6 +91,49 @@ class HttpTests(unittest.TestCase):
 
         self.assertEqual(result.body, {"ok": True})
         response.close.assert_called_once_with()
+
+    def test_untraced_request_leaves_no_api_call(self):
+        recorder = ApiTraceRecorder()
+        with (
+            patch("e2e.http.API_TRACE", recorder),
+            patch("e2e.http.urllib.request.urlopen", side_effect=urllib.error.URLError("refused")),
+            self.assertRaises(OSError),
+        ):
+            request("GET", "http://example.test", trace=False)
+
+        self.assertEqual(recorder.snapshot(), [])
+
+
+class StartupProbeTests(unittest.TestCase):
+    def test_refused_probes_are_not_traced_and_readiness_is_recorded_once(self):
+        config = MagicMock(app_url="http://127.0.0.1:18000")
+        recorder = ApiTraceRecorder()
+        response = MagicMock(status=200, headers={"Content-Type": "application/json"})
+        response.read.return_value = b'{"ok": true}'
+        refused = urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+        process = MagicMock()
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as directory:
+            config.root = Path(directory)
+            app = ManagedApp(config, Identity("alice", "username"))
+            app.python.parent.mkdir(parents=True)
+            app.python.touch()
+            with (
+                patch.object(ManagedApp, "environment", return_value={}),
+                patch("e2e.app.subprocess.run", return_value=MagicMock(returncode=0)),
+                patch("e2e.app.subprocess.Popen", return_value=process),
+                patch("e2e.app.time.sleep"),
+                patch("e2e.http.API_TRACE", recorder),
+                patch("e2e.http.urllib.request.urlopen", side_effect=[refused, refused, refused, response, response]),
+            ):
+                app.start()
+            app.log_handle.close()
+
+        calls = recorder.snapshot()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["url"], "http://127.0.0.1:18000/bk_plugin/meta/")
+        self.assertEqual(calls[0]["status"], 200)
+        self.assertEqual(calls[0]["error"], "")
 
 
 class ReportTests(unittest.TestCase):
@@ -218,6 +262,52 @@ class ReportTests(unittest.TestCase):
         self.assertIn(".component-grid{display:grid;grid-template-columns:1fr;gap:16px}", document)
         self.assertIn("grid-template-columns:repeat(auto-fit,minmax(280px,1fr))", document)
         self.assertEqual(document.count('<section class="component-card healthy">'), 2)
+
+    def test_unfinished_call_is_pending_instead_of_failed(self):
+        report = RunReport(
+            "2026-08-28T00:00:00+08:00",
+            ["wxbot"],
+            cases=[CaseResult("wxbot", "停止生成", "passed", 1, scenario_id="wxbot.stop-command")],
+            api_calls=[
+                {
+                    "sequence": 1,
+                    "source": "agent-to-remote-mock",
+                    "scenario_id": "wxbot.stop-command",
+                    "chain_id": "standalone-0001",
+                    "method": "POST",
+                    "url": "http://mock/v1/chat/completions",
+                    "status": None,
+                    "error": "",
+                }
+            ],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            document = write_report(report, Path(directory)).read_text(encoding="utf-8")
+        self.assertIn('<details class="call-chain pending">', document)
+        self.assertIn('<span class="status">含未结束调用</span>', document)
+        self.assertIn('<span class="status">未结束</span>', document)
+        self.assertNotIn("链路异常", document)
+        self.assertNotIn('<span class="status">ERROR</span>', document)
+
+    def test_errors_and_http_failures_still_fail_their_chain(self):
+        base = {"source": "test-runner", "scenario_id": "api.chat", "method": "POST", "url": "http://agent/chat"}
+        report = RunReport(
+            "2026-08-28T00:00:00+08:00",
+            ["api"],
+            cases=[CaseResult("api", "对话", "failed", 1, scenario_id="api.chat")],
+            api_calls=[
+                {**base, "sequence": 1, "chain_id": "request-0001", "status": None, "error": "connection refused"},
+                {**base, "sequence": 2, "chain_id": "request-0002", "status": 502, "error": ""},
+                {**base, "sequence": 3, "chain_id": "request-0003", "status": 200, "error": ""},
+            ],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            document = write_report(report, Path(directory)).read_text(encoding="utf-8")
+        self.assertEqual(document.count('<details class="call-chain failed">'), 2)
+        self.assertEqual(document.count('<details class="call-chain passed">'), 1)
+        self.assertIn('<span class="status">ERROR</span>', document)
+        self.assertIn('<span class="status">502</span>', document)
+        self.assertNotIn("未结束", document)
 
 
 class TraceTests(unittest.TestCase):
