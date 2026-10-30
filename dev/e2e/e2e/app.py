@@ -4,8 +4,27 @@ import os
 import subprocess
 import time
 
-from .config import Config, Identity, env_bool
+from .config import MYSQL_ENV_NAMES, Config, Identity, env_bool, rabbitmq_stream_port
 from .http import request
+
+# Runs inside the template venv after migrations; bkoauth only reads tokens from its table,
+# so seeding a long-lived row lets the chat authorization gate pass without a real OAuth login.
+OAUTH_SEED_SCRIPT = """
+import os
+from datetime import timedelta
+
+from bkoauth.django_conf import ENV_NAME
+from bkoauth.models import AccessToken
+from django.utils import timezone
+
+expires = timezone.now() + timedelta(days=3650)
+for user in filter(None, os.environ["E2E_OAUTH_USERS"].split(",")):
+    AccessToken.objects.update_or_create(
+        env_name=ENV_NAME,
+        user_id=user,
+        defaults={"access_token": f"e2e-oauth-{user}", "expires": expires, "refresh_token": ""},
+    )
+"""
 
 
 class ManagedApp:
@@ -43,6 +62,7 @@ class ManagedApp:
                 "RABBITMQ_USER": os.getenv("RABBITMQ_USER", "aidev"),
                 "RABBITMQ_PASSWORD": os.getenv("RABBITMQ_PASSWORD", "aidev-e2e"),
                 "RABBITMQ_VHOST": os.getenv("RABBITMQ_VHOST", "/"),
+                "RABBITMQ_STREAM_PORT": rabbitmq_stream_port(),
                 "BKAI_AGENT_OTEL_ENABLED": os.getenv("BKAI_AGENT_OTEL_ENABLED", "true"),
                 "BKAI_AGENT_ENABLE_METRICS": os.getenv("BKAI_AGENT_ENABLE_METRICS", "true"),
                 "BKAI_AGENT_OTEL_ENDPOINTS": os.getenv(
@@ -74,16 +94,35 @@ class ManagedApp:
                 }
             )
         else:
+            # blueapps switches to MySQL as soon as MYSQL_NAME exists, even when E2E_DB=sqlite.
+            for name in MYSQL_ENV_NAMES:
+                env.pop(name, None)
             env.update(
                 {
                     "BK_PLUGIN_DEV_USE_MYSQL": "0",
                     "E2E_SQLITE_PATH": str(self.config.root / "dev/e2e/.runtime/agent.sqlite3"),
                 }
             )
+        if not env["RABBITMQ_STREAM_PORT"]:
+            env.pop("RABBITMQ_STREAM_PORT")
         # blueapps treats an absent BKPAAS_ENVIRONMENT as local development;
         # setting it to "dev" switches logging to the read-only PaaS /app path.
         env.pop("BKPAAS_ENVIRONMENT", None)
         return env
+
+    def seed_oauth_tokens(self, env: dict[str, str]) -> None:
+        """Give every E2E chat user a local bkoauth token so the authorization gate is satisfied."""
+        seeded = subprocess.run(
+            [str(self.python), "bin/manage.py", "shell", "-c", OAUTH_SEED_SCRIPT],
+            cwd=self.project,
+            env={**env, "E2E_OAUTH_USERS": ",".join(self.identity.oauth_users)},
+            stdout=self.log_handle,
+            stderr=subprocess.STDOUT,
+            timeout=60,
+            check=False,
+        )
+        if seeded.returncode:
+            raise RuntimeError("bkoauth token seeding failed; see dev/e2e/.runtime/app.log")
 
     def start(self) -> None:
         if not env_bool("E2E_MANAGED_APP", True):
@@ -105,6 +144,7 @@ class ManagedApp:
         )
         if migrate.returncode:
             raise RuntimeError(f"Django migration failed; see {runtime / 'app.log'}")
+        self.seed_oauth_tokens(env)
         address = self.config.app_url.removeprefix("http://").removeprefix("https://")
         self.process = subprocess.Popen(
             [str(self.python), "bin/manage.py", "runserver", address, "--noreload"],

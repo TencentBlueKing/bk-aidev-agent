@@ -6,16 +6,19 @@ import time
 import urllib.error
 import urllib.request
 
-from .config import Config
+from .config import Config, rabbitmq_stream_port
 
 
 def main() -> None:
+    # Load the E2E env file first so its RabbitMQ Stream override is honoured.
+    config = Config.from_env()
     targets = [
         ("Redis", "127.0.0.1", 16379),
         ("RabbitMQ AMQP", "127.0.0.1", 25672),
         ("RabbitMQ management", "127.0.0.1", 15673),
     ]
-    config = Config.from_env()
+    if stream_port := rabbitmq_stream_port():
+        targets.append(("RabbitMQ Stream", "127.0.0.1", int(stream_port)))
     if config.database == "mysql":
         targets.insert(0, ("MySQL", os.getenv("MYSQL_HOST", "127.0.0.1"), int(config.mysql_port)))
     deadline = time.monotonic() + 120
