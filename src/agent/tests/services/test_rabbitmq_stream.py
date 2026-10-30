@@ -1,9 +1,10 @@
+import asyncio
 import contextlib
 import os
 import queue
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import aidev_agent.services.messages_handler.rabbitmq_stream as rabbitmq_stream_module
 import pytest
@@ -11,9 +12,12 @@ from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 from aidev_agent.services.messages_handler.rabbitmq_stream import (
     RabbitMQStreamMessageHandler,
+    _RabbitMQStreamRuntime,
     _StreamSubscription,
 )
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
+from rstream import OnClosedErrorInfo
+from rstream.connection import ConnectionClosed
 
 
 def _make_handler() -> RabbitMQStreamMessageHandler:
@@ -27,6 +31,31 @@ def _make_handler() -> RabbitMQStreamMessageHandler:
     handler._notify_eod_committed = MagicMock()
     handler._notify_replay_waiters = MagicMock()
     return handler
+
+
+def _make_runtime(submit_results: list) -> tuple[_RabbitMQStreamRuntime, list]:
+    """构造不连接 RabbitMQ 的 runtime，按顺序模拟每次 _submit 的结果。"""
+    runtime = object.__new__(_RabbitMQStreamRuntime)
+    runtime._operation_timeout = 1.0
+    runtime._producer_generation = 1
+    runtime._producer_stale = False
+    runtime._reconnect_lock = threading.Lock()
+    submitted: list = []
+    results = iter(submit_results)
+
+    def submit(coro, timeout=None):
+        submitted.append(coro.__qualname__)
+        coro.close()
+        result = next(results)
+        if isinstance(result, BaseException):
+            raise result
+        if coro.__qualname__.endswith("_restart_producer"):
+            runtime._producer_generation += 1
+            runtime._producer_stale = False
+        return result
+
+    runtime._submit = submit
+    return runtime, submitted
 
 
 def test_stream_handler_inherits_rabbitmq_control_plane():
@@ -94,6 +123,83 @@ def test_has_pending_messages_checks_stream_without_history_scan():
 
     assert handler.has_pending_messages("thread-id") is True
     handler._stream_runtime.stream_exists.assert_called_once_with("aidev_agent.stream.thread-id")
+
+
+def test_has_pending_messages_falls_back_when_stream_check_fails():
+    handler = _make_handler()
+    handler._stream_runtime.stream_exists.side_effect = TimeoutError()
+
+    assert handler.has_pending_messages("thread-id") is False
+
+
+@pytest.mark.parametrize("error", [TimeoutError(), ConnectionError(), ConnectionClosed()])
+def test_stream_exists_reconnects_and_retries_once(error):
+    runtime, submitted = _make_runtime([error, None, True])
+
+    assert runtime.stream_exists("stream") is True
+    assert [name.rsplit(".", 1)[-1] for name in submitted] == ["check", "_restart_producer", "check"]
+    assert runtime._producer_generation == 2
+
+
+def test_stream_exists_raises_when_retry_still_fails():
+    runtime, submitted = _make_runtime([TimeoutError(), None, TimeoutError()])
+
+    with pytest.raises(TimeoutError):
+        runtime.stream_exists("stream")
+    assert len(submitted) == 3
+
+
+def test_publish_marks_producer_stale_without_retry():
+    runtime, submitted = _make_runtime([TimeoutError()])
+
+    with pytest.raises(TimeoutError):
+        runtime.publish("stream", [b"payload"], publisher_name="stream", max_age_seconds=1)
+    assert len(submitted) == 1
+    assert runtime._producer_stale is True
+
+
+def test_stale_producer_reconnects_before_next_operation():
+    runtime, submitted = _make_runtime([None, None])
+    runtime._producer_stale = True
+
+    runtime.delete_stream("stream")
+
+    assert [name.rsplit(".", 1)[-1] for name in submitted] == ["_restart_producer", "_delete_stream"]
+
+
+def test_reconnect_skips_when_other_thread_already_rebuilt():
+    runtime, submitted = _make_runtime([])
+
+    runtime._reconnect(failed_generation=0)
+
+    assert submitted == []
+
+
+@pytest.mark.parametrize(("reason", "stale"), [("Metadata Update", False), ("Heartbeats missing", True)])
+def test_producer_close_handler_marks_stale_on_disconnect(reason, stale):
+    runtime, _ = _make_runtime([])
+
+    asyncio.run(runtime._on_producer_closed(OnClosedErrorInfo(reason, ["stream"])))
+
+    assert runtime._producer_stale is stale
+
+
+def test_restart_producer_replaces_connection_and_clears_stream_cache(monkeypatch):
+    runtime, _ = _make_runtime([])
+    runtime._connection_kwargs = {"host": "localhost"}
+    runtime._known_streams = {"stream"}
+    old_producer = MagicMock(close=AsyncMock(side_effect=ConnectionClosed()))
+    new_producer = MagicMock(start=AsyncMock())
+    runtime._producer = old_producer
+    monkeypatch.setattr(rabbitmq_stream_module, "Producer", MagicMock(return_value=new_producer))
+
+    asyncio.run(runtime._restart_producer())
+
+    old_producer.close.assert_awaited_once()
+    new_producer.start.assert_awaited_once()
+    assert runtime._producer is new_producer
+    assert runtime._known_streams == set()
+    assert (runtime._producer_generation, runtime._producer_stale) == (2, False)
 
 
 def test_subscription_queue_is_thread_safe():

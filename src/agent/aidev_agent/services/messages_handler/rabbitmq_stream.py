@@ -15,10 +15,11 @@ import threading
 import time
 from dataclasses import dataclass, field
 from logging import getLogger
-from typing import Any, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Coroutine, Optional
 
 from environs import Env
-from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, Producer
+from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo, Producer
+from rstream.connection import ConnectionClosed
 
 from .constants import EOD_CHUNK, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
@@ -26,6 +27,11 @@ from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
 env = Env()
+
+# OSError 已覆盖 TimeoutError、ConnectionError 等超时和断连异常。
+_RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (OSError, ConnectionClosed)
+# stream 删除等元数据变化也会触发 on_close_handler，但连接本身仍可用。
+_METADATA_UPDATE_REASON = "Metadata Update"
 
 
 @dataclass
@@ -80,6 +86,9 @@ class _RabbitMQStreamRuntime:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._producer: Producer | None = None
+        self._producer_generation = 0
+        self._producer_stale = False
+        self._reconnect_lock = threading.Lock()
         self._startup_event = threading.Event()
         self._startup_error: BaseException | None = None
         self.ensure_alive()
@@ -126,8 +135,59 @@ class _RabbitMQStreamRuntime:
         self._loop.close()
 
     async def _start_producer(self) -> None:
-        self._producer = Producer(**self._connection_kwargs, connection_name="aidev-agent-stream-producer")
+        self._producer = Producer(
+            **self._connection_kwargs,
+            connection_name="aidev-agent-stream-producer",
+            on_close_handler=self._on_producer_closed,
+        )
         await self._producer.start()
+        self._known_streams = set()
+        self._producer_stale = False
+        self._producer_generation += 1
+
+    async def _on_producer_closed(self, info: OnClosedErrorInfo) -> None:
+        if info.reason == _METADATA_UPDATE_REASON:
+            return
+        logger.warning("RabbitMQ Stream producer connection closed reason=%s", info.reason)
+        self._producer_stale = True
+
+    async def _restart_producer(self) -> None:
+        # 重建失败时保持失效标记，下一次操作会再次尝试重建。
+        self._producer_stale = True
+        old_producer, self._producer = self._producer, None
+        if old_producer is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(old_producer.close(), timeout=self._operation_timeout)
+        await self._start_producer()
+
+    def _reconnect(self, failed_generation: int) -> None:
+        """重建 producer；并发失败时只由第一个线程重建。"""
+        with self._reconnect_lock:
+            if self._producer_generation != failed_generation:
+                return
+            logger.warning("Reconnecting RabbitMQ Stream producer generation=%s", failed_generation)
+            self._submit(self._restart_producer(), timeout=self._operation_timeout * 2)
+
+    def _submit_with_reconnect(
+        self,
+        coro_factory: Callable[[], Coroutine[Any, Any, Any]],
+        *,
+        timeout: float | None = None,
+        retry: bool = True,
+    ) -> Any:
+        """超时或断连时重建连接；幂等操作再用新协程重试一次。"""
+        if self._producer_stale:
+            self._reconnect(self._producer_generation)
+        generation = self._producer_generation
+        try:
+            return self._submit(coro_factory(), timeout)
+        except _RECONNECTABLE_ERRORS as error:
+            logger.warning("RabbitMQ Stream operation failed retry=%s error=%r", retry, error)
+            if not retry:
+                self._producer_stale = True
+                raise
+            self._reconnect(generation)
+            return self._submit(coro_factory(), timeout)
 
     def _submit(self, coro: Any, timeout: float | None = None) -> Any:
         self.ensure_alive()
@@ -201,9 +261,11 @@ class _RabbitMQStreamRuntime:
         publisher_name: str,
         max_age_seconds: int,
     ) -> list[int]:
-        return self._submit(
-            self._publish_confirmed(stream, payloads, publisher_name, max_age_seconds),
+        # 发布不在此处重试，失败消息由 flush 放回缓冲区后再发，避免同一批次重复投递。
+        return self._submit_with_reconnect(
+            lambda: self._publish_confirmed(stream, payloads, publisher_name, max_age_seconds),
             timeout=self._operation_timeout + 1,
+            retry=False,
         )
 
     async def _create_subscription(
@@ -272,7 +334,7 @@ class _RabbitMQStreamRuntime:
         offset: int,
         timeout: float | None,
     ) -> tuple[list[Any], int]:
-        subscription = self._submit(self._get_subscription(key, stream, offset))
+        subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
         return subscription.read(offset, timeout)
 
     async def _close_subscription(self, key: tuple[int, str]) -> None:
@@ -295,14 +357,14 @@ class _RabbitMQStreamRuntime:
         self._known_streams.discard(stream)
 
     def delete_stream(self, stream: str) -> None:
-        self._submit(self._delete_stream(stream))
+        self._submit_with_reconnect(lambda: self._delete_stream(stream))
 
     def stream_exists(self, stream: str) -> bool:
         async def check() -> bool:
             assert self._producer is not None
             return await self._producer.stream_exists(stream)
 
-        return bool(self._submit(check()))
+        return bool(self._submit_with_reconnect(check))
 
     async def _close_async(self) -> None:
         for key in list(self._subscriptions):
@@ -480,8 +542,9 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
         try:
             return self._stream_runtime.stream_exists(self._get_stream_name(thread_id))
         except Exception:
-            logger.exception("Error checking RabbitMQ Stream for thread_id=%s", thread_id)
-            raise
+            # 检查失败时按无待续流处理，让本轮对话继续生成而不是中断。
+            logger.exception("Error checking RabbitMQ Stream for thread_id=%s, fallback to no pending", thread_id)
+            return False
 
     def _delete_stream_and_control_resources(self, thread_id: str) -> None:
         self._stream_runtime.delete_stream(self._get_stream_name(thread_id))
