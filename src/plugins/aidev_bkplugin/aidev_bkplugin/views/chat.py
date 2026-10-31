@@ -135,6 +135,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     channel_type=self.channel_type,
                     resource_manager=rm,
                     model=data.get("model", ""),
+                    reasoning_effort=data.get("reasoning_effort"),
                 )
 
             # 走到这里 thread_id 必为空（上面已 return）；由 serializer 中的 uuid 兜底规则可推出
@@ -173,6 +174,7 @@ class ChatCompletionViewSet(PluginViewSet):
                 resource_manager=rm,
                 agent_code=agent_code,
                 model=model,
+                reasoning_effort=data.get("reasoning_effort"),
             ).by_session_code(
                 session_code,
                 version=execute_kwargs.version,
@@ -234,6 +236,7 @@ class ChatCompletionViewSet(PluginViewSet):
         channel_type: str,
         resource_manager: ResourceManagerProtocol,
         model: str = "",
+        reasoning_effort: str | None = None,
     ):
         """
         通过 thread_id 自动管理会话，使用 chat_history 初始化，自动保存到 session
@@ -245,6 +248,7 @@ class ChatCompletionViewSet(PluginViewSet):
             resource_manager=resource_manager,
             agent_code=agent_code,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         agent_instance, session_code = builder.by_thread_id_with_chat_history(
             thread_id=thread_id,

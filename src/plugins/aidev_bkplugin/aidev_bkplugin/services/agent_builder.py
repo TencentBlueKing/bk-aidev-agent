@@ -46,6 +46,9 @@ class LLMOverrideResourceManager(AgentResourceManager):
     def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:
         config = super().get_agent_config(agent_code, version=version, **kwargs)
         if self.model:
+            # 智能体默认思考深度只属于默认模型，切到其它模型后不再携带
+            if self.model != config.chat_model:
+                config.reasoning_effort = None
             config.chat_model = self.model
             config.support_vision = self._resolve_model_support_vision()
         return config
@@ -88,6 +91,7 @@ class AgentBuilder:
         model: str = "",
         temperature: float | None = None,
         retry_strategy: str | None = None,
+        reasoning_effort: str | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -101,6 +105,7 @@ class AgentBuilder:
         self.model = model or ""
         self.temperature = temperature
         self.retry_strategy = retry_strategy
+        self.reasoning_effort = reasoning_effort
 
     def by_session_code(
         self,
@@ -219,4 +224,5 @@ class AgentBuilder:
             channel_type=channel_type,
             temperature=self.temperature,
             retry_strategy=self.retry_strategy,
+            reasoning_effort=self.reasoning_effort,
         )

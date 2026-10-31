@@ -139,6 +139,20 @@ def test_llm_override_resource_manager_overrides_chat_model_only():
     mock_get_llm.assert_called_once()
 
 
+@pytest.mark.parametrize(("model", "expected"), [("orig-chat", "high"), ("hy3-preview", None)], ids=["same", "swapped"])
+def test_llm_override_keeps_agent_reasoning_effort_only_for_default_model(model, expected):
+    """智能体默认思考深度只属于默认模型：热切换到其它模型时清空，选的仍是默认模型时保留。"""
+    config = MagicMock(name="agent_config")
+    config.chat_model = "orig-chat"
+    config.reasoning_effort = "high"
+    with (
+        patch.object(AgentResourceManager, "get_agent_config", return_value=config),
+        patch.object(LLMService, "get_llm", return_value=None),
+    ):
+        result = LLMOverrideResourceManager(username="alice", model=model).get_agent_config("x")
+    assert result.reasoning_effort == expected
+
+
 def test_llm_override_keeps_vision_when_swapped_model_supports_it():
     """热切换到仍支持视觉的模型时，support_vision 保持 True。"""
     config = MagicMock(name="agent_config")

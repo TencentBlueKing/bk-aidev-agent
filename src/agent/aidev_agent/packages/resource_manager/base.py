@@ -518,6 +518,7 @@ class BaseResourceManager(abc.ABC):
             related_agents=related_agents,
             temperature=prompt_setting.get("temperature"),
             max_tokens=prompt_setting.get("max_tokens"),
+            reasoning_effort=prompt_setting.get("reasoning_effort"),
             agent_info=agent_info,
             security_settings=SecuritySettings(**(agent_info.get("security_settings") or {})),
         )

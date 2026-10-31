@@ -1796,6 +1796,36 @@ class TestBuildChatModelFast:
             assert builder.build_chat_model_fast() is None
 
 
+class TestBuildChatModelReasoningEffort:
+    """思考深度只作用于主模型，辅助模型不携带；本轮未指定时回落智能体默认档。"""
+
+    @pytest.mark.parametrize(
+        ("request_effort", "agent_effort", "expected"),
+        [("high", "low", "high"), (None, "low", "low"), (None, None, None)],
+        ids=["request_first", "agent_default", "absent"],
+    )
+    @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
+    @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
+    def test_only_primary_model_carries_reasoning_effort(self, mock_setup, request_effort, agent_effort, expected):
+        ctx = MagicMock(spec=AgentBuildContext)
+        ctx.session_context_data = []
+        ctx.session_code = ""
+        ctx.agent_config.chat_model = "hy3"
+        ctx.agent_config.non_thinking_llm = "hy-lite"
+        ctx.agent_config.fallback_model = None
+        ctx.agent_config.temperature = None
+        ctx.agent_config.max_tokens = None
+        ctx.agent_config.reasoning_effort = agent_effort
+        ctx.chat = ChatBuildExtras(reasoning_effort=request_effort)
+        builder = ChatAgentBuilder(ctx)
+
+        builder.build_chat_model()
+        assert mock_setup.call_args.kwargs.get("reasoning_effort") == expected
+
+        builder.build_chat_model_non_thinking()
+        assert "reasoning_effort" not in mock_setup.call_args.kwargs
+
+
 class TestStreamSnapshotSource:
     """``_stream`` 首帧快照数据源：lossless chat_history 单账本（唯一历史事实源）。"""
 
