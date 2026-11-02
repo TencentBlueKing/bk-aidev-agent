@@ -244,7 +244,8 @@ class AgentKnowledgeNodeCallWrapper:
             attributes = self.get_attributes(state, config, instance)
             with trace_cb.create_custom_span("rag.retrieval", attributes=attributes) as span:
                 ret = wrapped(*args, **kwargs)
-                self._on_end(span, ret)
+                if span is not None:
+                    self._on_end(span, ret)
         else:
             ret = wrapped(*args, **kwargs)
         return ret

@@ -27,6 +27,7 @@ Token 压缩中间件
 from __future__ import annotations
 
 import concurrent.futures
+import contextvars
 import copy
 import hashlib
 import logging
@@ -42,6 +43,10 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, To
 from aidev_agent.core.ag_ui.types import CustomMessageType, InfoMessage
 from aidev_agent.packages.langchain_core.retrievers.utils import HUNYUAN_SPECIFIC_RESPONSE
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
+from aidev_agent.packages.opentelemetry.context_obs import (
+    observe_compression_call,
+    resolve_model_name,
+)
 from aidev_agent.utils.decorator import retry
 
 from .pydantic_models import NextFunction, ProcessorContext
@@ -53,6 +58,15 @@ logger = logging.getLogger(__name__)
 _compression_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=int(os.getenv("COMPRESSION_EXECUTOR_MAX_WORKERS", "10"))
 )
+
+
+def _text_chars(value: Any) -> int:
+    """文本内容的字符数：None 记 0，非字符串按 str() 取长度。"""
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return len(value)
+    return len(str(value))
 
 
 # ============================================================================
@@ -326,12 +340,19 @@ class KnowledgeCompressor:
             HumanMessage(content=usr_prompt),
         ]
 
-        resp = self.llm.invoke(messages)
-        resp_content = resp.content
+        input_chars = _text_chars(candidate_context)
+        with observe_compression_call(
+            module="knowledge", model=resolve_model_name(self.llm), input_chars=input_chars
+        ) as call:
+            resp = self.llm.invoke(messages)
+            resp_content = resp.content
 
-        # 如果触发了混元的特殊回复，则不进行压缩
-        if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
-            resp_content = candidate_context
+            # 如果触发了混元的特殊回复，则不进行压缩
+            if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
+                resp_content = candidate_context
+
+            # 混元特别回复时不压缩：output_chars 等于输入长度
+            call.set_output(_text_chars(resp_content), resp)
 
         return resp_content
 
@@ -358,8 +379,10 @@ class KnowledgeCompressor:
             return context
 
         try:
+            # 每个任务独立 copy_context()，继承当前 OTel 父级与 handler
             futures = [
                 _compression_executor.submit(
+                    contextvars.copy_context().run,
                     self.llm_context_compressor,
                     provided_chat_history,
                     query,
@@ -442,11 +465,12 @@ class KnowledgeCompressionMiddleware(BaseCompressionMiddleware):
         # 执行压缩流程
         provided_chat_history = ctx.metadata.get("provided_chat_history", [])
         logger.info("=====>Token 超限，尝试压缩知识库知识内容以减少 token 使用")
-        original_tokens = self._estimate_tokens(ctx, str(ctx.variables["context"]))
+        original_context = ctx.variables["context"]
+        original_tokens = self._estimate_tokens(ctx, str(original_context))
         compressed_context = self.knowledge_compressor_func(
             provided_chat_history,
             ctx.variables.get("query", ""),
-            ctx.variables["context"],
+            original_context,
         )
         compressed_tokens = self._estimate_tokens(ctx, str(compressed_context))
         self._record_compression(ctx, "知识库", original_tokens - compressed_tokens)
@@ -575,15 +599,23 @@ class ToolOutputCompressor:
             HumanMessage(content=usr_prompt),
         ]
 
-        resp = self.llm.invoke(messages)
-        resp_content = resp.content
+        with observe_compression_call(
+            module="tool_output",
+            model=resolve_model_name(self.llm),
+            input_chars=_text_chars(tool_result_str),
+        ) as call:
+            resp = self.llm.invoke(messages)
+            resp_content = resp.content
 
-        # 如果触发了混元的特殊回复，则不进行压缩
-        if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
-            logger.debug(f"工具 {tool_name} 触发混元特殊回复，不压缩")
-            return tool_result_str
+            # 如果触发了混元的特殊回复，则不进行压缩
+            if resp_content == HUNYUAN_SPECIFIC_RESPONSE:
+                logger.debug(f"工具 {tool_name} 触发混元特殊回复，不压缩")
+                call.set_output(_text_chars(tool_result_str), resp)
+                return tool_result_str
 
-        logger.debug(f"工具 {tool_name} 压缩完成: {len(tool_result_str)} -> {len(resp_content)}")
+            logger.debug(f"工具 {tool_name} 压缩完成: {len(tool_result_str)} -> {len(resp_content)}")
+            call.set_output(_text_chars(resp_content), resp)
+
         return resp_content
 
     def llm_intermediate_step_compressor_parallel(
@@ -602,9 +634,10 @@ class ToolOutputCompressor:
         Returns:
             压缩结果列表，与 tool_msg_positions 一一对应，失败的位置为 None
         """
-        # 并发压缩
+        # 并发压缩；每个任务独立 copy_context()，继承当前 OTel 父级与 handler
         futures = {
             _compression_executor.submit(
+                contextvars.copy_context().run,
                 self.llm_intermediate_step_compressor,
                 provided_chat_history,
                 query,

@@ -17,8 +17,10 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import asyncio
+import contextvars
 import json
 import re
+import threading
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -34,7 +36,7 @@ from langgraph.types import Command
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import NoOpTracerProvider
+from opentelemetry.trace import INVALID_SPAN, NoOpTracerProvider, set_span_in_context, use_span
 
 
 @pytest.fixture
@@ -1769,3 +1771,70 @@ class TestBkAidevAgentCallbackHandler:
         assert root_span is not None and root_span.name == "agent.execution"
         assert root_span.attributes["agent.session.input"] == str({"input": "x"})
         assert "input.value" not in chain_span.attributes
+
+
+class TestCreateCustomSpanParentContext:
+    def test_current_context_overrides_handler_fallbacks(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        workflow_id = uuid4()
+        workflow = handler._create_span(workflow_id, None, "workflow")
+        handler._current_workflow_run_id = workflow_id
+        handler._injector = MagicMock(root_span=workflow)
+        handler.parent_context = set_span_in_context(workflow)
+        with tracer.start_as_current_span("active") as active, handler.create_custom_span("custom"):
+            pass
+        handler._end_span(workflow, workflow_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent.span_id == active.get_span_context().span_id
+        assert not handler.spans
+
+    def test_explicit_run_id_overrides_current_context(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        parent_id = uuid4()
+        parent = handler._create_span(parent_id, None, "explicit")
+        with (
+            tracer.start_as_current_span("active"),
+            handler.create_custom_span("custom", parent_run_id=parent_id),
+        ):
+            pass
+        handler._end_span(parent, parent_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent.span_id == parent.get_span_context().span_id
+        assert not handler.spans
+
+    def test_without_current_span_does_not_use_workflow(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        parent_id = uuid4()
+        parent = handler._create_span(parent_id, None, "workflow")
+        handler._current_workflow_run_id = parent_id
+        handler._injector = MagicMock(root_span=parent)
+        handler.parent_context = set_span_in_context(parent)
+        with use_span(INVALID_SPAN), handler.create_custom_span("custom"):
+            pass
+        handler._end_span(parent, parent_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent is None
+
+    def test_current_parent_across_thread(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        errors = []
+
+        def worker():
+            try:
+                with handler.create_custom_span("compression"):
+                    pass
+            except BaseException as error:
+                errors.append(error)
+
+        with handler.create_custom_span("assembly"):
+            thread = threading.Thread(target=contextvars.copy_context().run, args=(worker,))
+            thread.start()
+            thread.join()
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert not errors
+        assert spans["compression"].parent.span_id == spans["assembly"].context.span_id
+        assert not handler.spans
