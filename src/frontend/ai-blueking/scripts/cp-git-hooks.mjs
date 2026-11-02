@@ -1,13 +1,13 @@
 import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const MONOREPO_DIR = resolve(import.meta.dirname, '..');
 const LOCAL_HOOKS_DIR = join(MONOREPO_DIR, '.git', 'hooks');
 
-/** 通过 git 命令定位真实的 .git/hooks 目录 */
+/** 定位仓库共享的 .git/hooks 目录，兼容 linked worktree */
 const getGitHooksDir = () => {
-  const gitDir = execSync('git rev-parse --git-dir', { cwd: MONOREPO_DIR, encoding: 'utf-8' }).trim();
+  const gitDir = execSync('git rev-parse --git-common-dir', { cwd: MONOREPO_DIR, encoding: 'utf-8' }).trim();
   return join(resolve(MONOREPO_DIR, gitDir), 'hooks');
 };
 
@@ -33,6 +33,8 @@ const run = () => {
     console.log('[cp-git-hooks] 没有找到需要拷贝的 hook 文件');
     return;
   }
+
+  mkdirSync(targetDir, { recursive: true });
 
   for (const hook of hooks) {
     const source = join(LOCAL_HOOKS_DIR, hook);
