@@ -7,8 +7,6 @@ import pytest
 
 try:
     import django  # noqa: F401
-    from django.conf import settings
-
     from aidev_wxbot.wxaibot.constants import QUEUE_EXPIRES_MS
     from aidev_wxbot.wxaibot.context import (
         CHUNK_FLUSH_THRESHOLD,
@@ -17,6 +15,7 @@ try:
         _normalize_url,
         stream_msg,
     )
+    from django.conf import settings
 
     _wxbot_available = True
 except ImportError:
@@ -311,7 +310,10 @@ class TestLlmChunkMsg:
         ) as prepare:
             msg.append_to_cache(client)
 
-        prepare.assert_called_once_with("带图回答")
+        prepare.assert_called_once()
+        args, _kwargs = prepare.call_args
+        assert args[0] == "带图回答"
+        assert callable(args[1])
         assert client.message_data["content"] == "处理后回答"
         assert client.message_data["msg_items"] == items
 
