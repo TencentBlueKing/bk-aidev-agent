@@ -68,6 +68,8 @@ vi.mock('vue-tippy', () => ({
       arrow: { type: Boolean, default: false },
       interactive: { type: Boolean, default: false },
       offset: { type: Array, default: () => [0, 0] },
+      onClickOutside: { type: Function, default: undefined },
+      onHide: { type: Function, default: undefined },
       placement: { type: String, default: 'top-end' },
       theme: { type: String, default: '' },
       trigger: { type: String, default: 'click' },
@@ -218,6 +220,117 @@ describe('ModelSelector', () => {
       const hideDescriptionTip = vi.spyOn(exposed, 'hideDescriptionTip');
       await wrapper.findComponent({ name: 'Tippy' }).vm.$emit('hidden');
       expect(hideDescriptionTip).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('思考深度', () => {
+    const reasoning = {
+      default_effort: 'medium' as const,
+      mandatory: false,
+      supported_efforts: [
+        { desc: '不思考，直接回答', key: 'none' as const, value: '关闭' },
+        { desc: '简单思考，响应较快', key: 'low' as const, value: '低' },
+        { desc: '兼顾思考深度与响应速度', key: 'medium' as const, value: '中' },
+      ],
+    };
+    const reasoningModels: IModelOption[] = [
+      createModel(1, 'Hy3', { property: { reasoning } }),
+      createModel(2, 'Other', { property: { reasoning } }),
+      createModel(3, 'Plain'),
+    ];
+    const panel = () => wrapper.findComponent(ModelSelectorPanel);
+
+    it('触发器按 v-model:reasoningEffort 回显档位，未传时回落 default_effort', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: reasoningModels, modelValue: 'Hy3', reasoningEffort: 'low' },
+      });
+      expect(wrapper.find('.ai-model-selector-trigger-effort').text()).toBe('低');
+
+      await wrapper.setProps({ reasoningEffort: null });
+      expect(wrapper.find('.ai-model-selector-trigger-effort').text()).toBe('中');
+      expect(panel().props('reasoningEffort')).toBeNull();
+    });
+
+    it('档位为「关闭」或模型不支持思考深度时触发器不回显', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: reasoningModels, modelValue: 'Hy3', reasoningEffort: 'none' },
+      });
+      expect(wrapper.find('.ai-model-selector-trigger-effort').exists()).toBe(false);
+
+      await wrapper.setProps({ modelValue: 'Plain', reasoningEffort: 'low' });
+      expect(wrapper.find('.ai-model-selector-trigger-effort').exists()).toBe(false);
+    });
+
+    it('切换到其它模型时清空档位，选回同一模型时保留', async () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: reasoningModels, modelValue: 'Hy3', reasoningEffort: 'low' },
+      });
+      const options = wrapper.findAll('.ai-model-selector-panel-option');
+      await options[0].trigger('click');
+      expect(wrapper.emitted('update:reasoningEffort')).toBeFalsy();
+
+      await options[1].trigger('click');
+      expect(wrapper.emitted('update:reasoningEffort')?.[0]).toEqual([undefined]);
+    });
+
+    it('当前模型卡片调档：更新 v-model 并抛出 reasoningEffortChange，不触发 change', () => {
+      wrapper = mount(ModelSelector, {
+        props: { models: reasoningModels, modelValue: 'Hy3', reasoningEffort: 'low' },
+      });
+      panel().vm.$emit('reasoningEffortChange', reasoningModels[0], 'none');
+
+      expect(wrapper.emitted('update:reasoningEffort')).toEqual([['none']]);
+      expect(wrapper.emitted('reasoningEffortChange')).toEqual([[reasoningModels[0], 'none']]);
+      expect(wrapper.emitted('change')).toBeFalsy();
+    });
+
+    it('非当前模型卡片调档：先选中该模型抛 change，再抛 reasoningEffortChange，且下拉不收起', () => {
+      const calls: string[] = [];
+      wrapper = mount(ModelSelector, {
+        props: {
+          models: reasoningModels,
+          modelValue: 'Hy3',
+          onChange: () => calls.push('change'),
+          onReasoningEffortChange: () => calls.push('reasoningEffortChange'),
+          reasoningEffort: 'low',
+        },
+      });
+      const hide = (wrapper.findComponent({ name: 'Tippy' }).vm.$.exposed as { hide: ReturnType<typeof vi.fn> })
+        .hide;
+      panel().vm.$emit('reasoningEffortChange', reasoningModels[1], 'medium');
+
+      expect(calls).toEqual(['change', 'reasoningEffortChange']);
+      expect(wrapper.emitted('update:modelValue')).toEqual([['Other']]);
+      expect(wrapper.emitted('update:reasoningEffort')).toEqual([[undefined], ['medium']]);
+      expect(wrapper.emitted('change')).toEqual([[reasoningModels[1]]]);
+      expect(wrapper.emitted('reasoningEffortChange')).toEqual([[reasoningModels[1], 'medium']]);
+      expect(hide).not.toHaveBeenCalled();
+    });
+
+    it('点击落在描述卡片内时拦截下拉收起，其余点击照常收起并调用外部 onHide', () => {
+      const onHide = vi.fn();
+      const onClickOutside = vi.fn();
+      wrapper = mount(ModelSelector, {
+        props: { models: reasoningModels, tippyOptions: { onClickOutside, onHide } },
+      });
+      const tippy = wrapper.findComponent({ name: 'Tippy' });
+      const exposed = panel().vm.$.exposed as { isTipTarget: (target: EventTarget | null) => boolean };
+      const isTipTarget = vi.spyOn(exposed, 'isTipTarget');
+      const clickOutside = tippy.props('onClickOutside') as (instance: unknown, event: Event) => void;
+      const hide = tippy.props('onHide') as (instance: unknown) => false | void;
+      const instance = {};
+
+      isTipTarget.mockReturnValue(true);
+      const insideEvent = new MouseEvent('mousedown');
+      clickOutside(instance, insideEvent);
+      expect(hide(instance)).toBe(false);
+      expect(onHide).not.toHaveBeenCalled();
+      expect(onClickOutside).toHaveBeenCalledWith(instance, insideEvent);
+
+      isTipTarget.mockReturnValue(false);
+      clickOutside(instance, new MouseEvent('mousedown'));
+      expect(hide(instance)).toBeUndefined();
+      expect(onHide).toHaveBeenCalledWith(instance);
     });
   });
 

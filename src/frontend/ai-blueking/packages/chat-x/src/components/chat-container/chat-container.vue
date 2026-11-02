@@ -237,6 +237,7 @@
             <ChatInput
               ref="chatInputRef"
               v-model:cite="cite"
+              v-model:reasoning-effort="reasoningEffort"
               v-model:selected-model="selectedModel"
               :menu-sources="resolvedMenuSources"
               :message-status="inputStatus"
@@ -254,6 +255,7 @@
               @delete-file="emits('deleteFile', $event)"
               @delete-shortcut="handleCloseShortcut"
               @model-change="emits('modelChange', $event)"
+              @reasoning-effort-change="handleReasoningEffortChange"
               @select-shortcut="handleSelectShortcut"
               @update:model-value="handleUpdateModelValue"
             >
@@ -338,6 +340,7 @@
     Shortcut,
     TagSchema,
   } from '../../types';
+  import type { IModelOption, ReasoningEffort } from '../chat-input/model-selector';
   import type { UserQuestionCardSlots } from '../chat-message/interrupt-message/user-question/user-question-card.vue';
   import type { Token } from 'markdown-it/index.js';
   export type ChatContainerProps = {
@@ -483,6 +486,10 @@
   });
   // 当前选中的模型（值为 llm_name），透传给 ChatInput 的模型选择器（v-model:selectedModel）
   const selectedModel = defineModel<string>('selectedModel', {
+    required: false,
+  });
+  // 当前模型生效的思考深度档位，透传给 ChatInput 的模型选择器（v-model:reasoningEffort）
+  const reasoningEffort = defineModel<null | ReasoningEffort>('reasoningEffort', {
     required: false,
   });
 
@@ -665,6 +672,9 @@
   };
   const handleUpdateModelValue = (value: string | TagSchema, selectedResourceList: IInputMenuItem[]) => {
     emits('update:modelValue', value, selectedResourceList);
+  };
+  const handleReasoningEffortChange = (model: IModelOption, effort: ReasoningEffort) => {
+    emits('reasoningEffortChange', model, effort);
   };
 
   /**

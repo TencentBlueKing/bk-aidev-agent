@@ -48,6 +48,12 @@
           :title="optionNameTitle(model)"
         >
           {{ model.llm_name }}
+          <span
+            v-if="effortSuffixMap.get(model.llm_name)"
+            class="ai-model-selector-panel-option-effort"
+          >
+            {{ effortSuffixMap.get(model.llm_name) }}
+          </span>
         </span>
         <span
           v-if="capabilityMap.get(model.llm_name)?.length"
@@ -75,6 +81,23 @@
         </Exception>
       </div>
     </div>
+    <!-- 卡片 DOM 由 tippy 移入浮层展示，这里只是 Vue 渲染的落脚点，本身不可见 -->
+    <div class="ai-model-selector-panel-tip-host">
+      <div
+        ref="tipContentRef"
+        class="ai-model-selector-panel-tip"
+        @mouseenter="handleTipEnter"
+        @mouseleave="handleTipLeave"
+      >
+        <ModelDescriptionCard
+          v-if="tipModel"
+          :effort="tipEffort"
+          :model="tipModel"
+          @change="handleTipEffortChange"
+          @dragging="handleTipDragging"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -89,10 +112,16 @@
   import { t } from '../../../lang/lang';
   import { ResourceIcon } from '../../resource-icon';
   import { resolveModelCapabilities } from './capabilities';
-  import { createModelDescriptionTippy, MODEL_DESCRIPTION_TIP_DELAY_MS } from './create-model-description-tippy';
+  import {
+    createModelDescriptionTippy,
+    MODEL_DESCRIPTION_TIP_DELAY_MS,
+    MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS,
+  } from './create-model-description-tippy';
+  import ModelDescriptionCard from './model-description-card.vue';
+  import { getReasoningOptions, resolveReasoningEffort, resolveReasoningSuffix } from './reasoning-effort';
 
   import type { AITippyProps } from '../../../types';
-  import type { IModelCapability, IModelOption } from './types';
+  import type { IModelCapability, IModelOption, ReasoningEffort } from './types';
   import type { Instance } from 'tippy.js';
 
   import 'tippy.js/dist/tippy.css';
@@ -100,6 +129,8 @@
   const props = defineProps<{
     /** 待展示的模型列表（已按关键字过滤） */
     models: IModelOption[];
+    /** 当前选中模型的思考深度档位 */
+    reasoningEffort?: null | ReasoningEffort;
     /** 搜索框占位文案 */
     searchPlaceholder?: string;
     /** 当前选中模型的 llm_name */
@@ -116,23 +147,47 @@
   });
   const emit = defineEmits<{
     (e: 'select', model: IModelOption): void;
+    (e: 'reasoningEffortChange', model: IModelOption, effort: ReasoningEffort): void;
   }>();
   /** 搜索关键字（受控，回传给容器交由 composable 过滤） */
   const keyword = defineModel<string>('keyword', { default: '' });
 
   const panelRef = useTemplateRef<HTMLElement>('panelRef');
   const searchInputRef = useTemplateRef<HTMLInputElement>('searchInputRef');
+  const tipContentRef = useTemplateRef<HTMLElement>('tipContentRef');
+
+  /** 当前模型取外部传入的档位；其余模型拿不到会话 / 偏好，只能按各自 default_effort 展示 */
+  const effortOf = (model: IModelOption) =>
+    model.llm_name === props.selectedName ? props.reasoningEffort : undefined;
+
+  /** 预计算每个模型名后回显的档位文字（键为 llm_name） */
+  const effortSuffixMap = computed(() => {
+    const map = new Map<string, string>();
+    props.models.forEach(model => map.set(model.llm_name, resolveReasoningSuffix(model, effortOf(model))));
+    return map;
+  });
 
   // 整表共用一个 tip：移入后延迟创建，离开 / 滚动 / 列表替换 / 卸载时销毁
   let descriptionTip: Instance | undefined;
   let tipAnchor: HTMLElement | undefined;
   let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let showToken = 0;
+  /** 卡片内滑块拖动中：鼠标拖出卡片也不关闭，松手后再判断 */
+  let tipDragging = false;
+  /** 卡片当前展示的模型 */
+  const tipModel = shallowRef<IModelOption>();
+  const tipEffort = computed(() =>
+    tipModel.value ? resolveReasoningEffort(tipModel.value, effortOf(tipModel.value))?.key : undefined,
+  );
 
   const readDescription = (model: IModelOption) => model.description?.trim() || undefined;
 
-  /** 有描述时不再挂名称 title，避免和描述 tip 叠成两个气泡 */
-  const optionNameTitle = (model: IModelOption) => (readDescription(model) ? undefined : model.llm_name);
+  /** 有描述或支持思考深度时才展示卡片 */
+  const hasCard = (model: IModelOption) => Boolean(readDescription(model) || getReasoningOptions(model).length);
+
+  /** 有卡片时不再挂名称 title，避免和卡片叠成两个气泡 */
+  const optionNameTitle = (model: IModelOption) => (hasCard(model) ? undefined : model.llm_name);
 
   const getReferenceClientRect = Object.assign(
     () => (tipAnchor?.isConnected ? tipAnchor.getBoundingClientRect() : new DOMRect()),
@@ -161,18 +216,39 @@
     showTimer = undefined;
   };
 
+  const clearHideTimer = () => {
+    if (hideTimer === undefined) {
+      return;
+    }
+    clearTimeout(hideTimer);
+    hideTimer = undefined;
+  };
+
   const hideDescriptionTip = () => {
     showToken += 1;
     clearShowTimer();
+    clearHideTimer();
     tipAnchor = undefined;
+    tipDragging = false;
+    tipModel.value = undefined;
     const instance = descriptionTip;
     descriptionTip = undefined;
     instance?.destroy();
   };
 
+  /** 延迟关闭，期间鼠标进入卡片或回到原选项会取消 */
+  const scheduleHideDescriptionTip = () => {
+    clearHideTimer();
+    hideTimer = setTimeout(() => {
+      hideTimer = undefined;
+      if (!tipDragging) {
+        hideDescriptionTip();
+      }
+    }, MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+  };
+
   const handleOptionEnter = (event: MouseEvent, model: IModelOption) => {
-    const description = readDescription(model);
-    if (!description) {
+    if (!hasCard(model)) {
       hideDescriptionTip();
       return;
     }
@@ -180,7 +256,12 @@
     if (!(anchor instanceof HTMLElement)) {
       return;
     }
-    clearShowTimer();
+    // 从卡片移回同一选项时保持展示
+    if (descriptionTip && tipAnchor === anchor) {
+      clearHideTimer();
+      return;
+    }
+    hideDescriptionTip();
     tipAnchor = anchor;
     const token = showToken;
     showTimer = setTimeout(() => {
@@ -188,26 +269,68 @@
       if (token !== showToken || tipAnchor !== anchor || !anchor.isConnected) {
         return;
       }
-      if (!descriptionTip) {
-        getReferenceClientRect.contextElement = resolveTipContextElement(props.tippyOptions?.appendTo);
-        descriptionTip = tippy(document.createElement('div'), {
-          ...createModelDescriptionTippy(getReferenceClientRect, props.tippyOptions),
-          // tippy 的 onShow 只认 false（取消展示）或 void；锚点已卸载时取消
-          onShow: () => {
-            if (!tipAnchor?.isConnected) {
-              return false;
-            }
-          },
-        });
-      }
-      descriptionTip.setContent(description);
-      descriptionTip.show();
+      tipModel.value = model;
+      // 等卡片渲染进落脚点后再交给 tippy，首次定位才能拿到真实尺寸
+      nextTick(() => {
+        const content = tipContentRef.value;
+        if (token !== showToken || !content) {
+          return;
+        }
+        if (!descriptionTip) {
+          getReferenceClientRect.contextElement = resolveTipContextElement(props.tippyOptions?.appendTo);
+          descriptionTip = tippy(document.createElement('div'), {
+            ...createModelDescriptionTippy(getReferenceClientRect, props.tippyOptions),
+            // tippy 的 onShow 只认 false（取消展示）或 void；锚点已卸载时取消
+            onShow: () => {
+              if (!tipAnchor?.isConnected) {
+                return false;
+              }
+            },
+          });
+        }
+        descriptionTip.setContent(content);
+        descriptionTip.show();
+      });
     }, MODEL_DESCRIPTION_TIP_DELAY_MS);
   };
 
   const handleOptionLeave = () => {
-    hideDescriptionTip();
+    // 卡片还没出来时直接取消；已展示时留时间让鼠标移入卡片
+    if (!descriptionTip) {
+      hideDescriptionTip();
+      return;
+    }
+    scheduleHideDescriptionTip();
   };
+
+  const handleTipEnter = () => {
+    clearHideTimer();
+  };
+
+  const handleTipLeave = () => {
+    if (!tipDragging) {
+      scheduleHideDescriptionTip();
+    }
+  };
+
+  const handleTipDragging = (dragging: boolean) => {
+    tipDragging = dragging;
+    // 拖到卡片外松手时补一次关闭
+    if (!dragging && !tipContentRef.value?.matches(':hover')) {
+      scheduleHideDescriptionTip();
+    }
+  };
+
+  const handleTipEffortChange = (effort: ReasoningEffort) => {
+    if (tipModel.value) {
+      emit('reasoningEffortChange', tipModel.value, effort);
+    }
+  };
+
+  /** 事件目标是否落在描述卡片内（下拉据此判断「点击外部」时不收起） */
+  const isTipTarget = (target: EventTarget | null) =>
+    target instanceof Node &&
+    [tipContentRef.value, descriptionTip?.popper].some(element => element?.contains(target));
 
   onBeforeUnmount(hideDescriptionTip);
 
@@ -245,6 +368,7 @@
   defineExpose({
     focusSearch,
     hideDescriptionTip,
+    isTipTarget,
   });
 </script>
 
@@ -346,6 +470,15 @@
         white-space: nowrap;
       }
 
+      // 模型名后回显的档位（与名称间隔一个空格），选中行随整行变为主色
+      &-effort {
+        color: variables.$color-text-secondary;
+      }
+
+      &.is-selected &-effort {
+        color: inherit;
+      }
+
       &-tags {
         display: flex;
         flex: 0 0 auto;
@@ -368,6 +501,10 @@
       img {
         margin-top: -10px;
       }
+    }
+
+    &-tip-host {
+      display: none;
     }
   }
 

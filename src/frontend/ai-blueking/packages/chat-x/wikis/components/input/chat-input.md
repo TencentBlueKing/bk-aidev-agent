@@ -547,16 +547,18 @@ const defaultFiles: UploadFile[] = [
 
 ## 模型选择
 
-传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象，能力标签由组件依据 `property` 自动派生。默认选择器展开时会收起输入框菜单；自定义 `#model-selector` 时需自行处理。
+传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)。选中值（模型的 `llm_name`）通过 `v-model:selected-model` 双向绑定，`@model-change` 可获取完整模型对象，能力标签由组件依据 `property` 自动派生。模型带 `property.reasoning` 时，可在选项 hover 卡片里调节思考深度，档位通过 `v-model:reasoning-effort` 绑定，`@reasoning-effort-change` 通知接入方写入会话（详见 [ModelSelector 思考深度](/components/input/model-selector#思考深度)）。默认选择器展开时会收起输入框菜单；自定义 `#model-selector` 时需自行处理。
 
 ```vue
 <template>
   <ChatInput
     v-model="inputValue"
     v-model:selected-model="selectedModel"
+    v-model:reasoning-effort="reasoningEffort"
     :models="models"
     :on-send-message="handleSendMessage"
     @model-change="handleModelChange"
+    @reasoning-effort-change="handleReasoningEffortChange"
   />
 </template>
 ```
@@ -572,7 +574,7 @@ const defaultFiles: UploadFile[] = [
   />
 </div>
 
-也可通过 `#model-selector` 插槽完全自定义，插槽参数为 `{ models, selectedModel }`：
+也可通过 `#model-selector` 插槽完全自定义，插槽参数为 `{ models, selectedModel, reasoningEffort }`：
 
 ```vue
 <template>
@@ -672,6 +674,7 @@ const defaultFiles: UploadFile[] = [
 | menuSources        | `IInputMenuItem[]`                                   | `[]`     | -    | 统一菜单数据源，按 `type` 分发到 `/` `@` `\` 与 + 号                 |
 | menuGroupItemLimit | `number`                                             | `4`      | -    | 每个分组默认展示条数，超出折叠为「更多 +N」                          |
 | selectedModel      | `string`                                             | -        | -    | 当前选中模型的 `llm_name`，支持 `v-model:selected-model`             |
+| reasoningEffort    | `null \| ReasoningEffort`                            | -        | -    | 当前模型的思考深度档位，支持 `v-model:reasoning-effort`；为空时按模型默认档位展示，切换模型时清空 |
 | cite               | `string`                                             | `''`     | -    | 引用内容，支持 `v-model:cite`，不为空时显示引用区                    |
 | messageStatus      | `MessageStatus`                                      | -        | -    | 消息状态，控制按钮；输入为空且无附件时内部强制 `disabled`            |
 | shortcuts          | `Shortcut[]`                                         | -        | -    | 快捷指令列表，显示在底部工具栏                                       |
@@ -694,6 +697,7 @@ const defaultFiles: UploadFile[] = [
 | ----------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
 | update:modelValue | `(value: string \| TagSchema, selectedResourceList: IInputMenuItem[])` | 编辑器值变化；第二参数为文档中能在 `menuSources` 反查到的条目 |
 | modelChange       | `(model: IModelOption)`                                               | 用户切换模型                                                 |
+| reasoningEffortChange | `(model: IModelOption, effort: ReasoningEffort)`                  | 用户在模型描述卡片里调整思考深度                             |
 | selectShortcut    | `(shortcut: Shortcut)`                                                | 点击底部快捷指令按钮                                         |
 | deleteShortcut    | -                                                                     | 点击已选快捷指令旁的关闭按钮                                 |
 | deleteFile        | `(file: Partial<UploadFile>)`                                         | 用户取消附件；携带文件 `id`、状态等信息，UI 立即移除，不等待删除接口 |
@@ -707,7 +711,7 @@ const defaultFiles: UploadFile[] = [
 | input-header   | -                                                                | 框体内顶部，替换引用区（`CiteContent`）                  |
 | files          | `{ files: Partial<UploadFile>[] }`                               | 文件预览区                                               |
 | attachment     | -                                                                | 底部快捷指令区，`AddMenuBtn` 在其左侧，不受此插槽影响    |
-| model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined }` | 发送按钮左侧模型选择区，默认渲染 `ModelSelector`         |
+| model-selector | `{ models: IModelOption[]; selectedModel: string \| undefined; reasoningEffort: null \| ReasoningEffort \| undefined }` | 发送按钮左侧模型选择区，默认渲染 `ModelSelector`         |
 | send-icon      | `{ sendDisabledTip?: string }`                                   | 替换发送区；自定义时需自行处理禁用，拦截文案见 `sendDisabledTip` |
 
 ### Expose

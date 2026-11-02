@@ -25,5 +25,13 @@
  */
 
 export { default as ModelSelector } from './model-selector.vue';
-export type { IModelCapability, IModelOption, IModelProperty, ModelCapabilityTheme } from './types';
+export type {
+  IModelCapability,
+  IModelOption,
+  IModelProperty,
+  IModelReasoning,
+  IReasoningEffortOption,
+  ModelCapabilityTheme,
+  ReasoningEffort,
+} from './types';
 export { useModelSelector } from './use-model-selector';

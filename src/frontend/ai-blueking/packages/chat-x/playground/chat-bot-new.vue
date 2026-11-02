@@ -18,6 +18,7 @@
     <ChatContainer
       v-model:aside-collapsed="asideCollapsed"
       v-model:cite="cite"
+      v-model:reasoning-effort="reasoningEffort"
       v-model:render-mode="chatMode"
       v-model:selected-model="selectedModel"
       v-model:selected-shortcut="selectedShortcut"
@@ -50,6 +51,7 @@
       @delete-file="handleDeleteFile"
       @delete-shortcut="handleDeleteShortcut"
       @model-change="handleModelChange"
+      @reasoning-effort-change="handleReasoningEffortChange"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleShortcutClose"
       @shortcut-submit="handleShortcutSubmit"
@@ -178,6 +180,7 @@
     type IModelOption,
     type Message,
     type OnInterruptResume,
+    type ReasoningEffort,
     type ToolMessage,
     type UserMessage,
     AgentIcon,
@@ -227,6 +230,12 @@
   const selectedModel = shallowRef<string>(MOCK_MODELS[0].llm_name);
   const handleModelChange = (model: IModelOption) => {
     console.log('model change:', model);
+  };
+  // 模拟会话「跟随默认」：未赋值时按当前模型 default_effort 展示；接入方应以会话详情 effective_reasoning_effort 回填
+  const reasoningEffort = shallowRef<null | ReasoningEffort>();
+  const handleReasoningEffortChange = (model: IModelOption, effort: ReasoningEffort) => {
+    // 接入方在这里调会话更新接口写入 reasoning_effort
+    console.log('reasoning effort change:', model.llm_name, effort);
   };
   // Info 分隔提示 + ToolCall 各状态 + flow_agent + 助手过程状态栏（已完成 / 生成中 / 失败）
   const messages = deepRef<Message[]>([

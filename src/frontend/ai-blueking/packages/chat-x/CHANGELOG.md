@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-02 18:00:00
+
+模型选择器支持配置思考深度，模型 hover 描述改为可交互的描述卡片。
+
+### Added
+
+- `ModelSelector`：模型 `property.reasoning.supported_efforts` 非空时，hover 描述卡片底部展示「思考深度」分段滑块，可点击、拖动或用 ← / → / Home / End 切换档位；档位文案悬停用原生 `title` 展示 `desc`。只有一个档位时显示为整条且不可操作，禁用模型的滑块不可操作。
+- `ModelSelector` / `ChatInput` / `ChatContainer` 新增 `v-model:reasoning-effort`（`null | ReasoningEffort`）与 `reasoningEffortChange(model, effort)` 事件，组件只负责交互，由接入方写入会话。为空时按模型 `default_effort` 展示；切换模型时清空。在非当前模型的卡片上改档位，会先选中该模型再写入档位，下拉保持展开。
+- 触发器与当前模型选项的名称后回显档位文案，档位为 `none` 时不显示。
+- `ChatInput` 的 `#model-selector` 插槽参数新增 `reasoningEffort`。
+- 导出类型 `IModelReasoning`、`IReasoningEffortOption`、`ReasoningEffort`；`IModelProperty` 新增 `reasoning?: IModelReasoning | null`。
+
+### Changed
+
+- 模型描述由深色气泡改为白底描述卡片：标题为模型名，描述最多 3 行，无描述显示 `--`；有描述或支持思考深度时展示。卡片可交互，鼠标移入不会关闭，离开选项和卡片约 100ms 后关闭；拖动滑块时移出卡片不关闭。
+
 ## 2026-10-28 11:42:07
 
 调整助手消息组的折叠边界，并支持统一关闭顶层折叠、过程状态栏和耗时展示。

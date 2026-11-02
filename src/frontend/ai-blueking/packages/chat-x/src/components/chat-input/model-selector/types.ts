@@ -74,6 +74,8 @@ export interface IModelProperty {
   is_self_host?: boolean;
   /** 模型最大上下文长度 */
   max_model_len?: number;
+  /** 思考深度能力；为 null 或未传时表示模型不支持思考深度 */
+  reasoning?: IModelReasoning | null;
   /** 是否支持摘要 */
   support_summary?: boolean;
   /** 是否支持深度思考 */
@@ -88,5 +90,28 @@ export interface IModelProperty {
   support_window?: boolean;
 }
 
+/** 模型的思考深度能力（后端 property.reasoning） */
+export interface IModelReasoning {
+  /** 模型默认档，用户未显式选择时生效 */
+  default_effort?: ReasoningEffort;
+  /** 为 true 时不能关闭思考（supported_efforts 中没有 none） */
+  mandatory?: boolean;
+  /** 支持的档位，按返回顺序由浅到深渲染 */
+  supported_efforts: IReasoningEffortOption[];
+}
+
+/** 单个思考深度档位，展示名与说明由接口下发（随语言切换） */
+export interface IReasoningEffortOption {
+  /** 档位说明 */
+  desc?: string;
+  /** 提交值 */
+  key: ReasoningEffort;
+  /** 展示名 */
+  value: string;
+}
+
 /** 模型能力标签的语义主题，决定标签配色（与设计稿语义色一一对应） */
 export type ModelCapabilityTheme = 'default' | 'primary' | 'success' | 'warning';
+
+/** 思考深度档位词表（7 档，由浅到深：none → minimal → low → medium → high → xhigh → max） */
+export type ReasoningEffort = 'high' | 'low' | 'max' | 'medium' | 'minimal' | 'none' | 'xhigh';
