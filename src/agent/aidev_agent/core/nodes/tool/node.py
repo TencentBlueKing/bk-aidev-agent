@@ -22,6 +22,7 @@ from typing import Callable
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as create_tool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
@@ -41,6 +42,12 @@ from .security_wrapper import (
     build_untrusted_sanitize_sync_wrapper,
 )
 from .timer_wrapper import timer_async_wrapper, timer_sync_wrapper
+from .tool_call_proxy_wrapper import (
+    build_tool_call_unwrap_async_wrapper,
+    build_tool_call_unwrap_sync_wrapper,
+    tool_call_rename_async_wrapper,
+    tool_call_rename_sync_wrapper,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +287,15 @@ def build_tool_node(
     # Keep approval and custom wrappers outside result reuse.
     sync_wrapper_list.append(deduplicate_sync)
     async_wrapper_list.append(deduplicate_async)
+    # tool_call 代理解包：解包置链首（其后所有 wrapper 按目标工具判定），改名置链尾（计时派发前改好名）。
+    if node_options.use_tool_call_proxy:
+        # 预先实例化，保证解包换入的目标工具与 ToolNode 注册的是同一实例
+        tools = [tool if isinstance(tool, BaseTool) else create_tool(tool) for tool in tools]
+        tools_by_name = {tool.name: tool for tool in tools}
+        sync_wrapper_list.insert(0, build_tool_call_unwrap_sync_wrapper(tools_by_name))
+        async_wrapper_list.insert(0, build_tool_call_unwrap_async_wrapper(tools_by_name))
+        sync_wrapper_list.append(tool_call_rename_sync_wrapper)
+        async_wrapper_list.append(tool_call_rename_async_wrapper)
     # 构建wrapper链
     final_sync_wrapper = _chain_tool_call_wrappers(sync_wrapper_list)
     final_async_wrapper = _chain_async_tool_call_wrappers(async_wrapper_list)

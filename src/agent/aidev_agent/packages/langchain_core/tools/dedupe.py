@@ -19,8 +19,25 @@ to the current version of the project delivered to anyone in the future.
 
 工具来自多个来源（平台工具、MCP Server、内置工具、middleware 注入等），
 同名工具会让模型请求被网关拒绝（400 duplicate tool name），也会让 tool_node
-按名路由时互相覆盖。本模块在工具收集完成、装配进图之前统一消除重名，
-不同名的工具永远不受影响。
+按名路由时互相覆盖。本模块在工具收集完成、装配进图之前统一消除重名。
+
+两级分组：
+
+1. 按工具名分组（内置工具名一并计入）：组内只有一个工具时不改名；
+2. 同名组内按来源再分组（优先级从高到低）：
+
+   - 内置工具：default 组，不加前缀、不改名、不拷贝，名字直接在占用表里预留；
+     default 组只能有一个工具；
+   - 带审批：独立成组，前缀 ``mcp-<完整 Server 名>``，无 Server 名时 ``approval001`` ...；
+     审批配置各自生效，不能被合并；
+   - MCP 工具：同一 MCP 服务合并为一组（同服务多端点暴露的是同一份能力），只保留首个，
+     前缀 ``mcp-<service>-prod``；Server 名中 ``-prod-`` 不是恰好出现一次时用完整 Server 名；
+   - 其余：每个工具独立成组，前缀 ``Tool001`` / ``Tool002`` ...
+
+   再分组后只剩一个组（例如全部来自同一 MCP 服务）时冲突已被合并消解，保留原名。
+
+改名结果为 ``<前缀>__<工具名>``。与已占用的名字（内置名、其他工具原名、已分配的新名）冲突时：
+序号前缀（``ToolNNN`` / ``approvalNNN``）取同名组内下一个序号；其余前缀依次追加 ``2``、``3`` ...
 """
 
 from __future__ import annotations
@@ -29,7 +46,9 @@ import hashlib
 import logging
 import re
 from collections import Counter, defaultdict
-from typing import Dict, List
+from dataclasses import dataclass
+from itertools import count
+from typing import Collection, Dict, Iterable, Iterator, List, Sequence
 
 from langchain_core.tools import BaseTool
 
@@ -43,20 +62,26 @@ TOOL_NAME_SEP = "__"
 MAX_TOOL_NAME_LEN = 64
 # 模型侧工具名字符集（OpenAI function name 约定）之外的字符
 INVALID_CHAR_RE = re.compile(r"[^A-Za-z0-9_-]")
-# MCP 分组名前缀，后接 MCP Server 名（审批组用完整 Server 名，其余用服务名）
+# MCP 分组名前缀，后接 MCP Server 名或服务名
 MCP_GROUP_PREFIX = "mcp-"
-# MCP Server 名中服务名与环境后缀的分隔段：``msdk-console-prod-mcp`` -> ``msdk-console``
-MCP_SERVICE_SEP = "-prod-"
+# MCP Server 名中服务名与环境后缀的分隔段：``msdk-console-prod-mcp`` -> ``mcp-msdk-console-prod``
+MCP_PROD_SEP = "-prod-"
+# 序号前缀：无法合并、也没有来源名可用的工具按同名组内出现顺序编号
+DEFAULT_SEQ_PREFIX = "Tool"
+APPROVAL_SEQ_PREFIX = "approval"
 
 
-def resolve_group(tool: BaseTool) -> str | None:
-    """计算同名工具的分组名，``None`` 表示 default 组。
+@dataclass(frozen=True)
+class _Slot:
+    """第二级分组中需要改名的一个外部工具组。"""
 
-    - 带审批：``mcp-<mcp_name>``，审批配置各自生效，不能被别的实例合并覆盖，
-      所以用完整 Server 名（无 mcp_name 时退回工具名）让它独立成组；
-    - MCP 工具：``mcp-<service>``，service 取 Server 名 ``-prod-`` 之前的部分；
-      没有或有多个 ``-prod-`` 段时解析不出服务名，退回完整 Server 名；
-    - 其余：``None``，即 default 组。
+    tool: BaseTool
+    prefix: str
+    numbered: bool
+
+
+def _classify(tool: BaseTool) -> tuple[str, bool, bool]:
+    """外部工具的 (前缀, 是否序号前缀, 是否可合并)，对应模块文档的优先级表。
 
     审批判定与 tool_node 的审批 wrapper 同源（``interrupt_manager.approval``），
     保证"会弹审批的工具"和"独立成组的工具"是同一批。
@@ -64,12 +89,14 @@ def resolve_group(tool: BaseTool) -> str | None:
     metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
     mcp_name = metadata.get("mcp_name") or ""
     if is_approval_configured(tool):
-        return MCP_GROUP_PREFIX + (mcp_name or tool.name)
-    if not mcp_name:
-        return None
-    parts = mcp_name.split(MCP_SERVICE_SEP)
-    service = parts[0] if len(parts) == 2 and parts[0] else mcp_name
-    return MCP_GROUP_PREFIX + service
+        if mcp_name:
+            return MCP_GROUP_PREFIX + mcp_name, False, False
+        return APPROVAL_SEQ_PREFIX, True, False
+    if mcp_name:
+        parts = mcp_name.split(MCP_PROD_SEP)
+        service = f"{parts[0]}-prod" if len(parts) == 2 and parts[0] else mcp_name
+        return MCP_GROUP_PREFIX + service, False, True
+    return DEFAULT_SEQ_PREFIX, True, False
 
 
 def compose_name(prefix: str, tool_name: str) -> str:
@@ -90,76 +117,77 @@ def compose_name(prefix: str, tool_name: str) -> str:
     return f"{tool_segment[: MAX_TOOL_NAME_LEN - len(digest)]}{digest}"
 
 
-def dedupe_same_name(name: str, tools: List[BaseTool]) -> List[BaseTool]:
-    """处理一组同名工具，返回组内顺序的结果（被合并的实例已剔除）。
+def _plan(externals: List[BaseTool]) -> List[_Slot]:
+    """同名组内外部工具的第二级分组，可合并的同组工具只保留首个。
 
-    - default 组的同名工具来自不同来源、各自可执行，不合并，依次改名为
-      ``<tool>`` / ``Tool001__<tool>`` / ``Tool002__<tool>``；
-    - 有分组名的改名为 ``<group>__<tool>``；分组名相同即同一 MCP 服务的多个端点，
-      暴露的是同一份后端能力，只保留第一个实例，被合并的 Server 名记入
-      ``metadata["merged_mcp_servers"]``。
-
-    只对发生变动的工具做 ``model_copy`` 浅拷贝，调用方持有的原对象不被修改；
-    原工具名写入 ``metadata["original_name"]`` 供排查与审批匹配。
+    内置工具（default 组）不需要改名，其名字已在名字占用表里预留，不参与这里的分组。
     """
-    result: List[BaseTool] = []
-    # 分组名 -> 该分组保留者在 result 中的下标
-    anchors: Dict[str, int] = {}
-    default_count = 0
-    for tool in tools:
-        group = resolve_group(tool)
-        if group is None:
-            new_name = name if default_count == 0 else compose_name(f"Tool{default_count:03d}", name)
-            default_count += 1
-        elif group in anchors:
-            anchor = result[anchors[group]]
-            merged_server = (tool.metadata or {}).get("mcp_name")
-            if merged_server:
-                metadata = dict(anchor.metadata or {})
-                metadata["merged_mcp_servers"] = [*metadata.get("merged_mcp_servers", []), merged_server]
-                result[anchors[group]] = anchor.model_copy(update={"metadata": metadata})
-            logger.info(f"[ToolDedupe] 同组工具合并: tool={name}, group={group}, merged_server={merged_server}")
+    slots: List[_Slot] = []
+    merged: set[str] = set()
+    for tool in externals:
+        prefix, numbered, mergeable = _classify(tool)
+        if mergeable and prefix in merged:
+            logger.info("[ToolDedupe] 同服务工具合并: %s <- %s", prefix, (tool.metadata or {}).get("mcp_name"))
             continue
+        if mergeable:
+            merged.add(prefix)
+        slots.append(_Slot(tool, prefix, numbered))
+    return slots
+
+
+class _NameAllocator:
+    """全局唯一的名字占用表。序号前缀在同名组内共用计数，其余前缀冲突时追加 2、3 ..."""
+
+    def __init__(self, taken: Iterable[str]):
+        self._taken = set(taken)
+
+    def allocate(self, slot: _Slot, name: str, seq: Dict[str, Iterator[int]]) -> str:
+        prefix = slot.prefix
+        if slot.numbered:
+            counter = seq.setdefault(prefix, count(1))
+            candidates = (compose_name(f"{prefix}{n:03d}", name) for n in counter)
         else:
-            anchors[group] = len(result)
-            new_name = compose_name(group, name)
-
-        if new_name != name:
-            metadata = dict(tool.metadata) if isinstance(tool.metadata, dict) else {}
-            metadata["original_name"] = name
-            tool = tool.model_copy(update={"name": new_name, "metadata": metadata})
-        result.append(tool)
-    logger.info(f"[ToolDedupe] 工具重名已处理: original={name}, result={[each.name for each in result]}")
-    return result
+            candidates = (compose_name(prefix if n == 1 else f"{prefix}{n}", name) for n in count(1))
+        candidate = next(each for each in candidates if each not in self._taken)
+        self._taken.add(candidate)
+        return candidate
 
 
-def dedupe_tool_names(tools: List[BaseTool]) -> List[BaseTool]:
-    """消除工具重名，保证模型请求中的工具名唯一。
+def dedupe_tool_names(
+    tools: List[BaseTool], *, builtin_tools: Sequence[BaseTool] = (), reserved_names: Collection[str] = ()
+) -> List[BaseTool]:
+    """返回去重后的外部工具；内置工具占 default 组、原样保留，不进入返回列表。
 
-    按工具名分组，只有一个实例的原样保留，同名的交给 :func:`dedupe_same_name` 处理。
-    分组字典按工具名首次出现的顺序插入，顺序遍历即可保持输入顺序。
-
-    返回前再扫一遍结果，若仍存在重名则抛 ``ValueError``——名字唯一是模型请求能被
-    接受的前提，宁可装配阶段报错也不把非法请求发给模型。
-
-    Args:
-        tools: 已按装配顺序排好的工具列表。
-
-    Returns:
-        处理后的工具列表，保持输入顺序（被合并的实例移除，改名的保持原位）。
+    ``reserved_names`` 是尚未构造实例的内置工具名（如延迟加载元工具），与内置工具同等占位。
+    内置实例被原样混入外部列表时（续跑等路径）直接剔除。
     """
-    groups: Dict[str, List[BaseTool]] = defaultdict(list)
+    reserved = set(reserved_names)
+    for tool in builtin_tools:
+        if not tool.name or tool.name in reserved:
+            raise ValueError(f"SDK 内置工具名必须非空且唯一，不能改名: {tool.name}")
+        reserved.add(tool.name)
+    builtin_ids = {id(tool) for tool in builtin_tools}
+    buckets: Dict[str, List[BaseTool]] = defaultdict(list)
     for tool in tools:
         if not tool.name:
-            # name 是 BaseTool 的必填字段，缺失说明装配链路有问题
             raise ValueError(f"工具缺少 name，无法参与重名去重: {tool!r}")
-        groups[tool.name].append(tool)
+        if id(tool) not in builtin_ids:
+            buckets[tool.name].append(tool)
 
+    allocator = _NameAllocator([*reserved, *buckets])
     result: List[BaseTool] = []
-    for name, same_name in groups.items():
-        result.extend(same_name if len(same_name) == 1 else dedupe_same_name(name, same_name))
-
-    duplicated = {name: count for name, count in Counter(each.name for each in result).items() if count > 1}
-    if duplicated:
-        raise ValueError(f"工具去重后仍存在重名工具: {duplicated}")
+    for name, externals in buckets.items():
+        if len(externals) == 1 and name not in reserved:
+            result.extend(externals)
+            continue
+        slots = _plan(externals)
+        if len(slots) == 1 and name not in reserved:
+            result.append(slots[0].tool)
+            continue
+        seq: Dict[str, Iterator[int]] = {}
+        renamed = [slot.tool.model_copy(update={"name": allocator.allocate(slot, name, seq)}) for slot in slots]
+        logger.info("[ToolDedupe] 工具重名已处理: original=%s, result=%s", name, [tool.name for tool in renamed])
+        result.extend(renamed)
+    names = Counter([*reserved, *(tool.name for tool in result)])
+    assert all(n == 1 for n in names.values()), f"工具去重后仍存在重名工具: {names}"
     return result

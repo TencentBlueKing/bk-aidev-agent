@@ -30,6 +30,7 @@ class ToolNodeSettings(BaseModel):
 
     - ``use_tool_redaction``：结果脱敏（所有工具结果按 MODEL_OUTPUT purpose 掩码凭据）。
     - ``use_tool_untrusted_sanitize``：不可信工具结果净化（原型污染清理 + 注入扫描 + 包裹）。
+    - ``use_tool_call_proxy``：延迟加载 ``tool_call`` 代理解包；由装配层按是否启用延迟加载注入。
     """
 
     use_timer: bool = True
@@ -38,3 +39,4 @@ class ToolNodeSettings(BaseModel):
     use_json_repair_on_error: bool = True
     use_tool_redaction: bool = True
     use_tool_untrusted_sanitize: bool = True
+    use_tool_call_proxy: bool = False

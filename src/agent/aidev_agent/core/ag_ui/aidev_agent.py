@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from logging import getLogger
@@ -35,9 +36,11 @@ from aidev_agent.utils.event import stamp_round_end_event
 
 from .agent import LangGraphAGUIAgent
 from .event_builders import (
+    PROXY_TOOL_CALL_NAME,
     build_tool_result_event,
     enhance_tool_call,
     is_tool_approval_required,
+    resolve_tool_call_target,
 )
 from .events import ExtendToolCallStartEvent
 from .types import (
@@ -99,6 +102,9 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         self._tool_mapping = tools or {}
         self._event_handler = event_handler
         self._suppressed_tool_call_ids: set[str] = set()
+        # tool_call 代理：流式三元组缓冲到 END 才能按真实目标判定；补发路径记录目标名
+        self._pending_proxy_calls: dict[str, list[BaseEvent]] = {}
+        self._proxy_targets: dict[str, str] = {}
         self._mcp_fetch_failures = mcp_fetch_failures or []
         self._approve_result = approve_result
         self._approval_interrupts = approval_interrupts or []
@@ -426,35 +432,95 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         方向 a（DB 权威化）保持此抑制不动，数量真相源统一由 checkpoint 派生快照/重放按 DB 等价谓词
         过滤（D-05，见 event_builders.should_suppress_approval_tool_call）。
         """
+        is_ontoolend_source = bool(event and event.get("event") == LangGraphEventTypes.OnToolEnd)
         async for ev in super()._handle_single_event(event, state):
-            if isinstance(ev, ToolCallStartEvent):
-                # 审批工具抑制按**原始事件来源**门控（quick-omz UAT 回归）：
-                # - 模型阶段来源（on_chat_model_stream/end，pre-approval 隐藏语义）仍抑制——
-                #   审批确认前不向前端暴露工具调用样式；
-                # - OnToolEnd 补发来源（工具已执行、approval 已解决、ToolMessage 已存在）放行——
-                #   审批 pending tool_call 已被快照谓词 should_suppress_approval_tool_call 过滤
-                #   （快照渲染 0 次），补发三元组与 RESULT 完整下发恰好渲染一次，避免孤儿 RESULT。
-                is_ontoolend_source = bool(event and event.get("event") == LangGraphEventTypes.OnToolEnd)
-                if is_tool_approval_required(ev.tool_call_name, self._tool_mapping) and not is_ontoolend_source:
-                    logger.info(f"[AidevAGUIAgent] 抑制需要审批的工具流式事件: {ev.tool_call_name} ({ev.tool_call_id})")
-                    self._suppressed_tool_call_ids.add(ev.tool_call_id)
-                    continue  # suppress
-                # ask_user 无条件抑制（首跑+续流）：其 tool_call 不在快照谓词过滤范围内，
-                # 首跑 MESSAGES_SNAPSHOT 已渲染——补发/流式三元组均冗余（放行会双样式）。
-                if ev.tool_call_name == ASK_USER_QUESTION_TOOL_NAME:
-                    logger.info(f"[AidevAGUIAgent] 抑制 ask_user_question 工具的 TOOL_CALL_START: {ev.tool_call_id}")
-                    self._suppressed_tool_call_ids.add(ev.tool_call_id)
-                    continue  # suppress
-                enhanced = enhance_tool_call(ev.tool_call_name, self._tool_mapping)
-                ev = ExtendToolCallStartEvent(**{**ev.model_dump(), **enhanced})
-            elif isinstance(ev, ToolCallArgsEvent):
-                if ev.tool_call_id in self._suppressed_tool_call_ids:
-                    continue  # suppress
-            elif isinstance(ev, ToolCallEndEvent):
-                if ev.tool_call_id in self._suppressed_tool_call_ids:
-                    self._suppressed_tool_call_ids.discard(ev.tool_call_id)
-                    continue  # suppress
+            if isinstance(ev, (ToolCallStartEvent, ToolCallArgsEvent, ToolCallEndEvent)):
+                for out in self._route_tool_call_event(ev, is_ontoolend_source):
+                    yield out
+                continue
             yield ev
+
+    def _route_tool_call_event(self, ev: BaseEvent, is_ontoolend_source: bool) -> Generator[BaseEvent, None, None]:
+        """``tool_call`` 代理的三元组按真实目标判定：流式路径缓冲到 END 拿全参数，OnToolEnd 补发按模型原调用还原。"""
+        if is_ontoolend_source:
+            ev = self._restore_proxy_tool_call_event(ev)
+            decision_name = self._proxy_targets.get(ev.tool_call_id)
+            yield from self._filter_tool_call_event(ev, is_ontoolend_source, decision_name)
+            return
+        pending = self._pending_proxy_calls
+        if isinstance(ev, ToolCallStartEvent) and ev.tool_call_name == PROXY_TOOL_CALL_NAME:
+            pending[ev.tool_call_id] = [ev]
+            return
+        if ev.tool_call_id not in pending:
+            yield from self._filter_tool_call_event(ev, is_ontoolend_source)
+            return
+        pending[ev.tool_call_id].append(ev)
+        if not isinstance(ev, ToolCallEndEvent):
+            return
+        buffered = pending.pop(ev.tool_call_id)
+        raw_args = "".join(each.delta for each in buffered if isinstance(each, ToolCallArgsEvent))
+        try:
+            args = json.loads(raw_args) if raw_args else {}
+        except json.JSONDecodeError:
+            args = {}
+        decision_name, _ = resolve_tool_call_target(PROXY_TOOL_CALL_NAME, args, self._tool_mapping)
+        for each in buffered:
+            yield from self._filter_tool_call_event(each, is_ontoolend_source, decision_name)
+
+    def _restore_proxy_tool_call_event(self, ev: BaseEvent) -> BaseEvent:
+        """OnToolEnd 补发事件来自被解包后的目标工具：名字与参数还原为模型侧的 tool_call 原调用。"""
+        tool_call = self._find_model_tool_call(ev.tool_call_id)
+        if not tool_call or tool_call.get("name") != PROXY_TOOL_CALL_NAME:
+            return ev
+        self._proxy_targets[ev.tool_call_id], _ = resolve_tool_call_target(
+            PROXY_TOOL_CALL_NAME, tool_call.get("args"), self._tool_mapping
+        )
+        if isinstance(ev, ToolCallStartEvent):
+            return ev.model_copy(update={"tool_call_name": PROXY_TOOL_CALL_NAME})
+        if isinstance(ev, ToolCallArgsEvent):
+            return ev.model_copy(update={"delta": json.dumps(tool_call.get("args") or {}, ensure_ascii=False)})
+        return ev
+
+    def _find_model_tool_call(self, tool_call_id: str) -> dict | None:
+        graph_state = (self.active_run or {}).get("current_graph_state") or {}
+        for msg in graph_state.get("messages") or []:
+            for tc in getattr(msg, "tool_calls", None) or []:
+                if tc.get("id") == tool_call_id:
+                    return tc
+        return None
+
+    def _filter_tool_call_event(
+        self, ev: BaseEvent, is_ontoolend_source: bool, decision_name: str | None = None
+    ) -> Generator[BaseEvent, None, None]:
+        """审批 / ask_user 抑制与工具增强；``decision_name`` 为代理调用的真实目标名（判定与增强都按它）。"""
+        if isinstance(ev, ToolCallStartEvent):
+            name = decision_name or ev.tool_call_name
+            # 审批工具抑制按**原始事件来源**门控（quick-omz UAT 回归）：
+            # - 模型阶段来源（on_chat_model_stream/end，pre-approval 隐藏语义）仍抑制——
+            #   审批确认前不向前端暴露工具调用样式；
+            # - OnToolEnd 补发来源（工具已执行、approval 已解决、ToolMessage 已存在）放行——
+            #   审批 pending tool_call 已被快照谓词 should_suppress_approval_tool_call 过滤
+            #   （快照渲染 0 次），补发三元组与 RESULT 完整下发恰好渲染一次，避免孤儿 RESULT。
+            if is_tool_approval_required(name, self._tool_mapping) and not is_ontoolend_source:
+                logger.info(f"[AidevAGUIAgent] 抑制需要审批的工具流式事件: {name} ({ev.tool_call_id})")
+                self._suppressed_tool_call_ids.add(ev.tool_call_id)
+                return
+            # ask_user 无条件抑制（首跑+续流）：其 tool_call 不在快照谓词过滤范围内，
+            # 首跑 MESSAGES_SNAPSHOT 已渲染——补发/流式三元组均冗余（放行会双样式）。
+            if name == ASK_USER_QUESTION_TOOL_NAME:
+                logger.info(f"[AidevAGUIAgent] 抑制 ask_user_question 工具的 TOOL_CALL_START: {ev.tool_call_id}")
+                self._suppressed_tool_call_ids.add(ev.tool_call_id)
+                return
+            enhanced = enhance_tool_call(name, self._tool_mapping)
+            ev = ExtendToolCallStartEvent(**{**ev.model_dump(), **enhanced})
+        elif isinstance(ev, ToolCallArgsEvent):
+            if ev.tool_call_id in self._suppressed_tool_call_ids:
+                return
+        elif isinstance(ev, ToolCallEndEvent):
+            if ev.tool_call_id in self._suppressed_tool_call_ids:
+                self._suppressed_tool_call_ids.discard(ev.tool_call_id)
+                return
+        yield ev
 
     async def _handle_on_custom_event(self, event: Any) -> AsyncGenerator[BaseEvent, None]:
         """覆写：处理 OnToolNodeFinish/OnToolNodeImmediate/KnowledgeRag CUSTOM 转换。

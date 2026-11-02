@@ -110,6 +110,24 @@ class _FailOnceCancelledWriter(_ConcreteWriter):
         return super()._do_create_content(payload, headers)
 
 
+@pytest.mark.parametrize("spawned_by, expected", [(None, 0), ("parent", 3)])
+def test_spawn_limit_is_final_before_graph_assembly(monkeypatch, spawned_by, expected):
+    agent = ChatCompletionAgent(max_spawn_depth=0)
+    execute_kwargs = ExecuteKwargs(spawned_by=spawned_by, max_spawn_depth=3)
+    sentinel = RuntimeError("stop after checking assembly parameters")
+
+    def capture_build(self, messages, *, execute_kwargs):
+        assert execute_kwargs.max_spawn_depth == expected
+        assert execute_kwargs.tool_allow == execute_kwargs.tool_deny == []
+        raise sentinel
+
+    monkeypatch.setattr(ChatCompletionAgent, "_update_aidev_agent_header", lambda *args: None)
+    monkeypatch.setattr(ChatCompletionAgent, "_get_agent", capture_build)
+    with pytest.raises(RuntimeError) as caught:
+        agent._execute([HumanMessage(content="hi")], execute_kwargs)
+    assert caught.value is sentinel
+
+
 def test_cancelled_message_write_retries_after_transient_failure():
     writer = _FailOnceCancelledWriter()
 

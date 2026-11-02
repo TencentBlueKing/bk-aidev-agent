@@ -3,24 +3,32 @@
 测试 ReActAgentBuilder 的完整行为：用户配置、build 预处理、返回值、E2E
 """
 
+import ast
+import inspect
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, TypedDict, get_type_hints
 from unittest.mock import MagicMock, patch
 
+import aidev_agent.core.graphs.react.graph as graph_module
 import pytest
 from aidev_agent.config import settings
 from aidev_agent.core.graphs.react.graph import DefaultState, ReActAgentBuilder
 from aidev_agent.core.graphs.react.skill_middleware import SkillsPromptMiddleware, _extract_paas_params
 from aidev_agent.core.graphs.react.team_middleware import TeamPromptMiddleware
+from aidev_agent.core.graphs.react.tool_lazy_loading_middleware import ToolDirectoryMiddleware
 from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings
 from aidev_agent.core.nodes.tool import ToolNodeSettings
 from aidev_agent.core.tools.a2a_tools.types import AgentSpec
+from aidev_agent.core.tools.ask_user_question import ask_user_question
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
+from aidev_agent.core.tools.tool_lazy_loading.meta_tools import CALL_TOOL_NAME, DESCRIBE_TOOL_NAME
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.pydantic_models import (
     AgentExecutorKwargs,
+    ExecuteKwargs,
     KnowledgeSettings,
     ModelContextSettings,
     SandboxPolicy,
@@ -28,7 +36,8 @@ from aidev_agent.pydantic_models import (
 )
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -468,7 +477,7 @@ class TestReActAgentBuilder:
         with (
             patch(
                 "aidev_agent.core.graphs.react.graph.ReActAgentBuilder._prepare_agent_tools",
-                return_value=[],
+                return_value=([], [], None),
             ) as mock_prepare_tools,
             patch("aidev_agent.core.graphs.react.graph.std_make_model_node", return_value=MagicMock()),
             patch(
@@ -486,7 +495,7 @@ class TestReActAgentBuilder:
         """middleware 中的 tools 属性应被收集到工具列表"""
         builder = ReActAgentBuilder()
         mw = CustomMiddlewareWithTools(tools=[calculator])
-        tools = builder._prepare_agent_tools(
+        tools, _builtin, _catalog = builder._prepare_agent_tools(
             extra_tools=[],
             langchain_middleware=[mw],
         )
@@ -527,14 +536,14 @@ class TestReActAgentBuilder:
         ) as mock_make:
             # enable_agentic_rag_tool=True → 知识工具被添加
             builder._enable_agentic_rag_tool = True
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, _builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
             assert sentinel in tools
             mock_make.assert_called_once()
 
             # enable_agentic_rag_tool=False → 知识工具不被添加
             mock_make.reset_mock()
             builder._enable_agentic_rag_tool = False
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, _builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
             assert sentinel not in tools
             mock_make.assert_not_called()
 
@@ -923,7 +932,7 @@ class TestReActAgentBuilder:
     def test_prepare_agent_tool_node_returns_none_for_empty_tools(self):
         """tools 为空时 _prepare_agent_tool_node 应返回 None"""
         builder = ReActAgentBuilder()
-        result = builder._prepare_agent_tool_node(tools=[], langchain_middleware=[])
+        result = builder._prepare_agent_tool_node(tools=[], langchain_middleware=[], node_options=ToolNodeSettings())
         assert result is None
 
     @patch("aidev_agent.core.graphs.react.graph.build_tool_node")
@@ -961,7 +970,7 @@ class TestReActAgentBuilder:
             enable_tool_untrusted_sanitize=False,
             enable_tool_result_limit=False,
         )
-        builder._prepare_agent_tool_node(tools=[calculator], langchain_middleware=[])
+        builder._prepare_agent_tool_node(tools=[calculator], langchain_middleware=[], node_options=ToolNodeSettings())
         kw = mock_build_tool_node.call_args.kwargs
         assert kw["node_options"].use_tool_redaction is False
         assert kw["node_options"].use_tool_untrusted_sanitize is False
@@ -1307,7 +1316,7 @@ class TestReActAgentBuilder:
         with patch(
             "aidev_agent.core.graphs.react.graph.get_task_tools", return_value=[_tool_mock("TaskCreate")]
         ) as mock:
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, _builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
         assert mock.called
         assert len(tools) >= 1
 
@@ -1317,9 +1326,9 @@ class TestReActAgentBuilder:
         builder._enable_task = False
         builder._enable_ask_user_question_tool = False
         with patch("aidev_agent.core.graphs.react.graph.get_task_tools") as mock:
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, builtin, catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
         mock.assert_not_called()
-        assert tools == []
+        assert tools == [] and builtin == [] and catalog is None
 
     def test_prepare_agent_tools_injects_a2a_tools_when_specs_and_resolver(self):
         """配置了 a2a_specs 和 a2a_resolver 时应注入 A2A 工具"""
@@ -1332,7 +1341,7 @@ class TestReActAgentBuilder:
             "aidev_agent.core.graphs.react.graph.get_agent_tools",
             return_value=[sentinel_tool],
         ) as mock:
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, _builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
         mock.assert_called_once_with(builder._a2a_specs, builder._a2a_resolver)
         assert sentinel_tool in tools
 
@@ -1343,9 +1352,9 @@ class TestReActAgentBuilder:
         builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
         # a2a_resolver 默认为 None
         with patch("aidev_agent.core.graphs.react.graph.get_agent_tools") as mock:
-            tools = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
+            tools, builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
         mock.assert_not_called()
-        assert tools == []
+        assert tools == [] and builtin == []
 
     def test_prepare_agent_tools_sets_handle_error_when_ignore_errors(self):
         """ignore_errors=True 时应为所有工具设置 handle_validation_error/handle_tool_error"""
@@ -1356,7 +1365,9 @@ class TestReActAgentBuilder:
         # 会就地改写列表内所有工具的 handle_* 标志；不关闭会把污染泄漏给后续测试
         builder._enable_ask_user_question_tool = False
         # 直接通过 extra_tools 传入，绕过其他注入路径
-        tools = builder._prepare_agent_tools(extra_tools=[t1, t2], ignore_errors=True, langchain_middleware=[])
+        tools, _builtin, _catalog = builder._prepare_agent_tools(
+            extra_tools=[t1, t2], ignore_errors=True, langchain_middleware=[]
+        )
         for t in tools:
             assert t.handle_validation_error is True
             assert t.handle_tool_error is True
@@ -1367,7 +1378,9 @@ class TestReActAgentBuilder:
         t1.handle_validation_error = "original"
         t1.handle_tool_error = "original"
         builder = ReActAgentBuilder()
-        tools = builder._prepare_agent_tools(extra_tools=[t1], ignore_errors=False, langchain_middleware=[])
+        tools, _builtin, _catalog = builder._prepare_agent_tools(
+            extra_tools=[t1], ignore_errors=False, langchain_middleware=[]
+        )
         assert tools[0].handle_validation_error == "original"
         assert tools[0].handle_tool_error == "original"
 
@@ -1938,12 +1951,12 @@ class TestVisionLlm:
 
     def test_read_image_registered_when_vision_llm_set(self):
         """_vision_llm 非 None 且启用 runtime 时应注册 read_image。"""
-        tools = self._build_with_vision(MagicMock())._prepare_agent_tools(langchain_middleware=())
+        tools, _builtin, _catalog = self._build_with_vision(MagicMock())._prepare_agent_tools(langchain_middleware=())
         assert any(t.name == "read_image" for t in tools)
 
     def test_read_image_absent_when_vision_llm_none(self):
         """_vision_llm 为 None 时不应注册 read_image。"""
-        tools = self._build_with_vision(None)._prepare_agent_tools(langchain_middleware=())
+        tools, _builtin, _catalog = self._build_with_vision(None)._prepare_agent_tools(langchain_middleware=())
         assert not any(t.name == "read_image" for t in tools)
 
     def test_read_image_absent_when_runtime_disabled(self):
@@ -1954,7 +1967,7 @@ class TestVisionLlm:
             .set_enable_runtime_tool(False)
             .set_vision_llm(MagicMock())
         )
-        tools = builder._prepare_agent_tools(langchain_middleware=())
+        tools, _builtin, _catalog = builder._prepare_agent_tools(langchain_middleware=())
         assert not any(t.name == "read_image" for t in tools)
 
     def test_read_image_built_with_resolver_and_vision_llm(self):
@@ -1971,6 +1984,832 @@ class TestVisionLlm:
             .set_vision_llm(vision_llm)
         )
         with patch("aidev_agent.core.graphs.react.graph.make_read_image_tool", return_value=sentinel) as build_mock:
-            tools = builder._prepare_agent_tools(langchain_middleware=())
+            tools, _builtin, _catalog = builder._prepare_agent_tools(langchain_middleware=())
         build_mock.assert_called_once_with(resolver, vision_llm)
         assert sentinel in tools
+
+
+# ============================================================================
+# 工具延迟加载：装配接线与线程级闭环（REQ-3 / REQ-5 / REQ-10 / REQ-12）
+# ============================================================================
+
+
+class _NamedTool(BaseTool):
+    """带固定名字的测试工具（业务侧 / MCP 侧工具在延迟模式下均属「其余工具」）。"""
+
+    name: str
+    description: str = "业务工具"
+
+    def _run(self, **kwargs):  # noqa: ANN003
+        return "ok"
+
+
+def _named_tools(count: int, *, prefix: str) -> list[_NamedTool]:
+    return [_NamedTool(name=f"{prefix}_{index}", description=f"{prefix} 描述 {index}") for index in range(count)]
+
+
+class _RecordingLlm:
+    """记录 bind_tools 收到的工具名与每次调用的消息（用于断言注入形态）。"""
+
+    model_name = "gpt-4o"
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.tool_batches: list[list[str]] = []
+        self.message_batches: list[list] = []
+
+    def bind_tools(self, tools, **kwargs):  # noqa: ANN003
+        self.tool_batches.append([t.name for t in tools])
+
+        def _invoke(messages, config=None, **kwargs):  # noqa: ANN001, ANN003
+            self.message_batches.append(messages)
+            return self.responses.pop(0) if self.responses else AIMessage(content="done")
+
+        return RunnableLambda(_invoke)
+
+    def invoke(self, messages, config=None, **kwargs):  # noqa: ANN001, ANN003
+        self.message_batches.append(messages)
+        return self.responses.pop(0) if self.responses else AIMessage(content="done")
+
+
+@contextmanager
+def _capture_lazy_catalog():
+    """装配期捕获 catalog：包装 ``_prepare_agent_tools`` 返回三元组中的目录。
+
+    ``ReActAgentBuilder`` 不再持有 catalog 字段，它只作为 ``build()`` 内的局部变量存在，
+    因此用调用期补丁观测，不向生产对象写任何测试属性。
+    """
+    original_prepare = ReActAgentBuilder._prepare_agent_tools
+    captured: dict = {"catalog": None}
+
+    def capture(*args, **kwargs):
+        result = original_prepare(*args, **kwargs)
+        captured["catalog"] = result[2]
+        return result
+
+    with patch.object(ReActAgentBuilder, "_prepare_agent_tools", autospec=True, side_effect=capture):
+        yield captured
+
+
+# SDK 固定的两个元工具名（模型提示词、审批、日志都依赖它），直接取真源而非手写
+META_NAME_PAIR = (DESCRIBE_TOOL_NAME, CALL_TOOL_NAME)
+
+
+def _directory_names(node_options) -> tuple[str, str]:
+    """模型节点实际装配出的目录中间件字段（装配期由 build() 决定，不另行推断）。"""
+    directory = next(m for m in node_options.extra_template_middlewares if isinstance(m, ToolDirectoryMiddleware))
+    return directory.describe_tool_name, directory.call_tool_name
+
+
+@contextmanager
+def _capture_assembly():
+    """装配期捕获插件相关实参：模型节点的 node_options / tools 与 ToolNode。
+
+    - node_options：模型节点实际收到的 ModelNodeSettings（经 std_make_model_node 包装捕获），
+      用于断言两条插件中间件是否被注册；
+    - tools：交给模型节点的绑定工具列表（延迟加载时即内置 + 元工具）；
+    - tool_node：_prepare_agent_tool_node 的返回值，用于断言 ToolNode 注册边界。
+    三条都来自真实 build() 调用链，不把模型节点 mock 掉。
+    """
+    original_prepare = ReActAgentBuilder._prepare_agent_model_node
+    original_tool_node = ReActAgentBuilder._prepare_agent_tool_node
+    original_make_model_node = graph_module.std_make_model_node
+    captured: dict = {}
+
+    def capture(*args, **kwargs):
+        captured["tools"] = list(kwargs.get("tools") or [])
+        return original_prepare(*args, **kwargs)
+
+    def capture_model_node(*, node_options, **kwargs):
+        captured["node_options"] = node_options
+        return original_make_model_node(node_options=node_options, **kwargs)
+
+    def capture_tool_node(*args, **kwargs):
+        captured["tool_node_options"] = kwargs["node_options"]
+        node = original_tool_node(*args, **kwargs)
+        captured["tool_node"] = node
+        return node
+
+    with (
+        patch.object(ReActAgentBuilder, "_prepare_agent_model_node", new=capture),
+        patch.object(ReActAgentBuilder, "_prepare_agent_tool_node", new=capture_tool_node),
+        patch.object(graph_module, "std_make_model_node", new=capture_model_node),
+    ):
+        yield captured
+
+
+@contextmanager
+def _capture_meta_tools():
+    """包装 graph 模块引用的 ``make_meta_tools``：保持真实工厂语义，同时捕获返回的二元组。
+
+    catalog 不再持有元工具，测试只能从真实装配链取实例（不能按名新建假实例）。
+    """
+    original_factory = graph_module.make_meta_tools
+    captured: dict = {}
+
+    def factory(*args, **kwargs):
+        pair = original_factory(*args, **kwargs)
+        captured["pair"] = pair
+        return pair
+
+    with patch.object(graph_module, "make_meta_tools", side_effect=factory):
+        yield captured
+
+
+def _lazy_middleware_types(node_options):
+    """模型节点上挂的插件中间件类型集合（模板管道 + tool 管道）。"""
+    middlewares = [*(node_options.extra_template_middlewares or []), *(node_options.extra_tool_middlewares or [])]
+    return {type(middleware) for middleware in middlewares}
+
+
+def _builder_for_lazy(extra_tools):
+    """构造与生产等价的最小 builder：不启用内置 ask_user_question，工具数即业务工具数。"""
+    builder = _builder_with_security().set_llm(_RecordingLlm([])).set_tools(extra_tools)
+    builder._enable_ask_user_question_tool = False
+    return builder
+
+
+def _prepared_tools(builder):
+    """装配期定型的工具三元组（与 build() 同参数）：外部 + 内置混排后的全量、内置集合、目录。"""
+    return builder._prepare_agent_tools(extra_tools=builder._extra_tools, langchain_middleware=())
+
+
+def _build_recording_graph(tools, responses, **request_filters):
+    llm = _RecordingLlm(responses)
+    builder = _builder_with_security().set_llm(llm).set_tools(tools)
+    if request_filters:
+        builder = builder.set_bkai_options(
+            AgentExecutorKwargs(
+                security_settings=_DEFAULT_SECURITY,
+                execute_kwargs=ExecuteKwargs(**request_filters),
+            )
+        )
+    graph, cfg = builder.build()
+    return builder, graph, cfg, llm
+
+
+def _tool_response(name, arguments, call_id):
+    return AIMessage(content="", tool_calls=[{"name": name, "args": arguments, "id": call_id, "type": "tool_call"}])
+
+
+def _invoke_graph(graph, cfg, thread_id: str, text: str = "你好"):
+    config = {**cfg, "configurable": {**cfg.get("configurable", {}), "thread_id": thread_id}}
+    return graph.invoke({"messages": [HumanMessage(content=text)]}, config=config)
+
+
+@pytest.fixture
+def lazy_loading_enabled():
+    """延迟加载默认关闭：装配类用例显式开启，结束时清理 settings 覆盖。"""
+    settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", True)
+    yield
+    settings.reset()
+
+
+@pytest.mark.usefixtures("lazy_loading_enabled")
+class TestToolLazyLoadingWiring:
+    """装配接线：四种组合下的 ctx.tools 与 system prompt 形态。"""
+
+    def test_builtin_tools_collected_by_identity(self):
+        """内置实例在独立列表保持，外部和中间件工具不混入。"""
+        builder = _builder_with_security().enable_task(True).set_enable_runtime_tool(True)
+        builder._runtime_backend_resolver = MagicMock()
+        builder._a2a_specs = [AgentSpec(name="helper", description="d", backend_type="bkai")]
+        builder._a2a_resolver = MagicMock()
+        business, middleware_tool = _named_tools(2, prefix="biz"), _NamedTool(name="mw_tool")
+        knowledge_tool, runtime_tool = _NamedTool(name="knowledge_retrieval"), _NamedTool(name="read_file")
+        agent_tool, task_tools = _NamedTool(name="Agent"), _named_tools(4, prefix="Task")
+        expected = [ask_user_question, runtime_tool, *task_tools, agent_tool, knowledge_tool]
+        with (
+            patch.object(graph_module, "make_knowledge_retrieval_tool", return_value=knowledge_tool),
+            patch.object(graph_module, "get_client_tools_with_runtime", return_value=[runtime_tool]),
+            patch.object(graph_module, "get_agent_tools", return_value=[agent_tool]),
+            patch.object(graph_module, "get_task_tools", return_value=task_tools),
+        ):
+            tools, builtin, catalog = builder._prepare_agent_tools(
+                extra_tools=business, langchain_middleware=[CustomMiddlewareWithTools(tools=[middleware_tool])]
+            )
+        assert [tool.name for tool in builtin] == [tool.name for tool in expected]
+        assert len(builtin) == len(expected) and all(actual is original for actual, original in zip(builtin, expected))
+        assert tools == [*business, middleware_tool, *builtin]
+        assert all(not any(tool is external for external in [*business, middleware_tool]) for tool in builtin)
+        assert catalog is None
+
+    def test_over_threshold_binds_builtin_and_meta(self):
+        """AC-2 / AC-3：超阈值时绑定内置工具 + 元工具，目录段出现在 system prompt。"""
+        with _capture_lazy_catalog() as captured, _capture_assembly() as assembly:
+            business = _named_tools(30, prefix="biz")
+            _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+        catalog = captured["catalog"]
+        assert catalog is not None
+
+        _invoke_graph(graph, cfg, "wiring-over")
+
+        bound = llm.tool_batches[0]
+        # 30 个业务工具 + 内置 ask_user_question = 31 > 30，进入延迟模式
+        assert bound == ["ask_user_question", "tool_describe", "tool_call"]
+        assert _directory_names(assembly["node_options"]) == ("tool_describe", "tool_call")
+        assert assembly["tool_node_options"].use_tool_call_proxy is True
+        assert catalog.executable("ask_user_question") is None
+        assert [t.name for t in catalog.deferred()] == [f"biz_{index}" for index in range(30)]
+
+        system_prompt = llm.message_batches[0][0].content
+        assert "# 可延迟加载的工具" in system_prompt
+        assert "- biz_0: biz 描述 0" in system_prompt
+
+    def test_catalog_snapshot_excludes_meta_even_after_node_attached(self):
+        """装配完成后：catalog 快照不含元工具实例，元工具名不可描述、不可代理，ToolNode 挂在元工具上。"""
+        with _capture_lazy_catalog() as captured, _capture_meta_tools() as metas, _capture_assembly() as assembly:
+            _, graph, cfg, llm = _build_recording_graph(_named_tools(30, prefix="biz"), [AIMessage(content="done")])
+        catalog = captured["catalog"]
+        describe_tool, call_tool = metas["pair"]
+        meta_ids = {id(describe_tool), id(call_tool)}
+        assert meta_ids.isdisjoint({id(tool) for tool in catalog.deferred()})
+        assert meta_ids.isdisjoint({id(tool) for tool in catalog.deferred()})
+        assert assembly["tools"][-2:] == [describe_tool, call_tool]
+        assert [item["name"] for item in catalog.describe([describe_tool.name, call_tool.name])] == [
+            describe_tool.name,
+            call_tool.name,
+        ]
+        assert all("error" in item for item in catalog.describe([describe_tool.name, call_tool.name]))
+        assert [catalog.executable(describe_tool.name), catalog.executable(call_tool.name)] == [None, None]
+        # 元工具与 catalog 都不持有 ToolNode：tool_call 由 ToolNode 在包装链之前解包执行
+        assert not hasattr(catalog, "tool_node")
+        assert not hasattr(call_tool, "tool_node")
+        _invoke_graph(graph, cfg, "snapshot-excludes-meta")
+
+    def test_business_copies_are_remapped_before_catalog_snapshot(self):
+        """业务工具与元工具同名：元工具仍是固定名，业务副本按去重规则让名到 Tool001__<原名>。"""
+        occupied = ["tool_describe", "tool_call"]
+        business = [*_named_tools(30, prefix="biz"), *[_NamedTool(name=name) for name in occupied]]
+        with _capture_assembly() as captured, _capture_lazy_catalog() as lazy, _capture_meta_tools() as metas:
+            _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+        describe, call = metas["pair"]
+        snapshot_names = {tool.name for tool in lazy["catalog"].deferred()}
+        assert [describe.name, call.name] == list(META_NAME_PAIR)
+        assert snapshot_names.isdisjoint(META_NAME_PAIR)
+        # 元工具名是保留名：业务副本不能占用原名
+        assert {"Tool001__tool_describe", "Tool001__tool_call"} <= snapshot_names
+        assert _directory_names(captured["node_options"]) == META_NAME_PAIR
+        _invoke_graph(graph, cfg, "remapped-meta-names")
+        bound = llm.tool_batches[0]
+        # 重映射后的业务副本仍在快照里、仍是可代理执行的延迟工具；元工具固定名在绑定里各出现一次
+        assert bound.count("tool_describe") == 1 and bound.count("tool_call") == 1
+        assert bound == ["ask_user_question", "tool_describe", "tool_call"]
+        header = llm.message_batches[0][0].content.split("# 可延迟加载的工具")[1].split("\n")[1]
+        assert " tool_describe(names=" in header and " tool_call(name=" in header
+
+    def test_meta_tools_join_collected_builtin_not_catalog(self):
+        """只有 SDK 元工具进入内置集合，业务冲突副本仍是延迟工具，且元工具不进目录快照。"""
+        business = _named_tools(30, prefix="biz") + [_NamedTool(name="tool_call", description="业务 tool_call")]
+        with _capture_lazy_catalog() as captured, _capture_meta_tools() as metas, _capture_assembly() as assembly:
+            _build_recording_graph(business, [AIMessage(content="done")])
+        catalog = captured["catalog"]
+        assert catalog is not None
+        describe_tool, call_tool = metas["pair"]
+        assert {describe_tool.name, call_tool.name} == set(META_NAME_PAIR)
+        # 内置集合只由真实 SDK 实例组成：ask_user_question + 两个元工具，业务副本按对象身份排除在外
+        builtin = assembly["tools"]
+        assert [tool.name for tool in builtin] == ["ask_user_question", *META_NAME_PAIR]
+        assert builtin[-2:] == [describe_tool, call_tool] and builtin[0] is graph_module._ask_user_question_tool
+        assert id(business[-1]) not in {id(tool) for tool in builtin}
+        assert "Tool001__tool_call" in {tool.name for tool in catalog.deferred()}
+        assert "tool_call" not in {tool.name for tool in catalog.deferred()}
+        assert {id(describe_tool), id(call_tool)}.isdisjoint({id(tool) for tool in catalog.deferred()})
+
+    def test_under_threshold_keeps_full_injection(self):
+        """AC-1：阈值以下全量注入、无元工具、无目录段。"""
+        business = _named_tools(29, prefix="biz")
+        with _capture_assembly() as assembly:
+            builder, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+        # 未进入延迟模式即不挂代理解包
+        assert assembly["tool_node_options"].use_tool_call_proxy is False
+
+        _invoke_graph(graph, cfg, "wiring-under")
+
+        bound = llm.tool_batches[0]
+        assert len(bound) == 30  # 29 业务工具 + 内置 ask_user_question = 阈值 30
+        assert all(f"biz_{index}" in bound for index in range(29))
+        assert not ({"tool_describe", "tool_call", "Tool001__tool_call"} & set(bound))
+        assert "# 可延迟加载的工具" not in llm.message_batches[0][0].content
+
+    def test_disabled_switch_keeps_full_injection(self):
+        """关闭开关时不注入元工具；通过 settings API 覆盖以免污染后续用例。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+        try:
+            business = _named_tools(100, prefix="biz")
+            with _capture_lazy_catalog() as captured:
+                _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+            assert captured["catalog"] is None
+            _invoke_graph(graph, cfg, "wiring-disabled")
+            bound = llm.tool_batches[0]
+            assert len(bound) == len(business) + 1
+            assert not ({"tool_describe", "tool_call", "Tool001__tool_call"} & set(bound))
+        finally:
+            settings.reset()
+
+    def test_structured_chat_bypasses_lazy_loading(self):
+        """AC-14：structured_chat 链路不注册中间件、不加元工具、不注入目录。"""
+        llm = MagicMock(model_name="deepseek-r1")
+        business = _named_tools(31, prefix="biz")
+        builder = ReActAgentBuilder().set_bkai_options(
+            AgentExecutorKwargs(
+                security_settings=_DEFAULT_SECURITY,
+                model_context_options=ModelContextSettings(llm_code_agent_type="deepseek_r1"),
+            )
+        )
+        builder.set_llm(llm).set_tools(business)
+        captured: dict = {}
+
+        def _capture_model_node(*, llm, non_thinking_llm, judge_llm, tools, node_options_kwargs=None):
+            captured["tools"] = tools
+            captured["node_options_kwargs"] = node_options_kwargs
+            return MagicMock()
+
+        with (
+            patch("aidev_agent.core.graphs.react.graph._ask_user_question_tool", ask_user_question.model_copy()),
+            patch.object(ReActAgentBuilder, "_prepare_agent_model_node", side_effect=_capture_model_node),
+            patch("aidev_agent.core.graphs.react.graph.ReActAgentBuilder._build_graph", return_value=(MagicMock(), {})),
+        ):
+            builder.build()
+        assert captured["node_options_kwargs"] is None
+        assert not ({"tool_describe", "tool_call", "Tool001__tool_call"} & {t.name for t in captured["tools"]})
+
+
+class TestMetaToolNamesNotForwarded:
+    """元工具名不经模型节点转发，目录直接采用 SDK 固定默认值。"""
+
+    def test_model_node_signature_has_no_meta_tool_names(self):
+        params = inspect.signature(ReActAgentBuilder._prepare_agent_model_node).parameters
+        assert "meta_tool_names" not in params
+
+    def test_no_call_site_passes_meta_tool_names(self):
+        source = Path(graph_module.__file__).read_text(encoding="utf-8")
+        call_sites = [
+            node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "_prepare_agent_model_node"
+        ]
+        assert call_sites, "扫描未命中调用点，断言会失去意义"
+        assert all("meta_tool_names" not in {kw.arg for kw in call.keywords} for call in call_sites)
+
+
+@pytest.mark.usefixtures("lazy_loading_enabled")
+class TestLazyLoadingGate:
+    """装配期一次性闸门：False 时不构造目录 / 元工具 / 中间件，True 时形态与既有装配一致。"""
+
+    @pytest.mark.parametrize(
+        "scenario, use_structured_response",
+        [("structured_chat", True), ("switch_off", False), ("at_threshold", False)],
+    )
+    def test_gate_returns_none_before_any_plugin_object(self, scenario, use_structured_response):
+        threshold = {"structured_chat": 1, "switch_off": 1, "at_threshold": 3}[scenario]
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", threshold)
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", scenario != "switch_off")
+        try:
+            business = _named_tools(3, prefix="biz")
+            builder = _builder_for_lazy(business)
+            with (
+                patch.object(graph_module, "LazyToolCatalog") as catalog_factory,
+                patch.object(graph_module, "make_meta_tools") as meta_factory,
+            ):
+                tools, builtin, catalog = builder._prepare_agent_tools(
+                    extra_tools=builder._extra_tools, ignore_errors=use_structured_response, langchain_middleware=()
+                )
+            catalog_factory.assert_not_called()
+            meta_factory.assert_not_called()
+            assert catalog is None and builtin == []
+            assert len(tools) == 3 and all(actual is expected for actual, expected in zip(tools, business))
+        finally:
+            settings.reset()
+
+    @pytest.mark.parametrize(
+        "count, enabled, structured", [(0, True, False), (30, True, False), (31, False, False), (31, True, True)]
+    )
+    def test_no_plugin_installed_when_at_threshold(self, count, enabled, structured):
+        """整图未启用：目录、元工具、两条中间件都未构造和安装，完整绑定不变。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", enabled)
+        builder = _builder_for_lazy(_named_tools(count, prefix="biz"))
+        if structured:
+            builder._model_context_options = ModelContextSettings(llm_code_agent_type="deepseek_r1")
+        try:
+            with (
+                _capture_lazy_catalog() as lazy,
+                _capture_assembly() as assembly,
+                patch.object(graph_module, "LazyToolCatalog") as catalog_factory,
+                patch.object(graph_module, "make_meta_tools") as meta_factory,
+            ):
+                graph, cfg = builder.build()
+            catalog_factory.assert_not_called()
+            meta_factory.assert_not_called()
+            assert lazy["catalog"] is None
+            assert _lazy_middleware_types(assembly["node_options"]) == set()
+            assert [tool.name for tool in assembly["tools"]] == [f"biz_{i}" for i in range(count)]
+            node = assembly["tool_node"]
+            assert (set(node.tools_by_name) if node else set()) == {f"biz_{i}" for i in range(count)}
+            if not structured:
+                _invoke_graph(graph, cfg, "gate-off")
+                assert "# 可延迟加载的工具" not in builder._llm.message_batches[0][0].content
+        finally:
+            settings.reset()
+
+    @pytest.mark.parametrize("threshold", [1, 5, 30, 50])
+    def test_threshold_counts_after_assembly_filtering(self, threshold):
+        """阈值按最终原始工具计数，不计追加的 SDK 元工具。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", threshold)
+        try:
+            at_limit, at_builtin, at_catalog = _prepared_tools(_builder_for_lazy(_named_tools(threshold, prefix="biz")))
+            assert len(at_limit) == threshold and at_builtin == [] and at_catalog is None
+            over, builtin, catalog = _prepared_tools(_builder_for_lazy(_named_tools(threshold + 1, prefix="biz")))
+            assert catalog is not None and len(over) == threshold + 3
+            assert [tool.name for tool in builtin] == ["tool_describe", "tool_call"]
+            assert [tool.name for tool in catalog.deferred()] == [f"biz_{i}" for i in range(threshold + 1)]
+            assert all(tool is expected for tool, expected in zip(over[-2:], builtin))
+        finally:
+            settings.reset()
+
+    def test_meta_tools_not_counted_toward_threshold(self):
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 3)
+        try:
+            tools, builtin, catalog = _prepared_tools(_builder_for_lazy(_named_tools(3, prefix="biz")))
+            assert len(tools) == 3 and builtin == [] and catalog is None
+        finally:
+            settings.reset()
+
+    def test_patch_target_observes_graph_plugin_construction(self):
+        from aidev_agent.core.tools.tool_lazy_loading.meta_tools import ToolCallTool, ToolDescribeTool
+
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 2)
+        business = _named_tools(3, prefix="biz")
+        pair = ToolDescribeTool(), ToolCallTool()
+        try:
+            with (
+                patch.object(graph_module, "LazyToolCatalog", wraps=graph_module.LazyToolCatalog) as catalog_factory,
+                patch.object(graph_module, "make_meta_tools", return_value=pair) as meta_factory,
+            ):
+                tools, builtin, catalog = _prepared_tools(_builder_for_lazy(business))
+            meta_factory.assert_called_once_with()
+            catalog_factory.assert_called_once()
+            assert catalog.deferred() == business
+            assert pair[0].catalog is pair[1].catalog is catalog
+            assert builtin == list(pair) and tools == [*business, *pair]
+        finally:
+            settings.reset()
+
+    def test_structured_chat_over_threshold_still_gated_off(self):
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 1)
+        try:
+            builder = _builder_for_lazy(_named_tools(100, prefix="biz"))
+            tools, builtin, catalog = builder._prepare_agent_tools(
+                extra_tools=builder._extra_tools, ignore_errors=True, langchain_middleware=()
+            )
+            assert len(tools) == 100 and builtin == [] and catalog is None
+        finally:
+            settings.reset()
+
+    def test_disabled_switch_over_threshold_is_gated_off(self):
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 1)
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+        try:
+            tools, builtin, catalog = _prepared_tools(_builder_for_lazy(_named_tools(100, prefix="biz")))
+            assert len(tools) == 100 and builtin == [] and catalog is None
+        finally:
+            settings.reset()
+
+    def test_all_builtin_over_threshold_installs_plugins(self):
+        """真实 SDK 工具注入全为内置且超阈值，仍安装两条插件并完整绑定。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 2)
+        builtin_tools = _named_tools(3, prefix="Task")
+        builder = _builder_for_lazy([]).enable_task(True)
+        try:
+            with (
+                _capture_lazy_catalog() as captured,
+                _capture_assembly() as assembly,
+                patch.object(graph_module, "get_task_tools", return_value=builtin_tools) as task_factory,
+            ):
+                graph, cfg = builder.build()
+            task_factory.assert_called_once()
+            catalog = captured["catalog"]
+            assert catalog is not None and catalog.deferred() == []
+            assert all(catalog.executable(tool.name) is None for tool in builtin_tools)
+            assert _lazy_middleware_types(assembly["node_options"]) == {ToolDirectoryMiddleware}
+            _invoke_graph(graph, cfg, "all-builtin")
+            assert builder._llm.tool_batches[0] == ["Task_0", "Task_1", "Task_2", "tool_describe", "tool_call"]
+            assert "# 可延迟加载的工具" in builder._llm.message_batches[0][0].content
+            assert "- Task_" not in builder._llm.message_batches[0][0].content
+        finally:
+            settings.reset()
+
+    def test_settings_change_after_build_does_not_affect_installed_plugins(self):
+        """装配后改配置（关开关 + 拉高阈值）不影响已装配图的绑定与目录。"""
+        business = _named_tools(30, prefix="biz")
+        _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 1000)
+        try:
+            _invoke_graph(graph, cfg, "gate-after-build")
+        finally:
+            settings.reset()
+        assert llm.tool_batches[0] == ["ask_user_question", "tool_describe", "tool_call"]
+        assert "# 可延迟加载的工具" in llm.message_batches[0][0].content
+
+    def test_settings_change_after_build_keeps_assembly_shape(self):
+        """同一场景的结构侧：中间件仍在、bind_tools 只拿到内置 + 两个元工具。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 2)
+        try:
+            builder = _builder_for_lazy(_named_tools(3, prefix="biz"))
+            with _capture_assembly() as assembly:
+                builder.build()
+            settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+            settings.set("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 1000)
+            assert _lazy_middleware_types(assembly["node_options"]) == {ToolDirectoryMiddleware}
+        finally:
+            settings.reset()
+
+
+@pytest.mark.usefixtures("lazy_loading_enabled")
+class TestToolFilteringAtAssembly:
+    """请求级过滤（deny / allow / depth）在装配期对所有 builder 生效。"""
+
+    @staticmethod
+    def _assemble(builder, extra_tools, middleware_tools=()):
+        return builder._prepare_agent_tools(
+            extra_tools=extra_tools, langchain_middleware=[CustomMiddlewareWithTools(tools=list(middleware_tools))]
+        )
+
+    @staticmethod
+    def _patch_builtins():
+        return patch.multiple(
+            "aidev_agent.core.graphs.react.graph",
+            get_client_tools_with_runtime=MagicMock(return_value=[_NamedTool(name="read_file", description="runtime")]),
+            get_task_tools=MagicMock(return_value=[_NamedTool(name="TaskCreate", description="task")]),
+            get_agent_tools=MagicMock(return_value=[_NamedTool(name="Agent"), _NamedTool(name="sendMessages")]),
+        )
+
+    def test_deny_allow_depth_cover_all_sources(self):
+        """extra / middleware / 内置三类来源同时被 deny；depth 只移除 Agent 工具。"""
+        builder = _builder_with_security().enable_task(True).set_enable_runtime_tool(True)
+        builder._runtime_backend_resolver = MagicMock()
+        builder._a2a_specs = [AgentSpec(name="helper", description="helper", backend_type="bkai")]
+        builder._a2a_resolver = MagicMock()
+        extra = [_NamedTool(name="biz_a", description="业务"), _NamedTool(name="biz_b", description="业务")]
+        middleware_tool = _NamedTool(name="mw_tool", description="中间件")
+        request = ExecuteKwargs(tool_deny=["biz_a", "mw_tool", "read_file"], spawn_depth=1, max_spawn_depth=1)
+        builder = builder.set_bkai_options(
+            AgentExecutorKwargs(security_settings=_DEFAULT_SECURITY, execute_kwargs=request)
+        )
+        with self._patch_builtins():
+            tools, builtin, catalog = self._assemble(builder, extra, [middleware_tool])
+        assert [t.name for t in tools] == ["biz_b", "ask_user_question", "TaskCreate"]
+        # 内置集合是过滤后的真实实例（按对象身份核对），目录未启用
+        assert [t.name for t in builtin] == ["ask_user_question", "TaskCreate"]
+        assert builtin[0] is graph_module._ask_user_question_tool
+        assert builtin[1] is tools[2]
+        assert tools == [extra[1], *builtin] and catalog is None
+
+    def test_allow_keeps_only_declared_names(self):
+        """tool_allow 只保留声明名，内置工具同样受约束。"""
+        builder = _builder_with_security()
+        extra = [_NamedTool(name="biz_a", description="业务"), _NamedTool(name="biz_b", description="业务")]
+        builder = builder.set_bkai_options(
+            AgentExecutorKwargs(security_settings=_DEFAULT_SECURITY, execute_kwargs=ExecuteKwargs(tool_allow=["biz_b"]))
+        )
+        tools, builtin, _catalog = self._assemble(builder, extra)
+        assert [t.name for t in tools] == ["biz_b"]
+        assert builtin == []
+
+    @pytest.mark.parametrize("denied, expected_active", [(0, True), (1, False), (2, False)])
+    def test_threshold_counts_after_request_filter(self, denied, expected_active):
+        """阈值判定发生在过滤之后：30 个业务工具 + 内置 ask = 31 进入延迟模式，deny 掉 1 个后等于 30 就不进。"""
+        business = _named_tools(30, prefix="biz")
+        filters = {"tool_deny": [f"biz_{index}" for index in range(denied)]} if denied else {}
+        with _capture_lazy_catalog() as captured:
+            builder, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")], **filters)
+        catalog = captured["catalog"]
+        # 阈值以下已不构造 catalog：False 用例连对象都不存在
+        assert (catalog is not None) is expected_active
+        _invoke_graph(graph, cfg, f"threshold-after-filter-{denied}")
+        bound = llm.tool_batches[0]
+        assert ("tool_call" in bound) is expected_active
+        assert "biz_0" not in bound
+
+    def test_filtered_builtin_disappears_everywhere(self):
+        """过滤后的内置集合、原始目录快照与真实绑定/注册一致。"""
+        llm = _RecordingLlm([])
+        builder = _builder_with_security().set_llm(llm).set_tools(_named_tools(31, prefix="biz"))
+        options = AgentExecutorKwargs(
+            security_settings=_DEFAULT_SECURITY,
+            knowledge_query_options=KnowledgeSettings(enable_agentic_rag_tool=True),
+            execute_kwargs=ExecuteKwargs(tool_deny=["knowledge_retrieval"]),
+        )
+        builder.set_bkai_options(options)
+        with (
+            _capture_lazy_catalog() as captured,
+            _capture_assembly() as assembly,
+            _capture_meta_tools() as metas,
+            patch.object(
+                graph_module, "make_knowledge_retrieval_tool", return_value=_NamedTool(name="knowledge_retrieval")
+            ),
+        ):
+            graph, cfg = builder.build()
+        _invoke_graph(graph, cfg, "filtered-builtin")
+        catalog = captured["catalog"]
+        describe_tool, call_tool = metas["pair"]
+        assert [tool.name for tool in assembly["tools"]] == llm.tool_batches[0]
+        assert catalog.executable("ask_user_question") is None
+        assert _directory_names(assembly["node_options"]) == (describe_tool.name, call_tool.name)
+        assert not hasattr(catalog, "tool_node")
+        registered = set(assembly["tool_node"].tools_by_name) - {describe_tool.name, call_tool.name}
+        assert registered == {"ask_user_question", *(tool.name for tool in catalog.deferred())}
+        assert llm.tool_batches[0] == ["ask_user_question", "tool_describe", "tool_call"]
+        assert "knowledge_retrieval" not in registered
+
+
+@pytest.mark.usefixtures("lazy_loading_enabled")
+class TestToolLazyLoadingThreadLoop:
+    """线程级闭环：目录 → describe → tool_call，重复调用与跨会话隔离。"""
+
+    def test_describe_then_tool_call_then_reuse(self):
+        """同一 thread 内 describe → 单工具代理执行，下一请求无需再次 describe。"""
+        responses = [
+            _tool_response("tool_describe", {"names": ["biz_0"]}, "call_describe"),
+            _tool_response("tool_call", {"name": "biz_0", "arguments": {}}, "call_bridge"),
+            AIMessage(content="完成"),
+            _tool_response("tool_call", {"name": "biz_0", "arguments": {}}, "call_bridge_2"),
+            AIMessage(content="再次完成"),
+        ]
+        _, graph, cfg, llm = _build_recording_graph(_named_tools(31, prefix="biz"), responses)
+        first = _invoke_graph(graph, cfg, "loop-thread")
+        results = {m.tool_call_id: m for m in first["messages"] if isinstance(m, ToolMessage)}
+        assert "biz 描述 0" in results["call_describe"].content
+        assert (results["call_bridge"].content, results["call_bridge"].status) == ("ok", "success")
+        second = _invoke_graph(graph, cfg, "loop-thread", text="再来一次")
+        messages = {m.tool_call_id: m for m in second["messages"] if isinstance(m, ToolMessage)}
+        assert (messages["call_bridge_2"].content, messages["call_bridge_2"].status) == ("ok", "success")
+        assert llm.tool_batches[0] == llm.tool_batches[3]
+        assert llm.message_batches[0][0].content == llm.message_batches[3][0].content
+
+    def test_cross_session_isolation(self):
+        """AC-10：另一 session 首请求的 tools 与目录段与前一会话相同，无跨会话残留。"""
+        business = _named_tools(31, prefix="biz")
+        responses = [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "tool_describe",
+                        "args": {"names": ["biz_1"]},
+                        "id": "call_describe",
+                        "type": "tool_call",
+                    }
+                ],
+            ),
+            AIMessage(content="完成"),
+            AIMessage(content="另一个会话"),
+        ]
+        builder, graph, cfg, llm = _build_recording_graph(business, responses)
+
+        _invoke_graph(graph, cfg, "session-a")
+        _invoke_graph(graph, cfg, "session-b")
+
+        assert llm.tool_batches[0] == llm.tool_batches[2]
+        assert llm.message_batches[0][0].content == llm.message_batches[2][0].content
+
+
+@pytest.mark.usefixtures("lazy_loading_enabled")
+class TestToolLazyLoadingNameCollisions:
+    """元工具 / 内置工具的名字冲突与来源识别（review F3 / F4）。"""
+
+    def test_business_tool_named_like_meta_tool_survives(self):
+        """业务侧存在 tool_call / tool_describe：副本让名后仍在快照里、仍是可代理执行的延迟工具。"""
+        business = _named_tools(30, prefix="biz") + [
+            _NamedTool(name="tool_call", description="业务 tool_call"),
+            _NamedTool(name="tool_describe", description="业务 tool_describe"),
+        ]
+        with _capture_assembly() as assembly, _capture_lazy_catalog() as lazy:
+            _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+
+        _invoke_graph(graph, cfg, "collision-thread")
+
+        bound = llm.tool_batches[0]
+        assert bound.count("tool_call") == 1 and bound.count("tool_describe") == 1
+        assert bound == ["ask_user_question", "tool_describe", "tool_call"]
+        assert _directory_names(assembly["node_options"]) == META_NAME_PAIR
+        business_names = {tool.name for tool in lazy["catalog"].deferred()}
+        assert {"Tool001__tool_call", "Tool001__tool_describe"} <= business_names
+        content = llm.message_batches[0][0].content
+        assert "- Tool001__tool_call: 业务 tool_call" in content
+        assert "- Tool001__tool_describe: 业务 tool_describe" in content
+
+    def test_inactive_path_keeps_tool_names_and_objects(self):
+        """开关关闭时重映射不发生：100 个业务工具（含元工具同名）名字与对象身份逐项不变。"""
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", False)
+        try:
+            business = _named_tools(98, prefix="biz") + [_NamedTool(name="tool_call"), _NamedTool(name="tool_describe")]
+            expected = [*[t.name for t in business], "ask_user_question"]
+            with _capture_lazy_catalog() as captured, _capture_assembly() as assembly:
+                _, graph, cfg, llm = _build_recording_graph(business, [AIMessage(content="done")])
+            assert captured["catalog"] is None
+            assert [t.name for t in assembly["tools"]] == expected
+            assert [id(t) for t in assembly["tools"][: len(business)]] == [id(t) for t in business]
+            _invoke_graph(graph, cfg, "inactive-identity")
+            assert llm.tool_batches[0] == expected
+        finally:
+            settings.reset()
+
+    @pytest.mark.parametrize("name", ["tool_call", "tool_describe"])
+    def test_conflicting_business_copy_remains_proxy_executable(self, name):
+        business = [*_named_tools(30, prefix="biz"), _NamedTool(name=name)]
+        response = _tool_response("tool_call", {"name": f"Tool001__{name}", "arguments": {}}, "proxy")
+        with _capture_lazy_catalog() as captured:
+            _, graph, cfg, llm = _build_recording_graph(business, [response, AIMessage(content="done")])
+        result = _invoke_graph(graph, cfg, "business-copy")
+        msg = next(m for m in result["messages"] if isinstance(m, ToolMessage) and m.tool_call_id == "proxy")
+        assert (msg.name, msg.status, msg.content) == ("tool_call", "success", "ok")
+        assert business[-1].name == name
+        assert captured["catalog"].executable(f"Tool001__{name}") is not business[-1]
+        assert llm.tool_batches[0] == ["ask_user_question", "tool_describe", "tool_call"]
+
+    def test_model_tool_list_reorder_does_not_change_directory_names_or_bridge(self):
+        original = ReActAgentBuilder._prepare_agent_model_node
+
+        def rewritten(builder, **kwargs):
+            kwargs["tools"].reverse()
+            return original(builder, **kwargs)
+
+        response = _tool_response("tool_call", {"name": "biz_0", "arguments": {}}, "proxy")
+        with patch.object(ReActAgentBuilder, "_prepare_agent_model_node", new=rewritten):
+            _, graph, cfg, llm = _build_recording_graph(
+                _named_tools(30, prefix="biz"), [response, AIMessage(content="done")]
+            )
+        result = _invoke_graph(graph, cfg, "reordered-tools")
+        message = next(m for m in result["messages"] if isinstance(m, ToolMessage) and m.tool_call_id == "proxy")
+        assert message.status == "success" and message.content == "ok"
+        header = llm.message_batches[0][0].content.split("# 可延迟加载的工具")[1].split("\n")[1]
+        assert " tool_describe(names=" in header and " tool_call(name=" in header
+
+    @pytest.mark.parametrize("name", ["tool_call", "tool_describe"])
+    def test_sdk_builtin_name_conflict_fails_loud(self, name):
+        """SDK 内置工具与固定元工具同名时不能改名消解：装配期直接报错，而不是静默丢一个。"""
+        sdk = _NamedTool(name=name)
+        builder = _builder_with_security().enable_task(True).set_llm(_RecordingLlm([]))
+        builder.set_tools(_named_tools(30, prefix="biz"))
+        with (
+            patch.object(graph_module, "get_task_tools", return_value=[sdk]),
+            pytest.raises(ValueError, match=name),
+        ):
+            builder.build()
+        assert sdk.name == name
+
+    def test_original_tools_are_not_mutated(self):
+        """重映射只改副本：用户持有的 tool_call 实例名字与 metadata 在 build() 之后不变。"""
+        user_tool = _NamedTool(name="tool_call", description="业务 tool_call", metadata={"keep": 1})
+        business = [*_named_tools(30, prefix="biz"), user_tool]
+        with _capture_lazy_catalog() as captured:
+            _build_recording_graph(business, [AIMessage(content="done")])
+        assert user_tool.name == "tool_call" and user_tool.metadata == {"keep": 1}
+        remapped = next(tool for tool in captured["catalog"].deferred() if tool.name.startswith("Tool001__"))
+        assert remapped is not user_tool and remapped.metadata == {"keep": 1}
+
+    def test_business_tool_colliding_with_builtin_yields_name(self):
+        """业务工具与内置 ask_user_question 同名：内置保持原名，业务副本改名后进入延迟集合。"""
+        business = _named_tools(29, prefix="biz") + [_NamedTool(name="ask_user_question", description="业务版")]
+        llm = _RecordingLlm([])
+        builder = _builder_with_security().set_llm(llm).set_tools(business)
+        with _capture_lazy_catalog() as captured, _capture_assembly() as assembly:
+            graph, cfg = builder.build()
+        _invoke_graph(graph, cfg, "builtin-collision")
+
+        catalog = captured["catalog"]
+        assert catalog is not None
+        builtin_names = [t.name for t in assembly["tools"] if t.name not in META_NAME_PAIR]
+        deferred_names = [t.name for t in catalog.deferred()]
+        ask_user = [name for name in builtin_names + deferred_names if "ask_user_question" in name]
+        assert len(ask_user) == 2, ask_user
+        renamed = [name for name in ask_user if name != "ask_user_question"]
+        # 内置实例按对象身份保留原名，业务副本（改名副本）是延迟工具
+        assert builtin_names == ["ask_user_question"]
+        assert renamed == ["Tool001__ask_user_question"] and renamed == deferred_names[-1:]
+        assert assembly["tools"][0] is graph_module._ask_user_question_tool
+        assert [tool.name for tool in assembly["tools"]] == llm.tool_batches[0]
+        assert llm.tool_batches[0] == ["ask_user_question", "tool_describe", "tool_call"]
+        # 业务工具对象本体名字与 metadata 都不被改写
+        assert business[-1].name == "ask_user_question"
+        assert "sdk_builtin_tool" not in (business[-1].metadata or {})
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_builtin_name_protected_even_without_lazy_plugins(self, enabled):
+        settings.set("BKAI_TOOL_LAZY_LOADING_ENABLED", enabled)
+        external = _NamedTool(name="ask_user_question", metadata={"origin": "business"})
+        try:
+            tools, builtin, catalog = _builder_with_security()._prepare_agent_tools(
+                extra_tools=[external], langchain_middleware=()
+            )
+            assert catalog is None
+            assert [tool.name for tool in tools] == ["Tool001__ask_user_question", "ask_user_question"]
+            assert builtin == [ask_user_question] and builtin[0] is ask_user_question
+            assert tools[0] is not external and tools[1] is ask_user_question
+            assert external.name == "ask_user_question" and external.metadata == {"origin": "business"}
+        finally:
+            settings.reset()

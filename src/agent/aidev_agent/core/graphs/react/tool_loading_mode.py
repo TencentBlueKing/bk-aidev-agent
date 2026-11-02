@@ -23,6 +23,7 @@ from typing import List
 from langchain_core.tools import BaseTool
 
 from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_TOOL_NAME, is_approval_configured
+from aidev_agent.pydantic_models import ExecuteKwargs
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,18 @@ def filter_tools_by_loading_mode(tools: List[BaseTool], mode: str) -> List[BaseT
     if dropped:
         logger.info("[tool-loading-mode] mode=%s 已剔除工具: %s", mode, dropped)
     return kept
+
+
+def filter_tools_by_request(tools: List[BaseTool], execute_kwargs: ExecuteKwargs) -> List[BaseTool]:
+    """按本轮已确定的深度与允许/拒绝列表裁剪，模型和 ToolNode 共用过滤结果。"""
+    filtered = tools
+    if execute_kwargs.spawn_depth >= execute_kwargs.max_spawn_depth:
+        filtered = [tool for tool in filtered if tool.name not in ("Agent", "sendMessages")]
+    if execute_kwargs.tool_deny:
+        filtered = [tool for tool in filtered if tool.name not in execute_kwargs.tool_deny]
+    if execute_kwargs.tool_allow:
+        filtered = [tool for tool in filtered if tool.name in execute_kwargs.tool_allow]
+    return filtered
 
 
 def command_approval_allowed(mode: str) -> bool:

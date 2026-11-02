@@ -19,7 +19,7 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated, Callable, List, Optional, Sequence, Tuple, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -48,8 +48,13 @@ from aidev_agent.core.graphs.react.skill_middleware import (
     _extract_local_params,
     _extract_paas_params,
 )
-from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware, ToolFilterMiddleware
-from aidev_agent.core.graphs.react.tool_loading_mode import command_approval_allowed, filter_tools_by_loading_mode
+from aidev_agent.core.graphs.react.team_middleware import TeamInfo, TeamPromptMiddleware
+from aidev_agent.core.graphs.react.tool_lazy_loading_middleware import ToolDirectoryMiddleware
+from aidev_agent.core.graphs.react.tool_loading_mode import (
+    command_approval_allowed,
+    filter_tools_by_loading_mode,
+    filter_tools_by_request,
+)
 from aidev_agent.core.nodes.knowledge import make_knowledge_node
 from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
@@ -71,6 +76,8 @@ from aidev_agent.core.tools.skill.local_backend import LocalBackend as LocalSkil
 from aidev_agent.core.tools.skill.provider import SkillRegistry
 from aidev_agent.core.tools.skill.types import SkillOptions, SkillProviderBackend
 from aidev_agent.core.tools.task import TeamTaskRecord, get_task_tools, merge_task_list
+from aidev_agent.core.tools.tool_lazy_loading import LazyToolCatalog, make_meta_tools
+from aidev_agent.core.tools.tool_lazy_loading.meta_tools import CALL_TOOL_NAME, DESCRIBE_TOOL_NAME
 from aidev_agent.enums import Decision
 from aidev_agent.packages.langchain_core.models.utils import is_model_without_function_calling
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
@@ -816,6 +823,7 @@ class ReActAgentBuilder:
         non_thinking_llm: BaseChatModel,
         judge_llm: BaseChatModel | None,
         tools: List[BaseTool],
+        node_options_kwargs: dict[str, Any] | None = None,
     ):
         """创建模型节点。
 
@@ -826,12 +834,15 @@ class ReActAgentBuilder:
             llm: 语言模型
             non_thinking_llm: 非深度思考模型
             judge_llm: 判断用 LLM（quality_gate 任务完成度判断）；None 时 fail-open
-            tools: 工具列表
+            tools: 模型节点绑定的工具列表
+            node_options_kwargs: 调用方追加的 ModelNodeSettings 参数，覆盖 SDK 推导值；
+                其中的 extra_*_middlewares 排在 SDK 自带中间件之后
 
         Returns:
             model_node: 模型节点
         """
         # 判断 use_structured_response
+        node_options_kwargs_override = dict(node_options_kwargs or {})
         node_options_kwargs = {"use_structured_response": self._compute_use_structured_response()}
 
         # 从 model_context_options 提取参数
@@ -865,10 +876,12 @@ class ReActAgentBuilder:
                 "enable_prompt_injection_guard": security_settings.enable_prompt_injection_guard,
             }
         )
+        node_options_kwargs.update(node_options_kwargs_override)
         node_options = ModelNodeSettings(**node_options_kwargs)
 
+        sdk_template_middlewares: List[Any] = []
         if self._enable_skills and self._skill_registry is not None:
-            node_options.extra_template_middlewares.append(
+            sdk_template_middlewares.append(
                 SkillsPromptMiddleware(
                     registry=self._skill_registry,
                     enable_runtime_tool=self._enable_runtime_tool,
@@ -877,8 +890,8 @@ class ReActAgentBuilder:
 
         # Team middleware registration (A2A Agent paradigm)
         if self._a2a_specs and self._a2a_resolver is not None:
-            node_options.extra_template_middlewares.append(TeamPromptMiddleware(specs=self._a2a_specs))
-            node_options.extra_tool_middlewares.append(ToolFilterMiddleware())
+            sdk_template_middlewares.append(TeamPromptMiddleware(specs=self._a2a_specs))
+        node_options.extra_template_middlewares[:0] = sdk_template_middlewares
 
         # 创建模型节点
         model_node = std_make_model_node(
@@ -897,30 +910,33 @@ class ReActAgentBuilder:
         extra_tools: List[BaseTool] = None,
         ignore_errors: bool = False,
         langchain_middleware: Sequence[AgentMiddleware],
-    ) -> List[BaseTool]:
-        tools: List[BaseTool] = []
+    ) -> tuple[List[BaseTool], List[BaseTool], LazyToolCatalog | None]:
+        external_tools: List[BaseTool] = []
+        builtin_tools: List[BaseTool] = []
         # 工具加载模式：装配期裁剪（命令审批开关已在 _prepare_agent_options 落到安全配置上）。
         mode = self._execute_kwargs.mode
         # 加载所有传入的工具
         if extra_tools:
-            tools.extend(extra_tools or [])
+            external_tools.extend(extra_tools)
         # 加载由中间间导入的工具
         middleware_tools = [t for m in langchain_middleware for t in getattr(m, "tools", [])]
-        tools.extend(middleware_tools)
+        external_tools.extend(middleware_tools)
+
+        # SDK 工具单独收集，去重只让外部工具让名，内置名称无需追踪恢复。
 
         # ask_user_question 工具注入
         if self._enable_ask_user_question_tool:
-            tools.append(_ask_user_question_tool)
+            builtin_tools.append(_ask_user_question_tool)
 
         # 加载 SKILL 工具
         if self._enable_skills and self._skill_registry is not None:
-            tools.append(self._skill_registry.get_activate_skill_tool())
+            builtin_tools.append(self._skill_registry.get_activate_skill_tool())
 
         # 加载 Runtime 工具 (ls/read_file/write_file/edit_file/glob/grep/execute)
         if self._enable_runtime_tool and self._runtime_backend_resolver is not None:
             # review 预分流：注入命令风险评估器（fast_llm 优先，non_thinking/主 llm 兜底）
             risk_assessor = CommandRiskAssessor(self._fast_llm or self._non_thinking_llm or self._llm)
-            tools.extend(
+            builtin_tools.extend(
                 get_client_tools_with_runtime(
                     self._runtime_backend_resolver,
                     enable_security=self._enable_security_runtime,
@@ -929,17 +945,17 @@ class ReActAgentBuilder:
             )
             # 仅在配置了视觉模型时注册图片识别工具，避免模型调用必然失败的工具
             if self._vision_llm is not None:
-                tools.append(make_read_image_tool(self._runtime_backend_resolver, self._vision_llm))
+                builtin_tools.append(make_read_image_tool(self._runtime_backend_resolver, self._vision_llm))
                 logger.info("[ReActAgentBuilder] 视觉模型已配置，图片识别工具已添加到工具列表")
 
         # 加载 Task 工具
         if self._enable_task:
-            tools.extend(get_task_tools())
+            builtin_tools.extend(get_task_tools())
 
         # 加载 A2A Agent 工具
         if self._a2a_specs and self._a2a_resolver is not None:
             a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver)
-            tools.extend(a2a_tools)
+            builtin_tools.extend(a2a_tools)
 
         if self._enable_agentic_rag_tool:
             # Agentic RAG模式：将知识检索作为工具
@@ -950,25 +966,39 @@ class ReActAgentBuilder:
                 kb_retriever=BkRetriever(resource_manager=self._resource_manager),
             )
             if knowledge_tool:
-                tools.append(knowledge_tool)
+                builtin_tools.append(knowledge_tool)
                 logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
 
-        # 所有来源的工具收集完毕后统一消除重名（同一服务多端点合并、跨来源改名），
-        # 保证进入模型请求的工具名唯一，tool_node 也能按名路由到正确实例
         if settings.BKAI_TOOL_NAME_DEDUPE_ENABLED:
-            tools = dedupe_tool_names(tools)
-
-        # 为所有工具添加忽略错误表示
+            # 延迟加载开启时元工具名同样是内置保留名，在唯一一次去重里一并占位
+            lazy_enabled = not ignore_errors and settings.BKAI_TOOL_LAZY_LOADING_ENABLED
+            external_tools = dedupe_tool_names(
+                external_tools,
+                builtin_tools=builtin_tools,
+                reserved_names=(DESCRIBE_TOOL_NAME, CALL_TOOL_NAME) if lazy_enabled else (),
+            )
+        external_tools = filter_tools_by_request(
+            filter_tools_by_loading_mode(external_tools, mode), self._execute_kwargs
+        )
+        builtin_tools = filter_tools_by_request(filter_tools_by_loading_mode(builtin_tools, mode), self._execute_kwargs)
         if ignore_errors:
-            # NOTE: 在 StructuredChatAgent 中修改 tools 中的参数
-            # 使得如果 LLM 调用工具时如果出现以下类型的错误，可以重新尝试，继续进行而不阻碍过程
-            for i in range(len(tools)):
-                tools[i].handle_validation_error = True
-                tools[i].handle_tool_error = True
+            for tool in [*external_tools, *builtin_tools]:
+                tool.handle_validation_error = True
+                tool.handle_tool_error = True
 
-        # 按工具加载模式裁剪（default 原样返回，保证与变更前一致）；
-        # 过滤后的列表在 build() 中同时交给 model 节点与 ToolNode。
-        return filter_tools_by_loading_mode(tools, mode)
+        # 延迟加载一次性判定：元工具名已在去重时占位，这里定型原始目录并追加元工具（不计入阈值）
+        lazy_catalog: LazyToolCatalog | None = None
+        if (
+            not ignore_errors
+            and settings.BKAI_TOOL_LAZY_LOADING_ENABLED
+            and len(external_tools) + len(builtin_tools) > settings.BKAI_TOOL_LAZY_LOADING_THRESHOLD
+        ):
+            describe_tool, call_tool = make_meta_tools()
+            lazy_catalog = LazyToolCatalog(deferred_tools=external_tools)
+            describe_tool.catalog = lazy_catalog
+            call_tool.catalog = lazy_catalog
+            builtin_tools.extend([describe_tool, call_tool])
+        return [*external_tools, *builtin_tools], builtin_tools, lazy_catalog
 
     def _prepare_skills(self) -> None:
         """准备 skills 系统。
@@ -1105,7 +1135,7 @@ class ReActAgentBuilder:
         name: str = "tools",
         tags: List[str] | None = None,
         langchain_middleware: Sequence[AgentMiddleware],
-        node_options: ToolNodeSettings = None,
+        node_options: ToolNodeSettings,
     ):
         middleware_w_wrap_tool_call = [
             m.wrap_tool_call
@@ -1133,8 +1163,6 @@ class ReActAgentBuilder:
             # 投影为小配置，故这里仍注入**总配置**（T-06-24）。
             security_settings = self._security_settings
             assert security_settings is not None  # _prepare_agent_options 已校验非空
-            if node_options is None:
-                node_options = ToolNodeSettings()
             node_options.use_tool_redaction = security_settings.enable_tool_redaction
             node_options.use_tool_untrusted_sanitize = security_settings.enable_tool_untrusted_sanitize
             node_options.use_result_limit = security_settings.enable_tool_result_limit
@@ -1349,10 +1377,10 @@ class ReActAgentBuilder:
             self._prepare_a2a()
 
         # 统一处理 tools
-        tool_ignore_errors = self._compute_use_structured_response()
-        tools: List[BaseTool] = self._prepare_agent_tools(
+        use_structured_response = self._compute_use_structured_response()
+        tools, builtin_tools, lazy_catalog = self._prepare_agent_tools(
             extra_tools=self._extra_tools,
-            ignore_errors=tool_ignore_errors,
+            ignore_errors=use_structured_response,
             langchain_middleware=self._langchain_middleware,
         )
 
@@ -1368,17 +1396,25 @@ class ReActAgentBuilder:
             llm=self._llm,
             non_thinking_llm=non_thinking_llm,
             judge_llm=judge_llm,
-            tools=tools,
+            # 延迟加载时模型只绑定内置 + 元工具，目录经模板中间件注入；ToolNode 仍持全量 tools
+            tools=builtin_tools if lazy_catalog is not None else tools,
+            node_options_kwargs=(
+                {"extra_template_middlewares": [ToolDirectoryMiddleware(catalog=lazy_catalog)]}
+                if lazy_catalog is not None
+                else None
+            ),
         )
 
         # 构造 PV Node
         pv_node = self._prepare_agent_pv_node()
 
-        # 统一处理 tool_node
+        # 统一处理 tool_node：tool_call 代理解包与延迟加载同生共死，由装配层推导、无条件覆盖
+        tool_node_options = self._tool_node_options or ToolNodeSettings()
+        tool_node_options.use_tool_call_proxy = lazy_catalog is not None
         tool_node = self._prepare_agent_tool_node(
             tools,
             langchain_middleware=self._langchain_middleware,
-            node_options=self._tool_node_options,
+            node_options=tool_node_options,
         )
 
         # 初始化 Store

@@ -1014,16 +1014,15 @@ class ChatCompletionAgent(BaseModel):
         if not messages:
             raise ValueError("The messages list cannot be empty.")
         self._update_aidev_agent_header(execute_kwargs)
-        # U-06（48）：恢复到 294ff5d55——_get_agent 在 _execute 内构建，双参签名（无 agent_e/cfg）。
-        agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
-        cfg.setdefault("configurable", {})
-        cfg["configurable"]["thread_id"] = self.thread_id
-        # spawn_depth/spawned_by 由 ExecuteKwargs 默认值（主 Agent）或 _extract_execute_kwargs（子 Agent）提供，
-        # 这里不再覆盖；仅主 Agent（无父会话）读 AgentConfig.max_spawn_depth，子 Agent 继承父值
+        # 装配期过滤要读取最终深度：主 Agent 取平台配置，子 Agent 保留继承值。
         if execute_kwargs.spawned_by is None:
             execute_kwargs.max_spawn_depth = self.max_spawn_depth
         execute_kwargs.tool_deny = execute_kwargs.tool_deny or []
         execute_kwargs.tool_allow = execute_kwargs.tool_allow or []
+        # U-06（48）：恢复到 294ff5d55——_get_agent 在 _execute 内构建，双参签名（无 agent_e/cfg）。
+        agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
+        cfg.setdefault("configurable", {})
+        cfg["configurable"]["thread_id"] = self.thread_id
         cfg["configurable"]["execute_kwargs"] = execute_kwargs
         self._execute_kwargs = execute_kwargs
 
