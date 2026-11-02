@@ -64,8 +64,8 @@
     (e: 'dragging', dragging: boolean): void;
   }>();
 
-  /** 滑块直径，与设计稿 slider-thumb 及样式中的 12px 一致；轨道两端各留半个滑块，保证滑块不越出轨道 */
-  const THUMB_SIZE = 12;
+  /** 分段间距，与样式中 segments 的 gap: 2px 一致；第 i 档对应第 i 个分段交界，交界中心在 i × (轨道宽 + 间距) / 段数 - 间距 / 2 */
+  const SEGMENT_GAP = 2;
 
   const trackRef = useTemplateRef<HTMLElement>('trackRef');
   /** 拖动中的预览下标，松手后清空并以 effort 为准 */
@@ -84,14 +84,15 @@
     isSingle.value ? 1 : Math.max(displayIndex.value, 0) / (props.options.length - 1),
   );
 
+  // 取离指针最近的分段交界作为档位，与滑块的渲染位置一一对应
   const indexFromClientX = (clientX: number) => {
     const rect = trackRef.value?.getBoundingClientRect();
-    const usable = (rect?.width ?? 0) - THUMB_SIZE;
-    if (!rect || usable <= 0) {
+    const lastIndex = props.options.length - 1;
+    if (!rect || rect.width <= 0 || lastIndex <= 0) {
       return 0;
     }
-    const ratio = Math.min(Math.max((clientX - rect.left - THUMB_SIZE / 2) / usable, 0), 1);
-    return Math.round(ratio * (props.options.length - 1));
+    const index = Math.round(((clientX - rect.left + SEGMENT_GAP / 2) * lastIndex) / (rect.width + SEGMENT_GAP));
+    return Math.min(Math.max(index, 0), lastIndex);
   };
 
   const commit = (index: number) => {
@@ -216,11 +217,12 @@
       }
     }
 
-    // 滑块左边缘位于 (轨道宽 - 滑块直径) × 比例，两端不越出轨道；直径与脚本中 THUMB_SIZE 保持一致
+    // 滑块中心对齐第 i 个分段交界（(100% + 2px 段间距) × 比例 - 1px），再减半个直径 6px；
+    // 首末档夹在轨道两端不越界，对应设计稿「关闭」x=0、「最高」x=165（轨道 177）
     &-thumb {
       position: absolute;
       top: 0;
-      left: calc((100% - 12px) * var(--ai-reasoning-effort-thumb-ratio, 0));
+      left: clamp(0px, calc((100% + 2px) * var(--ai-reasoning-effort-thumb-ratio, 0) - 7px), calc(100% - 12px));
       box-sizing: border-box;
       width: 12px;
       height: 12px;

@@ -39,9 +39,9 @@ const SIX_EFFORTS: IReasoningEffortOption[] = [
   { desc: '最大思考投入，耗时最长', key: 'max', value: '最高' },
 ];
 
-// 轨道 0~177px，滑块 12px：可用宽度 165，第 i 档中心在 6 + 33 * i
+// 轨道 0~177px、5 段、段间距 2px：第 i 档对应第 i 个分段交界，中心在 i × 179 / 5 - 1
 const TRACK_RECT = new DOMRect(0, 0, 177, 12);
-const clientXOf = (index: number) => 6 + 33 * index;
+const clientXOf = (index: number) => (index * 179) / 5 - 1;
 
 describe('ReasoningEffortSlider', () => {
   let wrapper: undefined | VueWrapper;
@@ -117,6 +117,14 @@ describe('ReasoningEffortSlider', () => {
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(2) + 10, pointerId: 1 });
       await track.trigger('pointerup', { clientX: clientXOf(2) + 10, pointerId: 1 });
       expect(wrapper!.emitted('change')).toEqual([['medium']]);
+    });
+
+    it('点击位置按分段交界划分：越过第一段中点即吸附到第 1 档', async () => {
+      // 第一段 0~34.8，中点 17.4；x=18 更靠近第 1 个交界
+      const track = mountSlider({ effort: 'none' });
+      await track.trigger('pointerdown', { button: 0, clientX: 18, pointerId: 1 });
+      await track.trigger('pointerup', { clientX: 18, pointerId: 1 });
+      expect(wrapper!.emitted('change')).toEqual([['low']]);
     });
 
     it('拖动过程中只预览不抛 change，松手时才抛出最终档位', async () => {

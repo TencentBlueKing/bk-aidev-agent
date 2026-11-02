@@ -57,8 +57,8 @@ export const createModelDescriptionTippy = (
   placement: shared?.placement ?? 'auto',
   // 定位用视口坐标，fixed 才不会被列表的 overflow 裁切，也不会算错滚动偏移
   popperOptions: { strategy: 'fixed' },
-  // 白底 + Shadow/Pop 阴影，与设计稿卡片一致
-  theme: 'ai-chat-box-light light',
+  // 白底 + Shadow/Pop 阴影，与设计稿卡片一致；ai-model-description 收窄箭头尺寸（样式见 model-description-card.vue）
+  theme: 'ai-chat-box-light light ai-model-description',
   trigger: 'manual',
   zIndex: shared?.zIndex ?? EDITOR_MENU_Z_INDEX,
 });

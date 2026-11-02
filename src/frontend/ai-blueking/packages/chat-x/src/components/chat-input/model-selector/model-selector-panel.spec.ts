@@ -160,7 +160,7 @@ describe('ModelSelectorPanel 描述卡片', () => {
     expect(tipState.content?.querySelector('.ai-model-description-card-reasoning')).toBeNull();
 
     const options = tippyMock.mock.calls[0][1] as Props;
-    expect(options.theme).toBe('ai-chat-box-light light');
+    expect(options.theme).toBe('ai-chat-box-light light ai-model-description');
     expect(options.interactive).toBe(true);
     expect(options.getReferenceClientRect?.()).toEqual(rect);
     expect(options.onShow?.({} as never)).toBeUndefined();

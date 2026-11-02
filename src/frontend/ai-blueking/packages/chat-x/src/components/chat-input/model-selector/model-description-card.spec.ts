@@ -96,4 +96,14 @@ describe('ModelDescriptionCard', () => {
     expect(wrapper.emitted('change')).toEqual([['xhigh']]);
     expect(wrapper.emitted('dragging')).toEqual([[true]]);
   });
+
+  it('思考深度行按设计稿只含左侧标签与右侧滑块两项（两端对齐布局依赖该结构）', () => {
+    wrapper = mount(ModelDescriptionCard, {
+      props: { model: createModel({ property: reasoningProperty }) },
+    });
+    const children = wrapper.find('.ai-model-description-card-reasoning').element.children;
+    expect(children).toHaveLength(2);
+    expect(children[0].classList).toContain('ai-model-description-card-reasoning-label');
+    expect(children[1].classList).toContain('ai-reasoning-effort-slider');
+  });
 });

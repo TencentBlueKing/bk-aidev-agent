@@ -91,15 +91,14 @@
       -webkit-box-orient: vertical;
     }
 
+    // 标签与右侧两端对齐；gap 只作最小间距，保证右侧拿到设计稿的轨道宽 177px
     &-reasoning {
       display: flex;
-      gap: 12px;
+      gap: 8px;
       align-items: center;
       justify-content: space-between;
       padding-top: 12px;
-
-      // 分割线色 Neutral/7 #eaebf0，variables 中无对应变量
-      border-top: 1px solid #eaebf0;
+      border-top: 1px solid variables.$color-border-light;
 
       &-label {
         flex: 0 0 auto;
@@ -107,5 +106,31 @@
         white-space: nowrap;
       }
     }
+  }
+
+  // 描述卡箭头按设计稿 arrow 节点缩为 12×6（tippy 默认 16×8），露出 5px、与卡片重叠 1px 避免缝隙
+  .tippy-box[data-theme~='ai-model-description'] > .tippy-arrow {
+    width: 12px;
+    height: 12px;
+  }
+
+  .tippy-box[data-theme~='ai-model-description'][data-placement^='top'] > .tippy-arrow::before {
+    bottom: -5px;
+    border-width: 6px 6px 0;
+  }
+
+  .tippy-box[data-theme~='ai-model-description'][data-placement^='bottom'] > .tippy-arrow::before {
+    top: -5px;
+    border-width: 0 6px 6px;
+  }
+
+  .tippy-box[data-theme~='ai-model-description'][data-placement^='left'] > .tippy-arrow::before {
+    right: -5px;
+    border-width: 6px 0 6px 6px;
+  }
+
+  .tippy-box[data-theme~='ai-model-description'][data-placement^='right'] > .tippy-arrow::before {
+    left: -5px;
+    border-width: 6px 6px 6px 0;
   }
 </style>
