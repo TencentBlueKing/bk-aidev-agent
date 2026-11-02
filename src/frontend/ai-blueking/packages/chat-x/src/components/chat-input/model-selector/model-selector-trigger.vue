@@ -13,6 +13,12 @@
     <span class="ai-model-selector-trigger-name">
       {{ model?.llm_name || placeholder }}
     </span>
+    <span
+      v-if="model && effortLabel"
+      class="ai-model-selector-trigger-effort"
+    >
+      {{ effortLabel }}
+    </span>
     <ArrowLeftIcon class="ai-model-selector-trigger-arrow" />
   </div>
 </template>
@@ -26,6 +32,8 @@
   defineProps<{
     /** 是否禁用 */
     disabled?: boolean;
+    /** 模型名后回显的思考深度档位，空时不展示 */
+    effortLabel?: string;
     /** 是否展开（下拉打开），用于箭头翻转与背景态 */
     expanded?: boolean;
     /** 当前选中的模型 */
@@ -70,6 +78,14 @@
       text-overflow: ellipsis;
       font-size: var(--ai-font-size, 12px);
       line-height: var(--ai-line-height, 20px);
+      white-space: nowrap;
+    }
+
+    &-effort {
+      flex: 0 0 auto;
+      font-size: var(--ai-font-size, 12px);
+      line-height: var(--ai-line-height, 20px);
+      color: variables.$color-text-secondary;
       white-space: nowrap;
     }
 

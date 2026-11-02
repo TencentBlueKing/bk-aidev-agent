@@ -23,24 +23,27 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { nextTick } from 'vue';
+
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MODEL_DESCRIPTION_TIP_DELAY_MS } from './create-model-description-tippy';
+import { MODEL_DESCRIPTION_TIP_DELAY_MS, MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS } from './create-model-description-tippy';
+import ModelDescriptionCard from './model-description-card.vue';
 import ModelSelectorPanel from './model-selector-panel.vue';
 
-import type { IModelOption } from './types';
+import type { IModelOption, IModelReasoning } from './types';
 import type { Props } from 'tippy.js';
 
 const { tippyMock, tipState } = vi.hoisted(() => {
-  const tipState = { alive: 0, content: '', shown: 0 };
+  const tipState = { alive: 0, content: undefined as HTMLElement | undefined, shown: 0 };
   const tippyMock = vi.fn(() => {
     tipState.alive += 1;
     return {
       destroy: () => {
         tipState.alive -= 1;
       },
-      setContent: (content: string) => {
+      setContent: (content: HTMLElement) => {
         tipState.content = content;
       },
       show: () => {
@@ -69,34 +72,46 @@ const createModel = (id: number, llmName: string, extra: Partial<IModelOption> =
   ...extra,
 });
 
+const reasoning: IModelReasoning = {
+  default_effort: 'medium',
+  mandatory: false,
+  supported_efforts: [
+    { desc: '不思考，直接回答', key: 'none', value: '关闭' },
+    { desc: '简单思考，响应较快', key: 'low', value: '低' },
+    { desc: '兼顾思考深度与响应速度', key: 'medium', value: '中' },
+  ],
+};
+
 const described = createModel(1, 'GPT-4', { description: ' 通用模型 ' });
 const plain = createModel(2, 'Claude 3');
 const blank = createModel(3, 'DeepSeek', { description: '   ' });
 const disabled = createModel(4, 'Disabled', { description: '不可用原因', disabled: true });
+const reasoningOnly = createModel(5, 'Hy3', { property: { reasoning } });
 
-describe('ModelSelectorPanel 描述 tip', () => {
+describe('ModelSelectorPanel 描述卡片', () => {
   let wrapper: undefined | VueWrapper<InstanceType<typeof ModelSelectorPanel>>;
 
   const mountPanel = (
-    models: IModelOption[] = [described, plain, blank, disabled],
-    tippyOptions?: { appendTo?: HTMLElement; placement?: 'bottom-start'; zIndex?: number },
+    models: IModelOption[] = [described, plain, blank, disabled, reasoningOnly],
+    extraProps: Record<string, unknown> = {},
   ) => {
     wrapper = mount(ModelSelectorPanel, {
       attachTo: document.body,
-      props: { models, tippyOptions },
+      props: { models, ...extraProps },
     });
   };
 
-  const optionAt = (index: number) => wrapper?.findAll('.ai-model-selector-panel-option')[index];
+  const optionAt = (index: number) => wrapper!.findAll('.ai-model-selector-panel-option')[index];
 
   const hover = async (index: number) => {
     await optionAt(index).trigger('mouseenter');
     await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
+    await nextTick();
   };
 
   beforeEach(() => {
     tipState.alive = 0;
-    tipState.content = '';
+    tipState.content = undefined;
     tipState.shown = 0;
     tippyMock.mockClear();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -108,7 +123,7 @@ describe('ModelSelectorPanel 描述 tip', () => {
     vi.useRealTimers();
   });
 
-  it('无描述时名称保留原生 title，且不创建 tip', async () => {
+  it('无描述且不支持思考深度时名称保留原生 title，且不创建卡片', async () => {
     mountPanel();
     const plainOption = optionAt(1);
     const blankOption = optionAt(2);
@@ -122,13 +137,12 @@ describe('ModelSelectorPanel 描述 tip', () => {
     expect(tippyMock).not.toHaveBeenCalled();
   });
 
-  it('有描述时延迟展示 tip，名称不再挂原生 title', async () => {
+  it('有描述时延迟展示卡片，名称不再挂原生 title', async () => {
     mountPanel();
     const option = optionAt(0);
     const rect = new DOMRect(10, 20, 30, 40);
     vi.spyOn(option.element, 'getBoundingClientRect').mockReturnValue(rect);
 
-    expect(option.attributes('title')).toBeUndefined();
     expect(option.find('.ai-model-selector-panel-option-name').attributes('title')).toBeUndefined();
 
     await option.trigger('mouseenter');
@@ -136,20 +150,34 @@ describe('ModelSelectorPanel 描述 tip', () => {
     expect(tippyMock).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
+    await nextTick();
     expect(tippyMock).toHaveBeenCalledTimes(1);
     expect(tipState.alive).toBe(1);
-    expect(tipState.content).toBe('通用模型');
     expect(tipState.shown).toBe(1);
+    expect(tipState.content?.querySelector('.ai-model-description-card-name')?.textContent?.trim()).toBe('GPT-4');
+    expect(tipState.content?.querySelector('.ai-model-description-card-desc')?.textContent?.trim()).toBe('通用模型');
+    // 不支持思考深度时卡片不展示思考深度行
+    expect(tipState.content?.querySelector('.ai-model-description-card-reasoning')).toBeNull();
 
     const options = tippyMock.mock.calls[0][1] as Props;
-    expect(options.theme).toBe('ai-chat-box');
+    expect(options.theme).toBe('ai-chat-box-light light');
+    expect(options.interactive).toBe(true);
     expect(options.getReferenceClientRect?.()).toEqual(rect);
     expect(options.onShow?.({} as never)).toBeUndefined();
     vi.spyOn(option.element, 'isConnected', 'get').mockReturnValue(false);
     expect(options.onShow?.({} as never)).toBe(false);
   });
 
-  it('未到延迟就离开时不应创建 tip', async () => {
+  it('无描述但支持思考深度时也展示卡片：描述占位「--」并带思考深度行', async () => {
+    mountPanel();
+    expect(optionAt(4).find('.ai-model-selector-panel-option-name').attributes('title')).toBeUndefined();
+
+    await hover(4);
+    expect(tipState.content?.querySelector('.ai-model-description-card-desc')?.textContent?.trim()).toBe('--');
+    expect(tipState.content?.querySelector('.ai-model-description-card-reasoning')).not.toBeNull();
+  });
+
+  it('未到延迟就离开时不应创建卡片', async () => {
     mountPanel();
     await optionAt(0).trigger('mouseenter');
     await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS - 1);
@@ -158,48 +186,95 @@ describe('ModelSelectorPanel 描述 tip', () => {
     expect(tippyMock).not.toHaveBeenCalled();
   });
 
-  it('离开、滚动或卸载后应销毁当前这一个 tip', async () => {
+  it('离开选项后延迟关闭；期间移入卡片或回到原选项时保持展示', async () => {
+    mountPanel();
+    await hover(0);
+    const tip = wrapper!.find('.ai-model-selector-panel-tip');
+
+    await optionAt(0).trigger('mouseleave');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS - 1);
+    await tip.trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(1);
+
+    await tip.trigger('mouseleave');
+    await optionAt(0).trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(1);
+    expect(tippyMock).toHaveBeenCalledTimes(1);
+
+    await tip.trigger('mouseleave');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(0);
+  });
+
+  it('拖动滑块期间移出卡片不关闭，松手且鼠标不在卡片上时再关闭', async () => {
+    mountPanel();
+    await hover(4);
+    const card = wrapper!.findComponent(ModelDescriptionCard);
+    const tip = wrapper!.find('.ai-model-selector-panel-tip');
+
+    card.vm.$emit('dragging', true);
+    await tip.trigger('mouseleave');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(1);
+
+    card.vm.$emit('dragging', false);
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(0);
+  });
+
+  it('切到另一个选项、滚动或卸载时应立即销毁当前这一个卡片', async () => {
     mountPanel();
     await hover(0);
     expect(tipState.alive).toBe(1);
 
-    await optionAt(0).trigger('mouseleave');
-    expect(tipState.alive).toBe(0);
-
     await hover(3);
-    expect(tipState.content).toBe('不可用原因');
     expect(tipState.alive).toBe(1);
+    expect(tipState.content?.querySelector('.ai-model-description-card-desc')?.textContent?.trim()).toBe('不可用原因');
 
-    await wrapper?.find('.ai-model-selector-panel-list').trigger('scroll');
+    await wrapper!.find('.ai-model-selector-panel-list').trigger('scroll');
     expect(tipState.alive).toBe(0);
 
     await hover(0);
-    wrapper?.unmount();
+    wrapper!.unmount();
     wrapper = undefined;
     expect(tipState.alive).toBe(0);
     expect(tippyMock).toHaveBeenCalledTimes(3);
   });
 
-  it('列表替换或主动关闭时应取消尚未展示的 tip', async () => {
+  it('列表替换或主动关闭时应取消尚未展示的卡片', async () => {
     mountPanel();
     await optionAt(0).trigger('mouseenter');
-    await wrapper?.setProps({ models: [described] });
+    await wrapper!.setProps({ models: [described] });
     await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
     expect(tippyMock).not.toHaveBeenCalled();
 
     await optionAt(0).trigger('mouseenter');
-    wrapper?.vm.hideDescriptionTip();
+    wrapper!.vm.hideDescriptionTip();
     await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
     expect(tippyMock).not.toHaveBeenCalled();
+  });
+
+  it('isTipTarget 只对卡片内的节点返回 true', async () => {
+    mountPanel();
+    await hover(4);
+    const slider = tipState.content?.querySelector('.ai-reasoning-effort-slider-thumb') ?? null;
+
+    expect(wrapper!.vm.isTipTarget(slider)).toBe(true);
+    expect(wrapper!.vm.isTipTarget(optionAt(0).element)).toBe(false);
+    expect(wrapper!.vm.isTipTarget(null)).toBe(false);
   });
 
   it('应复用外层 tippyOptions 的 appendTo、placement 和 zIndex', async () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     mountPanel([described], {
-      appendTo: host,
-      placement: 'bottom-start',
-      zIndex: 20,
+      tippyOptions: {
+        appendTo: host,
+        placement: 'bottom-start',
+        zIndex: 20,
+      },
     });
 
     await hover(0);
@@ -211,5 +286,60 @@ describe('ModelSelectorPanel 描述 tip', () => {
     expect(options.getReferenceClientRect?.contextElement).toBe(host);
     expect(options.trigger).toBe('manual');
     host.remove();
+  });
+});
+
+describe('ModelSelectorPanel 思考深度', () => {
+  let wrapper: undefined | VueWrapper<InstanceType<typeof ModelSelectorPanel>>;
+  const other = createModel(6, 'Other', { property: { reasoning } });
+
+  const effortTextOf = (index: number) =>
+    wrapper!.findAll('.ai-model-selector-panel-option')[index].find('.ai-model-selector-panel-option-effort');
+
+  beforeEach(() => {
+    tippyMock.mockClear();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+
+  afterEach(() => {
+    wrapper?.unmount();
+    wrapper = undefined;
+    vi.useRealTimers();
+  });
+
+  it('当前模型按传入档位回显，其余模型按 default_effort 回显，不支持时不回显', () => {
+    wrapper = mount(ModelSelectorPanel, {
+      attachTo: document.body,
+      props: { models: [reasoningOnly, other, plain], reasoningEffort: 'low', selectedName: 'Hy3' },
+    });
+
+    expect(effortTextOf(0).text()).toBe('低');
+    expect(effortTextOf(1).text()).toBe('中');
+    expect(effortTextOf(2).exists()).toBe(false);
+  });
+
+  it('档位为「关闭」时模型名后不回显', () => {
+    wrapper = mount(ModelSelectorPanel, {
+      attachTo: document.body,
+      props: { models: [reasoningOnly], reasoningEffort: 'none', selectedName: 'Hy3' },
+    });
+
+    expect(effortTextOf(0).exists()).toBe(false);
+  });
+
+  it('卡片内调档时应抛出 reasoningEffortChange（携带卡片对应的模型）', async () => {
+    wrapper = mount(ModelSelectorPanel, {
+      attachTo: document.body,
+      props: { models: [reasoningOnly, other], reasoningEffort: 'low', selectedName: 'Hy3' },
+    });
+    await wrapper.findAll('.ai-model-selector-panel-option')[1].trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
+    await nextTick();
+
+    const card = wrapper.findComponent(ModelDescriptionCard);
+    // 非当前模型的卡片按 default_effort 展示
+    expect(card.props('effort')).toBe('medium');
+    card.vm.$emit('change', 'none');
+    expect(wrapper.emitted('reasoningEffortChange')?.[0]).toEqual([other, 'none']);
   });
 });

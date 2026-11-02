@@ -26,18 +26,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { EDITOR_MENU_Z_INDEX } from '../../../common';
-import { createModelDescriptionTippy, MODEL_DESCRIPTION_TIP_DELAY_MS } from './create-model-description-tippy';
+import {
+  createModelDescriptionTippy,
+  MODEL_DESCRIPTION_TIP_DELAY_MS,
+  MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS,
+} from './create-model-description-tippy';
 
 import type { GetReferenceClientRect } from 'tippy.js';
 
 describe('createModelDescriptionTippy', () => {
   const getReferenceClientRect = (() => new DOMRect()) as GetReferenceClientRect;
 
-  it('应复用 ai-chat-box，并挂到 body 上以免被列表裁切', () => {
+  it('应使用白底卡片主题、可交互，并挂到 body 上以免被列表裁切', () => {
     const options = createModelDescriptionTippy(getReferenceClientRect);
     const appendTo = options.appendTo as () => HTMLElement;
 
     expect(MODEL_DESCRIPTION_TIP_DELAY_MS).toBe(300);
+    expect(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS).toBe(100);
     expect(options.getReferenceClientRect).toBe(getReferenceClientRect);
     expect(appendTo()).toBe(document.body);
     expect(options).toMatchObject({
@@ -45,11 +50,12 @@ describe('createModelDescriptionTippy', () => {
       arrow: true,
       content: '',
       delay: [0, 0],
-      interactive: false,
+      hideOnClick: false,
+      interactive: true,
       offset: [0, 8],
       placement: 'auto',
       popperOptions: { strategy: 'fixed' },
-      theme: 'ai-chat-box',
+      theme: 'ai-chat-box-light light',
       trigger: 'manual',
       zIndex: EDITOR_MENU_Z_INDEX,
     });
@@ -68,6 +74,6 @@ describe('createModelDescriptionTippy', () => {
     expect(options.placement).toBe('bottom-start');
     expect(options.zIndex).toBe(20);
     expect(options.trigger).toBe('manual');
-    expect(options.interactive).toBe(false);
+    expect(options.interactive).toBe(true);
   });
 });

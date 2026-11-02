@@ -1051,7 +1051,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 模型选择
 
-`ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。
+`ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。模型支持思考深度时，`v-model:reasoning-effort` 与 `@reasoning-effort-change` 同样透传，用法见 [ModelSelector 思考深度](/components/input/model-selector#思考深度)。
 
 ```vue
 <template>
@@ -1177,6 +1177,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | cite             | `string`              | 引用内容                                                                                                                                          |
 | renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 开放侧栏只读查看并隐藏底部输入与交互操作；`Test` 隐藏分享按钮                                                    |
 | selectedModel    | `string`              | 当前选中模型的 `llm_name`，透传至 ChatInput 的 ModelSelector                                                                                      |
+| reasoningEffort  | `null \| ReasoningEffort` | 当前模型的思考深度档位，透传至 ChatInput 的 ModelSelector；为空时按模型默认档位展示，切换模型时清空                                           |
 | asideCollapsed   | `boolean`             | 侧栏折叠态，**严格受控**：传入后一律以外部值为准，内部展开动作（文件预览、`addCustomTab`）只发 `update:asideCollapsed`，外部不改则不展开；不传时由组件内部自持（默认折叠）  |
 
 ### Events
@@ -1193,6 +1194,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
 | deleteFile     | `(file: Partial<UploadFile>)`          | 取消输入框附件（继承自 ChatInput）；业务方根据 `file.id` 调用删除接口，UI 立即移除，不等待结果 |
 | modelChange    | `(model: IModelOption)`                | 切换模型（继承自 ChatInput）         |
+| reasoningEffortChange | `(model: IModelOption, effort: ReasoningEffort)` | 调整思考深度（继承自 ChatInput）     |
 
 ### Slots
 

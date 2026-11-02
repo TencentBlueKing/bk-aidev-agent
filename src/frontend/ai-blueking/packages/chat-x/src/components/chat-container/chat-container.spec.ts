@@ -415,6 +415,7 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       menuSources: Array,
       shortcuts: Array,
       models: Array,
+      reasoningEffort: String,
       selectedModel: String,
       supportUpload: Boolean,
       cite: String,
@@ -429,10 +430,12 @@ vi.mock('../chat-input/chat-input.vue', () => ({
       'update:modelValue',
       'update:cite',
       'update:selectedModel',
+      'update:reasoningEffort',
       'selectShortcut',
       'deleteShortcut',
       'deleteFile',
       'modelChange',
+      'reasoningEffortChange',
     ],
     setup(_, { slots, expose }) {
       expose({ uploadedArtifacts: mockUploadedArtifactsRef });
@@ -1102,6 +1105,22 @@ describe('ChatContainer', () => {
       await ci.vm.$emit('modelChange', models[0]);
 
       expect(wrapper.emitted('modelChange')?.[0]).toEqual([models[0]]);
+    });
+
+    it('应透传 v-model:reasoningEffort，并向上冒泡 reasoningEffortChange', async () => {
+      const models = [{ id: 1, llm_name: 'GPT-4' }];
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, models, reasoningEffort: 'medium' },
+      });
+
+      const ci = wrapper.findComponent({ name: 'ChatInput' });
+      expect(ci.props('reasoningEffort')).toBe('medium');
+
+      await ci.vm.$emit('update:reasoningEffort', 'none');
+      await ci.vm.$emit('reasoningEffortChange', models[0], 'none');
+      expect(wrapper.emitted('update:reasoningEffort')?.[0]).toEqual(['none']);
+      expect(wrapper.emitted('reasoningEffortChange')?.[0]).toEqual([models[0], 'none']);
     });
 
     it('存在待审批第三方审批单时应通过 slot 展示提示，并将阻断文案传给 ChatInput', () => {

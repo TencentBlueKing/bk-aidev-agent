@@ -154,6 +154,7 @@ export const lang = {
   上传文件: 'Upload File',
   选择模型: 'Select model',
   搜索模型关键字: 'Search models',
+  思考深度: 'Reasoning effort',
   '请求中...': 'Requesting...',
   取消满意: 'Cancel satisfied',
   取消不满意: 'Cancel dissatisfied',

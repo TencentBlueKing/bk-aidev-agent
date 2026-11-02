@@ -32,7 +32,9 @@ import {
   type IInputMenuItem,
   type IModelOption,
   // type InfoMessage,
+  type IReasoningEffortOption,
   type Message,
+  type ReasoningEffort,
   type Shortcut,
   type UserMessage,
   AIBluekingIcon,
@@ -68,20 +70,65 @@ const createMockModel = (id: number, llmName: string, extra: Partial<IModelOptio
   ...extra,
 });
 
-// 模型选择器 mock 数据：property 派生能力标签（图生文/深度思考/快速思考），description 作为选项 hover 提示
+// 思考深度 7 档词表（key / 展示名 / 说明），与后端 property.reasoning.supported_efforts 结构一致
+const REASONING_EFFORTS: Record<ReasoningEffort, IReasoningEffortOption> = {
+  none: { key: 'none', value: '关闭', desc: '不思考，直接回答' },
+  minimal: { key: 'minimal', value: '极低', desc: '几乎不思考，响应最快' },
+  low: { key: 'low', value: '低', desc: '简单思考，响应较快' },
+  medium: { key: 'medium', value: '中', desc: '兼顾思考深度与响应速度' },
+  high: { key: 'high', value: '高', desc: '深入思考，回答更周全' },
+  xhigh: { key: 'xhigh', value: '超高', desc: '更深入的思考，适合复杂问题' },
+  max: { key: 'max', value: '最高', desc: '最大思考投入，耗时最长' },
+};
+const pickEfforts = (...keys: ReasoningEffort[]) => keys.map(key => REASONING_EFFORTS[key]);
+
+// 模型选择器 mock 数据：property 派生能力标签（图生文/深度思考/快速思考），description 与 reasoning 组成 hover 卡片
 export const MOCK_MODELS: IModelOption[] = [
   createMockModel(1, 'hunyuan-turbos', {
-    description: '混元 turbos 模型，支持视觉理解与深度思考',
-    property: { max_model_len: 32000, support_thinking: true, support_vision: true },
+    description:
+      '混元 turbos 模型，支持视觉理解与深度思考。适合多轮对话、复杂推理与长文档总结等场景，可按需调整思考深度，在响应速度与回答质量之间取得平衡。',
+    property: {
+      max_model_len: 32000,
+      support_thinking: true,
+      support_vision: true,
+      // 可关闭思考：含 none
+      reasoning: {
+        supported_efforts: pickEfforts('none', 'low', 'medium', 'high', 'xhigh', 'max'),
+        default_effort: 'medium',
+        mandatory: false,
+      },
+    },
   }),
   createMockModel(2, 'Hy3 hunyuan', {
     description: '混元 Hy3 模型，支持视觉理解与快速思考',
-    property: { max_model_len: 32000, support_thinking_quick: true, support_vision: true },
+    property: {
+      max_model_len: 32000,
+      support_thinking_quick: true,
+      support_vision: true,
+      reasoning: {
+        supported_efforts: pickEfforts('low', 'medium', 'xhigh'),
+        default_effort: 'xhigh',
+        mandatory: true,
+      },
+    },
   }),
   createMockModel(3, 'Deepseek - R1', {
     base_model: 'deepseek',
     description: 'DeepSeek R1 推理模型，支持深度思考',
     property: { max_model_len: 64000, support_thinking: true },
+  }),
+  // 无描述但支持思考深度：卡片描述显示「--」，不可关闭思考
+  createMockModel(7, 'Deepseek - R1 无描述', {
+    base_model: 'deepseek',
+    property: {
+      max_model_len: 64000,
+      support_thinking: true,
+      reasoning: {
+        supported_efforts: pickEfforts('low', 'medium', 'high', 'xhigh', 'max'),
+        default_effort: 'high',
+        mandatory: true,
+      },
+    },
   }),
   createMockModel(4, 'Deepseek - V3', {
     base_model: 'deepseek',
@@ -91,6 +138,8 @@ export const MOCK_MODELS: IModelOption[] = [
   createMockModel(5, 'GPT-4o', {
     base_model: 'openai',
     description: 'GPT-4o 通用对话模型',
+    // 不支持思考深度
+    property: { reasoning: null },
   }),
   createMockModel(6, 'Legacy Model（已停用）', {
     disabled: true,

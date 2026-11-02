@@ -102,15 +102,17 @@
             <template #before-send>
               <slot
                 name="model-selector"
-                v-bind="{ models, selectedModel }"
+                v-bind="{ models, selectedModel, reasoningEffort }"
               >
                 <ModelSelector
                   v-if="models?.length"
                   v-model="selectedModel"
+                  v-model:reasoning-effort="reasoningEffort"
                   class="chat-input-model-selector"
                   :models="models"
                   :tippy-options="tippyOptions"
                   @change="handleModelChange"
+                  @reasoning-effort-change="handleReasoningEffortChange"
                   @show="handleCloseMenu"
                 />
               </slot>
@@ -176,7 +178,7 @@
 
   import type { AIFileInfo } from '../../ag-ui/types/file';
   import type { MenuGroupKey } from './input-menu';
-  import type { IModelOption } from './model-selector';
+  import type { IModelOption, ReasoningEffort } from './model-selector';
 
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
@@ -189,6 +191,10 @@
   const selectedModel = defineModel<string>('selectedModel', {
     required: false,
   });
+  // 当前模型生效的思考深度档位（v-model:reasoningEffort），透传给模型选择器
+  const reasoningEffort = defineModel<null | ReasoningEffort>('reasoningEffort', {
+    required: false,
+  });
   const maxHeight = shallowRef(280);
   export type ChatInputEmits = {
     (e: 'selectShortcut', shortcut: Shortcut): void;
@@ -196,6 +202,7 @@
     (e: 'deleteFile', file: Partial<UploadFile>): void;
     (e: 'update:modelValue', value: string | TagSchema, selectedResourceList: IInputMenuItem[]): void;
     (e: 'modelChange', model: IModelOption): void;
+    (e: 'reasoningEffortChange', model: IModelOption, effort: ReasoningEffort): void;
   };
   export type ChatInputProps = {
     accept?: string; // 「文件」项 / 拖拽 / 粘贴的过滤类型，同时用于入队校验
@@ -475,6 +482,9 @@
   };
   const handleModelChange = (model: IModelOption) => {
     emit('modelChange', model);
+  };
+  const handleReasoningEffortChange = (model: IModelOption, effort: ReasoningEffort) => {
+    emit('reasoningEffortChange', model, effort);
   };
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
   const applyUploadResult = (fileItem: Partial<UploadFile>, res?: ChatInputUploadResult) => {

@@ -163,8 +163,9 @@ vi.mock('./model-selector', () => ({
     props: {
       models: { type: Array, default: () => [] },
       modelValue: { type: String, default: '' },
+      reasoningEffort: { type: String, default: undefined },
     },
-    emits: ['update:modelValue', 'change', 'show'],
+    emits: ['update:modelValue', 'update:reasoningEffort', 'change', 'reasoningEffortChange', 'show'],
     setup(props, { emit }) {
       return () =>
         h(
@@ -752,6 +753,26 @@ describe('ChatInput', () => {
       await wrapper.find('.mock-model-selector').trigger('click');
 
       expect(wrapper.emitted('modelChange')?.[0]).toEqual([{ id: 'gpt-4', name: 'GPT-4' }]);
+    });
+
+    it('应透传 v-model:reasoningEffort，并向上抛出 reasoningEffortChange', async () => {
+      const models = [{ id: 'gpt-4', name: 'GPT-4' }];
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          models,
+          reasoningEffort: 'low',
+        },
+      });
+
+      const selector = wrapper.findComponent({ name: 'ModelSelector' });
+      expect(selector.props('reasoningEffort')).toBe('low');
+
+      await selector.vm.$emit('update:reasoningEffort', 'high');
+      await selector.vm.$emit('reasoningEffortChange', models[0], 'high');
+      expect(wrapper.emitted('update:reasoningEffort')?.[0]).toEqual(['high']);
+      expect(wrapper.emitted('reasoningEffortChange')?.[0]).toEqual([models[0], 'high']);
     });
 
     it('点击发送应该调用 onSendMessage', async () => {
