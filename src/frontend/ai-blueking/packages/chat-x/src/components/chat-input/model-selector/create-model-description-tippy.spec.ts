@@ -55,7 +55,7 @@ describe('createModelDescriptionTippy', () => {
       offset: [0, 8],
       placement: 'auto',
       popperOptions: { strategy: 'fixed' },
-      theme: 'ai-chat-box-light light',
+      theme: 'ai-chat-box-light light ai-model-description',
       trigger: 'manual',
       zIndex: EDITOR_MENU_Z_INDEX,
     });

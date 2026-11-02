@@ -320,7 +320,7 @@ interface IModelOption {
 2. 选中值为模型的 `llm_name`；能力标签由组件依据 `property` 的 `support_thinking` / `support_thinking_quick` / `support_vision` 派生，文案走内置 i18n。
 3. `description` 去掉首尾空白后有内容，或模型带 `property.reasoning.supported_efforts` 时，鼠标停在选项上约 300ms 后弹出白底描述卡片：标题为模型名，正文为纯文本描述（不解析 HTML，最多 3 行，超出省略；无描述显示 `--`）。卡片可交互，鼠标从选项移入卡片不会关闭；离开选项和卡片约 100ms 后关闭，列表滚动、搜索替换列表、下拉收起时立即关闭。同一列表同时只有一张卡片。两者都没有时不展示卡片，名称用原生 `title` 显示全名。禁用项同样展示卡片，但滑块不可操作。
 4. 描述卡片默认 `appendTo` 为 `document.body`、`placement` 为 `auto`、`zIndex` 为 `EDITOR_MENU_Z_INDEX`（10001）。`tippyOptions` 的这三项会覆盖默认值，并与下拉共用；经 `ChatContainer` 使用时它们来自 `commonTippyOptions`（全屏会把 `appendTo` 改到全屏容器）。`trigger`、主题等其余字段只作用于下拉。
-5. 思考深度：滑块分段数为档位数减 1，只有一个档位时显示为整条且不可操作；档位文案悬停时用原生 `title` 展示 `desc`。在非当前模型的卡片上改档位，会先选中该模型（触发 `change`），再写入档位（触发 `reasoningEffortChange`），下拉保持展开。拖动中鼠标移出卡片不会关闭，松开后才按鼠标位置判断。`mandatory` 由服务端配置档位列表时体现（如不提供 `none`），组件不额外处理。
+5. 思考深度：滑块分段数为档位数减 1，第 i 档时前 i 段高亮、滑块中心落在第 i 个分段交界（首末档贴住轨道两端），点击或拖动时吸附到离指针最近的交界；只有一个档位时显示为整条且不可操作；档位文案悬停时用原生 `title` 展示 `desc`。在非当前模型的卡片上改档位，会先选中该模型（触发 `change`），再写入档位（触发 `reasoningEffortChange`），下拉保持展开。拖动中鼠标移出卡片不会关闭，松开后才按鼠标位置判断。`mandatory` 由服务端配置档位列表时体现（如不提供 `none`），组件不额外处理。
 6. 展开面板后会自动聚焦搜索框；列表支持键盘上下选择与 Enter 确认（复用 `useMenuKeydown`）。
 7. 图标由 [ResourceIcon](/components/helper/resource-icon) 渲染（`type="model"`）：支持图片 URL 或 Vue 组件，URL 加载失败自动回退到内置兜底图标；未提供 `icon` 时不渲染图标位。
 
