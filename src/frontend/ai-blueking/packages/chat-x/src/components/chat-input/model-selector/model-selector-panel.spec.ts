@@ -114,7 +114,7 @@ describe('ModelSelectorPanel 描述卡片', () => {
     tipState.content = undefined;
     tipState.shown = 0;
     tippyMock.mockClear();
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] });
   });
 
   afterEach(() => {
@@ -267,6 +267,8 @@ describe('ModelSelectorPanel 描述卡片', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key }));
       await nextTick();
       await nextTick();
+      await vi.advanceTimersByTimeAsync(16);
+      await nextTick();
     };
 
     expect(tippyMock).not.toHaveBeenCalled();
@@ -285,6 +287,28 @@ describe('ModelSelectorPanel 描述卡片', () => {
     await press('ArrowDown');
     expect(tipState.alive).toBe(0);
     expect(optionAt(1).classes()).toContain('is-active');
+  });
+
+  it('键盘切换引起的滚动先派发时，描述卡片在滚动之后仍然展示', async () => {
+    mountPanel();
+    Object.defineProperty(wrapper?.element, 'offsetParent', {
+      configurable: true,
+      get: () => document.body,
+    });
+    const cardName = () => tipState.content?.querySelector('.ai-model-description-card-name')?.textContent?.trim();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    await nextTick();
+    await nextTick();
+    expect(tippyMock).not.toHaveBeenCalled();
+
+    await wrapper?.find('.ai-model-selector-panel-list').trigger('scroll');
+    expect(tipState.alive).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(16);
+    await nextTick();
+    expect(cardName()).toBe('Hy3');
+    expect(tipState.alive).toBe(1);
   });
 
   it('isTipTarget 只对卡片内的节点返回 true', async () => {
