@@ -223,6 +223,12 @@
     hideTimer = undefined;
   };
 
+  const destroyDescriptionTip = () => {
+    const instance = descriptionTip;
+    descriptionTip = undefined;
+    instance?.destroy();
+  };
+
   const hideDescriptionTip = () => {
     showToken += 1;
     clearShowTimer();
@@ -230,9 +236,7 @@
     tipAnchor = undefined;
     tipDragging = false;
     tipModel.value = undefined;
-    const instance = descriptionTip;
-    descriptionTip = undefined;
-    instance?.destroy();
+    destroyDescriptionTip();
   };
 
   /** 延迟关闭，期间鼠标进入卡片或回到原选项会取消 */
@@ -247,23 +251,45 @@
   };
 
   const openDescriptionTip = (anchor: HTMLElement, model: IModelOption, delayMs: number) => {
+    // 卡片在选项上方时，鼠标必须划过中间项才能进去。路过其他选项不能立刻销毁当前卡片。
+    clearHideTimer();
     if (!hasCard(model)) {
+      if (descriptionTip && delayMs > 0) {
+        clearShowTimer();
+        showToken += 1;
+        const token = showToken;
+        showTimer = setTimeout(() => {
+          showTimer = undefined;
+          if (token === showToken) {
+            hideDescriptionTip();
+          }
+        }, delayMs);
+        return;
+      }
       hideDescriptionTip();
       return;
     }
     // 从卡片移回同一选项时保持展示
     if (descriptionTip && tipAnchor === anchor) {
-      clearHideTimer();
+      clearShowTimer();
       return;
     }
-    hideDescriptionTip();
-    tipAnchor = anchor;
+    clearShowTimer();
+    showToken += 1;
     const token = showToken;
     const reveal = () => {
       showTimer = undefined;
-      if (token !== showToken || tipAnchor !== anchor || !anchor.isConnected) {
+      if (token !== showToken || !anchor.isConnected) {
         return;
       }
+      if (descriptionTip && tipAnchor === anchor) {
+        return;
+      }
+      // 真正切换到新选项时才拆掉旧实例，路过中间项时旧卡片还在
+      if (descriptionTip) {
+        destroyDescriptionTip();
+      }
+      tipAnchor = anchor;
       tipModel.value = model;
       // 等卡片渲染进落脚点后再交给 tippy，首次定位才能拿到真实尺寸
       nextTick(() => {
@@ -313,6 +339,8 @@
 
   const handleTipEnter = () => {
     clearHideTimer();
+    // 进卡片后取消「切到路过选项」的待展示，否则延迟到期会把当前卡片换掉
+    clearShowTimer();
   };
 
   const handleTipLeave = () => {

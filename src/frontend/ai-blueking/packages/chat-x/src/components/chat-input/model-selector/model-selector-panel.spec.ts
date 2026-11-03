@@ -208,6 +208,51 @@ describe('ModelSelectorPanel 描述卡片', () => {
     expect(tipState.alive).toBe(0);
   });
 
+  it('卡片已展示时划过其他选项不应立刻关闭，移入卡片后保持原卡片', async () => {
+    mountPanel();
+    await hover(0);
+    const tip = wrapper?.find('.ai-model-selector-panel-tip');
+    const cardName = () => tipState.content?.querySelector('.ai-model-description-card-name')?.textContent?.trim();
+
+    await optionAt(0).trigger('mouseleave');
+    await optionAt(3).trigger('mouseenter');
+    expect(tipState.alive).toBe(1);
+    expect(cardName()).toBe('GPT-4');
+
+    await optionAt(3).trigger('mouseleave');
+    await tip.trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
+    expect(tipState.alive).toBe(1);
+    expect(cardName()).toBe('GPT-4');
+    expect(tippyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('卡片已展示时划过无描述选项也不应立刻关闭', async () => {
+    mountPanel();
+    await hover(0);
+    const tip = wrapper?.find('.ai-model-selector-panel-tip');
+
+    await optionAt(0).trigger('mouseleave');
+    await optionAt(1).trigger('mouseenter');
+    expect(tipState.alive).toBe(1);
+
+    await optionAt(1).trigger('mouseleave');
+    await tip.trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
+    expect(tipState.alive).toBe(1);
+    expect(tipState.content?.querySelector('.ai-model-description-card-name')?.textContent?.trim()).toBe('GPT-4');
+  });
+
+  it('停在无描述选项上超过展示延迟后应收起当前卡片', async () => {
+    mountPanel();
+    await hover(0);
+
+    await optionAt(1).trigger('mouseenter');
+    await vi.advanceTimersByTimeAsync(MODEL_DESCRIPTION_TIP_DELAY_MS);
+    expect(tipState.alive).toBe(0);
+  });
+
   it('拖动滑块期间移出卡片不关闭，松手且鼠标不在卡片上时再关闭', async () => {
     mountPanel();
     await hover(4);
@@ -224,7 +269,7 @@ describe('ModelSelectorPanel 描述卡片', () => {
     expect(tipState.alive).toBe(0);
   });
 
-  it('切到另一个选项、滚动或卸载时应立即销毁当前这一个卡片', async () => {
+  it('停在另一个选项超过展示延迟后切换卡片；滚动或卸载时立即销毁', async () => {
     mountPanel();
     await hover(0);
     expect(tipState.alive).toBe(1);
