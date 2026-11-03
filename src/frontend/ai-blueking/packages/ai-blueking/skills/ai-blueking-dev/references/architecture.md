@@ -82,9 +82,10 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 2. loadRecentSession / createNewSession → SessionBusinessManager.createSession
    → resolveModelForSession（保证落在可用列表；空列表抛 ModelUnavailableError）
 3. ChatBusinessManager 委托同一 ModelSelectionManager；切换模型写回 persistSessionModel
-4. ChatBot 绑定 models + v-model:selected-model → ChatContainer ModelSelector
-5. 切 session → applySessionModel（仅 sessionCode 变化时）
-6. chat(..., property, selectedLlmCode) 热切换
+4. ChatBot 绑定 models + v-model:selected-model + v-model:reasoning-effort → ChatContainer ModelSelector
+5. 切 session → applySessionModel，并用 effectiveReasoningEffort 回显思考深度（仅 sessionCode 变化时）
+6. 改档防抖后 session.updateReasoningEffort；切模型仍只写 model
+7. chat(..., property, selectedLlmCode, reasoningEffort) 热切换。小鲸每轮都带思考深度
 ```
 
 ## 职责分离原则

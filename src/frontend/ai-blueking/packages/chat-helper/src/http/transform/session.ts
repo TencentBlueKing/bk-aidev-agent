@@ -37,6 +37,8 @@ export const transferSessionApi2Session = (data: ISessionApi): ISession => {
     sessionName: data.session_name,
     isTemporary: data.is_temporary,
     model: data.model,
+    reasoningEffort: data.reasoning_effort ?? null,
+    effectiveReasoningEffort: data.effective_reasoning_effort ?? null,
     comment: data.comment,
     rate: data.rate,
     updatedAt: data.updated_at,
@@ -59,6 +61,19 @@ export const transferSessionApi2Session = (data: ISessionApi): ISession => {
 };
 
 /**
+ * 会话列表项转换。列表接口不返回 effective_reasoning_effort，缺省字段不能当作 null，
+ * 否则合并进 current 时会抹掉详情里的生效档。
+ */
+export const transferSessionListItemApi2Session = (data: ISessionApi): ISession => {
+  const { effectiveReasoningEffort, reasoningEffort, ...session } = transferSessionApi2Session(data);
+  return {
+    ...session,
+    ...('reasoning_effort' in data ? { reasoningEffort } : {}),
+    ...('effective_reasoning_effort' in data ? { effectiveReasoningEffort } : {}),
+  };
+};
+
+/**
  * 将前端使用的 session 数据转换为 API 使用的 session 数据
  * @param data 前端使用的 session 数据
  * @returns API 使用的 session 数据
@@ -70,6 +85,8 @@ export const transferSession2SessionApi = (data: ISession): ISessionApi => {
     session_name: data.sessionName,
     is_temporary: data.isTemporary,
     model: data.model,
+    // 创建会话不接收 reasoning_effort；与 model 写在同一次更新里会被忽略并清空档位。
+    // 档位只走单独的 PUT { reasoning_effort }。
     comment: data.comment,
     rate: data.rate,
     updated_at: data.updatedAt,

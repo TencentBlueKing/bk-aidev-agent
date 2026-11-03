@@ -24,6 +24,7 @@
  * IN THE SOFTWARE.
  */
 
+import type { ReasoningEffort } from '../agent/type';
 import type { IMessage } from '../message';
 
 export enum SessionStatus {
@@ -39,6 +40,16 @@ export interface ISession<ITool = unknown, IAnchorPathResources = unknown> {
   createdAt?: string;
   isTemporary?: boolean;
   model?: string;
+  /**
+   * 用户在该会话显式选择的思考深度。
+   * null 表示跟随默认（个人偏好或模型 default_effort）。
+   */
+  reasoningEffort?: ReasoningEffort | null;
+  /**
+   * 下一轮实际生效的思考深度。
+   * null 表示当前模型不支持思考深度。会话列表接口不返回，以详情 / 更新响应为准。
+   */
+  effectiveReasoningEffort?: ReasoningEffort | null;
   rate?: number;
   sessionCode: string;
   /** 会话消息数量，用于判断会话是否有内容 */
@@ -69,6 +80,10 @@ export interface ISessionApi<IToolApi = unknown, IAnchorPathResourcesApi = unkno
   created_at?: string;
   is_temporary?: boolean;
   model?: string;
+  /** 显式档位；空则字段可能不返回，按 null（跟随默认）处理 */
+  reasoning_effort?: ReasoningEffort | null;
+  /** 下一轮生效档位；空则字段可能不返回，按 null（模型不支持）处理 */
+  effective_reasoning_effort?: ReasoningEffort | null;
   rate?: number;
   session_code: string;
   /** 会话消息数量 */

@@ -217,7 +217,7 @@ ChatBot.onMounted()
 └── emit('agent-info-loaded', chatHelper)
 ```
 
-模型选中语义见主 SKILL「模型选择」小节：跟随 session；切换写回 `persistSessionModel`；所有新建会话路径统一解析 model；空列表阻断并上报。文件上传常驻，不跟随模型 `support_vision`。
+模型选中语义见主 SKILL「模型选择」小节：跟随 session；切换写回 `persistSessionModel`；所有新建会话路径统一解析 model；空列表阻断并上报。思考深度跟模型选择器一起回显和写回，小鲸每轮对话带上当前档。文件上传常驻，不跟随模型 `support_vision`。
 
 ### 嵌入页等待就绪（whenReady）
 

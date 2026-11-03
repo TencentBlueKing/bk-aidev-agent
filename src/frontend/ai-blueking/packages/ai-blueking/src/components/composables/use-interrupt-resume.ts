@@ -9,7 +9,7 @@
 
 import type { Ref } from 'vue';
 
-import { ResumeStatus, UserOperation, type IResume } from '@blueking/chat-helper';
+import { ResumeStatus, UserOperation, type IResume, type ReasoningEffort } from '@blueking/chat-helper';
 import {
   InterruptReason,
   InterruptResumeOperation,
@@ -20,6 +20,7 @@ import {
   type UserQuestionResume,
 } from '@blueking/chat-x';
 
+import type { ChatBusinessManager } from '../../manager/business/chat-business-manager';
 import type { IChatHelper } from '../../types';
 import type { ReportChatBotError } from './use-error-reporter';
 
@@ -31,6 +32,8 @@ const USER_OPERATION_MAP: Partial<Record<InterruptResumeOperation, UserOperation
 };
 
 export interface UseInterruptResumeParams {
+  /** 提供当前思考深度；小鲸恢复执行也是新开一轮，需要显式带上 */
+  chatBusinessManager?: Ref<ChatBusinessManager | null>;
   chatHelper: Ref<IChatHelper | null>;
   reportError: ReportChatBotError;
 }
@@ -77,7 +80,11 @@ function toIResume(resume: UserQuestionResume): IResume {
 }
 
 export function useInterruptResume(params: UseInterruptResumeParams): UseInterruptResumeReturn {
-  const { chatHelper, reportError } = params;
+  const { chatBusinessManager, chatHelper, reportError } = params;
+
+  /** 未注入业务管理器时返回 undefined，由 chat-helper 回落到会话上的生效档 */
+  const resolveReasoningEffort = (): ReasoningEffort | null | undefined =>
+    chatBusinessManager?.value?.resolveChatReasoningEffort();
 
   const handleUserOperationResume = async (payload: InterruptResume) => {
     const helper = chatHelper.value;
@@ -93,10 +100,7 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
 
     // 刷新审批单状态：复用 chat-x（chat-helper）的轮询能力，主动拉取一次单据最新状态即可
     if (payload.operation === InterruptResumeOperation.ApprovalRefresh) {
-      const agent = helper.agent as typeof helper.agent & {
-        pollResumeSession: (sessionCode: string) => void;
-      };
-      agent.pollResumeSession(sessionCode);
+      helper.agent.pollResumeSession(sessionCode, undefined, resolveReasoningEffort());
       return;
     }
 
@@ -104,16 +108,17 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
     if (!operation) {
       throw new Error(`[ChatBot] Unsupported interrupt resume operation: ${payload.operation}`);
     }
-    const agent = helper.agent as typeof helper.agent & {
-      userOperationStreamRequest: (
-        sessionCode: string,
-        operation: UserOperation,
-        payload: { interrupt_id: number | string } | { node_id: string; task_id: string },
-      ) => Promise<void>;
-    };
+    const { agent } = helper;
 
     if (payload.operation === InterruptResumeOperation.ApprovalCancel) {
-      await agent.userOperationStreamRequest(sessionCode, operation, { interrupt_id: payload.payload.interrupt_id });
+      await agent.userOperationStreamRequest(
+        sessionCode,
+        operation,
+        { interrupt_id: payload.payload.interrupt_id },
+        undefined,
+        undefined,
+        resolveReasoningEffort(),
+      );
       return;
     }
 
@@ -121,10 +126,17 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
       payload.operation === InterruptResumeOperation.FlowNodeRetry ||
       payload.operation === InterruptResumeOperation.FlowNodeSkip
     ) {
-      await agent.userOperationStreamRequest(sessionCode, operation, {
-        node_id: payload.payload.node_id,
-        task_id: String(payload.payload.task_id),
-      });
+      await agent.userOperationStreamRequest(
+        sessionCode,
+        operation,
+        {
+          node_id: payload.payload.node_id,
+          task_id: String(payload.payload.task_id),
+        },
+        undefined,
+        undefined,
+        resolveReasoningEffort(),
+      );
     }
   };
 
@@ -135,13 +147,11 @@ export function useInterruptResume(params: UseInterruptResumeParams): UseInterru
     }
 
     const sessionCode = getSessionCode(helper);
-    const agent = helper.agent as typeof helper.agent & {
-      streamRequest: (options: { sessionCode: string; resume?: IResume; input?: string }) => Promise<void>;
-    };
 
-    await agent.streamRequest({
+    await helper.agent.streamRequest({
       sessionCode,
       resume: toIResume(payload),
+      reasoningEffort: resolveReasoningEffort(),
       ...(input ? { input } : {}),
     });
   };

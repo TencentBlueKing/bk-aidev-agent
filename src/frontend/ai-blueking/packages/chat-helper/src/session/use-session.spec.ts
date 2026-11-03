@@ -9,6 +9,11 @@
 import { ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  transferSession2SessionApi,
+  transferSessionApi2Session,
+  transferSessionListItemApi2Session,
+} from '../http/transform/session';
 import { useSession } from './use-session';
 
 import type { IMediatorModule } from '../mediator';
@@ -149,5 +154,88 @@ describe('useSession.deletePvFile', () => {
       's-abc',
       encodeURIComponent(path),
     );
+  });
+});
+
+describe('session reasoning effort transform', () => {
+  it('list items leave omitted fields absent instead of null', () => {
+    const item = transferSessionListItemApi2Session({ session_code: 's1', session_name: 'chat' });
+    expect(item).not.toHaveProperty('effectiveReasoningEffort');
+    expect(item).not.toHaveProperty('reasoningEffort');
+
+    expect(
+      transferSessionListItemApi2Session({ reasoning_effort: 'low', session_code: 's1', session_name: 'chat' }),
+    ).toEqual(expect.objectContaining({ reasoningEffort: 'low' }));
+  });
+
+  it('detail maps fields and treats omitted values as null', () => {
+    expect(
+      transferSessionApi2Session({
+        effective_reasoning_effort: 'medium',
+        reasoning_effort: 'medium',
+        session_code: 's1',
+        session_name: 'chat',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        effectiveReasoningEffort: 'medium',
+        reasoningEffort: 'medium',
+      }),
+    );
+
+    expect(
+      transferSessionApi2Session({
+        session_code: 's1',
+        session_name: 'chat',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        effectiveReasoningEffort: null,
+        reasoningEffort: null,
+      }),
+    );
+  });
+
+  it('does not send reasoning effort on a generic session update', () => {
+    const api = transferSession2SessionApi({
+      effectiveReasoningEffort: 'high',
+      model: 'hy3',
+      reasoningEffort: 'high',
+      sessionCode: 's1',
+      sessionName: 'chat',
+    });
+
+    expect(api).not.toHaveProperty('reasoning_effort');
+    expect(api).not.toHaveProperty('effective_reasoning_effort');
+    expect(api.model).toBe('hy3');
+  });
+});
+
+describe('useSession keeps detail-only reasoning fields on current', () => {
+  it('renaming a listed session does not wipe current.effectiveReasoningEffort', async () => {
+    const listItem = transferSessionListItemApi2Session({ session_code: 's1', session_name: '新会话' });
+    const detail = transferSessionApi2Session({
+      effective_reasoning_effort: 'high',
+      session_code: 's1',
+      session_name: '新会话',
+    });
+    const mediator = {
+      agent: { abortChat: vi.fn(), info: ref({}) },
+      http: {
+        session: {
+          getSessions: vi.fn().mockResolvedValue({ count: 1, numPages: 1, page: 1, results: [listItem] }),
+          getSession: vi.fn().mockResolvedValue(detail),
+          renameSession: vi.fn().mockResolvedValue({ ...listItem, sessionName: 'AI 名称' }),
+        },
+      },
+    } as unknown as IMediatorModule;
+    const session = useSession(mediator);
+
+    await session.getSessions();
+    await session.getSession('s1');
+    await session.renameSession('s1');
+
+    expect(session.current.value?.sessionName).toBe('AI 名称');
+    expect(session.current.value?.effectiveReasoningEffort).toBe('high');
   });
 });

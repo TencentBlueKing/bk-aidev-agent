@@ -61,6 +61,7 @@ const models: ILlmItem[] = [
 | 空列表 | 启用模型选择但无可用模型 → 抛 `ModelUnavailableError`，阻断建会话并上报 `sdk-error`（`apiName: session`） |
 | 首次 / 兜底 | `session.model` 命中列表 → 选中；空/未知且无有效选中 → `property.default` / 首项 |
 | 附件按钮 | 常驻开启；不再跟随选中模型 `property.support_vision` 或快捷指令 `supportUpload.vision` |
+| 思考深度 | 模型 `property.reasoning.supported_efforts` 非空时，在选项 hover 卡片里调节。进入会话用详情里的 `effective_reasoning_effort` 作为选中档；为空时按该模型 `default_effort` 展示 |
 
 选中优先级：
 
@@ -71,6 +72,21 @@ const models: ILlmItem[] = [
 ```
 
 时序约束：若存在 `sessionModule` 但 `current` 尚未就绪，**不会**先落 default，避免挡住后续的 `session.model`。
+
+## 思考深度
+
+chat-x 只负责滑块交互。小鲸在 `ChatBot` 里把它接到 `ModelSelectionManager`：
+
+| 步骤 | 行为 |
+| --- | --- |
+| 拉模型 | `GET llms/` 的 `property.reasoning`。`null` 表示该模型没有思考深度 |
+| 进入会话 | 用会话详情的 `effective_reasoning_effort` 回显。列表接口没有这个字段 |
+| 切换档位 | 防抖后单独 `PUT session/{session_code}/`，body 只有 `{ reasoning_effort: 档位 key }`。滑块没有「默认」档；要清空显式选择并跟随默认，调用 `updateReasoningEffort(sessionCode, 'default')` |
+| 切换模型 | 只写 `model`。同一次请求里不要带档位，后端会忽略档位并清空会话档位。写完后再按新模型的生效档回显 |
+| 发消息 | 小鲸每轮 `chat_completion` 都带当前档（`agent.chat` 第 7 个参数）。未手动选择时传模型 `default_effort`；模型不支持时传 `null` |
+| 人机协同恢复 | 审批取消、流程节点重试 / 跳过、用户提问作答也是新开一轮，同样带选择器当前档。续接已有流（刷新、断线重连）不发送该字段 |
+
+档位取值是 `none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`。展示名和说明用接口下发的 `value`、`desc`，不要在前端写死文案。
 
 ## 模型描述 {#模型描述}
 
@@ -94,7 +110,8 @@ selectedModelName → ChatContainer ModelSelector
 用户选模型 A → persistSessionModel 写回当前 session.model
   → 切历史会话 B → applySessionModel(B.model)
   → 新建会话 → resolveModelForSession 写入合法 model
-  → chat_completion(model=当前 llm_code)
+  → 改思考深度 → updateReasoningEffort（与 model 分开写）
+  → chat_completion(model=当前 llm_code, reasoning_effort=当前档)
 ```
 
 ## Props
@@ -139,8 +156,8 @@ const { agent } = chatHelper;
 // 拉取可用模型（默认 llm_type=chat.completion），写入 agent.models
 const list = await agent.getLlms({ llm_type: 'chat.completion' });
 
-// 热切换：第 6 个参数为 llm_code（须在 GET llms/ 列表内）
-await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-preview');
+// 热切换：第 6 个参数为 llm_code，第 7 个参数为本轮思考深度
+await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-preview', 'medium');
 ```
 
 自定义请求参数请走第 4 个参数 `config.data`（如 `temperature`），**不要**再把 `model` 塞进 `config.data`。

@@ -26,6 +26,7 @@
 
 import { computed, ref } from 'vue';
 
+import type { ReasoningEffort } from '../agent/type';
 import type { IMediatorModule } from '../mediator';
 import { isPvFileUploadSupported } from './pv-file-upload';
 import type {
@@ -70,11 +71,11 @@ export const useSession = (mediator: IMediatorModule) => {
   const updateSessionInList = (session: Partial<ISession> & { sessionCode: string }) => {
     // 先更新 list 中对应的 session
     list.value = list.value.map(item => (item.sessionCode === session.sessionCode ? { ...item, ...session } : item));
-    // 同步 current：优先指向 list 中更新后的对象；若不在 list（分页外 / getSession 单独写入），直接合并字段
+    // 同步 current：合并 list 中更新后的对象；若不在 list（分页外 / getSession 单独写入），直接合并字段。
+    // 保留 current 上只有详情接口才返回的字段（如 effectiveReasoningEffort）
     if (current.value?.sessionCode === session.sessionCode) {
-      current.value =
-        list.value.find(item => item.sessionCode === session.sessionCode) ??
-        ({ ...current.value, ...session } as ISession);
+      const listed = list.value.find(item => item.sessionCode === session.sessionCode);
+      current.value = { ...current.value, ...(listed ?? session) } as ISession;
     }
   };
 
@@ -201,6 +202,18 @@ export const useSession = (mediator: IMediatorModule) => {
       .finally(() => {
         isUpdateLoading.value = false;
       });
+  };
+
+  /**
+   * 单独写入思考深度。具体档位如 "medium"；"default" 恢复跟随默认。
+   * 必须在模型切换请求完成之后再调用，否则新 model 会让本次档位被忽略。
+   */
+  // 不复用 isUpdateLoading：与模型写回并发时会提前把它置回 false
+  const updateReasoningEffort = (sessionCode: string, reasoningEffort: ReasoningEffort | 'default') => {
+    return mediator.http?.session.updateReasoningEffort(sessionCode, reasoningEffort).then((res: ISession) => {
+      updateSessionInList(res);
+      return res;
+    });
   };
 
   const deleteSession = async (sessionCode: string) => {
@@ -359,6 +372,7 @@ export const useSession = (mediator: IMediatorModule) => {
     getSession,
     createSession,
     updateSession,
+    updateReasoningEffort,
     deleteSession,
     batchDeleteSessions,
     postSessionFeedback,

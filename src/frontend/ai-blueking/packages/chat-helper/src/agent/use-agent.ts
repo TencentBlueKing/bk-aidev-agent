@@ -41,7 +41,7 @@ import { MessageRole, MessageStatus, UserOperation } from '../message';
 import type { IRequestConfig, IRequestError, ISSEProtocol } from '../http';
 import type { IMediatorModule } from '../mediator';
 import type { IInterruptMessage, IMessageProperty, IUserMessage, IUserOperationPayload } from '../message/type';
-import type { IAgentInfo, ILlmItem, ILlmListQuery, StreamMode } from './type';
+import type { IAgentInfo, ILlmItem, ILlmListQuery, ReasoningEffort, StreamMode } from './type';
 import { SessionStatus } from '../session/type';
 
 /** SSE 静默重连最大次数（退避总时长约 23s，落在后端 orphan grace ~30s 内） */
@@ -137,6 +137,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     config?: IRequestConfig;
     streamMode: StreamMode;
     input?: string;
+    reasoningEffort?: ReasoningEffort | null;
   } | null = null;
 
   /**
@@ -219,13 +220,14 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     payload: IUserOperationPayload,
     config?: IRequestConfig,
     model?: string,
+    reasoningEffort?: ReasoningEffort | null,
   ) => {
     return mediator.http?.message.userOperation(sessionCode, operation, payload, config).then(() => {
       if (operation !== UserOperation.ApprovalCancel) {
-        streamRequest({ sessionCode, config, model });
+        streamRequest({ sessionCode, config, model, reasoningEffort });
       } else {
         clearLongPollTimer();
-        pollResumeSession(sessionCode, model);
+        pollResumeSession(sessionCode, model, reasoningEffort);
       }
     });
   };
@@ -357,6 +359,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       model: ctx?.model,
       url: ctx?.url,
       config: ctx?.config,
+      reasoningEffort: ctx?.reasoningEffort,
       lastMessageId: lastMessageId !== undefined ? String(lastMessageId) : undefined,
       isReconnect: true,
       /** 静默重连：仅接管已有流，禁止后端新建 producer */
@@ -373,6 +376,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     resume,
     input,
     lastMessageId,
+    reasoningEffort,
     isReconnect = false,
     /** start 可启动新一轮执行；attach 仅接管/回放已有流 */
     streamMode = 'start',
@@ -384,6 +388,11 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     resume?: IResume;
     input?: string;
     lastMessageId?: string;
+    /**
+     * 本轮思考深度。小鲸不读会话档位，start 时必须显式传入。
+     * 未传时回落到当前会话的 effectiveReasoningEffort；null 表示模型不支持。
+     */
+    reasoningEffort?: ReasoningEffort | null;
     /** 内部静默重连，不重置重连计数 */
     isReconnect?: boolean;
     streamMode?: StreamMode;
@@ -412,7 +421,18 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       resetStreamReconnectState();
     }
 
-    activeStreamContext = { sessionCode, model, url, config, streamMode, input };
+    const resolvedReasoningEffort =
+      reasoningEffort !== undefined ? reasoningEffort : mediator.session?.current?.value?.effectiveReasoningEffort;
+
+    activeStreamContext = {
+      sessionCode,
+      model,
+      url,
+      config,
+      streamMode,
+      input,
+      reasoningEffort: resolvedReasoningEffort,
+    };
 
     // 先递增世代再 abort 旧连接，避免旧流 onDone 误触发二次重连
     const streamId = ++activeStreamId;
@@ -452,8 +472,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       if (input) {
         backfillLastUserMessageId(sessionCode);
       }
-      // 轮询接口，判断是否可以继续聊天
-      pollResumeSession(sessionCode);
+      // 轮询接口，判断是否可以继续聊天；审批通过后的续跑沿用本轮档位
+      pollResumeSession(sessionCode, undefined, resolvedReasoningEffort);
     };
 
     const failWithError = (error: Error) => {
@@ -588,6 +608,11 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           session_code: sessionCode,
           model,
           input,
+          // 只在新开一轮时带上。attach 是接管已有流，不能改写这一轮的档位。
+          // 小鲸不传则后端不读会话档位和偏好，所以 null 也要显式带上。
+          ...(streamMode === 'start' && resolvedReasoningEffort !== undefined
+            ? { reasoning_effort: resolvedReasoningEffort }
+            : {}),
           execute_kwargs: {
             stream: true,
             stream_mode: streamMode,
@@ -616,6 +641,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param config - 请求配置（可选）
    * @param property - 消息属性，用于传递引用内容或快捷键相关信息（可选）
    * @param model - 模型标识（可选）
+   * @param reasoningEffort - 本轮思考深度（可选）。小鲸每轮都要传当前生效档；null 表示模型不支持
    */
   const chat = async (
     userInput: IUserMessage['content'],
@@ -624,6 +650,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     config?: IRequestConfig,
     property?: IMessageProperty,
     model?: string,
+    reasoningEffort?: ReasoningEffort | null,
   ) => {
     // 先新增一个 message
     await mediator.message?.createAndPlusMessage({
@@ -634,7 +661,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       ...(property && { property }),
     });
     // 发起聊天
-    streamRequest({ sessionCode, model, url, config });
+    streamRequest({ sessionCode, model, url, config, reasoningEffort });
   };
 
   /**
@@ -665,7 +692,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param sessionCode - 会话编码
    * @returns 是否可以继续聊天
    */
-  const pollResumeSession = (sessionCode: string, model?: string) => {
+  const pollResumeSession = (sessionCode: string, model?: string, reasoningEffort?: ReasoningEffort | null) => {
     const lastMessage = mediator.message?.list.value.at(-1) as IInterruptMessage;
     const pendingApprovalInterrupt =
       lastMessage?.content?.outcome?.type === RunFinishedOutcomeType.Interrupt
@@ -690,6 +717,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           streamRequest({
             sessionCode,
             model,
+            reasoningEffort,
             resume: {
               interruptId: pendingApprovalInterrupt.id,
               status: ResumeStatus.Resolved,
@@ -699,7 +727,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
           longPollTimer = setTimeout(() => {
             // 如果会话不匹配，则不继续轮询
             if (sessionCode !== mediator.session?.current?.value?.sessionCode) return;
-            pollResumeSession(sessionCode, model);
+            pollResumeSession(sessionCode, model, reasoningEffort);
           }, 10000);
         }
       });
@@ -808,6 +836,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
    * @param url - 请求 URL（可选）
    * @param config - 请求配置（可选）
    * @param model - 模型标识（可选）
+   * @param reasoningEffort - 本轮思考深度（可选），语义同 chat
    */
   const resendMessage = async (
     messageId: string,
@@ -816,6 +845,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     url?: string,
     config?: IRequestConfig,
     model?: string,
+    reasoningEffort?: ReasoningEffort | null,
   ) => {
     const messages = mediator.message?.list.value || [];
 
@@ -852,7 +882,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     });
 
     // 6. 立即发起流式请求（不等待删除和创建的 API 完成）
-    streamRequest({ sessionCode, model, url, config });
+    streamRequest({ sessionCode, model, url, config, reasoningEffort });
 
     // 7. 在后台等待 API 完成，处理可能的错误
     Promise.all([deletePromise, createPromise])['catch'](error => {

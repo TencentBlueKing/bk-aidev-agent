@@ -173,12 +173,31 @@ export interface IAgentResources {
   tool?: IAgentResourceItem[];
 }
 
+/** 思考深度档位（由浅到深）。对话请求只接受这些值或 null，不接受 "default" */
+export type ReasoningEffort = 'high' | 'low' | 'max' | 'medium' | 'minimal' | 'none' | 'xhigh';
+
+/** 单个思考深度档位，展示名与说明由接口下发 */
+export interface IReasoningEffortOption {
+  desc?: string;
+  key: ReasoningEffort;
+  value: string;
+}
+
+/** 模型的思考深度能力（后端 property.reasoning）；null 表示不支持 */
+export interface ILlmReasoning {
+  default_effort?: ReasoningEffort;
+  mandatory?: boolean;
+  supported_efforts: IReasoningEffortOption[];
+}
+
 /** 模型能力属性（后端 property 字段） */
 export interface ILlmProperty {
   agent_type?: string;
   default?: boolean;
   is_self_host?: boolean;
   max_model_len?: number;
+  /** 思考深度；null 或缺省表示该模型不支持 */
+  reasoning?: ILlmReasoning | null;
   support_summary?: boolean;
   support_thinking?: boolean;
   support_thinking_quick?: boolean;
