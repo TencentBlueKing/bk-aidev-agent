@@ -58,6 +58,7 @@ from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel, Ch
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import (
+    AgentConfig,
     AgentOptions,
     ChatPrompt,
     ExecuteKwargs,
@@ -1820,6 +1821,10 @@ class ChatAgentBuilder:
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
 
+        reasoning_effort = chat.reasoning_effort or self._agent_default_reasoning_effort(config)
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+
         if chat.auth_headers:
             kwargs["auth_headers"] = chat.auth_headers
 
@@ -1837,6 +1842,18 @@ class ChatAgentBuilder:
             kwargs["max_retries"] = 0
 
         return ChatModel.get_setup_instance(**kwargs)
+
+    @staticmethod
+    def _agent_default_reasoning_effort(config: AgentConfig) -> str | None:
+        """智能体默认思考深度只属于平台下发的默认模型，chat_model 被热切换后不再携带。
+
+        无 ``agent_info.prompt_setting.llm_code``（手工构造的 AgentConfig）时视为未切换。
+        """
+        prompt_setting = (getattr(config, "agent_info", None) or {}).get("prompt_setting") or {}
+        default_model = prompt_setting.get("llm_code")
+        if default_model and default_model != config.chat_model:
+            return None
+        return config.reasoning_effort
 
     def build_chat_model_non_thinking(self) -> BaseChatModel | None:
         """构建非思考模型 (返回 ChatModel 实例)"""

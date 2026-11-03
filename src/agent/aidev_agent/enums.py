@@ -129,6 +129,18 @@ class ExecutorIdentity(enum.StrEnum):
     APPROVER = "approver"
 
 
+class ReasoningEffort(enum.StrEnum):
+    """模型思考深度档位（对齐 OpenAI reasoning_effort），由网关按模型配置翻译为上游参数。"""
+
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
 class SessionsStatus(enum.Enum):
     """会话状态（断点续传）"""
 
