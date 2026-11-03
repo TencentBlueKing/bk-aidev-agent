@@ -52,6 +52,14 @@ const RECONNECT_MAX_DELAY_MS = 8000;
 const getReconnectDelayMs = (attempt: number): number =>
   Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1), RECONNECT_MAX_DELAY_MS);
 
+/** 相同查询参数的 getLlms 视为同一次请求 */
+const buildLlmQueryKey = (params?: ILlmListQuery): string =>
+  JSON.stringify({
+    fuzzy: params?.fuzzy ?? '',
+    llm_type: params?.llm_type ?? '',
+    supports: params?.supports ?? '',
+  });
+
 /** 后端 attach_only 且无可接管流时抛出（见 StreamAttachUnavailableError） */
 const isStreamAttachUnavailableError = (error: Error): boolean => /No active or replayable stream/i.test(error.message);
 
@@ -120,6 +128,8 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
   let queuedStart: { sessionCode: string } | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectWaitResolve: ((continued: boolean) => void) | null = null;
+  /** 进行中的模型列表请求；相同查询且未传 config 时复用，避免初始化并发打两次 llms/ */
+  let pendingLlms: { key: string; promise: Promise<ILlmItem[]> } | null = null;
   let activeStreamContext: {
     sessionCode: string;
     model?: string;
@@ -131,8 +141,17 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
 
   /**
    * 获取可用模型列表，写入 models；失败时清空列表并抛出
+   *
+   * 未传 config 时，相同查询的并发调用复用同一次 HTTP。
+   * 外壳 bootstrap 与内嵌 ChatBot 会在初始化时各调一次，这里合并成一次请求。
+   * 带 config（例如 AbortSignal）的调用不参与合并，避免互相取消。
    */
-  const getLlms = (params?: ILlmListQuery, config?: IRequestConfig) => {
+  const getLlms = (params?: ILlmListQuery, config?: IRequestConfig): Promise<ILlmItem[]> => {
+    const key = buildLlmQueryKey(params);
+    if (!config && pendingLlms?.key === key) {
+      return pendingLlms.promise;
+    }
+
     isModelsLoading.value = true;
     const request = mediator.http?.agent.getLlms(params, config);
     if (!request) {
@@ -140,7 +159,9 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
       models.value = [];
       return Promise.resolve([] as ILlmItem[]);
     }
-    return request
+
+    let promise!: Promise<ILlmItem[]>;
+    promise = request
       .then((res: ILlmItem[]) => {
         models.value = res;
         return res;
@@ -150,8 +171,16 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
         throw error;
       })
       ['finally'](() => {
+        if (pendingLlms?.promise === promise) {
+          pendingLlms = null;
+        }
         isModelsLoading.value = false;
       });
+
+    if (!config) {
+      pendingLlms = { key, promise };
+    }
+    return promise;
   };
 
   const getAgentInfo = () => {
@@ -840,6 +869,7 @@ export const useAgent = (mediator: IMediatorModule, protocol: ISSEProtocol) => {
     isChatting.value = false;
     models.value = [];
     isModelsLoading.value = false;
+    pendingLlms = null;
     activeStreamContext = null;
     reconnectAttempt = 0;
     runFinished = false;

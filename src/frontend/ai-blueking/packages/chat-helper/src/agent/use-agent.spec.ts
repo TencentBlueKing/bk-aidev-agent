@@ -18,6 +18,18 @@ import { useAgent } from './use-agent';
 
 import type { IMediatorModule } from '../mediator';
 import type { IMessage } from '../message/type';
+import type { ILlmItem } from './type';
+
+const sampleLlm: ILlmItem = {
+  id: 1,
+  llm_code: 'hy3-preview',
+  llm_name: '混元3',
+  llm_type: 'chat.completion',
+  max_token_size: 0,
+  property: {},
+  space_auth_mode: '',
+  user_auth_mode: '',
+};
 
 const flush = async () => {
   await Promise.resolve();
@@ -339,5 +351,68 @@ describe('useAgent stop seal', () => {
 
     expect(pushedUser?.id).toBe('real-1');
     expect(harness.getMessages).toHaveBeenCalledWith('s1');
+  });
+});
+
+describe('getLlms', () => {
+  it('joins concurrent calls with the same query into one HTTP request', async () => {
+    const harness = createHarness();
+    let resolveList: (value: ILlmItem[]) => void = () => {};
+    harness.mediator.http!.agent.getLlms.mockImplementation(
+      () =>
+        new Promise<ILlmItem[]>(resolve => {
+          resolveList = resolve;
+        }),
+    );
+
+    const first = harness.agent.getLlms();
+    const second = harness.agent.getLlms();
+
+    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+
+    resolveList([sampleLlm]);
+    await expect(first).resolves.toEqual([sampleLlm]);
+    await expect(second).resolves.toEqual([sampleLlm]);
+    expect(harness.agent.models.value).toEqual([sampleLlm]);
+    expect(harness.agent.isModelsLoading.value).toBe(false);
+  });
+
+  it('starts a new request after the in-flight one settles', async () => {
+    const harness = createHarness();
+    harness.mediator.http!.agent.getLlms.mockResolvedValue([sampleLlm]);
+
+    await harness.agent.getLlms();
+    await harness.agent.getLlms();
+
+    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not join calls that use different query params', async () => {
+    const harness = createHarness();
+    harness.mediator.http!.agent.getLlms.mockResolvedValue([sampleLlm]);
+
+    await Promise.all([
+      harness.agent.getLlms({ llm_type: 'chat.completion' }),
+      harness.agent.getLlms({ fuzzy: 'hunyuan' }),
+    ]);
+
+    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a later call retry after a shared in-flight request fails', async () => {
+    const harness = createHarness();
+    harness.mediator.http!.agent.getLlms.mockRejectedValueOnce(new Error('network'));
+    harness.mediator.http!.agent.getLlms.mockResolvedValueOnce([sampleLlm]);
+
+    const first = harness.agent.getLlms();
+    const second = harness.agent.getLlms();
+
+    await expect(first).rejects.toThrow('network');
+    await expect(second).rejects.toThrow('network');
+    expect(harness.agent.models.value).toEqual([]);
+
+    await expect(harness.agent.getLlms()).resolves.toEqual([sampleLlm]);
+    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
   });
 });
