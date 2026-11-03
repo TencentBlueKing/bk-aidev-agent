@@ -1837,6 +1837,7 @@ class TestBuildChatModelReasoningEffort:
         ctx = MagicMock(spec=AgentBuildContext)
         ctx.session_context_data = []
         ctx.session_code = ""
+        ctx.resource_manager = MagicMock(tenant_id="default")
         ctx.agent_config.agent_info = {"prompt_setting": {"llm_code": "hy3"}}
         ctx.agent_config.chat_model = chat_model
         ctx.agent_config.non_thinking_llm = "hy-lite"
