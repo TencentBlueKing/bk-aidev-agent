@@ -339,27 +339,40 @@
   const isTipTarget = (target: EventTarget | null) =>
     target instanceof Node && [tipContentRef.value, descriptionTip?.popper].some(element => element?.contains(target));
 
-  onBeforeUnmount(hideDescriptionTip);
-
   // 键盘导航复用通用 composable，items 需为 shallowRef，故本地同步一份并在列表变化时重置高亮
   const navItems = shallowRef<IModelOption[]>(props.models);
+  // scrollIntoView 的 scroll 事件先于本帧 rAF。打开卡片必须等滚动处理完，否则会被 hideDescriptionTip 立刻关掉
+  let keyboardTipFrame = 0;
   const { activeIndex } = useMenuKeydown<IModelOption>({
     items: navItems,
     menuRef: panelRef,
     onSelect: model => handleSelect(model),
-    // 上下键移动高亮后立刻展示该项的描述卡片（悬停仍走延迟）
     onActive: index => {
-      const model = navItems.value[index];
-      const anchor = panelRef.value?.querySelectorAll('.ai-model-selector-panel-option')[index];
-      if (model && anchor instanceof HTMLElement) {
-        openDescriptionTip(anchor, model, 0);
-      }
+      cancelAnimationFrame(keyboardTipFrame);
+      keyboardTipFrame = requestAnimationFrame(() => {
+        keyboardTipFrame = 0;
+        if (index !== activeIndex.value) {
+          return;
+        }
+        const model = navItems.value[index];
+        const anchor = panelRef.value?.querySelectorAll('.ai-model-selector-panel-option')[index];
+        if (model && anchor instanceof HTMLElement) {
+          openDescriptionTip(anchor, model, 0);
+        }
+      });
     },
+  });
+
+  onBeforeUnmount(() => {
+    cancelAnimationFrame(keyboardTipFrame);
+    hideDescriptionTip();
   });
 
   watch(
     () => props.models,
     models => {
+      cancelAnimationFrame(keyboardTipFrame);
+      keyboardTipFrame = 0;
       navItems.value = models;
       activeIndex.value = 0;
       hideDescriptionTip();

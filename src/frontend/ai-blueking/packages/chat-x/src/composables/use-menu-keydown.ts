@@ -28,7 +28,7 @@ import { type ShallowRef, nextTick, onMounted, onScopeDispose, shallowRef } from
 export const useMenuKeydown = <T>(props: {
   items: ShallowRef<T[]>;
   menuRef: Readonly<ShallowRef<HTMLElement | null>>;
-  /** 上下键移动高亮后回调（滚动到位之后），Enter 不触发 */
+  /** 上下键移动高亮并 scrollIntoView 之后回调，Enter 不触发。不传时行为不变 */
   onActive?: (index: number) => void;
   onSelect: (item: T) => void;
 }) => {
