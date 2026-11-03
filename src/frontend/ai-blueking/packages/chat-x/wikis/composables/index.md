@@ -34,6 +34,7 @@
 | `useGlobalConfig`        | 根容器组件                    | 向后代 provide 全局展示配置（`size` / `supportUpload` / `timezone` / `menuSources`）    | [查看](./use-global-config.md)         |
 | `injectGlobalConfig`     | 任意后代组件                  | 取出全局展示配置，无 Provider 时返回 `undefined`                                        | [查看](./use-global-config.md)         |
 | `useCommandSelection`    | `AiSlashInput`                | edix 编辑器的光标位置快照工具；返回 `GetCursorPosition` 命令和 `commandSelection`       | [查看](./use-command-selection.md)     |
+| `useMessageMinimap`      | `MessageMinimap`、`MessageContainer` | 消息定位器的轮次划分、可视区高亮（IntersectionObserver）与问答摘要提取              | [查看](./use-message-minimap.md)       |
 | `useFlowNodeActions`     | `FlowAgentContent`            | **未从包入口导出**。源码在 `src/components/chat-content/flow-agent-content/use-flow-node-actions.ts` | [查看](./use-flow-node-actions.md) |
 | `use-common.ts`          | `ChatContainer` 等            | **未从包入口导出**。含 `useRenderModeProvider` / `useCommonTippyProvider` 等，无独立文档 | — |
 
@@ -90,6 +91,9 @@ import {
 
   // 内部：edix 光标追踪
   useCommandSelection,
+
+  // 内部：消息定位器
+  useMessageMinimap,
 } from '@blueking/chat-x';
 ```
 

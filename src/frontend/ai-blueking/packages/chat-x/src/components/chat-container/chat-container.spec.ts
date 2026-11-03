@@ -485,6 +485,7 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       messageToolsStatus: String,
       messageToolsTippyOptions: Object,
       enableMessageCollapse: Boolean,
+      enableMessageMinimap: Boolean,
       enableSelection: Boolean,
       selectedUserMessages: Array,
       onAgentAction: Function,
@@ -996,6 +997,16 @@ describe('ChatContainer', () => {
       expect(messageContainer.props('enableMessageCollapse')).toBe(false);
       await wrapper.setProps({ enableMessageCollapse: true });
       expect(messageContainer.props('enableMessageCollapse')).toBe(true);
+    });
+
+    it('消息定位器应默认开启，并将开关透传给 MessageContainer', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      const messageContainer = wrapper.findComponent({ name: 'MessageContainer' });
+
+      expect(messageContainer.props('enableMessageMinimap')).toBe(true);
+      await wrapper.setProps({ enableMessageMinimap: false });
+      expect(messageContainer.props('enableMessageMinimap')).toBe(false);
     });
 
     it('应该将 menuSources 属性透传给 ChatInput', () => {

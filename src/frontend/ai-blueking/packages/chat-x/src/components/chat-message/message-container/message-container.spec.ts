@@ -36,12 +36,16 @@ import MessageContainer from './message-container.vue';
 
 import type { AssistantMessage, Message, ToolMessage, UserMessage } from '../../../ag-ui/types';
 
+// 定位器点击会关闭自动贴底，提升到模块级以便断言
+const autoScrollEnabled = vi.hoisted(() => ({ value: true }));
+
 // Mock composables
 vi.mock('../../../composables', () => ({
   useClipboard: () => ({
     copy: vi.fn(),
   }),
   useContainerScrollProvider: () => ({
+    autoScrollEnabled,
     isScrollBottom: { value: true },
     jumpToBottom: vi.fn(),
     toScrollBottom: vi.fn(),
@@ -136,6 +140,26 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
           },
           ['Message Tools', slots.append?.()],
         );
+    },
+  }),
+}));
+
+// 定位器内部行为见 message-minimap.spec.ts，这里只断言接入与定位
+vi.mock('../message-minimap/message-minimap.vue', () => ({
+  default: defineComponent({
+    name: 'MessageMinimap',
+    props: {
+      container: { type: Object, default: null },
+      messageGroups: { type: Array, default: () => [] },
+    },
+    emits: ['locate'],
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-message-minimap',
+          'data-group-count': props.messageGroups.length,
+          'data-has-container': props.container ? 'true' : undefined,
+        });
     },
   }),
 }));
@@ -355,6 +379,81 @@ describe('MessageContainer', () => {
 
       const messageGroups = wrapper.findAll('.message-group');
       expect(messageGroups.length).toBe(4);
+    });
+  });
+
+  describe('消息定位器测试', () => {
+    const roundMessages: Message[] = [
+      createUserMessage('1', 'Q1', 1),
+      createAssistantMessage('2', 'A1', 2),
+      createUserMessage('3', 'Q2', 3),
+      createAssistantMessage('4', 'A2', 4),
+    ];
+
+    it('默认渲染定位器，并传入消息容器与可见消息组', async () => {
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      const minimap = wrapper.find('.mock-message-minimap');
+      expect(minimap.exists()).toBe(true);
+      expect(minimap.attributes('data-group-count')).toBe('4');
+      expect(minimap.attributes('data-has-container')).toBe('true');
+      // 定位器位于滚动容器首位，靠 sticky 固定在可视区
+      expect(wrapper.find('.ai-message-container').element.firstElementChild).toBe(minimap.element);
+    });
+
+    it('enableMessageMinimap 为 false 时不渲染定位器', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          enableMessageMinimap: false,
+          messages: roundMessages,
+          messageGroups: buildGroups(roundMessages),
+        },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-minimap').exists()).toBe(false);
+    });
+
+    it('定位事件应只滚动消息容器到对应提问组，并暂停自动贴底', async () => {
+      autoScrollEnabled.value = true;
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      const container = wrapper.find('.ai-message-container').element as HTMLElement;
+      const scrollTo = vi.fn();
+      container.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+      const target = wrapper.find('[data-message-group-id="group-3"]').element as HTMLElement;
+      Object.defineProperty(target, 'offsetTop', { configurable: true, value: 120 });
+
+      wrapper.findComponent({ name: 'MessageMinimap' }).vm.$emit('locate', 'group-3');
+      await nextTick();
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 120, behavior: 'smooth' });
+      expect(autoScrollEnabled.value).toBe(false);
+    });
+
+    it('找不到对应消息组时不滚动', async () => {
+      autoScrollEnabled.value = true;
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      const container = wrapper.find('.ai-message-container').element as HTMLElement;
+      const scrollTo = vi.fn();
+      container.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+
+      wrapper.findComponent({ name: 'MessageMinimap' }).vm.$emit('locate', 'missing');
+      await nextTick();
+
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(autoScrollEnabled.value).toBe(true);
     });
   });
 

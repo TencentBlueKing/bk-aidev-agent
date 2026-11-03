@@ -3,6 +3,12 @@
     ref="messageContainerRef"
     class="ai-message-container"
   >
+    <MessageMinimap
+      v-if="enableMessageMinimap"
+      :container="messageContainerRef"
+      :message-groups="visibleMessageGroups"
+      @locate="handleMinimapLocate"
+    />
     <div
       v-for="(group, groupIndex) in visibleMessageGroups"
       :id="group.uid"
@@ -139,6 +145,7 @@
   import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../../ag-ui/types';
   import { CONST_MESSAGE_TOOLS, CONST_UPDATE_TOOLS, RenderMode } from '../../../common';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
+  import { findMessageGroupElement } from '../../../composables/use-message-minimap';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import { type Token } from '../../../markdown-it';
@@ -149,6 +156,7 @@
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
   import MessageProcessList from '../message-process/message-process-list.vue';
   import { isMessageGenerating, shouldShowMessageProcess } from '../message-process/message-process-status';
+  import MessageMinimap from '../message-minimap/message-minimap.vue';
   import MessageRender from '../message-render/message-render.vue';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
@@ -162,6 +170,8 @@
   export type MessageContainerProps = {
     /** 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息，消息内部的折叠行为不变 */
     enableMessageCollapse?: boolean;
+    /** 是否启用左侧消息定位器；提问超过 4 条时展示，可预览并定位到历史问答 */
+    enableMessageMinimap?: boolean;
     enableSelection?: boolean; // 是否启用多选模式
     messageGroups: MessageGroup[]; // 消息分组列表
     messages: Message[];
@@ -209,6 +219,7 @@
 
   const props = withDefaults(defineProps<MessageContainerProps>(), {
     enableMessageCollapse: true,
+    enableMessageMinimap: true,
     enableSelection: false,
   });
   // 选中的消息
@@ -260,10 +271,22 @@
   const messageContainerRef = useTemplateRef<HTMLElement>('messageContainerRef');
   const messageContainerBottomRef = useTemplateRef<HTMLElement>('messageContainerBottomRef');
 
-  const { jumpToBottom, toScrollBottom, debouncedShowScrollBottomBtn } = useContainerScrollProvider(
+  const { autoScrollEnabled, jumpToBottom, toScrollBottom, debouncedShowScrollBottomBtn } = useContainerScrollProvider(
     messageContainerRef,
     messageContainerBottomRef,
   );
+
+  /**
+   * 定位器点击：只滚消息容器（不用 scrollIntoView，避免带动 window），
+   * 并暂停自动贴底，生成中也不会被流式跟随拉回底部；回到底部后由滚动 provider 恢复
+   */
+  const handleMinimapLocate = (uid: string) => {
+    const container = messageContainerRef.value;
+    const target = findMessageGroupElement(container, uid);
+    if (!container || !target) return;
+    autoScrollEnabled.value = false;
+    container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+  };
 
   // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
   // 再在首帧布局后补一次，避免历史消息渲染过程中出现从顶部滚到底部的动画

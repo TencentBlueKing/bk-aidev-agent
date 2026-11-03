@@ -210,6 +210,7 @@ function sidebarAPI() {
         { text: 'useContainerScroll 滚动控制', link: 'composables/use-container-scroll' },
         { text: 'useAnimationText 文本动画', link: 'composables/use-animation-text' },
         { text: 'useMessageGroup 消息分组', link: 'composables/use-message-group' },
+        { text: 'useMessageMinimap 消息定位器（内部）', link: 'composables/use-message-minimap' },
         { text: 'useCustomTab 自定义 Tab', link: 'composables/use-custom-tab' },
         { text: 'useArtifactPreview 文件产物预览', link: 'composables/use-artifact-preview' },
         { text: 'useFlowNodeActions 节点行尾操作（内部）', link: 'composables/use-flow-node-actions' },
