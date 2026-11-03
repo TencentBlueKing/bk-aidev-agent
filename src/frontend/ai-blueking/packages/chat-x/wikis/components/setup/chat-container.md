@@ -259,6 +259,12 @@ sinceVersion: 1.0.0
 <ChatContainer :messages="messages" :enable-message-collapse="false" />
 ```
 
+`enableMessageMinimap` 默认为 `true`，透传给 `MessageContainer`：提问超过 4 条时在消息区左侧展示[消息定位器](/components/setup/message-container#消息定位器)，hover 预览问答、点击定位到对应提问。设为 `false` 关闭。
+
+```vue
+<ChatContainer :messages="messages" :enable-message-minimap="false" />
+```
+
 ## 组件结构
 
 ```
@@ -1154,6 +1160,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
 | enableMessageCollapse     | `boolean`                                                                                | `true`    | 继承自 MessageContainer，是否启用所有轮次消息的顶层折叠及过程状态栏。关闭时展示全部消息并隐藏状态栏和耗时，工具栏和消息内部的折叠行为不变 |
+| enableMessageMinimap      | `boolean`                                                                                | `true`    | 继承自 MessageContainer，是否启用左侧消息定位器；提问超过 4 条时展示，hover 预览问答、点击定位到对应提问 |
 | commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件。原样透传，仅全屏态强制把 `appendTo` 改为全屏容器；未传 `appendTo` 时不注入该字段，各浮层沿用自身默认挂载点 |
 | getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |

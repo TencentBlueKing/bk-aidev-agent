@@ -751,7 +751,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。`enableMessageMinimap`（默认 `true`）同样透传给 `MessageContainer`，提问超过 4 条时在消息区左侧展示消息定位器，设为 `false` 关闭。
 
 ### v-model
 

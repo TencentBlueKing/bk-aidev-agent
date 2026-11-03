@@ -74,6 +74,7 @@ export const lang = {
   复制成功: 'Copy Success',
   复制失败: 'Copy Failed',
   返回底部: 'Return to bottom',
+  消息定位: 'Message Locator',
   停止生成: 'Stop generating',
   正在停止: 'Stopping',
   耗时: 'Duration',

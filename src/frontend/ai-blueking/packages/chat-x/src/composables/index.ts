@@ -35,5 +35,6 @@ export * from './use-global-config';
 export * from './use-input-mention';
 export * from './use-menu-keydown';
 export * from './use-message-group';
+export * from './use-message-minimap';
 export * from './use-observer-visible-list';
 export * from './use-parent-scrolling';
