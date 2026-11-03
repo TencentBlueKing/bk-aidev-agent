@@ -1816,20 +1816,29 @@ class TestBuildChatModelFast:
 
 
 class TestBuildChatModelReasoningEffort:
-    """思考深度只作用于主模型，辅助模型不携带；本轮未指定时回落智能体默认档。"""
+    """思考深度只作用于主模型，辅助模型不携带；本轮未指定时回落智能体默认档（仅默认模型）。"""
 
     @pytest.mark.parametrize(
-        ("request_effort", "agent_effort", "expected"),
-        [("high", "low", "high"), (None, "low", "low"), (None, None, None)],
-        ids=["request_first", "agent_default", "absent"],
+        ("chat_model", "request_effort", "agent_effort", "expected"),
+        [
+            ("hy3", "high", "low", "high"),
+            ("hy3", None, "low", "low"),
+            ("hy3", None, None, None),
+            ("swapped", None, "low", None),
+            ("swapped", "high", "low", "high"),
+        ],
+        ids=["request_first", "agent_default", "absent", "swapped_drops_agent_default", "swapped_keeps_request"],
     )
     @patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
     @patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "http://gw.test")
-    def test_only_primary_model_carries_reasoning_effort(self, mock_setup, request_effort, agent_effort, expected):
+    def test_only_primary_model_carries_reasoning_effort(
+        self, mock_setup, chat_model, request_effort, agent_effort, expected
+    ):
         ctx = MagicMock(spec=AgentBuildContext)
         ctx.session_context_data = []
         ctx.session_code = ""
-        ctx.agent_config.chat_model = "hy3"
+        ctx.agent_config.agent_info = {"prompt_setting": {"llm_code": "hy3"}}
+        ctx.agent_config.chat_model = chat_model
         ctx.agent_config.non_thinking_llm = "hy-lite"
         ctx.agent_config.fallback_model = None
         ctx.agent_config.temperature = None
