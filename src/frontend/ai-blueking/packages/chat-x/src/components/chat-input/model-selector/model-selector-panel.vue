@@ -157,8 +157,7 @@
   const tipContentRef = useTemplateRef<HTMLElement>('tipContentRef');
 
   /** 当前模型取外部传入的档位；其余模型拿不到会话 / 偏好，只能按各自 default_effort 展示 */
-  const effortOf = (model: IModelOption) =>
-    model.llm_name === props.selectedName ? props.reasoningEffort : undefined;
+  const effortOf = (model: IModelOption) => (model.llm_name === props.selectedName ? props.reasoningEffort : undefined);
 
   /** 预计算每个模型名后回显的档位文字（键为 llm_name） */
   const effortSuffixMap = computed(() => {
@@ -247,13 +246,9 @@
     }, MODEL_DESCRIPTION_TIP_HIDE_DELAY_MS);
   };
 
-  const handleOptionEnter = (event: MouseEvent, model: IModelOption) => {
+  const openDescriptionTip = (anchor: HTMLElement, model: IModelOption, delayMs: number) => {
     if (!hasCard(model)) {
       hideDescriptionTip();
-      return;
-    }
-    const anchor = event.currentTarget;
-    if (!(anchor instanceof HTMLElement)) {
       return;
     }
     // 从卡片移回同一选项时保持展示
@@ -264,7 +259,7 @@
     hideDescriptionTip();
     tipAnchor = anchor;
     const token = showToken;
-    showTimer = setTimeout(() => {
+    const reveal = () => {
       showTimer = undefined;
       if (token !== showToken || tipAnchor !== anchor || !anchor.isConnected) {
         return;
@@ -291,7 +286,20 @@
         descriptionTip.setContent(content);
         descriptionTip.show();
       });
-    }, MODEL_DESCRIPTION_TIP_DELAY_MS);
+    };
+    if (delayMs <= 0) {
+      reveal();
+      return;
+    }
+    showTimer = setTimeout(reveal, delayMs);
+  };
+
+  const handleOptionEnter = (event: MouseEvent, model: IModelOption) => {
+    const anchor = event.currentTarget;
+    if (!(anchor instanceof HTMLElement)) {
+      return;
+    }
+    openDescriptionTip(anchor, model, MODEL_DESCRIPTION_TIP_DELAY_MS);
   };
 
   const handleOptionLeave = () => {
@@ -329,8 +337,7 @@
 
   /** 事件目标是否落在描述卡片内（下拉据此判断「点击外部」时不收起） */
   const isTipTarget = (target: EventTarget | null) =>
-    target instanceof Node &&
-    [tipContentRef.value, descriptionTip?.popper].some(element => element?.contains(target));
+    target instanceof Node && [tipContentRef.value, descriptionTip?.popper].some(element => element?.contains(target));
 
   onBeforeUnmount(hideDescriptionTip);
 
@@ -340,6 +347,14 @@
     items: navItems,
     menuRef: panelRef,
     onSelect: model => handleSelect(model),
+    // 上下键移动高亮后立刻展示该项的描述卡片（悬停仍走延迟）
+    onActive: index => {
+      const model = navItems.value[index];
+      const anchor = panelRef.value?.querySelectorAll('.ai-model-selector-panel-option')[index];
+      if (model && anchor instanceof HTMLElement) {
+        openDescriptionTip(anchor, model, 0);
+      }
+    },
   });
 
   watch(

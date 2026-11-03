@@ -28,6 +28,8 @@ import { type ShallowRef, nextTick, onMounted, onScopeDispose, shallowRef } from
 export const useMenuKeydown = <T>(props: {
   items: ShallowRef<T[]>;
   menuRef: Readonly<ShallowRef<HTMLElement | null>>;
+  /** 上下键移动高亮后回调（滚动到位之后），Enter 不触发 */
+  onActive?: (index: number) => void;
   onSelect: (item: T) => void;
 }) => {
   const activeIndex = shallowRef(0);
@@ -45,9 +47,10 @@ export const useMenuKeydown = <T>(props: {
   const scrollToActive = () => {
     nextTick(() => {
       const activeEl = props.menuRef.value?.querySelector('.is-active');
-      if (activeEl) {
+      if (activeEl instanceof HTMLElement) {
         activeEl.scrollIntoView({ block: 'nearest' });
       }
+      props.onActive?.(activeIndex.value);
     });
   };
   const handleKeydown = (e: KeyboardEvent) => {

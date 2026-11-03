@@ -55,10 +55,11 @@ describe('ReasoningEffortSlider', () => {
     return track;
   };
 
-  const segments = () => wrapper!.findAll('.ai-reasoning-effort-slider-segment');
+  const segments = () => wrapper?.findAll('.ai-reasoning-effort-slider-segment');
   const activeCount = () => segments().filter(segment => segment.classes('is-active')).length;
-  const thumb = () => wrapper!.find('.ai-reasoning-effort-slider-thumb');
-  const valueText = () => wrapper!.find('.ai-reasoning-effort-slider-value');
+  const thumb = () => wrapper?.find('.ai-reasoning-effort-slider-thumb');
+  const valueText = () => wrapper?.find('.ai-reasoning-effort-slider-value');
+  const tip = () => wrapper?.find('.ai-reasoning-effort-slider-tip');
 
   afterEach(() => {
     wrapper?.unmount();
@@ -103,20 +104,48 @@ describe('ReasoningEffortSlider', () => {
       expect(activeCount()).toBe(1);
       expect(thumb().attributes('style')).toContain('--ai-reasoning-effort-thumb-ratio: 1');
       expect(thumb().attributes('tabindex')).toBe('-1');
-      expect(wrapper!.classes()).toContain('is-static');
+      expect(wrapper?.classes()).toContain('is-static');
 
       await track.trigger('pointerdown', { button: 0, clientX: 0, pointerId: 1 });
       await track.trigger('pointerup', { clientX: 0, pointerId: 1 });
-      expect(wrapper!.emitted('change')).toBeFalsy();
+      expect(wrapper?.emitted('change')).toBeFalsy();
     });
   });
 
   describe('交互', () => {
-    it('点击轨道应就近吸附并抛出一次 change', async () => {
+    it('按下轨道后聚焦滑块，左右键才能调档', async () => {
+      wrapper = mount(ReasoningEffortSlider, {
+        attachTo: document.body,
+        props: { effort: 'low', options: SIX_EFFORTS },
+      });
+      const track = wrapper.find('.ai-reasoning-effort-slider-track');
+      vi.spyOn(track.element, 'getBoundingClientRect').mockReturnValue(TRACK_RECT);
+
+      await track.trigger('pointerdown', { button: 0, clientX: clientXOf(1), pointerId: 1 });
+      expect(document.activeElement).toBe(thumb().element);
+      await track.trigger('pointerup', { clientX: clientXOf(1), clientY: 6, pointerId: 1 });
+
+      await thumb().trigger('keydown', { key: 'ArrowRight' });
+      expect(wrapper.emitted('change')).toEqual([['medium']]);
+      // 左右键后气泡跟着新档位，不留在按下时的位置
+      expect(tip().text()).toBe('中');
+      expect(tip().attributes('style')).toContain('--ai-reasoning-effort-tip-ratio: 0.4');
+
+      await wrapper.setProps({ effort: 'medium' });
+      await thumb().trigger('keydown', { key: 'ArrowLeft' });
+      expect(tip().text()).toBe('低');
+      expect(tip().attributes('style')).toContain('--ai-reasoning-effort-tip-ratio: 0.2');
+
+      await thumb().trigger('blur');
+      expect(tip().exists()).toBe(false);
+    });
+
+    it('点击轨道应在按下时就近吸附，并只抛出一次 change', async () => {
       const track = mountSlider({ effort: 'none' });
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(2) + 10, pointerId: 1 });
-      await track.trigger('pointerup', { clientX: clientXOf(2) + 10, pointerId: 1 });
-      expect(wrapper!.emitted('change')).toEqual([['medium']]);
+      expect(wrapper?.emitted('change')).toEqual([['medium']]);
+      await track.trigger('pointerup', { clientX: clientXOf(2) + 10, clientY: 6, pointerId: 1 });
+      expect(wrapper?.emitted('change')).toEqual([['medium']]);
     });
 
     it('点击位置按分段交界划分：越过第一段中点即吸附到第 1 档', async () => {
@@ -124,39 +153,72 @@ describe('ReasoningEffortSlider', () => {
       const track = mountSlider({ effort: 'none' });
       await track.trigger('pointerdown', { button: 0, clientX: 18, pointerId: 1 });
       await track.trigger('pointerup', { clientX: 18, pointerId: 1 });
-      expect(wrapper!.emitted('change')).toEqual([['low']]);
+      expect(wrapper?.emitted('change')).toEqual([['low']]);
     });
 
-    it('拖动过程中只预览不抛 change，松手时才抛出最终档位', async () => {
+    it('拖动跨档时立即抛出 change，同一档不重复，松手不再抛出', async () => {
       const track = mountSlider({ effort: 'none' });
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(0), pointerId: 1 });
-      expect(wrapper!.emitted('dragging')).toEqual([[true]]);
+      expect(wrapper?.emitted('dragging')).toEqual([[true]]);
+      expect(wrapper?.emitted('change')).toBeFalsy();
 
       await track.trigger('pointermove', { clientX: clientXOf(3), pointerId: 1 });
       expect(activeCount()).toBe(3);
       expect(valueText().text()).toBe('高');
-      expect(wrapper!.emitted('change')).toBeFalsy();
+      expect(tip().text()).toBe('高');
+      expect(wrapper?.emitted('change')).toEqual([['high']]);
 
-      // 拖出轨道右侧应夹到最后一档
+      // 仍停在同一档时不重复抛出
+      await track.trigger('pointermove', { clientX: clientXOf(3) + 2, pointerId: 1 });
+      expect(wrapper?.emitted('change')).toEqual([['high']]);
+
+      // 拖出轨道右侧应夹到最后一档；松手不再追加
       await track.trigger('pointermove', { clientX: 999, pointerId: 1 });
-      await track.trigger('pointerup', { clientX: 999, pointerId: 1 });
-      expect(wrapper!.emitted('change')).toEqual([['max']]);
-      expect(wrapper!.emitted('dragging')).toEqual([[true], [false]]);
+      await track.trigger('pointerup', { clientX: 999, clientY: 0, pointerId: 1 });
+      expect(wrapper?.emitted('change')).toEqual([['high'], ['max']]);
+      expect(wrapper?.emitted('dragging')).toEqual([[true], [false]]);
     });
 
     it('松手位置与当前档位相同时不抛 change', async () => {
       const track = mountSlider({ effort: 'low' });
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(1), pointerId: 1 });
       await track.trigger('pointerup', { clientX: clientXOf(1), pointerId: 1 });
-      expect(wrapper!.emitted('change')).toBeFalsy();
+      expect(wrapper?.emitted('change')).toBeFalsy();
     });
 
-    it('pointercancel 时放弃拖动、恢复原档位', async () => {
+    it('pointercancel 结束拖动，不撤回已抛出的档位', async () => {
       const track = mountSlider({ effort: 'low' });
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(4), pointerId: 1 });
+      expect(wrapper?.emitted('change')).toEqual([['xhigh']]);
       await track.trigger('pointercancel', { pointerId: 1 });
-      expect(wrapper!.emitted('change')).toBeFalsy();
+      expect(wrapper?.emitted('change')).toEqual([['xhigh']]);
+      expect(wrapper?.emitted('dragging')).toEqual([[true], [false]]);
+      // 父级未回写 effort 时，展示回落到 props
       expect(valueText().text()).toBe('低');
+      expect(tip().exists()).toBe(false);
+    });
+
+    it('悬停轨道时显示所在档位名称，不改变选中；移出后气泡消失', async () => {
+      const track = mountSlider({ effort: 'none' });
+      expect(tip().exists()).toBe(false);
+
+      await track.trigger('pointermove', { clientX: clientXOf(2) });
+      expect(tip().text()).toBe('中');
+      expect(tip().attributes('style')).toContain('--ai-reasoning-effort-tip-ratio: 0.4');
+      expect(valueText().text()).toBe('关闭');
+      expect(activeCount()).toBe(0);
+      expect(wrapper?.emitted('change')).toBeFalsy();
+
+      await track.trigger('pointerleave');
+      expect(tip().exists()).toBe(false);
+    });
+
+    it('disabled 时悬停仍显示档位名称，但按下不抛 change', async () => {
+      const track = mountSlider({ disabled: true, effort: 'low' });
+      await track.trigger('pointermove', { clientX: clientXOf(3) });
+      expect(tip().text()).toBe('高');
+      await track.trigger('pointerdown', { button: 0, clientX: clientXOf(4), pointerId: 1 });
+      expect(wrapper?.emitted('change')).toBeFalsy();
     });
 
     it('左右方向键、Home、End 应调档，越界时不抛出', async () => {
@@ -167,11 +229,11 @@ describe('ReasoningEffortSlider', () => {
       await thumb().trigger('keydown', { key: 'Home' });
       // 上下方向键由模型列表的键盘导航使用，这里不响应
       await thumb().trigger('keydown', { key: 'ArrowUp' });
-      expect(wrapper!.emitted('change')).toEqual([['medium'], ['none'], ['max'], ['none']]);
+      expect(wrapper?.emitted('change')).toEqual([['medium'], ['none'], ['max'], ['none']]);
 
-      await wrapper!.setProps({ effort: 'none' });
+      await wrapper?.setProps({ effort: 'none' });
       await thumb().trigger('keydown', { key: 'ArrowLeft' });
-      expect(wrapper!.emitted('change')).toHaveLength(4);
+      expect(wrapper?.emitted('change')).toHaveLength(4);
     });
 
     it('disabled 时不响应点击和按键', async () => {
@@ -179,8 +241,8 @@ describe('ReasoningEffortSlider', () => {
       await track.trigger('pointerdown', { button: 0, clientX: clientXOf(4), pointerId: 1 });
       await track.trigger('pointerup', { clientX: clientXOf(4), pointerId: 1 });
       await thumb().trigger('keydown', { key: 'ArrowRight' });
-      expect(wrapper!.emitted('change')).toBeFalsy();
-      expect(wrapper!.classes()).toContain('is-disabled');
+      expect(wrapper?.emitted('change')).toBeFalsy();
+      expect(wrapper?.classes()).toContain('is-disabled');
     });
   });
 });
