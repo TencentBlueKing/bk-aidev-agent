@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EventType } from '../event';
 import { useMessage } from '../message';
-import { MessageRole, MessageStatus } from '../message/type';
+import { MessageRole, MessageStatus, UserOperation } from '../message/type';
 import { SessionStatus } from '../session/type';
 import { useAgent } from './use-agent';
 
@@ -351,6 +351,72 @@ describe('useAgent stop seal', () => {
 
     expect(pushedUser?.id).toBe('real-1');
     expect(harness.getMessages).toHaveBeenCalledWith('s1');
+  });
+});
+
+describe('reasoning effort on chat_completion', () => {
+  it('sends reasoning_effort when starting a turn, including null', async () => {
+    const harness = createHarness();
+
+    await harness.agent.streamRequest({ model: 'hy3', reasoningEffort: 'high', sessionCode: 's1' });
+    expect(harness.lastStreamCallbacks().data.reasoning_effort).toBe('high');
+
+    await harness.agent.streamRequest({ reasoningEffort: null, sessionCode: 's1' });
+    expect(harness.lastStreamCallbacks().data.reasoning_effort).toBeNull();
+  });
+
+  it('falls back to the current session effective reasoning effort', async () => {
+    const harness = createHarness();
+    harness.mediator.session!.current.value = {
+      effectiveReasoningEffort: 'medium',
+      sessionCode: 's1',
+      status: SessionStatus.Running,
+    } as typeof harness.mediator.session.current.value;
+
+    await harness.agent.streamRequest({ sessionCode: 's1' });
+
+    expect(harness.lastStreamCallbacks().data.reasoning_effort).toBe('medium');
+  });
+
+  it('forwards reasoning_effort from userOperationStreamRequest and resendMessage', async () => {
+    const harness = createHarness();
+    (harness.mediator.http as unknown as { message: { userOperation: unknown } }).message.userOperation = vi
+      .fn()
+      .mockResolvedValue(undefined);
+
+    await harness.agent.userOperationStreamRequest(
+      's1',
+      UserOperation.FlowNodeRetry,
+      { node_id: 'n1', task_id: '1' },
+      undefined,
+      undefined,
+      'high',
+    );
+    expect(harness.lastStreamCallbacks().data.reasoning_effort).toBe('high');
+
+    harness.mediator.message!.list.value.push({
+      content: 'hi',
+      id: 'u1',
+      role: MessageRole.User,
+      sessionCode: 's1',
+      status: MessageStatus.Complete,
+    });
+    (harness.mediator.message as unknown as { createAndPlusMessage: unknown }).createAndPlusMessage = vi
+      .fn()
+      .mockResolvedValue(undefined);
+    (harness.mediator.message as unknown as { deleteMessages: unknown }).deleteMessages = vi
+      .fn()
+      .mockResolvedValue(undefined);
+    await harness.agent.resendMessage('u1', 's1', undefined, undefined, undefined, 'hy3', 'low');
+    expect(harness.lastStreamCallbacks().data.reasoning_effort).toBe('low');
+  });
+
+  it('omits reasoning_effort when attaching to an existing stream', async () => {
+    const harness = createHarness();
+
+    await harness.agent.streamRequest({ reasoningEffort: 'high', sessionCode: 's1', streamMode: 'attach' });
+
+    expect(harness.lastStreamCallbacks().data).not.toHaveProperty('reasoning_effort');
   });
 });
 

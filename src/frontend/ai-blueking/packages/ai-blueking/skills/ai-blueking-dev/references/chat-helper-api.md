@@ -150,6 +150,7 @@ await agent.chat(
   config?: RequestConfig,
   property?: IMessageProperty,   // 第 5 个参数：引用内容 / 快捷键等消息属性
   model?: string,                // 第 6 个参数：热切换 llm_code（须在 GET llms/ 列表内）
+  reasoningEffort?: ReasoningEffort | null, // 第 7 个参数：本轮思考深度。小鲸每轮都要传；null 表示模型不支持
 );
 
 // 带额外参数（通过第 5 个参数 property 传递）
@@ -157,8 +158,8 @@ await agent.chat(userInput, sessionCode, undefined, undefined, {
   extra: { cite: '引用内容' },
 });
 
-// 模型热切换
-await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-preview');
+// 模型热切换，并带上当前思考深度
+await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-preview', 'medium');
 
 // 自定义请求参数（如 temperature）走 config.data，不要把 model 塞进 data
 await agent.chat(userInput, sessionCode, undefined, {
@@ -409,6 +410,8 @@ interface ISession {
   status?: SessionStatus;        // 会话运行状态
   isTemporary?: boolean;         // 是否临时会话
   model?: string;                // 模型
+  reasoningEffort?: ReasoningEffort | null;           // 会话里显式选的档；null = 跟随默认
+  effectiveReasoningEffort?: ReasoningEffort | null;  // 下一轮实际档；null = 模型不支持。列表接口不返回
   rate?: number;                 // 评分
   comment?: string;              // 评论
   createdAt?: string;
@@ -479,6 +482,23 @@ await session.updateSession({
   sessionName: '新名称',
 });
 ```
+
+通用更新**不会**提交 `reasoning_effort`。换模型时不要把档位和 `model` 放在同一次请求里，后端会忽略档位并清空会话档位。
+
+#### updateReasoningEffort
+
+只写思考深度。具体档位写入会话（小鲸同时记为该模型的个人偏好）；`'default'` 恢复跟随默认。
+
+```typescript
+await session.updateReasoningEffort(sessionCode, 'medium');
+await session.updateReasoningEffort(sessionCode, 'default');
+```
+
+改档要等同会话的模型更新完成后再调用。
+
+会话列表接口不返回 `effective_reasoning_effort`。列表项上这个字段**缺省**（不是 `null`），合并进 `current` 时不会抹掉详情里的值；详情 / 更新响应缺省时按 `null` 处理。
+
+新开一轮的其它入口同样接受思考深度：`resendMessage` 第 7 参、`userOperationStreamRequest` 第 6 参、`pollResumeSession` 第 3 参、`streamRequest({ reasoningEffort })`。未传时回落到 `current.effectiveReasoningEffort`；`attach` 续流不发送该字段。
 
 #### deleteSession
 

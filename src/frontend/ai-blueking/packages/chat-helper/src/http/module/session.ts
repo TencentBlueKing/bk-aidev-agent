@@ -28,9 +28,11 @@ import {
   transferSessionApi2Session,
   transferSessionFeedback2SessionFeedbackApi,
   transferSessionFeedbackApi2SessionFeedback,
+  transferSessionListItemApi2Session,
 } from '../transform/session';
 import { resolveRequestValue } from '../fetch';
 
+import type { ReasoningEffort } from '../../agent/type';
 import type {
   GetPvFileDownloadUrlOptions,
   ILegacyUploadFileResult,
@@ -66,7 +68,7 @@ const normalizeSessionListResponse = (res: ISessionListApi | ISessionApi[]) => {
       page: 1,
       numPages: 1,
       count: res.length,
-      results: res.map(transferSessionApi2Session),
+      results: res.map(transferSessionListItemApi2Session),
     };
   }
 
@@ -75,7 +77,7 @@ const normalizeSessionListResponse = (res: ISessionListApi | ISessionApi[]) => {
     page: res?.page ?? 1,
     numPages: res?.num_pages ?? 1,
     count: res?.count ?? results.length,
-    results: results.map(transferSessionApi2Session),
+    results: results.map(transferSessionListItemApi2Session),
   };
 };
 
@@ -137,10 +139,24 @@ export const useSession = (fetchClient: FetchClient) => {
       .post<ISessionApi>(`session/`, transferSession2SessionApi(data), config)
       .then(res => transferSessionApi2Session(res));
 
-  // 修改会话
+  // 修改会话（不含思考深度；档位须单独写，避免和 model 放在同一次请求里被清空）
   const modifySession = (data: ISession, config?: IRequestConfig) =>
     fetchClient
       .put<ISessionApi>(`session/${data.sessionCode}/`, transferSession2SessionApi(data), config)
+      .then(res => transferSessionApi2Session(res));
+
+  /**
+   * 只更新会话思考深度。
+   * 具体档位写入会话（小鲸同时记为该模型的个人偏好）；"default" 恢复跟随默认。
+   * 不要和 model 放在同一次请求里。
+   */
+  const updateReasoningEffort = (
+    sessionCode: string,
+    reasoningEffort: ReasoningEffort | 'default',
+    config?: IRequestConfig,
+  ) =>
+    fetchClient
+      .put<ISessionApi>(`session/${sessionCode}/`, { reasoning_effort: reasoningEffort }, config)
       .then(res => transferSessionApi2Session(res));
 
   // 删除会话
@@ -241,6 +257,7 @@ export const useSession = (fetchClient: FetchClient) => {
     getSessions,
     plusSession,
     modifySession,
+    updateReasoningEffort,
     deleteSession,
     batchDeleteSessions,
     getSession,

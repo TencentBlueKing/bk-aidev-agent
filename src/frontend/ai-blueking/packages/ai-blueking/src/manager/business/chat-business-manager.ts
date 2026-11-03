@@ -22,6 +22,7 @@ import type {
   IMessageModule,
   ISessionModule,
   IUserMessage,
+  ReasoningEffort,
 } from '@blueking/chat-helper';
 
 /**
@@ -59,6 +60,14 @@ export class ChatBusinessManager {
   private resolveChatModel(override?: string): string | undefined {
     const code = override ?? this.modelSelection.selectedLlmCode.value;
     return code || undefined;
+  }
+
+  /**
+   * 小鲸每轮 chat_completion 都要显式带上的思考深度。
+   * 人机协同恢复等新开一轮的入口也要用它，不能依赖会话上的缓存值。
+   */
+  resolveChatReasoningEffort(): ReasoningEffort | null {
+    return this.modelSelection.resolveReasoningEffortForChat();
   }
   /**
    * 自动重命名会话（当第一条消息发送成功后）
@@ -167,6 +176,11 @@ export class ChatBusinessManager {
     return this.modelSelection.selectedModelName;
   }
 
+  /** 当前模型生效的思考深度（绑定 ChatContainer v-model:reasoning-effort） */
+  get reasoningEffort(): Ref<ReasoningEffort | null> {
+    return this.modelSelection.reasoningEffort;
+  }
+
   /** 当前选中模型是否支持 vision（图生文能力标签，不再用于附件入口） */
   get selectedModelSupportsVision(): ComputedRef<boolean> {
     return this.modelSelection.selectedModelSupportsVision;
@@ -214,6 +228,19 @@ export class ChatBusinessManager {
   setSelectedModel(model: ILlmItem | null | undefined): void {
     this.modelSelection.setSelectedModel(model);
     this.persistSelection(this.modelSelection.selectedLlmCode.value);
+  }
+
+  /** 同步选择器上的思考深度，不写会话 */
+  setReasoningEffort(effort: ReasoningEffort | null): void {
+    this.modelSelection.setReasoningEffort(effort);
+  }
+
+  /** 用户改档：防抖后单独写入 session.reasoning_effort；失败不阻断 UI，仅上报 */
+  commitReasoningEffort(effort: ReasoningEffort): void {
+    this.modelSelection.commitReasoningEffort(effort).catch((error: unknown) => {
+      console.error('[ChatBusinessManager] Failed to persist reasoning effort:', error);
+      this.emit('chat-error', { action: 'persistReasoningEffort', error });
+    });
   }
 
   /**
@@ -378,7 +405,15 @@ export class ChatBusinessManager {
 
       // chat 内部的 createAndPlusMessage 也是乐观更新，立即添加新消息
       // 同时发起流式请求
-      this.agentModule.chat(content, sessionCode, undefined, undefined, property, this.resolveChatModel());
+      this.agentModule.chat(
+        content,
+        sessionCode,
+        undefined,
+        undefined,
+        property,
+        this.resolveChatModel(),
+        this.resolveChatReasoningEffort(),
+      );
 
       // 6. 发射事件
       this.emit('chat-regenerate', { messageId });
@@ -437,7 +472,15 @@ export class ChatBusinessManager {
       const deletePromise = this.messageModule.deleteMessages(messagesToDelete);
 
       // 使用新内容和新属性发送
-      this.agentModule.chat(newContent, sessionCode, undefined, undefined, newProperty, this.resolveChatModel());
+      this.agentModule.chat(
+        newContent,
+        sessionCode,
+        undefined,
+        undefined,
+        newProperty,
+        this.resolveChatModel(),
+        this.resolveChatReasoningEffort(),
+      );
 
       // 5. 发射事件
       this.emit('chat-resend', { messageId });
@@ -511,6 +554,7 @@ export class ChatBusinessManager {
         undefined,
         options.property,
         this.resolveChatModel(options.model),
+        this.resolveChatReasoningEffort(),
       );
 
       // 自动重命名：当第一条消息发送成功后

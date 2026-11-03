@@ -4,7 +4,12 @@ import { shallowRef } from 'vue';
 import { UserOperation } from '@blueking/chat-helper';
 import { InterruptReason, InterruptResumeOperation } from '@blueking/chat-x';
 
-import { createErrorReporterParams, createMockChatHelper, createMockEmit } from '../../../__tests__/helpers';
+import {
+  createErrorReporterParams,
+  createMockChatBusinessManager,
+  createMockChatHelper,
+  createMockEmit,
+} from '../../../__tests__/helpers';
 import { useInterruptResume } from '../use-interrupt-resume';
 
 function createParams() {
@@ -38,6 +43,9 @@ describe('useInterruptResume', () => {
       'session-1',
       UserOperation.FlowNodeRetry,
       { node_id: 'node-1', task_id: '123' },
+      undefined,
+      undefined,
+      undefined,
     );
   });
 
@@ -54,6 +62,9 @@ describe('useInterruptResume', () => {
       'session-1',
       UserOperation.FlowNodeSkip,
       { node_id: 'node-2', task_id: '456' },
+      undefined,
+      undefined,
+      undefined,
     );
   });
 
@@ -70,6 +81,9 @@ describe('useInterruptResume', () => {
       'session-1',
       UserOperation.ApprovalCancel,
       { interrupt_id: 987654 },
+      undefined,
+      undefined,
+      undefined,
     );
   });
 
@@ -86,6 +100,9 @@ describe('useInterruptResume', () => {
       'session-1',
       UserOperation.ApprovalCancel,
       { interrupt_id: 'interrupt-1' },
+      undefined,
+      undefined,
+      undefined,
     );
   });
 
@@ -98,7 +115,7 @@ describe('useInterruptResume', () => {
       payload: { interrupt_id: 987654 },
     });
 
-    expect(params.chatHelper.value!.agent.pollResumeSession).toHaveBeenCalledWith('session-1');
+    expect(params.chatHelper.value!.agent.pollResumeSession).toHaveBeenCalledWith('session-1', undefined, undefined);
     expect(params.chatHelper.value!.agent.userOperationStreamRequest).not.toHaveBeenCalled();
   });
 
@@ -167,6 +184,40 @@ describe('useInterruptResume', () => {
         payload: { answers: [] },
       },
     });
+  });
+
+  it('注入 chatBusinessManager 时，恢复执行都带上选择器当前档位', async () => {
+    const params = createParams();
+    const chatBusinessManager = shallowRef(createMockChatBusinessManager());
+    (chatBusinessManager.value!.resolveChatReasoningEffort as ReturnType<typeof vi.fn>).mockReturnValue('high');
+    const { handleInterruptResume } = useInterruptResume({ ...params, chatBusinessManager });
+
+    await handleInterruptResume({
+      operation: InterruptResumeOperation.FlowNodeRetry,
+      payload: { node_id: 'node-1', task_id: 1 },
+    });
+    await handleInterruptResume({
+      operation: InterruptResumeOperation.ApprovalRefresh,
+      payload: { interrupt_id: 1 },
+    });
+    await handleInterruptResume({
+      interruptId: 'interrupt-1',
+      reason: InterruptReason.UserQuestion,
+      status: 'resolved',
+      payload: { answers: [] },
+    });
+
+    const { agent } = params.chatHelper.value!;
+    expect(agent.userOperationStreamRequest).toHaveBeenCalledWith(
+      'session-1',
+      UserOperation.FlowNodeRetry,
+      { node_id: 'node-1', task_id: '1' },
+      undefined,
+      undefined,
+      'high',
+    );
+    expect(agent.pollResumeSession).toHaveBeenCalledWith('session-1', undefined, 'high');
+    expect(agent.streamRequest).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }));
   });
 
   it('无当前会话时应 emit error', async () => {

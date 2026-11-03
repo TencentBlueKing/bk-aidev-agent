@@ -71,6 +71,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        null,
       );
     });
 
@@ -198,6 +199,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         property,
         undefined,
+        null,
       );
     });
   });
@@ -226,6 +228,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        null,
       );
       expect(manager.isGenerating.value).toBe(true);
     });
@@ -268,6 +271,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         undefined,
+        null,
       );
     });
 
@@ -318,6 +322,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         newProperty,
         undefined,
+        null,
       );
       expect(manager.isGenerating.value).toBe(true);
     });
@@ -349,6 +354,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         newProperty,
         undefined,
+        null,
       );
     });
   });
@@ -508,6 +514,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         'deepseek',
+        null,
       );
 
       mocks.mockAgentModule.chat.mockClear();
@@ -529,6 +536,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         'deepseek',
+        null,
       );
     });
 
@@ -544,6 +552,7 @@ describe('ChatBusinessManager', () => {
         undefined,
         undefined,
         'override-code',
+        null,
       );
     });
 
@@ -730,6 +739,74 @@ describe('ChatBusinessManager', () => {
 
       manager.setSelectedModelByName('Text');
       expect(manager.selectedModelSupportsVision.value).toBe(false);
+    });
+
+    it('should send the model default effort, or the tier the user picked', async () => {
+      const reasoningModel = {
+        id: 1,
+        llm_code: 'hy3-preview',
+        llm_name: '混元3',
+        llm_type: 'chat.completion',
+        max_token_size: 32768,
+        property: {
+          default: true,
+          reasoning: {
+            default_effort: 'low',
+            supported_efforts: [
+              { key: 'low', value: '低' },
+              { key: 'high', value: '高' },
+            ],
+          },
+        },
+        space_auth_mode: '',
+        user_auth_mode: '',
+      };
+      manager.setModels([reasoningModel] as any);
+
+      await manager.sendMessage('hello', 'session-1');
+      expect(mocks.mockAgentModule.chat).toHaveBeenCalledWith(
+        'hello',
+        'session-1',
+        undefined,
+        undefined,
+        undefined,
+        'hy3-preview',
+        'low',
+      );
+
+      expect(manager.resolveChatReasoningEffort()).toBe('low');
+
+      manager.setReasoningEffort('high');
+      await manager.sendMessage('again', 'session-1');
+      expect(mocks.mockAgentModule.chat).toHaveBeenLastCalledWith(
+        'again',
+        'session-1',
+        undefined,
+        undefined,
+        undefined,
+        'hy3-preview',
+        'high',
+      );
+    });
+
+    it('should emit chat-error when persisting the reasoning tier fails', async () => {
+      vi.useFakeTimers();
+      try {
+        (mocks.mockSessionModule as Record<string, unknown>).updateReasoningEffort = vi
+          .fn()
+          .mockRejectedValue(new Error('400'));
+        manager.setModels(sampleModels as any);
+
+        manager.commitReasoningEffort('high');
+        await vi.advanceTimersByTimeAsync(300);
+
+        expect(mocks.mockEventEmitter.emit).toHaveBeenCalledWith('chat-error', {
+          action: 'persistReasoningEffort',
+          error: expect.any(Error),
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

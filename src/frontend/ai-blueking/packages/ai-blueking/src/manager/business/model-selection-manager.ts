@@ -10,7 +10,10 @@
 import { type ComputedRef, type Ref, computed, ref, watch } from 'vue';
 
 import type { ModelSelectionConfig } from './types';
-import type { IAgentModule, ILlmItem, ISession, ISessionModule } from '@blueking/chat-helper';
+import type { IAgentModule, ILlmItem, ISession, ISessionModule, ReasoningEffort } from '@blueking/chat-helper';
+
+/** 拖动滑块会连续跨档，写入会话前合并为最后一档 */
+const REASONING_PERSIST_DELAY_MS = 300;
 
 /**
  * 启用模型选择但无可用模型时抛出
@@ -38,22 +41,49 @@ export class ModelUnavailableError extends Error {
 export class ModelSelectionManager {
   private _isLoading: Ref<boolean>;
   private _models: Ref<ILlmItem[]>;
+  private _reasoningEffort: Ref<ReasoningEffort | null>;
   private _selectedLlmCode: Ref<string | undefined>;
   private _selectedModelName: ComputedRef<string>;
   private _selectedModelSupportsVision: ComputedRef<boolean>;
 
   private agentModule: IAgentModule | null;
+  /** 已同步过思考深度的会话；sessionCode 变化时才用详情覆盖本地档位 */
+  private boundSessionCode: string | undefined;
   private config: ModelSelectionConfig;
   /** 进行中的加载，供共享实例的多方调用复用 */
   private loadPromise: null | Promise<void> = null;
   /** 按 sessionCode 记录在途的 model 写回，用于合并重复写回 */
   private pendingPersist = new Map<string, { llmCode: string; promise: Promise<void> }>();
+  private reasoningPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 被新档位或切会话取代的那次防抖写回，用它结束调用方的 Promise */
+  private resolveSupersededPersist: (() => void) | null = null;
   private sessionModule: ISessionModule | null;
 
   /** 默认模型：property.default 优先，否则首项 */
   private defaultModelCode(): string | undefined {
     const list = this._models.value;
     return (list.find(m => m.property?.default) ?? list[0])?.llm_code;
+  }
+
+  /** 模型切换写回完成后，本地档位仍为空时采用服务端算出的生效档 */
+  private applyServerReasoningIfUnset(sessionCode: string): void {
+    if (this._reasoningEffort.value) {
+      return;
+    }
+    const current = this.sessionModule?.current?.value;
+    if (!current || current.sessionCode !== sessionCode || this.boundSessionCode !== sessionCode) {
+      return;
+    }
+    this._reasoningEffort.value = current.effectiveReasoningEffort ?? null;
+  }
+
+  private cancelReasoningPersist(): void {
+    if (this.reasoningPersistTimer) {
+      clearTimeout(this.reasoningPersistTimer);
+      this.reasoningPersistTimer = null;
+    }
+    this.resolveSupersededPersist?.();
+    this.resolveSupersededPersist = null;
   }
 
   /** 当前选中是否仍在可用模型列表中 */
@@ -67,6 +97,40 @@ export class ModelSelectionManager {
     return this.sessionModule != null && this.sessionModule.current?.value == null;
   }
 
+  private scheduleReasoningPersist(effort: ReasoningEffort): Promise<void> {
+    this.cancelReasoningPersist();
+    return new Promise<void>((resolve, reject) => {
+      this.resolveSupersededPersist = resolve;
+      this.reasoningPersistTimer = setTimeout(() => {
+        this.reasoningPersistTimer = null;
+        this.resolveSupersededPersist = null;
+        this.flushReasoningPersist(effort).then(resolve, reject);
+      }, REASONING_PERSIST_DELAY_MS);
+    });
+  }
+
+  private selectedModel(): ILlmItem | undefined {
+    const code = this._selectedLlmCode.value;
+    if (!code) {
+      return undefined;
+    }
+    return this._models.value.find(item => item.llm_code === code);
+  }
+
+  /**
+   * 进入会话或模型列表就绪时同步选中项。
+   * 思考深度只在 sessionCode 变化时用 effectiveReasoningEffort 覆盖，避免刷新详情冲掉用户刚选的档。
+   */
+  private syncFromSession(session?: ISession | null): void {
+    const code = session?.sessionCode;
+    if (code !== this.boundSessionCode) {
+      this.boundSessionCode = code;
+      this.cancelReasoningPersist();
+      this._reasoningEffort.value = session?.effectiveReasoningEffort ?? null;
+    }
+    this.applySessionModel(session?.model);
+  }
+
   constructor(
     agentModule: IAgentModule | null,
     sessionModule: ISessionModule | null = null,
@@ -78,6 +142,7 @@ export class ModelSelectionManager {
 
     this._models = ref<ILlmItem[]>([]);
     this._selectedLlmCode = ref<string | undefined>(undefined);
+    this._reasoningEffort = ref<ReasoningEffort | null>(null);
     this._isLoading = ref(false);
     this._selectedModelName = computed(() => {
       const code = this._selectedLlmCode.value;
@@ -95,12 +160,12 @@ export class ModelSelectionManager {
       return Boolean(model?.property?.support_vision);
     });
 
-    // 仅在 sessionCode 变化时同步模型（同一会话的 updateSession 改写 current 引用时不覆盖用户选中）
+    // 仅在 sessionCode 变化时同步模型与思考深度（同一会话的 updateSession 改写 current 引用时不覆盖用户选中）
     if (this.enabled && this.sessionModule) {
       watch(
         () => this.sessionModule!.current?.value?.sessionCode,
         () => {
-          this.applySessionModel(this.sessionModule!.current?.value?.model);
+          this.syncFromSession(this.sessionModule!.current?.value);
         },
       );
     }
@@ -119,6 +184,11 @@ export class ModelSelectionManager {
   /** 可用模型列表 */
   get models(): Ref<ILlmItem[]> {
     return this._models;
+  }
+
+  /** 当前模型生效的思考深度；null 时选择器按模型 default_effort 展示 */
+  get reasoningEffort(): Ref<ReasoningEffort | null> {
+    return this._reasoningEffort;
   }
 
   /** 当前选中模型的 llm_code */
@@ -197,7 +267,7 @@ export class ModelSelectionManager {
       } else {
         this._models.value = [];
       }
-      this.applySessionModel(this.sessionModule?.current?.value?.model);
+      this.syncFromSession(this.sessionModule?.current?.value);
     } catch (error) {
       console.error('[ModelSelectionManager] Failed to load models:', error);
       this._models.value = [];
@@ -231,7 +301,9 @@ export class ModelSelectionManager {
         model: llmCode,
       }),
     )
-      .then(() => undefined)
+      .then(() => {
+        this.applyServerReasoningIfUnset(sessionCode);
+      })
       .finally(() => {
         if (this.pendingPersist.get(sessionCode)?.promise === promise) {
           this.pendingPersist.delete(sessionCode);
@@ -270,24 +342,109 @@ export class ModelSelectionManager {
    */
   setModels(models: ILlmItem[]): void {
     this._models.value = models;
-    this.applySessionModel(this.sessionModule?.current?.value?.model);
+    this.syncFromSession(this.sessionModule?.current?.value);
   }
 
   /**
-   * 按模型选项设置选中（@model-change 回调）
+   * 按模型选项设置选中（@model-change 回调）。
+   * 换模型时清空本地档位，与选择器「换模型即回到默认档」一致；新档位由随后的 commitReasoningEffort 写入。
    */
   setSelectedModel(model: ILlmItem | null | undefined): void {
-    this._selectedLlmCode.value = model?.llm_code;
+    const next = model?.llm_code;
+    if (next !== this._selectedLlmCode.value) {
+      this.setReasoningEffort(null);
+    }
+    this._selectedLlmCode.value = next;
   }
 
   /**
    * 按展示名设置选中模型（ModelSelector v-model 为 llm_name）
    */
   setSelectedModelByName(llmName: string): void {
-    if (!llmName) {
-      this._selectedLlmCode.value = undefined;
+    const next = llmName ? this._models.value.find(item => item.llm_name === llmName)?.llm_code : undefined;
+    if (next !== this._selectedLlmCode.value) {
+      this.setReasoningEffort(null);
+    }
+    this._selectedLlmCode.value = next;
+  }
+
+  /**
+   * 同步选择器 v-model。清空（切换模型）时取消尚未发出的档位写回。
+   */
+  setReasoningEffort(effort: ReasoningEffort | null): void {
+    this._reasoningEffort.value = effort;
+    if (!effort) {
+      this.cancelReasoningPersist();
+    }
+  }
+
+  /**
+   * 用户在描述卡片里选定档位。先更新本地值，防抖后再单独写入会话。
+   * 被后续档位或切会话取代时 resolve；写回失败时 reject，本地档位保持不变（下一轮对话仍按它发送）。
+   */
+  commitReasoningEffort(effort: ReasoningEffort): Promise<void> {
+    this._reasoningEffort.value = effort;
+    return this.scheduleReasoningPersist(effort);
+  }
+
+  /**
+   * 本轮 chat_completion 要带的档位。
+   * 小鲸不读会话偏好，未显式选择时用当前模型的 default_effort，模型不支持时传 null。
+   */
+  resolveReasoningEffortForChat(): ReasoningEffort | null {
+    if (this._reasoningEffort.value) {
+      return this._reasoningEffort.value;
+    }
+    // 已选中模型时以该模型的默认档为准。换模型会先清空本地档位，
+    // 此时会话里还是旧模型的 effective，不能拿来发给新模型。
+    const model = this.enabled ? this.selectedModel() : undefined;
+    if (model) {
+      return this.defaultEffortOf(model);
+    }
+    return this.sessionModule?.current?.value?.effectiveReasoningEffort ?? null;
+  }
+
+  private defaultEffortOf(model: ILlmItem): ReasoningEffort | null {
+    const reasoning = model.property?.reasoning;
+    const efforts = reasoning?.supported_efforts ?? [];
+    if (efforts.length === 0) {
+      return null;
+    }
+    if (reasoning?.default_effort && efforts.some(item => item.key === reasoning.default_effort)) {
+      return reasoning.default_effort;
+    }
+    return efforts[0]?.key ?? null;
+  }
+
+  private async flushReasoningPersist(effort: ReasoningEffort): Promise<void> {
+    const sessionCode = this.sessionModule?.current?.value?.sessionCode;
+    const update = this.sessionModule?.updateReasoningEffort;
+    if (!sessionCode || typeof update !== 'function') {
       return;
     }
-    this._selectedLlmCode.value = this._models.value.find(m => m.llm_name === llmName)?.llm_code;
+    if (this._reasoningEffort.value !== effort) {
+      return;
+    }
+
+    const modelWrite = this.pendingPersist.get(sessionCode);
+    if (modelWrite) {
+      await modelWrite.promise.catch(() => undefined);
+    }
+    if (!this.isStillCurrent(sessionCode, effort)) {
+      return;
+    }
+
+    const updated = await update(sessionCode, effort);
+    if (!this.isStillCurrent(sessionCode, effort)) {
+      return;
+    }
+    if (updated?.effectiveReasoningEffort) {
+      this._reasoningEffort.value = updated.effectiveReasoningEffort;
+    }
+  }
+
+  /** 写回期间用户没有再改档，也没有切走会话 */
+  private isStillCurrent(sessionCode: string, effort: ReasoningEffort): boolean {
+    return this._reasoningEffort.value === effort && this.sessionModule?.current?.value?.sessionCode === sessionCode;
   }
 }

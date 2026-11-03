@@ -9,6 +9,7 @@
       v-model:aside-collapsed="asideCollapsed"
       v-model:cite="cite"
       v-model:render-mode="internalRenderMode"
+      v-model:reasoning-effort="reasoningEffort"
       v-model:selected-model="selectedModelName"
       v-model:selected-shortcut="selectedShortcut"
       :chat-loading="effectiveChatLoading"
@@ -51,6 +52,7 @@
       @delete-file="handleDeleteFile"
       @delete-shortcut="handleCloseShortcut"
       @model-change="handleModelChange"
+      @reasoning-effort-change="handleReasoningEffortChange"
       @select-shortcut="handleSelectShortcut"
       @shortcut-close="handleCloseShortcut"
       @shortcut-submit="handleShortcutSubmit"
@@ -104,7 +106,16 @@
   import type { IChatHelper, IRequestOptions } from '../types';
   import type { ChatBotEmits, ChatBotExpose, ChatBotProps, ChatMessageSlotProps, MessageToolsTippyOptions } from './types';
   import type { ILlmItem, ISupportUpload } from '@blueking/chat-helper';
-  import type { CustomBkFlowTab, IModelOption, IToolBtn, MessageSlotProps, Shortcut, TagSchema, UserMessage } from '@blueking/chat-x';
+  import type {
+    CustomBkFlowTab,
+    IModelOption,
+    IToolBtn,
+    MessageSlotProps,
+    ReasoningEffort,
+    Shortcut,
+    TagSchema,
+    UserMessage,
+  } from '@blueking/chat-x';
 
   const props = withDefaults(defineProps<ChatBotProps>(), {
     chatHelper: undefined,
@@ -207,6 +218,7 @@
   } = useChatbotInit({ props, emit, reportError, managerErrorBridge });
 
   const { handleInterruptResume, resumeUserQuestionWithInput } = useInterruptResume({
+    chatBusinessManager,
     chatHelper,
     reportError,
   });
@@ -353,6 +365,17 @@
 
   const handleModelChange = (model: IModelOption) => {
     chatBusinessManager.value?.setSelectedModel(model as ILlmItem);
+  };
+
+  const reasoningEffort = computed<ReasoningEffort | null>({
+    get: () => chatBusinessManager.value?.reasoningEffort?.value ?? null,
+    set: (effort: ReasoningEffort | null | undefined) => {
+      chatBusinessManager.value?.setReasoningEffort(effort ?? null);
+    },
+  });
+
+  const handleReasoningEffortChange = (_model: IModelOption, effort: ReasoningEffort) => {
+    chatBusinessManager.value?.commitReasoningEffort(effort);
   };
 
   // 外部 models 变更时同步到 manager（初始化后）
