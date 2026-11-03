@@ -41,6 +41,7 @@ function createHarness() {
   const stopChatHttp = vi.fn().mockResolvedValue(undefined);
   const getMessages = vi.fn().mockResolvedValue([]);
   const getSession = vi.fn().mockResolvedValue(undefined);
+  const getLlmsHttp = vi.fn();
   const protocol = {
     onDone: vi.fn(),
     onError: vi.fn(),
@@ -53,7 +54,7 @@ function createHarness() {
       fetchClient: { streamRequest },
       message: { stopChat: stopChatHttp, getMessages },
       session: { isResumeSession: vi.fn().mockResolvedValue(false) },
-      agent: { getLlms: vi.fn(), getAgentInfo: vi.fn() },
+      agent: { getLlms: getLlmsHttp, getAgentInfo: vi.fn() },
     },
     session: {
       current: ref({ sessionCode: 's1', status: SessionStatus.Running }),
@@ -64,7 +65,17 @@ function createHarness() {
   (mediator as { message: unknown }).message = useMessage(mediator);
   const agent = useAgent(mediator, protocol);
   const lastStreamCallbacks = () => streamRequest.mock.calls.at(-1)?.[0];
-  return { agent, mediator, protocol, streamRequest, stopChatHttp, getMessages, getSession, lastStreamCallbacks };
+  return {
+    agent,
+    mediator,
+    protocol,
+    streamRequest,
+    stopChatHttp,
+    getMessages,
+    getSession,
+    getLlmsHttp,
+    lastStreamCallbacks,
+  };
 }
 
 const pushUserAndStreamingAssistant = (harness: ReturnType<typeof createHarness>) => {
@@ -424,7 +435,7 @@ describe('getLlms', () => {
   it('joins concurrent calls with the same query into one HTTP request', async () => {
     const harness = createHarness();
     let resolveList: (value: ILlmItem[]) => void = () => {};
-    harness.mediator.http!.agent.getLlms.mockImplementation(
+    harness.getLlmsHttp.mockImplementation(
       () =>
         new Promise<ILlmItem[]>(resolve => {
           resolveList = resolve;
@@ -434,7 +445,7 @@ describe('getLlms', () => {
     const first = harness.agent.getLlms();
     const second = harness.agent.getLlms();
 
-    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(1);
+    expect(harness.getLlmsHttp).toHaveBeenCalledTimes(1);
     expect(second).toBe(first);
 
     resolveList([sampleLlm]);
@@ -446,30 +457,30 @@ describe('getLlms', () => {
 
   it('starts a new request after the in-flight one settles', async () => {
     const harness = createHarness();
-    harness.mediator.http!.agent.getLlms.mockResolvedValue([sampleLlm]);
+    harness.getLlmsHttp.mockResolvedValue([sampleLlm]);
 
     await harness.agent.getLlms();
     await harness.agent.getLlms();
 
-    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
+    expect(harness.getLlmsHttp).toHaveBeenCalledTimes(2);
   });
 
   it('does not join calls that use different query params', async () => {
     const harness = createHarness();
-    harness.mediator.http!.agent.getLlms.mockResolvedValue([sampleLlm]);
+    harness.getLlmsHttp.mockResolvedValue([sampleLlm]);
 
     await Promise.all([
       harness.agent.getLlms({ llm_type: 'chat.completion' }),
       harness.agent.getLlms({ fuzzy: 'hunyuan' }),
     ]);
 
-    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
+    expect(harness.getLlmsHttp).toHaveBeenCalledTimes(2);
   });
 
   it('lets a later call retry after a shared in-flight request fails', async () => {
     const harness = createHarness();
-    harness.mediator.http!.agent.getLlms.mockRejectedValueOnce(new Error('network'));
-    harness.mediator.http!.agent.getLlms.mockResolvedValueOnce([sampleLlm]);
+    harness.getLlmsHttp.mockRejectedValueOnce(new Error('network'));
+    harness.getLlmsHttp.mockResolvedValueOnce([sampleLlm]);
 
     const first = harness.agent.getLlms();
     const second = harness.agent.getLlms();
@@ -479,6 +490,6 @@ describe('getLlms', () => {
     expect(harness.agent.models.value).toEqual([]);
 
     await expect(harness.agent.getLlms()).resolves.toEqual([sampleLlm]);
-    expect(harness.mediator.http!.agent.getLlms).toHaveBeenCalledTimes(2);
+    expect(harness.getLlmsHttp).toHaveBeenCalledTimes(2);
   });
 });
