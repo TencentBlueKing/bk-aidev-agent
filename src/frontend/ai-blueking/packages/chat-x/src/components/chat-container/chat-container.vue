@@ -330,6 +330,7 @@
   import InputInfoAlert from '../chat-input/input-info-alert.vue';
   import FileArtifactPanel from '../chat-message/assistant-message/message-artifacts/file-artifact-panel.vue';
   import { buildSkipResumePayload, UserQuestionCard } from '../chat-message/interrupt-message/user-question';
+  import { getVisibleMessageGroups } from '../chat-message/message-container/get-visible-message-groups';
   import MessageContainer, {
     type MessageContainerEmits,
     type MessageContainerProps,
@@ -633,8 +634,8 @@
     messageContainerRef.value?.locate(uid);
   };
 
-  // 直接用消息容器正在渲染的分组，分享态去掉 Loading 的规则只留在容器里
-  const minimapMessageGroups = computed(() => messageContainerRef.value?.visibleMessageGroups ?? []);
+  // 与消息列表共用同一过滤规则，不回读子组件派生状态
+  const minimapMessageGroups = computed(() => getVisibleMessageGroups(messageGroups.value, renderMode.value));
 
   // 输入框里上传成功但尚未发送的文件也可立即预览，移除附件后同步移出侧栏。
   const sessionArtifacts = computed(() => {

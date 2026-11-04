@@ -151,6 +151,7 @@
   import MessageProcessList from '../message-process/message-process-list.vue';
   import { isMessageGenerating, shouldShowMessageProcess } from '../message-process/message-process-status';
   import MessageRender from '../message-render/message-render.vue';
+  import { getVisibleMessageGroups } from './get-visible-message-groups';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { IToolBtn, MessageSlotProps, TagSchema } from '../../../types';
@@ -278,12 +279,7 @@
     container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   };
 
-  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
-  const visibleMessageGroups = computed(() =>
-    props.renderMode === RenderMode.Share
-      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
-      : props.messageGroups,
-  );
+  const visibleMessageGroups = computed(() => getVisibleMessageGroups(props.messageGroups, props.renderMode));
 
   defineExpose({
     getScrollElement: () => messageContainerRef.value,
