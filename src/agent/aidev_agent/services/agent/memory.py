@@ -15,7 +15,7 @@ from aidev_agent.utils.message_text import strip_think_blocks
 
 logger = logging.getLogger(__name__)
 MEMORY_REQUEST_TIMEOUT = 2
-# 平台空间灰度未启用或探测失败后，在该时长内不再为同一智能体与用户重复探测；启用结果不缓存。
+# 用户未获记忆权限或探测失败后，在该时长内不再为同一智能体与用户重复探测；启用结果不缓存。
 POLICY_DISABLED_TTL = 60
 POLICY_FAILURE_TTL = 30
 POLICY_CACHE_MAX_ENTRIES = 4096
@@ -137,10 +137,10 @@ def automatic_personal_memory(
     """为标准 SDK 对话入口自动构建个人记忆运行时，不可用时返回 `None` 以降级为普通对话。
 
     直接使用原配置接口已选好的 `memory_settings`，关闭时不探测、不创建运行时。
-    要求 `agent_code`、`username`、`session_id` 有效且 `manager` 实现三个记忆接口；平台空间灰度返回
+    要求 `agent_code`、`username`、`session_id` 有效且 `manager` 实现三个记忆接口；用户特性权限返回
     `enabled` 不为 `True` 时不启用。只绑定当前轮用户输入；历史原文只在单次工具明确选择角色时按需读取，并以 best-effort 模式和 `MEMORY_REQUEST_TIMEOUT` 超时创建运行时、预先生成工具。
     平台判定未启用时 `POLICY_DISABLED_TTL` 秒内、探测失败时 `POLICY_FAILURE_TTL` 秒内不再重复探测，
-    因此空间灰度开启最多延迟该时长生效。任何异常只记录告警并返回 `None`，不阻断对话。
+    因此用户获权最多延迟该时长生效。任何异常只记录告警并返回 `None`，不阻断对话。
     """
     if not (memory_settings or {}).get("enabled", True):
         return None

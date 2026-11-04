@@ -293,6 +293,7 @@ def build_model_end_payload(output_message: Any, tools_mapping: dict[str, Any]) 
     if (
         output_message.tool_calls
         or output_message.invalid_tool_calls
+        or not isinstance(output_message.content, str)
         or not output_message.content.strip()
         or not is_complete_finish_reason(output_message.response_metadata.get("finish_reason"))
     ):
