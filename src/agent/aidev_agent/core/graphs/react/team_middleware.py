@@ -69,6 +69,10 @@ class TeamPromptMiddleware:
         parts.append("\n调用模式说明：\n")
         parts.append("  - task: 一次性任务模式，Agent 完成任务后返回结果\n")
         parts.append("  - member: 成员模式，支持多轮对话，自动通过 session 保持上下文\n")
+        parts.append(
+            "\n子智能体结果中的 references 是本次检索到的相关文档。采用其中的信息作答时，"
+            "引用对应的原文 URL；仅有 preview_url 时可提供知识库预览。未提供来源时不要编造链接。\n"
+        )
         if self.specs:
             parts.append("\n成员模式使用说明：\n")
             parts.append("  - 首次调用成员时使用 Agent 工具（会自动创建会话）\n")

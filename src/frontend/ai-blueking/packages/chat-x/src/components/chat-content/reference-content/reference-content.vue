@@ -1,7 +1,7 @@
 <template>
   <template
-    v-for="item in links"
-    :key="item.title"
+    v-for="(item, index) in links"
+    :key="`${item.sourceUrl || item.previewUrl}:${index}`"
   >
     <div class="ai-reference-item">
       <!-- <img
@@ -12,19 +12,19 @@
       <DocLinkIcon color="#D66F6B" />
       <span
         class="ai-reference-item-title"
-        @click="event => item.url && gotoLink(item.url, event)"
+        @click="event => gotoLink(item.sourceUrl || item.previewUrl, event)"
       >
         {{ item.title }}
       </span>
       <PreviewIcon
-        v-if="item.url && item.originFileUrl"
+        v-if="item.previewUrl"
         v-tippy="{ content: t('预览内容'), theme: 'ai-chat-box' }"
-        @click="(event: MouseEvent) => item.url && gotoLink(item.url, event)"
+        @click="(event: MouseEvent) => gotoLink(item.previewUrl, event)"
       />
       <TargetIcon
-        v-if="item.url && item.originFileUrl"
+        v-if="item.sourceUrl"
         v-tippy="{ content: t('跳转详情'), theme: 'ai-chat-box' }"
-        @click="(event: MouseEvent) => item.originFileUrl && gotoLink(item.originFileUrl, event)"
+        @click="(event: MouseEvent) => gotoLink(item.sourceUrl, event)"
       />
     </div>
   </template>
@@ -44,6 +44,18 @@
   const props = defineProps<{
     content: ReferenceDocumentContent[];
   }>();
+  const normalizePreviewUrl = (url: string) => {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/{2,}(?=agent-develop\/knowledgebase(?:\/|$))/g, '/');
+      if (path === parsed.pathname) return url;
+      parsed.pathname = path;
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  };
   const gotoLink = (url: string, event: MouseEvent) => {
     if (!url) return;
     event.stopPropagation();
@@ -56,8 +68,8 @@
       .map(item => {
         return {
           title: item.name,
-          url: item.url,
-          originFileUrl: item.originFile,
+          sourceUrl: item.url,
+          previewUrl: normalizePreviewUrl(item.originFile),
         };
       });
   });

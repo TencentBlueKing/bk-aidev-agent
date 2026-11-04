@@ -21,7 +21,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, Literal, Optional, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 
 class AgentBackendType(str, Enum):
@@ -204,11 +204,21 @@ class SubAgentConfig(BaseModel):
         )
 
 
+class KnowledgeReference(BaseModel):
+    """Related source retrieved during a child run, available for answer attribution."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = ""
+    url: str = ""
+    preview_url: str = ""
+
+
 class AgentResult(BaseModel):
     """Agent 后端标准化富结果。不可变，可序列化。
 
     阶段 26：从 TypedDict 重写为 frozen Pydantic BaseModel（D-01）。
-    精简为 5 个字段（D-02）：status / result / error / tool_calls / exit_reason。
+    保留原有结果字段，并按需附带本轮检索的相关来源。
     duration_seconds 已由 timer_wrapper 在 ToolNode 层统一记录，无需冗余。
     agent_type 标识智能体的后端类型（bkai / local），用于前端展示。
 
@@ -225,10 +235,19 @@ class AgentResult(BaseModel):
     result: str = Field(default="", description="完成时的文本结果")
     error: str | None = Field(default=None, description="失败时的错误信息")
     tool_calls: int = Field(default=0, description="工具调用次数")
+    references: list[KnowledgeReference] = Field(default_factory=list, description="本次检索到的相关来源")
     exit_reason: ExitReason = Field(
         default=ExitReason.COMPLETED,
         description="退出原因（ExitReason 枚举值，经 use_enum_values=True 序列化为字符串）",
     )
+
+    @model_serializer(mode="wrap")
+    def serialize_result(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Preserve the existing wire shape when no references were returned."""
+        data = handler(self)
+        if not self.references:
+            data.pop("references", None)
+        return data
 
 
 class AgentToolInput(BaseModel):

@@ -17,7 +17,7 @@
 
 > **能力域**：内容渲染
 
-引用文档列表渲染基础组件，用于展示 AI 回复中引用的参考文档，每项包含文档图标、标题、预览与跳转操作。
+引用文档列表渲染基础组件，用于展示本次检索得到的相关文档，每项包含文档图标、标题、预览与跳转操作。
 
 主要由 `ActivityMessage`（知识库问答场景）和 `ContentRender`（`reference_document` 类型内容）内部使用。
 
@@ -25,20 +25,20 @@
 
 ```
 <template>（无根元素，Fragment 模式）
-  v-for item in links（过滤 name 为空 → 映射为 { title, url, originFileUrl }）
+  v-for (item, index) in links（过滤 name 为空 → 映射为 { title, sourceUrl, previewUrl }）
     │
     div.ai-reference-item（flex，height: 28px，padding: 0 12px，color: #3a84ff）
       ├── DocLinkIcon（color="#D66F6B"，.ai-doc-link-icon，始终可见）
       ├── span.ai-reference-item-title（flex: 1，ellipsis，font-size: 12px）
-      │     @click → url && gotoLink(url, event)
+      │     @click → gotoLink(sourceUrl || previewUrl, event)
       │     （XSS 安全：{{ item.title }} 文本插值）
-      ├── [v-if url && originFileUrl] PreviewIcon（.ai-common-icon）
+      ├── [v-if previewUrl] PreviewIcon（.ai-common-icon）
       │     v-tippy: "预览内容"
-      │     @click → gotoLink(url, event)
+      │     @click → gotoLink(previewUrl, event)
       │     默认 display: none，hover 父容器后 display: flex
-      └── [v-if url && originFileUrl] TargetIcon（.ai-common-icon）
+      └── [v-if sourceUrl] TargetIcon（.ai-common-icon）
             v-tippy: "跳转详情"
-            @click → gotoLink(originFileUrl, event)
+            @click → gotoLink(sourceUrl, event)
             默认 display: none，hover 父容器后 display: flex
 
 gotoLink(url, event):
@@ -46,17 +46,17 @@ gotoLink(url, event):
   window.open(url, '_blank', 'noopener,noreferrer')
 ```
 
-> **`v-for` key**：使用 `item.title`（即 `name`）作为 `:key`，同一组 `content` 中 `name` 须唯一，否则触发 Vue 重复 key 警告。
+> **`v-for` key**：使用链接与序号组合作为 `:key`，不同文档可以使用相同名称（例如多个 README.md）。
 
 ## 图标可见性规则
 
 | 图标                      | 始终显示 | 显示条件（数据层）                | 显示条件（交互层） |
 | ------------------------- | -------- | --------------------------------- | ------------------ |
 | `DocLinkIcon`（红色书签） | ✓        | 无条件                            | 无条件             |
-| `PreviewIcon`（预览）     | —        | `url` 与 `originFileUrl` 均为真值 | 仅在 hover 时出现  |
-| `TargetIcon`（跳转）      | —        | `url` 与 `originFileUrl` 均为真值 | 仅在 hover 时出现  |
+| `PreviewIcon`（预览）     | —        | `originFile` 为真值 | 仅在 hover 时出现  |
+| `TargetIcon`（跳转）      | —        | `url` 为真值 | 仅在 hover 时出现  |
 
-即：只有 `url` 没有 `originFileUrl`（或反之），两个操作图标均不渲染。
+`url` 表示原文/来源链接，`originFile` 表示平台预览链接；只有一个地址时，仍显示对应的操作图标。已有会话中平台预览路由前多出的斜杠会在打开前修正，保留原查询参数。
 
 ## 基础用法
 
@@ -82,12 +82,12 @@ gotoLink(url, event):
 
 ## 混合场景：过滤与图标差异
 
-`name` 为空的项被过滤不渲染；`originFile` 为空时不显示 `PreviewIcon` / `TargetIcon`：
+`name` 为空的项被过滤不渲染；`originFile` 为空时隐藏预览图标，`url` 为空时隐藏原文跳转图标：
 
 ```typescript
 const refs = [
-  { name: '有预览和跳转', url: 'https://…/preview', originFile: 'https://…/origin' }, // 两图标
-  { name: '仅有 url', url: 'https://…/only', originFile: '' }, // 无图标
+  { name: '有预览和跳转', url: 'https://…/origin', originFile: 'https://…/preview' }, // 两图标
+  { name: '仅有 url', url: 'https://…/only', originFile: '' }, // 仅跳转图标
   { name: '', url: 'https://…/filtered', originFile: '' }, // 被过滤
 ];
 // 实际渲染 2 条，第 3 条因 name='' 被过滤
@@ -105,9 +105,9 @@ const refs = [
 
 ```typescript
 export type ReferenceDocumentContent = {
-  name: string; // 文档标题（用作列表展示文本，也作为 v-for :key）
-  url: string; // 预览链接：标题点击、PreviewIcon 点击时打开
-  originFile: string; // 原始文件链接：TargetIcon 点击时打开；为空则不渲染两个操作图标
+  name: string; // 文档标题（用作列表展示文本，允许重名）
+  url: string; // 原文/来源链接：标题优先打开，TargetIcon 点击时打开
+  originFile: string; // 平台预览链接：PreviewIcon 点击时打开；为空时隐藏预览图标
 };
 ```
 

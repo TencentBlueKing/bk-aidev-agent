@@ -23,6 +23,7 @@ from ag_ui.core.events import EventType
 
 from .context import CHUNK_FLUSH_THRESHOLD, LlmChunkMsg
 from .formatters import handle_flow_custom_event
+from .references import collect_reference_documents
 
 if TYPE_CHECKING:
     from ..utils.rabbitmq import RabbitMQClient
@@ -135,9 +136,7 @@ def consume_chat_stream(
                     think_content = ""
 
             elif event_type == EventType.CUSTOM:
-                for doc_info in chunk_json.get("documents", []):
-                    if isinstance(doc_info, dict) and "metadata" in doc_info:
-                        docs.append(doc_info["metadata"])
+                collect_reference_documents(chunk_json, docs)
 
             elif event_type == EventType.RUN_ERROR:
                 LlmChunkMsg(

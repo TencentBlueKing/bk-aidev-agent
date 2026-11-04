@@ -92,6 +92,60 @@ describe('ReferenceContent', () => {
 
   afterEach(() => {
     wrapper?.unmount();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['.mock-preview-icon', 'https://example.com/preview'],
+    ['.mock-target-icon', 'https://example.com/source'],
+  ])('opens the matching destination for %s', async (selector, expectedUrl) => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    wrapper = mount(ReferenceContent, {
+      props: {
+        content: [{ name: 'Guide', url: 'https://example.com/source', originFile: 'https://example.com/preview' }],
+      },
+    });
+    await wrapper.find(selector).trigger('click');
+    expect(open).toHaveBeenCalledWith(expectedUrl, '_blank', 'noopener,noreferrer');
+  });
+
+  it.each<[string, string, boolean, boolean]>([
+    ['https://example.com/source', '', false, true],
+    ['https://example.com/a//b', '', false, true],
+    ['', 'https://example.com/preview', true, false],
+  ])('keeps an available link usable when its companion is missing', async (url, originFile, preview, source) => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    wrapper = mount(ReferenceContent, { props: { content: [{ name: 'Guide', url, originFile }] } });
+    expect(wrapper.find('.mock-preview-icon').exists()).toBe(preview);
+    expect(wrapper.find('.mock-target-icon').exists()).toBe(source);
+    await wrapper.find('.ai-reference-item-title').trigger('click');
+    expect(open).toHaveBeenCalledWith(url || originFile, '_blank', 'noopener,noreferrer');
+  });
+
+  it.each(['', '/prefix'])('repairs stored preview paths while preserving their query', async prefix => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const query = '?anchorPath=%2F1%2Fa%26b&knowledgeName=A%2BB%20%23C';
+    const originFile = `https://example.com${prefix}//agent-develop/knowledgebase${query}`;
+    wrapper = mount(ReferenceContent, {
+      props: { content: [{ name: 'Guide', url: 'https://example.com/source', originFile }] },
+    });
+    await wrapper.find('.mock-preview-icon').trigger('click');
+    expect(open).toHaveBeenCalledWith(
+      `https://example.com${prefix}/agent-develop/knowledgebase${query}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('keeps same-named documents attached to their own sources after reordering', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const content = [1, 2].map(id => ({ name: 'README.md', url: `https://example.com/${id}`, originFile: '' }));
+    wrapper = mount(ReferenceContent, { props: { content } });
+    await wrapper.setProps({ content: [...content].reverse() });
+    await wrapper.findAll('.mock-target-icon')[0].trigger('click');
+    expect(open).toHaveBeenLastCalledWith(content[1].url, '_blank', 'noopener,noreferrer');
+    await wrapper.findAll('.mock-target-icon')[1].trigger('click');
+    expect(open).toHaveBeenLastCalledWith(content[0].url, '_blank', 'noopener,noreferrer');
   });
 
   describe('渲染测试', () => {

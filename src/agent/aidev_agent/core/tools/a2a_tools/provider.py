@@ -21,10 +21,11 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import InjectedState, ToolRuntime
 
-from aidev_agent.core.ag_ui.types import CustomEventNames
+from aidev_agent.core.ag_ui.types import CustomEventNames, CustomMessageType
 from aidev_agent.core.tools.a2a_tools.agent_tool import A2AAgentTool
 from aidev_agent.core.tools.a2a_tools.types import (
     AgentBackend,
+    AgentResult,
     AgentSpec,
     AgentToolInput,
     ExitReason,
@@ -32,6 +33,24 @@ from aidev_agent.core.tools.a2a_tools.types import (
 )
 
 logger = logging.getLogger("aidev-agent")
+
+
+def _dispatch_knowledge_references(result: AgentResult, config: RunnableConfig | None) -> None:
+    if not result.references or not config or not config.get("callbacks"):
+        return
+    documents = [
+        {
+            "name": reference.name or reference.url or reference.preview_url,
+            "url": reference.url or reference.preview_url,
+            "originFile": reference.preview_url,
+        }
+        for reference in result.references
+    ]
+    dispatch_custom_event(
+        CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
+        data={"message_id": uuid.uuid4().hex, "data": documents},
+        config=config,
+    )
 
 
 class AgentBackendResolver:
@@ -317,6 +336,7 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         wrapper = backend_result.model_dump()
         wrapper["agent_name"] = agent_name
         wrapper.update(extra_response_fields)
@@ -388,6 +408,7 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         return json.dumps(backend_result.model_dump(), ensure_ascii=False)
 
     description = _build_tool_description(specs)

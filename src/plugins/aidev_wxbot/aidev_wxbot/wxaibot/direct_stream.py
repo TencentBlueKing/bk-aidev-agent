@@ -16,6 +16,7 @@ from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_ur
 from .flow_cards import build_flow_action_card
 from .formatters import _task_state_label, format_flow_progress, format_task_outputs
 from .question_cards import build_pending_question_card, pending_question, question_prompt
+from .references import collect_reference_documents
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
 from .tracing import wxbot_span
@@ -124,9 +125,7 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                     yield DirectStreamFrame(content=_render_chat(thinking, segments.render()), finish=False)
                     pending_chars = 0
         elif event_type == EventType.CUSTOM:
-            for document in event.get("documents", []):
-                if isinstance(document, dict) and isinstance(document.get("metadata"), dict):
-                    documents.append(document["metadata"])
+            collect_reference_documents(event, documents)
         elif event_type == EventType.RUN_ERROR:
             yield DirectStreamFrame(content=STREAM_ERROR_REPLY, finish=True, failed=True)
             finished = True
@@ -271,7 +270,7 @@ def _render_flow(state: _FlowState) -> str:
 def _format_documents(documents: list[dict]) -> str:
     if not documents:
         return ""
-    lines = ["\n当前回答参考的文档如下:"]
+    lines = ["\n本次检索相关文档："]
     for index, document in enumerate(documents):
         display_name = _escape_markdown_text(str(document.get("display_name", "")))
         path = _normalize_url(str(document.get("path", "")))

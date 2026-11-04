@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from logging import getLogger
 from typing import Any
 
-from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason
+from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason, KnowledgeReference
 from aidev_agent.pydantic_models import ExecuteKwargs
 
 logger = getLogger("aidev-agent")
@@ -290,6 +290,38 @@ def sanitize_error_message(message: str) -> str:
     return sanitized
 
 
+def collect_knowledge_references(events: Iterable[dict[str, Any]]) -> list[KnowledgeReference]:
+    """Keep references from this run's retrieval events, without replaying history snapshots."""
+    references = []
+    seen = set()
+    for event in events:
+        if event.get("type") == "CUSTOM" and event.get("name") == "knowledge_rag_result":
+            documents = event.get("value")
+            if not isinstance(documents, list):
+                documents = event.get("documents")
+        elif event.get("event") == "reference_doc" or event.get("type") == "CUSTOM":
+            documents = event.get("documents")
+        else:
+            continue
+        for document in documents if isinstance(documents, list) else []:
+            if not isinstance(document, dict):
+                continue
+            metadata = document.get("metadata")
+            source = metadata if isinstance(metadata, dict) else document
+            name = source.get("display_name") or source.get("name")
+            url = source.get("path") or source.get("url")
+            preview_url = source.get("preview_path") or source.get("originFile")
+            name = name if isinstance(name, str) else ""
+            url = url.strip() if isinstance(url, str) else ""
+            preview_url = preview_url.strip() if isinstance(preview_url, str) else ""
+            identity = url or preview_url
+            if not identity or identity in seen:
+                continue
+            seen.add(identity)
+            references.append(KnowledgeReference(name=name or identity, url=url, preview_url=preview_url))
+    return references
+
+
 def build_enriched_result(
     *,
     status: str,
@@ -299,6 +331,7 @@ def build_enriched_result(
     error: str | None = None,
     tool_calls: int = 0,
     exit_reason: str = ExitReason.COMPLETED.value,
+    references: list[KnowledgeReference] | None = None,
 ) -> AgentResult:
     """构建标准化富结果。
 
@@ -325,6 +358,7 @@ def build_enriched_result(
         agent_type=agent_type,
         result=summary or "",
         tool_calls=tool_calls,
+        references=references or [],
         exit_reason=exit_reason,  # type: ignore[arg-type]  # str 与 ExitReason 兼容
     )
     if error:

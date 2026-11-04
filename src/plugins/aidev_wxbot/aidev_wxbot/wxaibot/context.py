@@ -100,7 +100,7 @@ class LlmChunkMsg(BaseModel):
     @property
     def docs_content(self):
         if self.docs:
-            content = "\n当前回答参考的文档如下:\n"
+            content = "\n本次检索相关文档：\n"
             for index, doc in enumerate(self.docs):
                 display_name = _escape_markdown_text(str(doc["display_name"]))
                 path = _normalize_url(str(doc["path"]))

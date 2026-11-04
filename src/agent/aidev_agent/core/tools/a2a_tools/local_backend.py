@@ -10,6 +10,7 @@ from aidev_agent.config import settings
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, ExitReason
 from aidev_agent.core.tools.a2a_tools.utils import (
     build_enriched_result,
+    collect_knowledge_references,
     consume_sse_stream,
     extract_child_execute_kwargs,
 )
@@ -138,6 +139,7 @@ class LocalBackend:
                 agent_name=spec.name,
                 agent_type=spec.backend_type,
                 summary=result_text,
+                references=collect_knowledge_references(events),
                 tool_calls=tool_count,
                 exit_reason=ExitReason.COMPLETED.value,
             )
