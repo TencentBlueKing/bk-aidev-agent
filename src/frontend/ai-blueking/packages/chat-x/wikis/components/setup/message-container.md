@@ -7,11 +7,11 @@ description: 负责按传入的 `messageGroups` 渲染、过程状态栏、滚�
 aiSummary: >
   负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
   每一轮助手组默认展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认保留最后一条 assistant 或更早的 flow_agent / 第三方审批及后续全部消息。enableMessageCollapse 为 false 时展示全部消息并隐藏过程状态栏和耗时。
-  不渲染消息定位器。expose getScrollElement 与 locate，供 ChatContainer 挂在主栏上的定位器判断可视区并滚动到指定消息组。
+  不渲染消息定位器。expose getScrollElement、locate 与 visibleMessageGroups，供 ChatContainer 挂在主栏上的定位器判断可视区、滚动并对齐当前渲染的分组。
   源码位置：src/components/chat-message/message-container/message-container.vue。
 relatedComponents:
   - slug: chat-container
-    relation: 消息定位器由 ChatContainer 挂载；本组件提供滚动容器与 locate
+    relation: 消息定位器由 ChatContainer 挂载；本组件提供滚动容器、locate 与可见分组
   - slug: message-render
     relation: 按组渲染每条消息时委托 MessageRender
   - slug: chat-input
@@ -849,7 +849,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 本组件不再接收 `enableMessageMinimap`，也不再渲染 `MessageMinimap`。定位器由 [ChatContainer](/components/setup/chat-container#消息定位器) 挂在主栏左侧。
 
-单独使用 `MessageContainer` 时不会出现定位器。需要接入时，用下面两个 expose：`getScrollElement()` 交出滚动容器，`locate(uid)` 只滚动到对应消息组并暂停自动贴底。详见 [Expose](#expose)。
+单独使用 `MessageContainer` 时不会出现定位器。需要接入时，用 expose：`getScrollElement()` 交出滚动容器，`locate(uid)` 只滚动到对应消息组并暂停自动贴底，`visibleMessageGroups` 是当前实际渲染的分组。详见 [Expose](#expose)。
 
 ## 自定义消息工具栏
 
@@ -1217,8 +1217,9 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 | 方法               | 类型                          | 说明                                                                                                                                 |
 | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| getScrollElement   | `() => HTMLElement \| null`   | 消息列表的滚动容器。`ChatContainer` 把它交给消息定位器，作为可视区判断的 root                                                       |
-| locate             | `(uid: string) => void`       | 在滚动容器的直接子节点里按 `data-message-group-id` 找到目标，只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
+| getScrollElement     | `() => HTMLElement \| null`   | 消息列表的滚动容器。`ChatContainer` 把它交给消息定位器，作为可视区判断的 root                                                       |
+| locate               | `(uid: string) => void`       | 在滚动容器的直接子节点里按 `data-message-group-id` 找到目标，只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
+| visibleMessageGroups | `MessageGroup[]`              | 当前实际渲染的消息组。分享态已去掉 Loading 组。`ChatContainer` 用它生成定位器轮次                                             |
 
 ### Slots
 
@@ -1270,7 +1271,7 @@ enum MessageToolsStatus {
 
 ## 关联组件
 
-- [ChatContainer](/components/setup/chat-container#消息定位器) — 消息定位器的挂载方；本组件只提供 `getScrollElement` 与 `locate`
+- [ChatContainer](/components/setup/chat-container#消息定位器) — 消息定位器的挂载方；本组件提供 `getScrollElement`、`locate` 与 `visibleMessageGroups`
 - [MessageRender](/components/message/message-render) — 按组渲染每条消息时委托使用
 - [MessageTime](/components/feedback/message-time) — AI 消息组工具栏右侧的时间
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传

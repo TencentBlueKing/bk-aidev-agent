@@ -178,10 +178,11 @@ describe('MessageMinimap', () => {
         },
       }) as DOMRect;
 
-    const mountInMain = async (gutter: number, offsetTop = 0) => {
+    const mountInMain = async (gutter: number, offsetTop = 0, paddingLeft = 0) => {
       const groups = createGroups(5);
       const main = document.createElement('div');
       const container = createContainer(groups);
+      container.style.paddingLeft = `${paddingLeft}px`;
       Object.defineProperty(container, 'offsetTop', { configurable: true, value: offsetTop });
       main.appendChild(container);
       document.body.appendChild(main);
@@ -205,6 +206,20 @@ describe('MessageMinimap', () => {
       const root = wrapper.find('.ai-message-minimap').element as HTMLElement;
       expect(root.classList.contains('is-overlap')).toBe(false);
       expect(root.style.getPropertyValue('--ai-message-minimap-mask-left')).toBe('120px');
+      main.remove();
+    });
+
+    it('刻度只压到容器左内边距时不遮罩', async () => {
+      const { main, wrapper } = await mountInMain(20, 0, 16);
+      const root = wrapper.find('.ai-message-minimap').element as HTMLElement;
+      expect(root.classList.contains('is-overlap')).toBe(false);
+      main.remove();
+    });
+
+    it('扣掉左内边距后仍压到消息正文时标记遮罩', async () => {
+      const { main, wrapper } = await mountInMain(10, 0, 16);
+      const root = wrapper.find('.ai-message-minimap').element as HTMLElement;
+      expect(root.classList.contains('is-overlap')).toBe(true);
       main.remove();
     });
   });

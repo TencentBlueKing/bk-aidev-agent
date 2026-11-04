@@ -99,7 +99,7 @@
   const viewportHeight = shallowRef(0);
   const minimapTop = shallowRef(0);
   const maskLeft = shallowRef(0);
-  // 最长刻度的右端越过消息列左缘时，hover 需要遮住被压住的消息
+  // 最长刻度的右端越过消息正文左缘时，hover 需要遮住被压住的消息
   const overlapsMessage = shallowRef(true);
   const hoverIndex = shallowRef(-1);
   const isFadeTop = shallowRef(false);
@@ -132,9 +132,11 @@
       return;
     }
     const gutter = container.getBoundingClientRect().left - anchor.getBoundingClientRect().left;
+    // 消息正文从容器 border-box 再往右一个左内边距开始，这段空白不算被刻度压住
+    const contentInset = Number.parseFloat(getComputedStyle(container).paddingLeft) || 0;
     minimapTop.value = container.offsetTop;
     maskLeft.value = Math.round(gutter);
-    overlapsMessage.value = gutter < EDGE_LEFT + LINE_MAX_WIDTH;
+    overlapsMessage.value = gutter + contentInset < EDGE_LEFT + LINE_MAX_WIDTH;
   };
 
   // 定位器以消息可视区为基准垂直居中、限制最大高度，需跟随容器尺寸变化
@@ -353,7 +355,7 @@
       }
     }
 
-    // 刻度压到消息列时才遮住左侧消息；左侧是空白时不盖
+    // 刻度压到消息正文时才遮住左侧消息；只压到左侧空白或容器内边距时不盖
     &.is-hover.is-overlap .ai-message-minimap-mask {
       left: var(--ai-message-minimap-mask-left, 0);
       opacity: 1;

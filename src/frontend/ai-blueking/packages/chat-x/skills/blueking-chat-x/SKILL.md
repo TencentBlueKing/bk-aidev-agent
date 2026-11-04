@@ -95,7 +95,7 @@ description: >-
 | 任务 | 入口组件 / 文档 |
 | --- | --- |
 | 搭完整对话界面 | `components/chat-container.md` |
-| 历史问答定位（左侧刻度） | `ChatContainer` 的 `enableMessageMinimap`（默认 `true`）。提问超过 4 条且未替换默认消息槽时，主栏左侧出现定位器。单独使用 `MessageContainer` 时定位器不会出现，需用它 expose 的 `getScrollElement` / `locate` |
+| 历史问答定位（左侧刻度） | `ChatContainer` 的 `enableMessageMinimap`（默认 `true`）。提问超过 4 条且未替换默认消息槽时，主栏左侧出现定位器。单独使用 `MessageContainer` 时定位器不会出现，需用它 expose 的 `getScrollElement`、`locate` 与 `visibleMessageGroups` |
 | 自定义布局（自己拼消息列表 + 输入框） | `components/message-container.md` + `components/chat-input.md` + `composables/use-message-group.md` |
 | `/` Prompt、`@` 资源、文件 / 图片上传 | `components/chat-input.md` |
 | 流式输出 / 停止生成 | `components/chat-container.md`（`messageStatus` + `@stop-streaming`） |

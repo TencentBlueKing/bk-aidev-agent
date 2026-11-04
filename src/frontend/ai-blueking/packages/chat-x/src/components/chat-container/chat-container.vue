@@ -617,10 +617,7 @@
     selectedUserMessages,
   });
 
-  const messageContainerRef = useTemplateRef<{
-    getScrollElement: () => HTMLElement | null;
-    locate: (uid: string) => void;
-  }>('messageContainerRef');
+  const messageContainerRef = useTemplateRef<InstanceType<typeof MessageContainer>>('messageContainerRef');
   const messageScrollElement = shallowRef<HTMLElement | null>(null);
 
   // 定位器挂在主栏上，可视区判断和点击滚动仍走消息容器
@@ -636,12 +633,8 @@
     messageContainerRef.value?.locate(uid);
   };
 
-  // 与消息容器的可见分组一致：分享态不把 Loading 组算进定位轮次
-  const minimapMessageGroups = computed(() =>
-    renderMode.value === RenderMode.Share
-      ? messageGroups.value.filter(group => group.type !== MessageRole.Loading)
-      : messageGroups.value,
-  );
+  // 直接用消息容器正在渲染的分组，分享态去掉 Loading 的规则只留在容器里
+  const minimapMessageGroups = computed(() => messageContainerRef.value?.visibleMessageGroups ?? []);
 
   // 输入框里上传成功但尚未发送的文件也可立即预览，移除附件后同步移出侧栏。
   const sessionArtifacts = computed(() => {
