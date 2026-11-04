@@ -1,4 +1,4 @@
-# ToolcallRender 工具调用渲染器
+# ToolCallRender 工具调用渲染器
 
 > 能力域：Agent 能力 ｜ 导入：`import { ToolCallRender } from '@blueking/chat-x'` ｜ since 1.0.0
 
@@ -8,7 +8,7 @@
 
 ---
 
-# ToolcallRender 工具调用渲染器
+# ToolCallRender 工具调用渲染器
 ## 源码事实
 
 - **源码位置**：`src/components/tool-call/toolcall-render/toolcall-render.vue`
@@ -44,14 +44,14 @@
 
 ```vue
 <template>
-  <ToolcallRender
+  <ToolCallRender
     :tool-call="toolCall"
     :status="MessageStatus.Complete"
   />
 </template>
 
 <script setup lang="ts">
-  import { ToolcallRender, MessageStatus, MessageContentType, type ToolCall } from '@blueking/chat-x';
+  import { ToolCallRender, MessageStatus, MessageContentType, type ToolCall } from '@blueking/chat-x';
 
   const toolCall: ToolCall = {
     id: 'call_1',
@@ -80,14 +80,16 @@
 ```typescript
 isSuccess = [complete, completed, success].includes(status);
 isError = status === 'error' || !!toolCall?.toolMessage?.error; // toolMessage.error 可独立判定失败
-isPending = !isSuccess && !isError; // 其余（含 pending / streaming / stop / undefined）统一视为进行中
+isStopped = status === 'stop'; // 用户停止：终态，不转圈，也不显示成功/失败
+isPending = !isSuccess && !isError && !isStopped; // 其余（含 pending / streaming / undefined）视为进行中
 ```
 
 | 归一状态 | 命中条件                                             | 头部渲染                                                       |
 | -------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| 进行中   | 非成功且非失败（含未传 `status`）                    | 前缀替换为「正在调用」（Skill 为「正在读取」），标题带 `is-loading` 闪动，无状态段、无箭头 |
+| 进行中   | 非成功、非失败、非停止（含未传 `status`）            | 前缀替换为「正在调用」（Skill 为「正在读取」），标题带 `is-loading` 闪动，无状态段、无箭头 |
 | 成功     | `complete` / `completed` / `success`                 | 状态段 `( 成功 )`，状态词 `#2caf5e`                            |
 | 失败     | `status === 'error'` **或** `toolMessage.error` 为真 | 状态段 `( 失败 )`，状态词 `#ea3636`                            |
+| 已停止   | `status === 'stop'`                                  | 结束态前缀（「调用工具」等），无状态段、不闪动，保留折叠箭头   |
 
 关于状态段的三个细节：
 
@@ -95,7 +97,7 @@ isPending = !isSuccess && !isError; // 其余（含 pending / streaming / stop /
 - **括号写法**：头部渲染用半角括号并在两侧补 `&nbsp;` 撑开间距；`overflow-tips` 气泡里的纯文本用全角括号，形如 `调用工具 search（成功，耗时：1.2s）`
 - **失败优先**：`toolMessage.error` 有值时即便 `status` 是成功态也判为失败
 
-进行中的「文字 loading」由 CSS 实现：`.toolcall-header-title.is-loading` 用 `linear-gradient` + `background-clip: text` 让一条光带以 `1.8s linear infinite` 循环扫过文字；`prefers-reduced-motion: reduce` 下自动关闭动画。
+进行中的「文字 loading」由 `src/styles/text-shimmer.scss` 的 `text-shimmer` mixin 实现，挂在 `.toolcall-header-title.is-loading` 上：`linear-gradient` + `background-clip: text`，光带以 `1.8s linear infinite` 循环扫过；`prefers-reduced-motion: reduce` 下关闭动画。助手过程状态栏的「处理中」使用同一 mixin。
 
 **三种状态对比**
 
@@ -168,10 +170,10 @@ durationDisplay = formatDuration(props.duration || toolCall?.toolMessage?.durati
 
 ```vue
 <!-- 方式一：直接传 duration prop（优先） -->
-<ToolcallRender :tool-call="toolCall" status="complete" :duration="1200" />
+<ToolCallRender :tool-call="toolCall" status="complete" :duration="1200" />
 
 <!-- 方式二（推荐）：duration 放在 toolMessage 中，无需额外 prop -->
-<ToolcallRender :tool-call="toolCallWithDuration" status="complete" />
+<ToolCallRender :tool-call="toolCallWithDuration" status="complete" />
 ```
 
 ```typescript
@@ -239,7 +241,7 @@ const failedToolCall: ToolCall = {
 
 ## 与 AssistantMessage 配合
 
-`ToolcallRender` 通常不需要单独使用，将 `toolCalls` 传给 `AssistantMessage`，会自动为每个工具调用渲染 `ToolcallRender`：
+`ToolCallRender` 通常不需要单独使用，将 `toolCalls` 传给 `AssistantMessage`，会自动为每个工具调用渲染 `ToolCallRender`：
 
 ```typescript
 const assistantMessage = {
@@ -271,13 +273,15 @@ const assistantMessage = {
 
 ```vue
 <template>
-  <ToolcallRender
+  <ToolCallRender
     v-for="toolCall in assistantMessage.toolCalls"
     :key="toolCall.id"
     :tool-call="toolCall"
     :status="
       !toolCall.toolMessage
-        ? MessageStatus.Pending
+        ? assistantMessage.status === MessageStatus.Stop
+          ? MessageStatus.Stop
+          : MessageStatus.Pending
         : toolCall.toolMessage.error
           ? MessageStatus.Error
           : (toolCall.toolMessage.status ?? assistantMessage.status)
@@ -295,7 +299,7 @@ const assistantMessage = {
 | 属性名   | 类型            | 默认值 | 说明                                                                                |
 | -------- | --------------- | ------ | ----------------------------------------------------------------------------------- |
 | toolCall | `ToolCall`      | —      | 工具调用信息对象                                                                    |
-| status   | `MessageStatus` | —      | 调用状态，归一为成功 / 失败 / 进行中三态；未传时按进行中渲染（「正在调用」+ 闪动）  |
+| status   | `MessageStatus` | —      | 调用状态，归一为成功 / 失败 / 已停止 / 进行中；`stop` 为终态，未传时按进行中渲染 |
 | duration | `number`        | —      | 调用耗时（毫秒），优先于 `toolCall.toolMessage?.duration`；均无时状态段不展示耗时   |
 
 ## 类型定义
@@ -335,7 +339,7 @@ interface ToolMessage {
   role: 'tool';
   content: string; // 返回内容（通常为 JSON 字符串）
   status: MessageStatus;
-  duration: number; // 调用耗时（毫秒），被 ToolcallRender 自动读取
+  duration: number; // 调用耗时（毫秒），被 ToolCallRender 自动读取
   error?: string; // 错误信息（仅当 content 为空时由 ToolMessage 展示）
   toolCallId: string; // 对应 ToolCall.id
 }

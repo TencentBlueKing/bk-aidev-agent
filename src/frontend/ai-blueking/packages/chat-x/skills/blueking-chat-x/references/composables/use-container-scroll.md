@@ -35,7 +35,8 @@ useContainerScrollProvider(containerRef, bottomRef)
   ├── jumpToBottom()   → autoScrollEnabled=true + container.scrollTop = scrollHeight（瞬时）
   ├── toScrollBottom(behavior?) → autoScrollEnabled=true；
   │     behavior 缺省时：距底部 > INSTANT_SCROLL_DISTANCE(600) → jumpToBottom()
-  │     否则 / 显式 'smooth' → bottomRef.scrollIntoView({ behavior:'smooth', block:'end' })
+  │     否则 / 显式 'smooth' → container.scrollTo({ top: scrollHeight, behavior:'smooth' })
+  │     （只滚消息容器，不用 scrollIntoView，避免带动 window）
   ├── toScrollTop()    → containerRef.scrollTo({ top:0, behavior:'smooth' })
   │
   └── provide(CONTAINER_SCROLL_TOKEN, computed(() => ({

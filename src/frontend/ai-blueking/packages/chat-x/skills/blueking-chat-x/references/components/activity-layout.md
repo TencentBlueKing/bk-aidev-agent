@@ -10,6 +10,8 @@
 
 # ActivityLayout 活动布局
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+
 > **能力域**：辅助能力
 
 `ActivityLayout` 是活动消息的通用折叠布局容器，负责渲染标题栏、折叠箭头和内容区域。它不关心活动内容类型本身，标题和正文均通过插槽传入，因此常被 `KnowledgeRagContent`、`ReferenceDocContent`、`FlowAgentContent` 等活动组件复用。
@@ -51,8 +53,8 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import ActivityLayout from '@blueking/chat-x/src/components/chat-content/activity-layout/activity-layout.vue';
-  import { DocumentIcon } from '@blueking/chat-x/src/icons/content';
+  import { DocumentIcon } from '@blueking/chat-x';
+  // ActivityLayout 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const collapsed = ref(false);
 </script>

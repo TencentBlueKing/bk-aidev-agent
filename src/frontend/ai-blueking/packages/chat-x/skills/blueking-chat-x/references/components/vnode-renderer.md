@@ -2,7 +2,7 @@
 
 > 能力域：辅助能力 ｜ 导入：`import { VNodeRenderer } from '@blueking/chat-x'` ｜ since 1.0.0
 
-将 Markdown token 转成 VNode 的内部渲染桥。 源码位置：src/components/chat-content/vnode-renderer.ts。
+将 Markdown token 转成 VNode；包入口已导出，通常经 MarkdownContent 使用。 源码位置：src/components/chat-content/vnode-renderer.ts。
 
 **关联**：markdown-content（MarkdownContent 对普通 token 分组使用本组件渲染）、code-content（fence/code_block 代码块通常会被 MarkdownContent 提前分流到 CodeContent）、mermaid-content（mermaid 代码块通常会被 MarkdownContent 提前分流到 MermaidContent）、image-content（图片 token 由 tokensToVNodes 转为 ImageContent）
 
@@ -37,8 +37,8 @@
 </template>
 
 <script setup lang="ts">
-  import MarkdownIt from '@blueking/chat-x/src/markdown-it/index';
-  import VNodeRenderer from '@blueking/chat-x/src/components/chat-content/vnode-renderer';
+  import { VNodeRenderer } from '@blueking/chat-x';
+  // MarkdownIt 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const md = new MarkdownIt();
   const tokens = md.parse('这是一段 **加粗文本**。', {});

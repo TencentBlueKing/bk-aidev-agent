@@ -4,7 +4,7 @@
 
 渲染助手 Markdown 正文、ToolCallRender 工具调用列表，以及 property.artifacts 文件卡片； 默认插槽仅覆盖正文。源码位置：src/components/chat-message/assistant-message/assistant-message.vue。
 
-**关联**：message-render（由 MessageRender 在 role 为 assistant 时创建）、tool-message（工具结果通过 toolCall.toolMessage 内联或独立 tool 消息关联展示）、toolcall-render（多条工具调用由 ToolcallRender 统一渲染）、file-artifact-panel（property.artifacts 文件产物点击后在侧栏预览）
+**关联**：message-render（由 MessageRender 在 role 为 assistant 时创建）、tool-message（工具结果通过 toolCall.toolMessage 内联或独立 tool 消息关联展示）、toolcall-render（多条工具调用由 ToolCallRender 统一渲染）、file-artifact-panel（property.artifacts 文件产物点击后在侧栏预览）
 
 ---
 
@@ -281,9 +281,10 @@ AI 可在一次回复中发起多个工具调用，组件依次渲染：
 
 传给每个 `ToolCallRender` 的 `status` 按以下优先级计算：
 
-1. 无 `toolMessage` → `MessageStatus.Pending`（进行中）
-2. `toolMessage.error` 为真 → `MessageStatus.Error`（失败）
-3. 否则 → `toolMessage.status ??` 本组件 `status`
+1. 无 `toolMessage` 且本组件 `status` 为 `stop` → `MessageStatus.Stop`（用户停止，终态，不再转圈）
+2. 无 `toolMessage` → `MessageStatus.Pending`（进行中）
+3. `toolMessage.error` 为真 → `MessageStatus.Error`（失败）
+4. 否则 → `toolMessage.status ??` 本组件 `status`
 
 **进行中**（有 `toolCalls`、尚无 `toolMessage`；即便助手 `status` 已是 `complete`，工具调用仍显示「正在调用」）：
 

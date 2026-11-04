@@ -10,6 +10,9 @@ markdownItContainer 基于 markdown-it-container，支持字符串或正则匹�
 
 # markdownItContainer 自定义容器插件
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 由 [MarkdownContent](/components/rendering/markdown-content) 内部注册。请用相对路径引入源码，不要写 `import { markdownItContainer } from '@blueking/chat-x'`。
+
 > **分类**：plugin
 
 将 `::: 容器名` 开头的块解析为带 `class` 的块级容器，闭合行使用 `:::`。
@@ -36,7 +39,7 @@ markdownItContainer 基于 markdown-it-container，支持字符串或正则匹�
 
 ```typescript
 import MarkdownIt from 'markdown-it';
-import { markdownItContainer } from '../../../src/plugins/markdown-container';
+import { markdownItContainer } from '../../src/plugins/markdown-container';
 
 const md = new MarkdownIt({ html: true }).use(markdownItContainer, /^hljs-(left|center|right)$/);
 ```

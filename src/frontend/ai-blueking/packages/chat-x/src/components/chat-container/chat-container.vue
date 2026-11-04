@@ -130,6 +130,13 @@
         </Transition>
       </template>
       <template #main>
+        <!-- 内置消息容器挂上后才显示；业务换掉默认消息槽时没有滚动容器 -->
+        <MessageMinimap
+          v-if="enableMessageMinimap && messages?.length && messageScrollElement"
+          :container="messageScrollElement"
+          :message-groups="minimapMessageGroups"
+          @locate="handleMinimapLocate"
+        />
         <slot
           v-if="messages?.length"
           name="default"
@@ -151,9 +158,9 @@
         >
           <MessageContainer
             v-if="messages?.length"
+            ref="messageContainerRef"
             v-model:selected-user-messages="selectedUserMessages"
             :enable-message-collapse="enableMessageCollapse"
-            :enable-message-minimap="enableMessageMinimap"
             :enable-selection="isShareMode"
             :message-groups="messageGroups"
             :message-status="inputStatus"
@@ -327,6 +334,7 @@
     type MessageContainerEmits,
     type MessageContainerProps,
   } from '../chat-message/message-container/message-container.vue';
+  import MessageMinimap from '../chat-message/message-minimap/message-minimap.vue';
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
 
@@ -352,6 +360,8 @@
     asideCollapsed?: boolean;
     chatLoading?: boolean;
     commonTippyOptions?: AITippyProps;
+    /** 是否启用左侧消息定位器；提问超过 4 条时贴在主栏左侧，可预览并定位到历史问答 */
+    enableMessageMinimap?: boolean;
     // 用于获取侧边栏组件的渲染
     getSideRenderComponent?: (createElement: typeof h, props?: Record<string, unknown>) => undefined | VNode;
     // 用于获取侧边栏 tab 的渲染
@@ -606,6 +616,32 @@
     renderMode: computed(() => renderMode.value),
     selectedUserMessages,
   });
+
+  const messageContainerRef = useTemplateRef<{
+    getScrollElement: () => HTMLElement | null;
+    locate: (uid: string) => void;
+  }>('messageContainerRef');
+  const messageScrollElement = shallowRef<HTMLElement | null>(null);
+
+  // 定位器挂在主栏上，可视区判断和点击滚动仍走消息容器
+  watch(
+    messageContainerRef,
+    () => {
+      messageScrollElement.value = messageContainerRef.value?.getScrollElement() ?? null;
+    },
+    { flush: 'post' },
+  );
+
+  const handleMinimapLocate = (uid: string) => {
+    messageContainerRef.value?.locate(uid);
+  };
+
+  // 与消息容器的可见分组一致：分享态不把 Loading 组算进定位轮次
+  const minimapMessageGroups = computed(() =>
+    renderMode.value === RenderMode.Share
+      ? messageGroups.value.filter(group => group.type !== MessageRole.Loading)
+      : messageGroups.value,
+  );
 
   // 输入框里上传成功但尚未发送的文件也可立即预览，移除附件后同步移出侧栏。
   const sessionArtifacts = computed(() => {

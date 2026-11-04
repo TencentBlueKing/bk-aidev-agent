@@ -7,10 +7,12 @@ aiSummary: >
   useMessageMinimap 接收消息容器与 messageGroups，返回 rounds（用户提问组 + 紧随的助手组）、visible（提问数 ≥ MESSAGE_MINIMAP_MIN_ROUNDS，即超过 4 条）与 activeIndexes（可视区内的轮次序号）。
   内部以容器为 root 创建 IntersectionObserver 观察各轮次的消息组节点，消息组变化时等 DOM 更新后重新观察，作用域销毁时断开。
   同文件导出 getQuestionText / getAnswerText（只取 assistant markdown 的行内文字，跳过代码块与图片，截断到 300 字）与 findMessageGroupElement。
-  由内部组件 MessageMinimap 与 MessageContainer 使用。源码位置：src/composables/use-message-minimap.ts。
+  由内部组件 MessageMinimap 调用。ChatContainer 在 enableMessageMinimap 时挂载该组件，并把 MessageContainer.getScrollElement() 当作 container。MessageContainer.locate 使用 findMessageGroupElement。源码位置：src/composables/use-message-minimap.ts。
 relatedComponents:
+  - slug: chat-container
+    relation: enableMessageMinimap 时挂载 MessageMinimap，并把消息列表的滚动容器传进来
   - slug: message-container
-    relation: 通过 enableMessageMinimap 渲染消息定位器，并用 findMessageGroupElement 定位
+    relation: locate 用 findMessageGroupElement 在滚动容器内定位消息组
   - slug: use-message-group
     relation: 输入的 messageGroups 来自 useMessageGroup
 sinceVersion: 3.1.0
@@ -18,9 +20,9 @@ sinceVersion: 3.1.0
 
 # useMessageMinimap 消息定位器
 
-> **分类**：composable（内部，供 `MessageMinimap` / `MessageContainer` 使用）
+> **分类**：composable（内部，供 `MessageMinimap` 使用；`MessageContainer` 只用 `findMessageGroupElement`）
 
-消息定位器（[MessageContainer · 消息定位器](/components/setup/message-container#消息定位器)）背后的数据逻辑。一般不需要直接调用，开关 `enableMessageMinimap` 即可。
+消息定位器（[ChatContainer · 消息定位器](/components/setup/chat-container#消息定位器)）背后的数据逻辑。一般不需要直接调用，在 `ChatContainer` 上开关 `enableMessageMinimap` 即可。
 
 ## 工作原理
 
