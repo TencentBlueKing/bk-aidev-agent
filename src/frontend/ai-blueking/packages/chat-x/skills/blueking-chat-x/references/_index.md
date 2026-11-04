@@ -7,8 +7,8 @@
 
 ### 对话搭建
 
-- **ChatContainer 聊天容器** — 完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。 → `components/chat-container.md`
-- **MessageContainer 消息列表容器** — 负责消息分组渲染、滚动控制、工具栏和消息插槽透传。 → `components/message-container.md`
+- **ChatContainer 聊天容器** — 完整对话容器，组合消息列表、输入区、模型选择、快捷指令、文件产物预览、分享选择和自定义 Tab。 → `components/chat-container.md`
+- **MessageContainer 消息列表容器** — 负责按传入的 `messageGroups` 渲染、过程状态栏、滚动控制、工具栏和消息插槽透传。 → `components/message-container.md`
 
 ### 消息系统
 
@@ -24,11 +24,11 @@
 
 ### 内容渲染
 
-- **AnimationText 动画文本** — 按文本增量播放流式动画。 → `components/animation-text.md`
+- **AnimationText 动画文本** — 内部文本淡入组件，当前只展示初始化文本。 → `components/animation-text.md`
 - **CiteContent 引用内容** — 渲染输入或消息中的引用片段。 → `components/cite-content.md`
 - **CodeContent 代码块** — 渲染 Markdown 代码块，支持高亮、复制和 header 插槽。 → `components/code-content.md`
 - **CollapsibleContent 折叠内容** — 内容超过阈值高度时折叠，并在下方展示「显示更多 / 收起」。 → `components/collapsible-content.md`
-- **CommonErrorContent 错误内容** — 展示统一错误提示内容。 → `components/common-error-content.md`
+- **commonErrorContent 错误内容** — 展示统一错误提示内容。 → `components/common-error-content.md`
 - **ContentRender 内容渲染器** — 按 MessageContentType 分发 Markdown、文本、引用、键值、图片等内容。 → `components/content-render.md`
 - **DescPanel 描述面板** — 将文本或 JSON 内容降级为可读描述面板。 → `components/desc-panel.md`
 - **KeyValueContent 键值内容** — 以键值列表展示结构化内容。 → `components/key-value-content.md`
@@ -59,7 +59,7 @@
 - **InputAttachment 输入附件区** — ChatInput 底部附件区布局，承载快捷按钮、文件与发送图标。 → `components/input-attachment.md`
 - **InputInfoAlert 输入提示条** — ChatInput 上方的信息提示条。 → `components/input-info-alert.md`
 - **InputMenuPanel 输入框菜单** — 输入框上方的统一菜单面板，@ / \ 与 + 号共用一套数据源、分组与折叠逻辑。 → `components/input-menu-panel.md`
-- **ModelSelector 模型选择器** — 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签、键盘导航，以及有描述时的 hover 气泡。 → `components/model-selector.md`
+- **ModelSelector 模型选择器** — 聊天输入区的模型下拉选择器，支持搜索过滤、能力标签、键盘导航，以及 hover 描述卡片里的思考深度调节。 → `components/model-selector.md`
 - **SelectionFooter 多选操作栏** — 消息多选/分享模式下的底部操作栏。 → `components/selection-footer.md`
 - **ShortcutBtn 快捷指令按钮** — 单个快捷指令按钮，支持默认/append 插槽和 expose focus。 → `components/shortcut-btn.md`
 - **ShortcutBtns 快捷指令按钮组** — 快捷指令列表入口，内部组合多个 ShortcutBtn。 → `components/shortcut-btns.md`
@@ -68,15 +68,14 @@
 ### Agent 能力
 
 - **DetailSection 详情分段** — FlowAgent 节点详情中的标题/内容分段容器。 → `components/detail-section.md`
-- **ExecutionSummary 执行摘要** — 按消息流提取执行摘要，支持关键词定位和消息渲染。 → `components/execution-summary.md`
 - **FlowAgentContent FlowAgent 执行内容** — 渲染 FlowAgent 任务/节点执行状态、耗时、详情入口和自定义 Tab 联动。 → `components/flow-agent-content.md`
 - **FlowAgentNodeDetail FlowAgent 节点详情** — 展示 FlowAgent 节点输入、输出、异常、耗时等详情。 → `components/flow-agent-node-detail.md`
-- **InterruptMessage 中断消息** — 渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果。 → `components/interrupt-message.md`
+- **InterruptMessageRender 中断消息** — 渲染 human-in-the-loop 中断消息，分发工具审批，并按 reason 回显 resume 结果。 → `components/interrupt-message.md`
 - **KnowledgeRagContent 知识召回内容** — 渲染知识召回活动，包含加载态、Markdown 内容与引用来源。 → `components/knowledge-rag-content.md`
 - **ReferenceDocContent 引用文档活动** — 渲染引用文档类活动内容，复用 ActivityLayout 与 ReferenceContent。 → `components/reference-doc-content.md`
 - **SimpleTable 简易表格** — FlowAgent 节点详情中的轻量表格展示组件。 → `components/simple-table.md`
 - **ToolApprovalCard 工具审批卡片** — 渲染 AIDevToolApproval 中断的审批信息与取消/刷新操作，readonly prop 支持纯只读展示。 → `components/tool-approval-card.md`
-- **ToolcallRender 工具调用渲染器** — 渲染 assistant toolCalls，展示工具调用状态、参数和结果。 → `components/toolcall-render.md`
+- **ToolCallRender 工具调用渲染器** — 渲染 assistant toolCalls，展示工具调用状态、参数和结果。 → `components/toolcall-render.md`
 - **UserQuestionAnsweredCard 用户问题回答回显** — 在 UserQuestion resume 成功后回显用户回答或取消状态。 → `components/user-question-answered-card.md`
 - **UserQuestionCard 用户问题中断** — 渲染 UserQuestion 中断的待回答面板；一次一题分页切换，支持单选/多选、Others、跳过与已完成进度。 → `components/user-question-card.md`
 - **UserQuestionChoice 用户问题选择题** — UserQuestionCard 默认的选择题渲染组件，封装单选/多选、Others 输入与答案组装。 → `components/user-question-choice.md`
@@ -96,16 +95,16 @@
 - **ActivityLayout 活动布局** — 活动消息的折叠布局容器，提供 title/default 插槽。 → `components/activity-layout.md`
 - **AiLoading 三点加载** — 小尺寸 AI 加载动效。 → `components/ai-loading.md`
 - **FileIcon 文件类型图标** — 按文件扩展名渲染对应类型图标，尺寸随外层 font-size 自适应。 → `components/file-icon.md`
-- **HighlightKeyword 关键词高亮** — 根据注入关键词高亮文本片段。 → `components/highlight-keyword.md`
+- **HighlightKeyword 关键词高亮** — 按传入关键词高亮文本片段。 → `components/highlight-keyword.md`
 - **MessageLoading 品牌加载** — 带品牌图标和逐字渐变动画的加载组件。 → `components/message-loading.md`
 - **QuestionsContainer 问题容器占位** — 源码为空文件，没有 props、emits、slots 或渲染能力；不建议作为功能组件使用。 → `components/questions-container.md`
 - **ResourceIcon 资源图标** — 按 URL / Vue 组件 / 类型兜底三级策略渲染资源图标，图片失效自动回退。 → `components/resource-icon.md`
 - **SelectionQuestion 选择问题占位** — 源码为空文件，没有 props、emits、slots 或渲染能力；不建议作为功能组件使用。 → `components/selection-question.md`
-- **VNodeRenderer VNode 渲染器** — 将 Markdown token 转成 VNode 的内部渲染桥。 → `components/vnode-renderer.md`
+- **VNodeRenderer VNode 渲染器** — 将 Markdown token 转成 VNode；包入口已导出，通常经 MarkdownContent 使用。 → `components/vnode-renderer.md`
 
 ## Composables 组合式函数
 
-- **useAnimationText** — 文本淡入动画的组合式函数。将响应式文本按**增量**拆分为独立 chunk，每个新增 chunk 对应一次淡入动画，适用于 AI 流式输出的逐段渐显效果。 → `composables/use-animation-text.md`
+- **useAnimationText** — 提供文本分块状态与淡入样式；当前实现只初始化文本，流式更新需调用方直接监听 Ref。 → `composables/use-animation-text.md`
 - **useArtifactPreview** — Provider/Consumer 模式的文件产物预览状态管理，用于 ChatContainer 侧栏「文件产物」Tab 的命中与切换。 Provider 在 ChatContainer 中创建，Consumer 在深层文件卡片中注入使用。 → `composables/use-artifact-preview.md`
 - **useClipboard** — 复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 bkui-vue `Message` 提示复制结果，调用方无需关心成功/失败处理。 → `composables/use-clipboard.md`
 - **useCommandSelection** — 为 `edix` 富文本编辑器提供光标位置追踪能力的组合式函数。内部封装一个 `EditorCommand`，由编辑器调用后将光标的行列信息存入响应式变量，供后续编辑命令（如插入 tag、删除关键词）精确定位。 → `composables/use-command-selection.md`
@@ -113,10 +112,11 @@
 - **useCustomTab** — Provider/Consumer 模式的自定义 Tab 管理，用于 `ChatContainer` 侧边栏的 Tab 动态管理。Provider 在 `ChatContainer` 中创建，Consumer 在任意后代组件中注入使用。 → `composables/use-custom-tab.md`
 - **useFlowNodeActions** — 聚合 FlowAgent 节点行尾操作（详情 / 重试 / 跳过）为声明式视图模型列表，显隐与 resume 回调收敛于此。 → `composables/use-flow-node-actions.md`
 - **useFullScreen** — 基于浏览器原生 Fullscreen API 的全屏控制组合式函数，自动嗅探标准与 WebKit 前缀，状态与 ESC 退出保持同步。 → `composables/use-full-screen.md`
-- **useGlobalConfig** — 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区、输入框菜单数据源）。 → `composables/use-global-config.md`
+- **useGlobalConfig** — 在聊天根容器与子组件之间通过 provide/inject 共享全局展示配置（字号主题档位、是否支持上传、消息时间时区、输入框菜单数据源、编辑态上传/删除回调）。 → `composables/use-global-config.md`
 - **useInputMention** — 通过 provide/inject 把「资源插入输入框」的能力开放给任意深度的后代组件。 → `composables/use-input-mention.md`
 - **useMenuKeydown** — 为弹出菜单提供键盘导航能力的组合式函数。在 `onMounted` 时于 **`window` 捕获阶段**注册 `keydown` 监听，在 `onScopeDispose` 时自动移除，通过 `menuRef.offsetParent` 检测菜单可见性来决定是否响应按键。 → `composables/use-menu-keydown.md`
-- **useMessageGroup** — 核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading 自动注入、执行摘要过滤和消息多选/分享等逻辑。 → `composables/use-message-group.md`
+- **useMessageGroup** — 核心消息分组逻辑，将原始 `Message[]` 数组转换为结构化的 `MessageGroup[]`。处理 Tool 消息合并、Loading 自动注入、会话产物收集和消息多选/分享等逻辑。 → `composables/use-message-group.md`
+- **useMessageMinimap** — 消息定位器的数据逻辑：按消息组配对问答轮次，以消息容器为 root 计算可视区内的轮次，并提取问答预览文本。 → `composables/use-message-minimap.md`
 - **useObserverVisibleList** — 基于 `ResizeObserver` 的容器宽度感知组合式函数：遍历列表项的实际 `offsetWidth`，使用贪心算法计算在容器中能完整显示的项目子集，并为"更多"按钮动态预留空间。 → `composables/use-observer-visible-list.md`
 - **useParentScrolling** — 向上递归查找**最近可滚动祖先**，监听其 `scroll` / `scrollend` 事件，提供 `isScrolling` 状态。常用于滚动时自动关闭浮层、禁用交互等场景。 → `composables/use-parent-scrolling.md`
 
@@ -139,7 +139,7 @@
 
 ## Plugins Markdown 插件
 
-- **插件** — `@blueking/chat-x` 提供了一些 Markdown-it 插件，用于扩展 Markdown 的解析能力。 → `plugins/index.md`
+- **插件** — `@blueking/chat-x` 提供一些 Markdown-it 插件，用于扩展 Markdown 的解析能力。包入口导出以 → `plugins/index.md`
 - **markdownItContainer** — Markdown-it 自定义容器插件，支持 ::: name ... ::: 语法，用于对齐块等场景。 → `plugins/markdown-container.md`
 - **markdownItLatex** — Markdown-it LaTeX 解析插件，用于解析 LaTeX 数学公式语法。 → `plugins/markdown-latex.md`
 - **markdownItMermaid** — Markdown-it Mermaid 解析插件，用于解析 Mermaid 图表代码块。 → `plugins/markdown-mermaid.md`

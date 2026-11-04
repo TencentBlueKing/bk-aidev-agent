@@ -9,6 +9,11 @@
 ---
 
 # ReferenceContent 引用文档内容
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ContentRender](/components/rendering/content-render) / [ActivityMessage](/components/message/activity-message) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { ReferenceContent } from '@blueking/chat-x'`。
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/reference-content/reference-content.vue`
@@ -66,8 +71,8 @@ gotoLink(url, event):
 </template>
 
 <script setup lang="ts">
-  import { ReferenceContent } from '@blueking/chat-x';
   import type { ReferenceDocumentContent } from '@blueking/chat-x';
+  // ReferenceContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const references: ReferenceDocumentContent[] = [
     { name: '蓝鲸 PaaS 平台文档', url: 'https://bk.tencent.com', originFile: '' },

@@ -10,6 +10,9 @@
 
 # KnowledgeRagContent 知识召回内容
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [MessageRender](/components/message/message-render) 渲染 `role: 'activity'`。
+
 > **能力域**：Agent 能力
 
 `KnowledgeRagContent` 用于渲染知识召回活动内容，包含活动标题、加载态、Markdown 摘要和引用来源列表。它是 `ActivityMessage` 在 `activityType === 'knowledge_rag'` 时使用的具体内容组件。
@@ -42,7 +45,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import KnowledgeRagContent from '@blueking/chat-x/src/components/chat-content/knowledge-rag-content/knowledge-rag-content.vue';
+  // KnowledgeRagContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { KnowledgeRagMessageContent } from '@blueking/chat-x';
 
   const collapsed = ref(false);

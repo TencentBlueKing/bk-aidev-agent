@@ -10,6 +10,9 @@ MentionText 接收一份 TagSchema 文档（二维数组：行 → 节点），�
 
 # MentionText 标签文本
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [UserMessage](/components/message/user-message) / [MessageRender](/components/message/message-render) 使用。
+
 > **能力域**：内容渲染
 
 ## 源码事实

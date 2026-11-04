@@ -9,6 +9,10 @@
 ---
 
 # FileContent 文件内容展示
+
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ChatInput](/components/input/chat-input) / [UserMessage](/components/message/user-message) 使用。
+> 文档站 demo 使用相对路径引入源码；不要写 `import { FileContent } from '@blueking/chat-x'`。
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/file-content/file-content.vue`
@@ -60,7 +64,8 @@ MIME 类型非 `image/*` 的文件，渲染为固定宽 180px 的文件卡片（
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { FileContent, type UploadFile } from '@blueking/chat-x';
+  import type { UploadFile } from '@blueking/chat-x';
+  // FileContent 未从包入口导出；文档站 demo 使用相对路径 FileContentComp
 
   const files = ref<Partial<UploadFile>[]>([
     { file: new File(['content'], 'report.pdf', { type: 'application/pdf' }) },
@@ -115,7 +120,8 @@ MIME 为 `image/*` 时渲染为图片缩略图（`cursor: zoom-in`）。点击�
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { FileContent, type UploadFile } from '@blueking/chat-x';
+  import type { UploadFile } from '@blueking/chat-x';
+  // FileContent 未从包入口导出；文档站 demo 使用相对路径 FileContentComp
 
   const imageFiles = ref<Partial<UploadFile>[]>([
     { url: 'https://example.com/cat.jpg', filename: 'cat.jpg', mimeType: 'image/jpeg' },

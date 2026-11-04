@@ -119,7 +119,7 @@ const createContainer = (groups: MessageGroup[], clientHeight = 600) => {
   return container;
 };
 
-let wrapper: VueWrapper | undefined;
+let wrapper: undefined | VueWrapper;
 
 const mountMinimap = async (groups: MessageGroup[], container = createContainer(groups)) => {
   wrapper = mount(MessageMinimap, {
@@ -162,6 +162,53 @@ describe('MessageMinimap', () => {
     });
   });
 
+  describe('贴主栏左侧', () => {
+    const rect = (left: number) =>
+      ({
+        bottom: 0,
+        height: 0,
+        left,
+        right: 0,
+        top: 0,
+        width: 0,
+        x: left,
+        y: 0,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+
+    const mountInMain = async (gutter: number, offsetTop = 0) => {
+      const groups = createGroups(5);
+      const main = document.createElement('div');
+      const container = createContainer(groups);
+      Object.defineProperty(container, 'offsetTop', { configurable: true, value: offsetTop });
+      main.appendChild(container);
+      document.body.appendChild(main);
+      vi.spyOn(main, 'getBoundingClientRect').mockReturnValue(rect(0));
+      vi.spyOn(container, 'getBoundingClientRect').mockReturnValue(rect(gutter));
+      const mounted = await mountMinimap(groups, container);
+      return { ...mounted, main };
+    };
+
+    it('刻度会压到消息列时标记遮罩，并记下消息列左缘', async () => {
+      const { main, wrapper } = await mountInMain(10, 12);
+      const root = wrapper.find('.ai-message-minimap').element as HTMLElement;
+      expect(root.classList.contains('is-overlap')).toBe(true);
+      expect(root.style.getPropertyValue('--ai-message-minimap-mask-left')).toBe('10px');
+      expect(root.style.getPropertyValue('--ai-message-minimap-top')).toBe('12px');
+      main.remove();
+    });
+
+    it('左侧空白够宽时不遮消息', async () => {
+      const { main, wrapper } = await mountInMain(120);
+      const root = wrapper.find('.ai-message-minimap').element as HTMLElement;
+      expect(root.classList.contains('is-overlap')).toBe(false);
+      expect(root.style.getPropertyValue('--ai-message-minimap-mask-left')).toBe('120px');
+      main.remove();
+    });
+  });
+
   describe('可视区高亮', () => {
     it('观察器回调后，可见轮次的刻度应加 is-active', async () => {
       const groups = createGroups(5);
@@ -172,6 +219,23 @@ describe('MessageMinimap', () => {
       const items = wrapper.findAll('.ai-message-minimap-item');
       expect(items[1].classes()).toContain('is-active');
       expect(items.filter(item => item.classes().includes('is-active'))).toHaveLength(1);
+    });
+
+    it('hover 时只高亮当前刻度，离开后恢复视口高亮', async () => {
+      const groups = createGroups(5);
+      const { container, wrapper } = await mountMinimap(groups);
+      observers.at(-1)?.callback([{ isIntersecting: true, target: container.children[0] }]);
+      await nextTick();
+      const items = wrapper.findAll('.ai-message-minimap-item');
+      expect(items[0].classes()).toContain('is-active');
+
+      await items[2].trigger('mouseenter');
+      expect(items[2].classes()).toContain('is-hover');
+      expect(items.some(item => item.classes().includes('is-active'))).toBe(false);
+
+      await wrapper.find('nav').trigger('mouseleave');
+      expect(items[0].classes()).toContain('is-active');
+      expect(items.some(item => item.classes().includes('is-hover'))).toBe(false);
     });
   });
 
@@ -218,6 +282,47 @@ describe('MessageMinimap', () => {
       current.unmount();
       wrapper = undefined;
       expect(tippyMock.instance.destroy).toHaveBeenCalled();
+    });
+  });
+
+  describe('滚轮', () => {
+    const wheelOnMinimap = (target: VueWrapper, deltaY: number, deltaMode = WheelEvent.DOM_DELTA_PIXEL) => {
+      const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaMode, deltaY });
+      target.find('.ai-message-minimap').element.dispatchEvent(event);
+      return event;
+    };
+
+    it('滚轮应被拦截，消息区不会收到冒泡', async () => {
+      const { wrapper } = await mountMinimap(createGroups(5));
+      const event = wheelOnMinimap(wrapper, 40);
+      expect(event.defaultPrevented).toBe(true);
+      expect(event.cancelBubble).toBe(true);
+    });
+
+    it('刻度超出定位器高度时，滚轮只滚动定位器列表', async () => {
+      const { wrapper } = await mountMinimap(createGroups(9));
+      const list = wrapper.find('nav').element as HTMLElement;
+      Object.defineProperty(list, 'clientHeight', { configurable: true, value: 24 });
+      Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 72 });
+
+      wheelOnMinimap(wrapper, 30);
+      expect(list.scrollTop).toBe(30);
+
+      wheelOnMinimap(wrapper, 1, WheelEvent.DOM_DELTA_LINE);
+      expect(list.scrollTop).toBe(46);
+
+      wheelOnMinimap(wrapper, 100);
+      expect(list.scrollTop).toBe(48);
+    });
+
+    it('刻度未超出时不滚动定位器列表', async () => {
+      const { wrapper } = await mountMinimap(createGroups(5));
+      const list = wrapper.find('nav').element as HTMLElement;
+      Object.defineProperty(list, 'clientHeight', { configurable: true, value: 80 });
+      Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 40 });
+
+      wheelOnMinimap(wrapper, 30);
+      expect(list.scrollTop).toBe(0);
     });
   });
 

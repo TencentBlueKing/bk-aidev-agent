@@ -1,4 +1,4 @@
-# InterruptMessage 中断消息
+# InterruptMessageRender 中断消息
 
 > 能力域：Agent 能力 ｜ 导入：`import { InterruptMessageRender } from '@blueking/chat-x'` ｜ since 1.0.0
 
@@ -8,7 +8,12 @@
 
 ---
 
-# InterruptMessage 中断消息
+# InterruptMessageRender 中断消息
+
+| 名称 | 种类 |
+| --- | --- |
+| `InterruptMessage` | TS 消息类型 |
+| `InterruptMessageRender` | 包入口 Vue 组件 |
 ## 源码事实
 
 - **源码位置**：`src/components/chat-message/interrupt-message/interrupt-message.vue`
