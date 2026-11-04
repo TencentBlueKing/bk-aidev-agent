@@ -218,9 +218,10 @@ class AgentResult(BaseModel):
     """Agent 后端标准化富结果。不可变，可序列化。
 
     阶段 26：从 TypedDict 重写为 frozen Pydantic BaseModel（D-01）。
-    保留原有结果字段，并按需附带本轮检索的相关来源。
+    精简为 5 个字段（D-02）：status / result / error / tool_calls / exit_reason。
     duration_seconds 已由 timer_wrapper 在 ToolNode 层统一记录，无需冗余。
     agent_type 标识智能体的后端类型（bkai / local），用于前端展示。
+    references 在原结果字段上追加可选来源元数据；无来源时保持原输出。
 
     session_code / member_name / agent_name 是 provider 层概念，
     不包含在此模型中（D-02 / D-06）。
@@ -235,7 +236,7 @@ class AgentResult(BaseModel):
     result: str = Field(default="", description="完成时的文本结果")
     error: str | None = Field(default=None, description="失败时的错误信息")
     tool_calls: int = Field(default=0, description="工具调用次数")
-    references: list[KnowledgeReference] = Field(default_factory=list, description="本次检索到的相关来源")
+    references: tuple[KnowledgeReference, ...] = Field(default=(), description="本次检索到的相关来源")
     exit_reason: ExitReason = Field(
         default=ExitReason.COMPLETED,
         description="退出原因（ExitReason 枚举值，经 use_enum_values=True 序列化为字符串）",

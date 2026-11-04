@@ -3,6 +3,7 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
+from aidev_agent.core.ag_ui.reference_documents import reference_documents_for_display
 from aidev_wxbot.wxaibot.context import LlmChunkMsg
 from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
 from aidev_wxbot.wxaibot.references import collect_reference_documents
@@ -44,8 +45,10 @@ def test_malformed_references_are_ignored(value):
     assert documents == []
 
 
-def test_queue_transport_preserves_sdk_reference_events():
-    events = [EVENT, EVENT, {"type": "TEXT_MESSAGE_CONTENT", "delta": "answer"}]
+@pytest.mark.parametrize("display_adapted", [False, True])
+def test_queue_transport_preserves_sdk_reference_events(display_adapted):
+    event = {**EVENT, "value": reference_documents_for_display(EVENT["value"])} if display_adapted else EVENT
+    events = [event, event, {"type": "TEXT_MESSAGE_CONTENT", "delta": "answer"}]
     with patch.object(LlmChunkMsg, "append_to_cache", autospec=True) as append:
         consume_chat_stream(sse(events), "example-stream", time.time(), Mock())
     message = append.call_args.args[0]
@@ -55,11 +58,13 @@ def test_queue_transport_preserves_sdk_reference_events():
     assert REFERENCE["url"] in message.docs_content
 
 
-def test_direct_transport_appends_sdk_references_once():
+@pytest.mark.parametrize("display_adapted", [False, True])
+def test_direct_transport_appends_sdk_references_once(display_adapted):
+    event = {**EVENT, "value": reference_documents_for_display(EVENT["value"])} if display_adapted else EVENT
     events = [
         {"type": "RUN_STARTED", "runId": "example-run"},
-        EVENT,
-        EVENT,
+        event,
+        event,
         {"type": "TEXT_MESSAGE_CONTENT", "delta": "answer"},
         {"type": "RUN_FINISHED"},
     ]

@@ -1,7 +1,7 @@
 <template>
   <template
-    v-for="(item, index) in links"
-    :key="`${item.sourceUrl || item.previewUrl}:${index}`"
+    v-for="item in links"
+    :key="item.title"
   >
     <div class="ai-reference-item">
       <!-- <img
@@ -12,19 +12,19 @@
       <DocLinkIcon color="#D66F6B" />
       <span
         class="ai-reference-item-title"
-        @click="event => gotoLink(item.sourceUrl || item.previewUrl, event)"
+        @click="event => item.url && gotoLink(item.url, event)"
       >
         {{ item.title }}
       </span>
       <PreviewIcon
-        v-if="item.previewUrl"
+        v-if="item.url && item.originFileUrl"
         v-tippy="{ content: t('预览内容'), theme: 'ai-chat-box' }"
-        @click="(event: MouseEvent) => gotoLink(item.previewUrl, event)"
+        @click="(event: MouseEvent) => item.url && gotoLink(item.url, event)"
       />
       <TargetIcon
-        v-if="item.sourceUrl"
+        v-if="item.url && item.originFileUrl"
         v-tippy="{ content: t('跳转详情'), theme: 'ai-chat-box' }"
-        @click="(event: MouseEvent) => gotoLink(item.sourceUrl, event)"
+        @click="(event: MouseEvent) => item.originFileUrl && gotoLink(item.originFileUrl, event)"
       />
     </div>
   </template>
@@ -44,18 +44,6 @@
   const props = defineProps<{
     content: ReferenceDocumentContent[];
   }>();
-  const normalizePreviewUrl = (url: string) => {
-    if (!url) return '';
-    try {
-      const parsed = new URL(url);
-      const path = parsed.pathname.replace(/\/{2,}(?=agent-develop\/knowledgebase(?:\/|$))/g, '/');
-      if (path === parsed.pathname) return url;
-      parsed.pathname = path;
-      return parsed.toString();
-    } catch {
-      return url;
-    }
-  };
   const gotoLink = (url: string, event: MouseEvent) => {
     if (!url) return;
     event.stopPropagation();
@@ -68,8 +56,8 @@
       .map(item => {
         return {
           title: item.name,
-          sourceUrl: item.url,
-          previewUrl: normalizePreviewUrl(item.originFile),
+          url: item.url,
+          originFileUrl: item.originFile,
         };
       });
   });

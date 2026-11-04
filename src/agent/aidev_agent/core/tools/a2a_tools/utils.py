@@ -358,7 +358,7 @@ def build_enriched_result(
         agent_type=agent_type,
         result=summary or "",
         tool_calls=tool_calls,
-        references=references or [],
+        references=tuple(references or ()),
         exit_reason=exit_reason,  # type: ignore[arg-type]  # str 与 ExitReason 兼容
     )
     if error:

@@ -61,9 +61,7 @@ export type InputContent = BinaryInputContent | TextInputContent;
 
 export type ReferenceDocumentContent = {
   name: string;
-  /** Knowledge preview URL; the field name is retained for wire compatibility. */
   originFile: string;
-  /** Original source URL, or the available source entry for uploaded files. */
   url: string;
 };
 

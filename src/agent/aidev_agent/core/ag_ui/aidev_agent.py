@@ -43,6 +43,7 @@ from .event_builders import (
     resolve_tool_call_target,
 )
 from .events import ExtendToolCallStartEvent
+from .reference_documents import reference_documents_for_display
 from .types import (
     AgentInput,
     CustomEventNames,
@@ -529,7 +530,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
         原先在 _convert_event CUSTOM 分支中做的 CUSTOM→ToolCallResultEvent/透传转换，
         现在在构造侧（本覆写）完成，yield 转换后的 Event。
 
-        分支顺序与原 _convert_custom_event 保持一致：KNOWLEDGE_RAG_RESULT 优先（透传），
+        分支顺序与原 _convert_custom_event 保持一致：KNOWLEDGE_RAG_RESULT 优先（展示适配，原事件保留），
         OnToolNodeFinish/OnToolNodeImmediate 随后（→ ToolCallResultEvent），其余委托 super()。
         """
         name = event.get("name", "")
@@ -539,7 +540,7 @@ class AidevAGUIAgent(LangGraphAGUIAgent):
             yield CustomEvent(
                 type=EventType.CUSTOM,
                 name=name,
-                value=event.get("data", {}).get("data", []),
+                value=reference_documents_for_display(event.get("data", {}).get("data", [])),
                 raw_event=event,
             )
             return

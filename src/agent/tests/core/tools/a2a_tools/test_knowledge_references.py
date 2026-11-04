@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from aidev_agent.api.bk_agent import Client as BkAgentApiClient
@@ -9,9 +9,35 @@ from aidev_agent.core.tools.a2a_tools.local_backend import LocalBackend
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, KnowledgeReference
 from aidev_agent.core.tools.a2a_tools.utils import build_enriched_result, collect_knowledge_references
+from pydantic import BaseModel, ConfigDict
 
 REFERENCE = {"name": "Guide", "url": "https://example.com/source", "originFile": "https://example.com/preview"}
 EVENT = {"type": "CUSTOM", "name": "knowledge_rag_result", "value": [REFERENCE]}
+
+
+class LegacyAgentResult(BaseModel):
+    """The result contract before references were introduced."""
+
+    model_config = ConfigDict(frozen=True, use_enum_values=True)
+    status: Literal["completed", "failed", "interrupted"]
+    agent_type: str = ""
+    result: str = ""
+    error: str | None = None
+    tool_calls: int = 0
+    exit_reason: str = "completed"
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
+@pytest.mark.parametrize("with_references", [False, True])
+def test_old_result_consumers_and_frozen_result_keys_remain_compatible(status, with_references):
+    old = LegacyAgentResult(status=status, agent_type="local", result="answer", tool_calls=2)
+    references = [KnowledgeReference(name="Guide", url=REFERENCE["url"])] if with_references else []
+    result = AgentResult(**old.model_dump(), references=references)
+    serialized = result.model_dump_json()
+    assert LegacyAgentResult.model_validate_json(serialized) == old
+    assert {result: "cached"}[result] == "cached"
+    if not with_references:
+        assert json.loads(serialized) == old.model_dump()
 
 
 @dataclass
