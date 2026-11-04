@@ -458,11 +458,11 @@ def _build_model_chain(
     # with_fallbacks 也只包裹 model_chain——耗尽时返回最后响应。
     # Keep every raw result ineligible until transforms and quality recovery accept it.
     # Rejected attempts and exhausted retry fallbacks never reach finalization.
-    model_chain = (
-        RunnableLambda(_call_llm, _acall_llm)
-        | RunnableLambda(_check_quality)
-        | RunnableLambda(_finalize_response, _afinalize_response)
+    model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(
+        _check_quality if track_memory_source else quality_gate
     )
+    if track_memory_source:
+        model_chain = model_chain | RunnableLambda(_finalize_response, _afinalize_response)
     # 用重试包装 — 捕获所有 RETRYABLE_EXCEPTIONS
     retryable_model_chain = model_chain.with_retry(
         retry_if_exception_type=RETRYABLE_EXCEPTIONS,
