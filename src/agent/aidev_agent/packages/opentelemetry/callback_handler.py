@@ -20,7 +20,7 @@ import json
 import logging
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, Union
@@ -553,6 +553,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         entity_name: str = "",
         entity_path: str = "",
         metadata: Optional[dict[str, Any]] = None,
+        context: Optional[context_api.Context] = None,
     ) -> Span:
         """
         统一的 Span 创建方法，支持完整的层级管理
@@ -565,6 +566,7 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
             attributes: Span 属性
             entity_name: 实体名称
             entity_path: 实体路径
+            context: 显式父 context，优先于默认根级回退，低于已登记的 parent_run_id
 
         Returns:
             创建的 Span
@@ -573,6 +575,8 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         if parent_run_id and parent_run_id in self.spans:
             # 有父 Span，使用父 Span 的 context
             ctx = set_span_in_context(self.spans[parent_run_id].span)
+        elif context is not None:
+            ctx = context
         elif self._injector is not None and self._injector.root_span is not None:
             # 顶层 span（无 LangChain 父 run_id）：优先以本服务的 root span 作为父，
             # 让 invoke_agent 等顶层 span 直接挂在 ``agent.execution`` 下。
@@ -728,17 +732,18 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         attributes: Optional[Dict[str, Any]] = None,
         kind: SpanKind = SpanKind.INTERNAL,
-        parent_span: Optional[Span] = None,
     ):
         """通用 Span 上下文管理器，支持 with 语法创建子 Span。
 
         示例:
             with collector.span_context("custom.span", attributes={"k": "v"}) as span:
                 ...
+
+        显式传入 ``parent_run_id`` 时按登记的父级创建；否则使用当前 OTel context，
+        不回退到 workflow、injector root 或上游 parent_context。跨线程调用须传播 context。
+
+        fail-open：span 创建失败时 yield None，状态写入与结束失败被吞掉；业务异常原样传播。
         """
-        if parent_run_id is None:
-            parent_run_id = self._current_workflow_run_id
-        span = None
         run_id = uuid4()
         try:
             span = self._create_span(
@@ -747,18 +752,28 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
                 name=name,
                 kind=kind,
                 attributes=attributes or {},
+                context=context_api.get_current() if parent_run_id is None else None,
             )
+        except Exception:  # noqa: BLE001
+            logger.warning("创建自定义 span 失败，埋点降级: %s", name, exc_info=True)
+            span = None
+        try:
             yield span
             # 正常结束标记为 OK
-            span.set_status(Status(StatusCode.OK))
-        except Exception as e:  # noqa: BLE001
             if span is not None:
-                span.set_status(Status(StatusCode.ERROR, str(e)))
-                span.record_exception(e)
+                with suppress(Exception):
+                    span.set_status(Status(StatusCode.OK))
+        except BaseException as e:
+            if span is not None:
+                with suppress(Exception):
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                with suppress(Exception):
+                    span.record_exception(e)
             raise
         finally:
             if span is not None:
-                self._end_span(span, run_id)
+                with suppress(Exception):
+                    self._end_span(span, run_id)
 
     def get_entity_path(self, parent_run_id: Optional[UUID]) -> str:
         """获取父级的 entity_path"""
