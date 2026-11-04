@@ -2078,6 +2078,9 @@ class _RecordingLlm:
         self.tool_batches: list[list[str]] = []
         self.message_batches: list[list] = []
 
+    def with_config(self, config):
+        return RunnableLambda(self.invoke).with_config(config)
+
     def bind_tools(self, tools, **kwargs):  # noqa: ANN003
         self.tool_batches.append([t.name for t in tools])
 
