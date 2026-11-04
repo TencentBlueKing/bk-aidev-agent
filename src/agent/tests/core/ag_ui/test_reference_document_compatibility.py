@@ -42,6 +42,15 @@ async def test_agui_adapts_links_without_changing_native_retrieval():
     assert event.value[0]["metadata"]["preview_path"] == PREVIEW
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin_key", ["originFile", "origin_file"])
+async def test_existing_preview_first_events_keep_their_source_and_preview(origin_key):
+    event = await convert([{"name": "Guide", "url": BROKEN_PREVIEW, origin_key: SOURCE}])
+    assert event.value[0]["url"] == PREVIEW
+    assert event.value[0]["originFile"] == SOURCE
+    assert event.value[0]["metadata"]["path"] == SOURCE
+
+
 @pytest.mark.parametrize("origin_key", ["originFile", "origin_file"])
 @pytest.mark.parametrize("activity_type", ["reference_document", "knowledge_rag"])
 def test_history_adapts_old_documents_without_mutating_saved_records(origin_key, activity_type):
@@ -113,6 +122,12 @@ def test_legacy_preview_first_fields_remain_available(key):
         (BROKEN_PREVIEW, BROKEN_PREVIEW, PREVIEW, PREVIEW),
         (SOURCE, "https://example.com/a//b?x=1+2#fragment", SOURCE, "https://example.com/a//b?x=1+2#fragment"),
         (SOURCE, "http://[", SOURCE, "http://["),
+        (
+            SOURCE + "?next=/agent-develop/knowledgebase",
+            BROKEN_PREVIEW,
+            SOURCE + "?next=/agent-develop/knowledgebase",
+            PREVIEW,
+        ),
         (
             SOURCE,
             "https://example.com//agent-develop/knowledgebase-other",

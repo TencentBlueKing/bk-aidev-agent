@@ -1,22 +1,32 @@
 """Adapt reference links for the existing UI without changing native retrieval records."""
 
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import SplitResult, urlsplit, urlunsplit
+
+_KNOWLEDGE_PREVIEW_ROUTE = "/agent-develop/knowledgebase"
 
 
 def _text(value: object) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _normalize_preview_url(value: str) -> str:
+def _knowledge_preview_parts(value: str) -> tuple[SplitResult, str] | None:
     try:
         parts = urlsplit(value)
     except ValueError:
-        return value
-    prefix, route, suffix = parts.path.rpartition("/agent-develop/knowledgebase")
+        return None
+    prefix, route, suffix = parts.path.rpartition(_KNOWLEDGE_PREVIEW_ROUTE)
     if not route or (suffix and not suffix.startswith("/")):
-        return value
+        return None
     path = prefix.rstrip("/") + route + suffix
+    return parts, path
+
+
+def _normalize_preview_url(value: str) -> str:
+    parsed = _knowledge_preview_parts(value)
+    if parsed is None:
+        return value
+    parts, path = parsed
     if path == parts.path:
         return value
     return urlunsplit(parts._replace(path=path))
@@ -35,6 +45,12 @@ def _reference_document_for_display(item: dict[str, Any]) -> dict[str, Any]:
         elif "originFile" in item or "origin_file" in item:
             source = _text(item.get("url"))
             preview = _text(item.get("originFile") or item.get("origin_file"))
+            if (
+                _KNOWLEDGE_PREVIEW_ROUTE in source
+                and _knowledge_preview_parts(source) is not None
+                and _knowledge_preview_parts(preview) is None
+            ):
+                source, preview = preview, source
         else:
             return document
     if not source and not preview:
