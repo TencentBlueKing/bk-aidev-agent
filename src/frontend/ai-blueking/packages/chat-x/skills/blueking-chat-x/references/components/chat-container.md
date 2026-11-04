@@ -4,7 +4,7 @@
 
 完整对话容器，组合消息列表、输入区、模型选择、快捷指令、文件产物预览、分享选择和自定义 Tab。 透传 models / selectedModel；支持 welcomeTitle 与 #welcome。 侧栏展开/折叠由外部 v-model:asideCollapsed 严格受控（传入后以外部值为准，内部展开动作仅发 update 事件），不再依赖执行数据或文件产物有无；无数据时侧栏照常展开并展示空态。 侧栏固定从右侧展开（无 placement prop），且不再内置折叠按钮。 「文件产物」Tab 常驻挂载。 enableMessageMinimap（默认 true）把内部消息定位器挂在主栏左侧；提问超过 4 条且未替换默认消息槽时展示，hover 预览问答，点击只滚动消息列表。 源码位置：src/components/chat-container/chat-container.vue。
 
-**关联**：message-container（默认消息列表；expose getScrollElement 与 locate，供定位器判断可视区并滚动）、use-message-minimap（消息定位器的轮次划分与可视区计算）、chat-input（对话输入与快捷指令入口）、model-selector（透传 models / selectedModel，在输入区展示模型选择器）、shortcut-render（快捷指令表单浮层）、file-artifact-panel（侧栏默认文件产物面板）、selection-footer（多选分享底部操作栏）
+**关联**：message-container（默认消息列表；expose getScrollElement、locate 与 visibleMessageGroups，供定位器判断可视区、滚动并对齐轮次）、use-message-minimap（消息定位器的轮次划分与可视区计算）、chat-input（对话输入与快捷指令入口）、model-selector（透传 models / selectedModel，在输入区展示模型选择器）、shortcut-render（快捷指令表单浮层）、file-artifact-panel（侧栏默认文件产物面板）、selection-footer（多选分享底部操作栏）
 
 ---
 
@@ -74,10 +74,10 @@ ai-chat-container（:data-ai-size="size"）
 - **出现条件**：开关打开、已有消息，且默认消息槽里的 `MessageContainer` 已经挂上（能拿到它的滚动容器）。提问超过 4 条才画出刻度。用 `#default` 换掉默认消息列表后没有内置滚动容器，定位器不会出现。
 - **位置**：绝对定位贴主栏左缘，垂直范围跟消息可视区对齐，不把输入框算进去。
 - **当前位置**：未 hover 时，落在可视区的问答对应刻度高亮。
-- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，并在右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用不参与。最长刻度压到消息列时，hover 会遮住被压住的左侧消息；左侧仍是空白时不盖。hover 期间不显示可视区高亮。
+- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，并在右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用不参与。最长刻度压到消息正文时，hover 会遮住被压住的左侧消息；只碰到左侧空白或消息容器的左内边距时不盖。hover 期间不显示可视区高亮。
 - **点击定位**：点击刻度后调用 `MessageContainer` 的 `locate`，只滚动消息列表到对应提问，并暂停流式输出时的自动贴底。
 - **滚轮**：滚轮留在定位器内，消息列表不跟随滚动。刻度超出定位器高度（最高为消息可视区的 2/3）时，只滚动定位器自己的列表，两端渐隐。
-- **分享模式**：传给定位器的消息组会去掉 Loading 组，避免把加载占位算进轮次。
+- **分享模式**：定位器使用 `MessageContainer` 正在渲染的分组。分享态下容器会去掉 Loading 组，加载占位不会算进轮次。
 
 ```vue
 <template>
@@ -944,7 +944,7 @@ interface Shortcut {
 
 ## 关联组件
 
-- [MessageContainer](/components/setup/message-container) — 默认消息列表；`getScrollElement` / `locate` 供消息定位器使用
+- [MessageContainer](/components/setup/message-container) — 默认消息列表；`getScrollElement` / `locate` / `visibleMessageGroups` 供消息定位器使用
 - [useMessageMinimap](/composables/use-message-minimap) — 消息定位器的轮次划分与可视区计算
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
 - [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModel`）

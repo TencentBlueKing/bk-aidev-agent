@@ -278,9 +278,17 @@
     container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   };
 
+  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
+  const visibleMessageGroups = computed(() =>
+    props.renderMode === RenderMode.Share
+      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
+      : props.messageGroups,
+  );
+
   defineExpose({
     getScrollElement: () => messageContainerRef.value,
     locate: handleMinimapLocate,
+    visibleMessageGroups,
   });
 
   // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
@@ -297,12 +305,6 @@
     return tools.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
   });
   const updateTools = computed(() => mergeToolsById(CONST_UPDATE_TOOLS, props.updateTools));
-  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
-  const visibleMessageGroups = computed(() =>
-    props.renderMode === RenderMode.Share
-      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
-      : props.messageGroups,
-  );
   // 「停止生成」按钮的显示条件；生成中时最后一组的过程状态栏显示「处理中」，其余各组都已结束
   const isGenerating = computed(
     () => props.renderMode !== RenderMode.Share && isMessageGenerating(props.messageStatus),

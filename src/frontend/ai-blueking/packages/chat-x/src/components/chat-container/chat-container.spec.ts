@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type Ref, defineComponent, h, nextTick } from 'vue';
+import { type Ref, computed, defineComponent, h, nextTick } from 'vue';
 
 import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
@@ -522,6 +522,12 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       expose({
         getScrollElement: () => document.createElement('div'),
         locate: () => undefined,
+        visibleMessageGroups: computed(() => {
+          const groups = (props.messageGroups as Array<{ type?: string }>) ?? [];
+          return props.renderMode === RenderMode.Share
+            ? groups.filter(group => group.type !== MessageRole.Loading)
+            : groups;
+        }),
       });
       type LooseMessage = { content?: unknown; id?: string };
       type LooseHandler = (...args: never[]) => unknown;
@@ -1033,6 +1039,36 @@ describe('ChatContainer', () => {
 
       await wrapper.setProps({ enableMessageMinimap: false });
       expect(wrapper.find('.mock-message-minimap').exists()).toBe(false);
+    });
+
+    it('分享态定位器使用消息容器的可见分组，不包含 Loading 组', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'assistant-1' },
+        { messages: [], type: MessageRole.Loading, uid: 'loading-1' },
+      ];
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, renderMode: RenderMode.Share },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('2');
+    });
+
+    it('消息分组变化后定位器跟随消息容器的可见分组', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [{ messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' }];
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('1');
+
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'assistant-1' },
+      ];
+      await nextTick();
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('2');
     });
 
     it('替换默认消息槽时不渲染定位器', async () => {

@@ -1126,6 +1126,25 @@ describe('MessageContainer', () => {
       expect(loadingRender).toBeUndefined();
     });
 
+    it('分享态 expose 的 visibleMessageGroups 不包含 Loading 组', async () => {
+      const messages: Message[] = [createUserMessage('1', 'Hello', 1)];
+      const messageGroups = buildGroups(messages);
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages,
+          messageGroups,
+          renderMode: RenderMode.Share,
+        },
+      });
+      await nextTick();
+
+      const exposed = wrapper.vm as unknown as { visibleMessageGroups: Array<{ type: MessageRole }> };
+      expect(messageGroups.some(group => group.type === MessageRole.Loading)).toBe(true);
+      expect(exposed.visibleMessageGroups.some(group => group.type === MessageRole.Loading)).toBe(false);
+    });
+
     it('最后一条消息是助手消息时不应该追加 Loading 消息组', async () => {
       const messages: Message[] = [createUserMessage('1', 'Hello', 1), createAssistantMessage('2', 'Hi!', 2)];
 
