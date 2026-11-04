@@ -78,6 +78,28 @@ def invoke_app():
 
 
 @pytest.fixture
+def reasoning_app():
+    """单节点图：节点返回带 reasoning 的 AI 消息（可带 tool_calls）。"""
+
+    def reason_node(state: AgentState):
+        return {
+            "messages": [
+                AIMessage(
+                    content="两步操作均已成功。",
+                    additional_kwargs={"reasoning_content": "先确认封板策略是全局还是单仓"},
+                    tool_calls=[{"name": "get_commit_block_status", "args": {}, "id": "c1", "type": "tool_call"}],
+                )
+            ]
+        }
+
+    graph = StateGraph(AgentState)
+    graph.add_node("reason", reason_node)
+    graph.add_edge(START, "reason")
+    graph.add_edge("reason", END)
+    return graph.compile()
+
+
+@pytest.fixture
 def interrupt_app():
     """中断图：首次执行触发 interrupt，恢复后返回 AI 消息。"""
 
@@ -130,6 +152,29 @@ class TestInvokeAgentSpanNormalInvoke:
         child_attrs = _child_spans(exporter)[0].attributes
         assert "gen_ai.input.messages" not in child_attrs
         assert "gen_ai.output.messages" not in child_attrs
+
+    async def test_top_level_output_carries_reasoning_but_input_does_not(
+        self, reasoning_app, make_handler, tracer_and_exporter
+    ):
+        """AC6: 顶层输出的末条 AI 消息带 reasoning part（位于 text / tool_call 之前），输入仍只有本轮用户输入"""
+        _, exporter = tracer_and_exporter
+        cfg = {"callbacks": [make_handler()]}
+        await reasoning_app.ainvoke({"messages": [HumanMessage(content="hello")]}, cfg)
+
+        attrs = _top_level_spans(exporter)[0].attributes
+        assert json.loads(attrs["gen_ai.output.messages"]) == [
+            {
+                "role": "assistant",
+                "parts": [
+                    {"type": "reasoning", "content": "先确认封板策略是全局还是单仓"},
+                    {"type": "text", "content": "两步操作均已成功。"},
+                    {"type": "tool_call", "id": "c1", "name": "get_commit_block_status", "arguments": {}},
+                ],
+            }
+        ]
+        input_messages = json.loads(attrs["gen_ai.input.messages"])
+        assert input_messages == [{"role": "user", "parts": [{"type": "text", "content": "hello"}]}]
+        assert all(part["type"] != "reasoning" for part in input_messages[0]["parts"])
 
 
 class TestInvokeAgentSpanInterruptResume:

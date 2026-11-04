@@ -102,12 +102,41 @@ def _content_to_parts(content) -> list:
                             "content": block.get("data", ""),
                         }
                     )
+                elif block_type == "reasoning":
+                    # reasoning 块由 _extract_reasoning_parts 统一转成 reasoning part，
+                    # 此处跳过，避免降级成 content 为块 JSON 的 text part
+                    continue
                 else:
                     parts.append({"type": "text", "content": json.dumps(block, cls=CallbackFilteredJSONEncoder)})
             else:
                 parts.append({"type": "text", "content": str(block)})
         return parts
     return [{"type": "text", "content": str(content)}] if content else []
+
+
+def _extract_reasoning_parts(msg: BaseMessage) -> list:
+    """把消息中的 reasoning 内容转成 OTel 官方 reasoning parts。
+
+    优先取 provider 原文 ``additional_kwargs["reasoning_content"]``；该值缺失或
+    不是去空白后非空的字符串时，按出现顺序收集 content 中 ``type == "reasoning"``
+    块的 ``reasoning`` 字段。两来源并存以 ``additional_kwargs`` 为准，避免同一段
+    思考重复上报。空值（None / 空串 / 空白串）与非字符串一律不产出 part。
+    """
+    additional_kwargs = getattr(msg, "additional_kwargs", None) or {}
+    reasoning_content = additional_kwargs.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        return [{"type": "reasoning", "content": reasoning_content}]
+    content = getattr(msg, "content", None)
+    if not isinstance(content, list):
+        return []
+    parts = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "reasoning":
+            continue
+        reasoning = block.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            parts.append({"type": "reasoning", "content": reasoning})
+    return parts
 
 
 def _tool_calls_to_parts(tool_calls) -> list:
@@ -140,7 +169,7 @@ def _chat_message_to_parts_dict(msg: BaseMessage) -> dict:
         )
         parts = [{"type": "tool_call_response", "id": msg.tool_call_id, "response": content_str}]
     else:
-        parts = _content_to_parts(msg.content)
+        parts = _extract_reasoning_parts(msg) + _content_to_parts(msg.content)
         tool_calls = (
             getattr(msg, "tool_calls", None)
             if hasattr(msg, "tool_calls")
