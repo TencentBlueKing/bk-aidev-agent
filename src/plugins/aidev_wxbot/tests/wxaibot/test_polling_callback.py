@@ -54,6 +54,7 @@ def polling_case(monkeypatch, settings):
     monkeypatch.setattr(views, "rabbitmq_client", queue)
     monkeypatch.setattr(views, "get_agent_executor", lambda: executor)
     monkeypatch.setattr(views, "resolve_strategy", lambda *_: strategy)
+    monkeypatch.setattr(views.AgentHelper, "get_authorize_prompt", lambda *_, **__: "")
     settings.MAX_MESSAGE_TIME = 300
 
     def post(payload, *, tamper=False):

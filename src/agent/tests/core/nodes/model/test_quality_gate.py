@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from aidev_agent.core.nodes.model.pydantic_models import ModelChainState, ProcessorContext
 from aidev_agent.core.nodes.model.quality_gate import (
+    THINKING_EXHAUSTED_MESSAGE,
     QualityGate,
     ResponseRoute,
 )
@@ -103,6 +104,53 @@ def _make_ctx(response, messages=None):
         response=response,
         metadata={"enable_custom_event": False},
     )
+
+
+@pytest.mark.parametrize("storage", ["additional_kwargs", "attribute", "inline"])
+@pytest.mark.parametrize("after_tool", [False, True])
+@pytest.mark.parametrize("max_retries", [0, 10])
+def test_exhausted_reasoning_terminates_without_repeating_model_or_tools(storage, after_tool, max_retries):
+    response = AIMessage(content="", response_metadata={"finish_reason": "length"})
+    if storage == "additional_kwargs":
+        response.additional_kwargs["reasoning_content"] = "considering the same action again"
+    elif storage == "attribute":
+        response.reasoning_content = "considering the same action again"
+    else:
+        response.content = "<think>considering the same action again</think>"
+    messages = [HumanMessage(content="Remember my preference")]
+    if after_tool:
+        messages.append(ToolMessage(content="saved", tool_call_id="write-1"))
+    ctx = _make_ctx(response, messages)
+    ctx.model_chain_state.max_retries = max_retries
+    original_messages = list(ctx.messages)
+    assert QualityGate().validate_response(ctx) == ResponseRoute.RECOVERY_TRUNCATION
+    assert QualityGate()(ctx).response.content == THINKING_EXHAUSTED_MESSAGE
+    assert ctx.response.response_metadata["finish_reason"] == "length"
+    assert ctx.messages == original_messages
+    assert ctx.model_chain_state == ModelChainState(max_retries=max_retries)
+
+
+@pytest.mark.parametrize("finish_reason", ["stop", None])
+@pytest.mark.parametrize("storage", ["additional_kwargs", "attribute"])
+def test_reasoning_without_exhaustion_keeps_prefill_recovery(finish_reason, storage):
+    response = AIMessage(content="", response_metadata={"finish_reason": finish_reason})
+    if storage == "additional_kwargs":
+        response.additional_kwargs["reasoning_content"] = "thinking"
+    else:
+        response.reasoning_content = "thinking"
+    assert QualityGate().validate_response(_make_ctx(response)) == ResponseRoute.RECOVERY_PREFILL
+
+
+def test_budget_failure_outside_a_runnable_keeps_the_response():
+    ctx = _make_ctx(
+        AIMessage(
+            content="",
+            response_metadata={"finish_reason": "length"},
+            additional_kwargs={"reasoning_content": "thinking"},
+        )
+    )
+    ctx.metadata["enable_custom_event"] = True
+    assert QualityGate()(ctx).response.content == THINKING_EXHAUSTED_MESSAGE
 
 
 class TestTaskJudgment:
