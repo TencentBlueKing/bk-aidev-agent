@@ -782,6 +782,17 @@
     height: 100% !important;
   }
 
+  /* 覆盖左侧消息缩略条位置：避开折叠按钮，并与其垂直居中对齐 */
+  .chat-main .ai-chatbot .ai-message-minimap {
+    top: 0;
+    height: 100%;
+  }
+
+  .chat-main .ai-chatbot .ai-message-minimap-list {
+    left: 40px;
+    top: calc(50% - 52px / 2);
+  }
+
   /* 覆盖 chat-bot 组件内 message 和 input 的最大宽度 */
   .chat-main .ai-chatbot .chatbot-messages .message-group {
     max-width: 800px !important;
