@@ -514,6 +514,18 @@ interface ChatBotExpose {
 }
 ```
 
+## ChatMessageSlotProps
+
+`ChatBot` / `AIBlueking` 的 `#message` 插槽作用域：chat-x `MessageSlotProps` 再加一份已绑定当前消息的默认渲染。
+
+```typescript
+type ChatMessageSlotProps = MessageSlotProps & {
+  renderDefault: () => VNode;
+};
+```
+
+`MessageSlotProps` 含 `message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`tippyOptions`。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
+
 ## ChatBotEmits
 
 `ChatBot` 组件的事件类型。

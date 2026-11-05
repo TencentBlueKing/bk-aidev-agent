@@ -180,3 +180,4 @@ await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-pr
 - [初始化生命周期](/guide/internals/chat-bootstrap) — bootstrap 并行拉取模型列表
 - [ChatBusinessManager](/api/ai-blueking/managers#chatbusinessmanager) / [ModelSelectionManager](/api/ai-blueking/managers#modelselectionmanager)
 - [Agent 模块](/api/chat-helper/sdk#agent-模块)
+- [更新日志](/changelog) — v3.1.0 思考深度与模型描述卡片

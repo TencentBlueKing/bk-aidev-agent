@@ -342,8 +342,20 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 
 ---
 
+## 如何关闭消息定位器？
+
+`ChatContainer` 的 `enableMessageMinimap` 默认 `true`：提问超过 4 条且未替换默认消息列表时，主栏左侧出现定位器。原子组装可以关掉：
+
+```vue
+<ChatContainer :messages="messages" :enable-message-minimap="false" />
+```
+
+`ChatBot` / `AIBlueking` 没有这个 prop，会走 `ChatContainer` 的默认开启。单独使用 `MessageContainer`，或用 `#default` 换掉默认消息列表时，定位器不会出现。详见 [聊天交互 · 消息定位器](/guide/core-features/chat-interaction#消息定位器)。
+
+---
+
 ## 为什么 executionTabVisible 不生效？
 
 chat-x 3.0.0 起，侧栏不再内建「执行情况」Tab。常驻默认 Tab 是「文件产物」。`executionTabVisible` 还在 `ChatBot` / `AIBlueking` 的类型里，也会被传下去，但 `ChatContainer` 已经不读它，所以 `true` / `false` 都看不到那个 Tab。
 
-文档站的[侧栏示例](/demos/side-render)使用 `3.1.0-beta.6`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
+文档站的[侧栏示例](/demos/side-render)使用 `3.1.0`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
