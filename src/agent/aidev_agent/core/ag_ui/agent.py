@@ -51,6 +51,7 @@ from .events import (
     ExtendThinkingEndEvent,
 )
 from .types import (
+    CONTEXT_COMPRESSION_TAG,
     CustomEventNames,
     Interrupt,
     LangGraphEventTypes,
@@ -558,6 +559,12 @@ class LangGraphAgent:
         state: State,  # noqa: ARG002
     ) -> AsyncGenerator[BaseEvent, None]:
         event_type = event.get("event")
+        # 上下文压缩的内部 LLM 调用不向前端展示，也不落库
+        if event_type in (
+            LangGraphEventTypes.OnChatModelStream,
+            LangGraphEventTypes.OnChatModelEnd,
+        ) and CONTEXT_COMPRESSION_TAG in (event.get("tags") or []):
+            return
         if event_type == LangGraphEventTypes.OnChatModelStream:
             async for ev in self._handle_on_chat_model_stream_event(event):
                 yield ev
