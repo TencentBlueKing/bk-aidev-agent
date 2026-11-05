@@ -40,7 +40,7 @@ from jinja2 import BaseLoader, Template
 from jinja2.sandbox import SandboxedEnvironment as Environment
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
-from aidev_agent.core.ag_ui.types import CustomMessageType, InfoMessage
+from aidev_agent.core.ag_ui.types import CONTEXT_COMPRESSION_TAG, CustomMessageType, InfoMessage
 from aidev_agent.packages.langchain_core.retrievers.utils import HUNYUAN_SPECIFIC_RESPONSE
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
 from aidev_agent.packages.opentelemetry.context_obs import (
@@ -344,7 +344,7 @@ class KnowledgeCompressor:
         with observe_compression_call(
             module="knowledge", model=resolve_model_name(self.llm), input_chars=input_chars
         ) as call:
-            resp = self.llm.invoke(messages)
+            resp = self.llm.invoke(messages, config={"tags": [CONTEXT_COMPRESSION_TAG]})
             resp_content = resp.content
 
             # 如果触发了混元的特殊回复，则不进行压缩
@@ -604,7 +604,7 @@ class ToolOutputCompressor:
             model=resolve_model_name(self.llm),
             input_chars=_text_chars(tool_result_str),
         ) as call:
-            resp = self.llm.invoke(messages)
+            resp = self.llm.invoke(messages, config={"tags": [CONTEXT_COMPRESSION_TAG]})
             resp_content = resp.content
 
             # 如果触发了混元的特殊回复，则不进行压缩
