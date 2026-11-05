@@ -21,7 +21,7 @@ sys.modules.setdefault("bk_plugin_framework.kit.decorators", MagicMock(inject_us
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager  # noqa: E402
 from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager  # noqa: E402
 from aidev_bkplugin.services.llm import LLMService  # noqa: E402
-from aidev_bkplugin.views.base import PluginResourceManager, PluginViewSet  # noqa: E402
+from aidev_bkplugin.views.base import PluginResourceManager  # noqa: E402
 
 
 def _patch_factories():
@@ -283,20 +283,6 @@ def test_request_token_cache_without_username_does_not_lookup():
     with patch("aidev_agent.packages.resource_manager.base._get_access_token_by_user") as lookup:
         assert LLMOverrideResourceManager().resolve_access_token() == ""
     lookup.assert_not_called()
-
-
-def test_view_reuses_manager_only_within_request_and_identity():
-    view = PluginViewSet()
-    view.request = SimpleNamespace(user=SimpleNamespace(username="alice", tenant_id="tenant-a"))
-    first = view.get_resource_manager()
-    assert view.get_resource_manager() is first
-    view.request.user.username = "bob"
-    assert view.get_resource_manager() is not first
-    view.request.user.username = "alice"
-    view.request.user.tenant_id = "tenant-b"
-    assert view.get_resource_manager() is not first
-    view.request = SimpleNamespace(user=SimpleNamespace(username="alice", tenant_id="tenant-a"))
-    assert view.get_resource_manager() is not first
 
 
 def test_concurrent_token_resolutions_share_one_lookup():

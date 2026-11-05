@@ -115,15 +115,7 @@ class PluginViewSet(ViewSetMixin, APIView):
 
     def get_resource_manager(self) -> Optional[ResourceManagerProtocol]:
         """子类可覆盖，返回自定义的 ``resource_manager``。"""
-        username = self.get_username()
-        tenant_id = resolve_tenant_id(self.request)
-        cache = getattr(self.request, "_plugin_resource_managers", None)
-        if cache is None:
-            cache = self.request._plugin_resource_managers = {}
-        key = (username, tenant_id)
-        if key not in cache:
-            cache[key] = PluginResourceManager(username=username, tenant_id=tenant_id)
-        return cache[key]
+        return PluginResourceManager(username=self.get_username(), tenant_id=resolve_tenant_id(self.request))
 
     def get_client(self, **kwargs: Any):
         """View 层取 ``client`` 的统一入口。
