@@ -105,6 +105,7 @@ const messageStatus = computed(() =>
 1. **右侧空间不足**（贴右边）：展开先左移再扩宽；收起先缩宽，再移回**挪窗前**的位置（贴右边回到贴右边）
 2. **右侧空间充足**（含窗口已够宽）：只扩宽 / 缩宽，不移动
 3. **展开后用户拖动或缩放了浮窗**：展开前快照失效，收起只缩宽、保持左边缘不动
+4. **主聊天区有下限**：默认 400，可用 `AIBlueking` 的 `minWidth` 改（`<AIBlueking :min-width="480" />`）。侧栏打开后，浮窗最小宽度 = 该值 + 当前侧栏宽度。分隔条用同一个值；若另外传了 `resizeProps.mainMin`，以 `mainMin` 为准。视口放不下时才允许主栏小于该值
 
 第 3 条有个坑：侧栏开关画在 `AIHeader` 上，而 Header 就是拖拽手柄（`.drag-handle`），`@click.stop` 拦不住 mousedown。点开关时鼠标抖几像素，`vue-draggable-resizable` 会发出**真实**的 `dragging` / `dragStop`，一旦当成用户挪窗就会清掉快照、收起时不归位（表现为时好时坏）。所以 `useDraggable` 用 `USER_MOVE_EPSILON`（3px）比对最近一次编程式落点来区分抖动和真正的挪窗。注意 VDR 的 `x` / `w` watcher 只调 `moveHorizontally` / `changeWidth`，**不会**回打事件，不需要为编程式改几何加忽略开关。
 

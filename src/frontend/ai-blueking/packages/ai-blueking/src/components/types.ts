@@ -11,6 +11,7 @@ import type { ComputedRef, MaybeRefOrGetter, Ref, VNode } from 'vue';
 
 import type { ModelSelectionManager } from '../manager/business/model-selection-manager';
 import type {
+  AsideResizeProps,
   GetSideRenderComponent,
   GetSideTabRenderComponent,
   IChatHelper,
@@ -269,12 +270,7 @@ export interface ChatBotProps {
   /** 使用 agentName 作为欢迎标题 */
   useAgentName?: boolean;
   /** ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
-  resizeProps?: {
-    disabled?: boolean;
-    initialDivide?: number | string;
-    max?: number;
-    min?: number;
-  };
+  resizeProps?: AsideResizeProps;
 }
 
 export type { GetSideRenderComponent, GetSideTabRenderComponent, IHostResourceItem, IHostSkillItem, OnCustomTabChange };

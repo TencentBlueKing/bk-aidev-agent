@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="containerRef"
     class="ai-chat-container"
     :data-ai-size="size"
     :style="{
@@ -338,6 +339,7 @@
   import MessageMinimap from '../chat-message/message-minimap/message-minimap.vue';
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
+  import { type ChatContainerResizeProps, useAsideResizeProps } from './use-aside-resize-props';
 
   import type { OnArtifactClick } from '../../ag-ui/types/file';
   import type {
@@ -376,12 +378,7 @@
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
-    resizeProps?: {
-      disabled?: boolean;
-      initialDivide?: number | string;
-      max?: number;
-      min?: number;
-    };
+    resizeProps?: ChatContainerResizeProps;
     /** 字号主题档位：small(默认 12px) / normal(14px) */
     size?: AiSizeMode;
     /** 消息时间展示所用的 IANA 时区名（如 Asia/Shanghai）；未配置时按浏览器时区展示 */
@@ -437,14 +434,8 @@
 
   useRenderModeProvider({ renderMode });
 
-  const resizeProps = computed(() => ({
-    collapsible: false,
-    immediate: true,
-    min: 400,
-    ...props.resizeProps,
-    // 侧栏固定从右侧展开，不再支持左侧
-    placement: 'right' as const,
-  }));
+  const containerRef = useTemplateRef<HTMLElement>('containerRef');
+  const resizeProps = useAsideResizeProps(containerRef, () => props.resizeProps);
 
   const sideRenderComponent = computed(() => {
     const tab = selectedTab.value;
@@ -819,6 +810,7 @@
     isResizing.value = true;
     resizeAsideWidth.value = w;
     lastExpandedAsideWidth.value = w;
+    emits('collapseChange', isCollapse.value, w);
   };
   const handleAfterResize = () => {
     isResizing.value = false;

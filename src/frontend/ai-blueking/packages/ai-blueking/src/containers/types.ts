@@ -51,6 +51,9 @@ export interface DraggableContainerExpose {
   /** 为侧面板展开扩展容器宽度 */
   expandForSidePanel: (extraWidth: number, hooks?: SidePanelGeometryHooks) => Promise<void>;
 
+  /** 侧栏拖拽变宽/变窄后同步窗口下限 */
+  setSidePanelWidth: (width: number) => void;
+
   /** 切换压缩状态 */
   toggleCompression: () => void;
 
@@ -177,14 +180,16 @@ export interface UseDraggableReturn {
   left: Ref<number>;
   maxWidth: Ref<number>;
   minHeight: number;
-  // 基本属性
-  minWidth: number;
+  // 基本属性。侧栏展开时为「主栏下限 + 当前侧栏宽度」
+  minWidth: ComputedRef<number>;
   top: Ref<number>;
   width: Ref<number>;
 
   abortSidePanelSequence: () => void;
   collapseSidePanel: (hooks?: SidePanelGeometryHooks) => Promise<void>;
   expandForSidePanel: (extraWidth: number, hooks?: SidePanelGeometryHooks) => Promise<void>;
+  /** 侧栏拖拽变宽/变窄后同步窗口下限 */
+  setSidePanelWidth: (width: number) => void;
   // 事件处理方法
   handleDragging: (x: number, y: number) => void;
   handleDragStop: (x: number, y: number) => void;

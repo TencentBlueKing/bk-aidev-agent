@@ -50,6 +50,7 @@ function createMockComponentManager() {
     handleResizeStop: vi.fn(),
     expandForSidePanel: vi.fn().mockResolvedValue(undefined),
     collapseSidePanel: vi.fn().mockResolvedValue(undefined),
+    setSidePanelWidth: vi.fn(),
     abortSidePanelSequence: vi.fn(),
   } as unknown as ComponentManager;
 }
@@ -157,6 +158,7 @@ describe('usePanelContainer aside orchestration', () => {
 
     expect(componentManager.expandForSidePanel).not.toHaveBeenCalled();
     expect(componentManager.collapseSidePanel).not.toHaveBeenCalled();
+    expect(componentManager.setSidePanelWidth).toHaveBeenCalledWith(600);
 
     await handleToggleAside();
     expect(componentManager.expandForSidePanel).toHaveBeenCalledWith(

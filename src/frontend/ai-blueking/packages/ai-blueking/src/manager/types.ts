@@ -77,6 +77,9 @@ export interface ContainerController {
   /** 为侧面板展开扩展容器宽度 */
   expandForSidePanel: (extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
 
+  /** 侧栏宽度变化后同步浮窗下限 */
+  setSidePanelWidth: (width: number) => void;
+
   /** 切换压缩状态 */
   toggleCompression: () => void;
 
