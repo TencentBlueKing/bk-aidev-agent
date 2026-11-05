@@ -9,6 +9,7 @@ SESSION 路径，``event_handler`` / ``checkpointer`` 集中注入。
 from __future__ import annotations
 
 from logging import getLogger
+from threading import Lock
 
 from aidev_agent.enums import AgentBuildType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
@@ -42,8 +43,28 @@ class LLMOverrideResourceManager(AgentResourceManager):
         # 避免 LLMOverrideResourceManager("alice", "gpt") 被静默解读成应用凭证。
         super().__init__(app_code=app_code, app_secret=app_secret, username=username, tenant_id=tenant_id)
         self.model = model or ""
+        self._access_token_cache: dict[tuple[str, str, str], str] = {}
+        self._access_token_lock = Lock()
         # 同一 rm 实例（即一次请求）内 get_agent_config 会被多次调用，按 model 缓存视觉能力，避免重复拉模型列表
         self._support_vision_cache: dict[str, bool] = {}
+
+    def resolve_access_token(self, username: str = None) -> str:
+        """本轮请求内按身份复用成功的凭证；失败仍允许后续解析重试。
+
+        缓存仅属于请求级资源管理器，不改变通用 SDK 实例的凭证刷新行为。
+        显式凭证始终优先，不能将其他用户的 fallback token 写入 self.access_token。
+        """
+        resolved_username = username or self.username
+        if self.access_token or not resolved_username:
+            return super().resolve_access_token(username)
+        key = (self.app_code, self.tenant_id, resolved_username)
+        with self._access_token_lock:
+            if key not in self._access_token_cache:
+                token = super().resolve_access_token(username)
+                if token:
+                    self._access_token_cache[key] = token
+                return token
+            return self._access_token_cache[key]
 
     def get_agent_config(self, agent_code: str, version: str | None = None, **kwargs) -> AgentConfig:
         config = super().get_agent_config(agent_code, version=version, **kwargs)
