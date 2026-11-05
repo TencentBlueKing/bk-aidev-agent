@@ -88,11 +88,21 @@ interface IAgentInfo {
 可用模型项（对齐 `plugin_api/llms/` 与 chat-x `IModelOption`）。字段以 snake_case 与后端保持一致，便于直接透传给 ModelSelector。
 
 ```typescript
+type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+interface ILlmReasoning {
+  default_effort?: ReasoningEffort;
+  mandatory?: boolean;
+  supported_efforts: Array<{ desc?: string; key: ReasoningEffort; value: string }>;
+}
+
 interface ILlmProperty {
   agent_type?: string;
   default?: boolean;
   is_self_host?: boolean;
   max_model_len?: number;
+  /** 思考深度；null 或缺省表示该模型不支持 */
+  reasoning?: ILlmReasoning | null;
   support_summary?: boolean;
   support_thinking?: boolean;
   support_thinking_quick?: boolean;
@@ -164,6 +174,10 @@ interface ISession {
   updatedAt: string;
   /** 会话关联模型（llm_code）；小鲸仅在首次无有效选中时用作兜底 */
   model?: string;
+  /** 用户在该会话显式选择的思考深度；null 表示跟随默认 */
+  reasoningEffort?: ReasoningEffort | null;
+  /** 下一轮实际生效的思考深度；列表接口不返回，以详情 / 更新响应为准 */
+  effectiveReasoningEffort?: ReasoningEffort | null;
 }
 ```
 

@@ -150,6 +150,23 @@ AI 小鲸支持多种内容渲染格式：
 
 工具栏，以及思考块、代码块等消息内部的折叠，不受此开关影响。运行中把该值改回 `true` 会恢复折叠、状态栏和耗时。
 
+## 消息定位器 {#消息定位器}
+
+自 **v3.1.0** 起，`ChatContainer` 默认在主栏左侧挂消息定位器（`enableMessageMinimap`，默认 `true`）。`ChatBot` / `AIBlueking` 走这套默认行为，没有单独开关。
+
+```vue
+<!-- 原子组装：关掉定位器 -->
+<ChatContainer :messages="messages" :enable-message-minimap="false" />
+```
+
+- **出现条件**：开关打开、已有消息，且默认消息槽里的 `MessageContainer` 已经挂上。提问超过 4 条才画出刻度。用 `#default` 换掉默认消息列表后没有内置滚动容器，定位器不会出现。单独使用 `MessageContainer` 时也不会出现。
+- **位置**：绝对定位贴主栏左缘，垂直范围跟消息可视区对齐，不把输入框算进去，不占布局。
+- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用不参与。
+- **点击定位**：只滚动消息列表到对应提问，并暂停流式输出时的自动贴底。
+- **分享模式**：定位器与消息列表共用同一过滤规则。分享态会去掉 Loading 组，加载占位不会算进轮次。
+
+详见 [chat-x ChatContainer](/api/chat-x/components#chatcontainer)。
+
 ## 消息时间展示 {#消息时间展示}
 
 自 **v2.2.3** 起，对话区会在消息工具栏旁展示创建时间，无需额外配置即可生效。时区可通过 `timezone` 统一指定，详见 [UI 定制 · 字号与消息时间](/guide/core-features/ui-customization#字号与消息时间)。

@@ -143,6 +143,30 @@
 </template>
 ```
 
+## ChatContainer {#chatcontainer}
+
+完整对话容器，组合消息列表、输入区、模型选择、侧栏和欢迎页。侧栏固定从右侧展开；`placement` 不可覆盖。
+
+### Props
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enableMessageCollapse` | `boolean` | `true` | 是否启用消息组顶层折叠及过程状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
+| `enableMessageMinimap` | `boolean` | `true` | 是否在主栏左侧挂[消息定位器](/guide/core-features/chat-interaction#消息定位器)。提问超过 4 条且使用默认消息列表时展示；替换 `#default` 后不出现 |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | 透传给内部 `ResizeLayout`，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right` |
+| `size` | `'normal' \| 'small'` | `'small'` | 字号主题 |
+| `timezone` | `string` | — | 消息时间所用的 IANA 时区名 |
+
+### v-model
+
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| `asideCollapsed` | `boolean` | 侧栏折叠态。传入后严格受控 |
+| `selectedModel` | `string` | 当前选中模型的 `llm_name` |
+| `reasoningEffort` | `null \| ReasoningEffort` | 当前模型的思考深度档位；为空时按模型默认档展示 |
+
+其余 Props 继承自 [ChatInput](#chatinput) 与 [MessageContainer](#messagecontainer)。
+
 ## MessageRender
 
 单条消息渲染组件，根据消息角色自动选择对应的渲染方式。
@@ -243,7 +267,7 @@
 
 模型下拉选择器，支持搜索与能力标签。通常由 `ChatInput` / `ChatContainer` 在传入 `models` 后自动渲染于发送按钮左侧；也可独立使用。
 
-`description` 去空白后非空时，选项悬停约 300ms 展示纯文本气泡，不再使用原生 `title`。气泡只复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)。
+`description` 去空白后非空时，选项悬停约 300ms 展示纯文本气泡，不再使用原生 `title`。气泡只复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。模型 `property.reasoning.supported_efforts` 非空时，hover 卡片里可调思考深度。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)、[思考深度](/guide/core-features/model-selection#思考深度)。
 
 ### Props
 
@@ -260,12 +284,14 @@
 | 属性 | 类型 | 说明 |
 | --- | --- | --- |
 | — | `string` | 当前选中模型的 `llm_name` |
+| `reasoningEffort` | `null \| ReasoningEffort` | 当前模型生效的思考深度档位；为空时按模型 `default_effort` 展示 |
 
 ### Events
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
 | `change` | `(model: IModelOption)` | 用户选中模型时触发 |
+| `reasoningEffortChange` | `(model: IModelOption, effort: ReasoningEffort)` | 用户在描述卡片里调整思考深度 |
 
 ### 用法示例
 

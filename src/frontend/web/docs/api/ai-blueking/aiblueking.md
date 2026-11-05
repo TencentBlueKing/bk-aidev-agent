@@ -277,7 +277,7 @@ function openAI() {
 | 插槽 | Scope | 说明 |
 | --- | --- | --- |
 | `welcome` | `{ openingRemark?, welcomeTitle? }` | 自定义空会话欢迎区（透传 ChatBot） |
-| `message` | `{ message, messageToolsStatus?, onInterruptResume? }` | 自定义消息渲染 |
+| `message` | `ChatMessageSlotProps` | 自定义消息渲染。含 chat-x `MessageSlotProps`（工具栏回调已绑定当前消息）以及 `renderDefault()`。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering) |
 | `codeHeader` | `{ language, token }` | 自定义代码块头部；`token` 为该代码块的 markdown-it `Token[]`，代码原文取 `type === 'fence'` 项的 `content`。示例见 [消息自定义渲染](/demos/custom-message) |
 | `headerLeft` | — | Header 标题区与右侧工具栏之间 |
 | `headerActions` | — | Header 右侧工具栏自定义图标（历史/转人工之后、压缩/关闭之前）；与 `showHistoryIcon` 独立 |

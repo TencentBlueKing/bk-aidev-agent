@@ -1,14 +1,16 @@
 # 更新日志
 
-## v3.1.0-beta.6
+## v3.1.0
 
-文档站交互示例使用已发布的 `@blueking/ai-blueking` / `chat-x` / `chat-helper` `3.1.0-beta.6`。这一版包含 `setInputContent`。
+v3.1.0 正式版整合 3.1.0-beta.1 至 beta.10 的功能与修复。配套 `@blueking/chat-x` `3.1.0`、`@blueking/chat-helper` `3.1.0`。文档站交互示例使用已发布的 `3.1.0`。
 
 ### 新功能
 
 - **消息顶层折叠可关闭**（`enableMessageCollapse`）：`AIBlueking` / `ChatBot` 透传 chat-x `ChatContainer`。默认 `true`，终态折叠本轮过程消息并展示过程状态栏（处理中 / 已完成 / 失败 / 已停止 / 已禁用及耗时）。设为 `false` 后完整展示每组消息，并隐藏整个过程状态栏；工具栏和消息内部的折叠不变。分享模式同样遵循此配置。详见 [聊天交互 · 消息折叠](/guide/core-features/chat-interaction#消息折叠)
 - **模型描述气泡**：模型 `description` 去空白后非空时，选项悬停约 300ms 后用气泡展示纯文本，不再用原生 `title`。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)
 - **`setInputContent` 写入标签**：`ChatBot` / `AIBlueking` 可用一份 `TagSchema` 整篇替换输入框，标签显示为芯片，不发送。自定义 `data.type` 必须由自己的 Agent 解析；官方 Agent 遇到不认识的类型会报 `docSchema tag type 非法`。详见 [写入输入框标签](/demos/set-input-content)
+- **思考深度**（≥ v3.1.0）：模型 `property.reasoning.supported_efforts` 非空时，在选项 hover 卡片里调节。进入会话用详情 `effective_reasoning_effort` 回显；切换档位单独写会话；每轮 `chat_completion` 带当前档。详见 [模型选择 · 思考深度](/guide/core-features/model-selection#思考深度)
+- **消息定位器**（≥ v3.1.0）：`ChatContainer` 默认在主栏左侧挂定位器（`enableMessageMinimap`，默认 `true`）。提问超过 4 条且未替换默认消息列表时出现；hover 预览问答，点击只滚动消息列表。`ChatBot` / `AIBlueking` 走默认开启，没有单独开关。详见 [聊天交互 · 消息定位器](/guide/core-features/chat-interaction#消息定位器)
 
 ### 优化
 
@@ -16,6 +18,13 @@
 - **思考块支持停止态**：停止生成时正在进行的思考显示「思考已停止」，不再停留在「思考中」
 - **删除助手回复会清掉整轮**：从对应的用户消息起，直到下一条用户消息之前（含未进工具栏分组的 tool 消息）一并删除。对不上唯一一轮时放弃删除，避免删错。接口仍只提交用户消息 id。详见 [原子组件组装](/guide/integration-modes/atomic-composition#工具栏回调)
 - **上传**：附件按钮常驻，不跟随 `support_vision`。单文件须严格小于 20MB。取消待发送附件时 ChatBot 会删除远端文件
+- **模型列表请求合并**：初始化时合并重复的 `GET llms/`
+- **模型描述卡片**：出现在列表上方时划过中间项不再立刻关闭；键盘滚动后再展示；思考深度滑块即时选中
+
+### 修复
+
+- 消息定位器与消息列表共用可见分组过滤；定位器遮罩按消息正文判断
+- `#message` 插槽作用域补齐用户消息工具回调，并提供 `renderDefault`
 
 ### 变更
 
@@ -23,8 +32,14 @@
 
 ### 文档
 
-- 更新 [聊天交互](/guide/core-features/chat-interaction)、[模型选择](/guide/core-features/model-selection)、[侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)、[原子组件组装](/guide/integration-modes/atomic-composition)
-- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)、[chat-helper SDK](/api/chat-helper/sdk)、[FAQ](/faq)
+- 更新 [聊天交互](/guide/core-features/chat-interaction)、[模型选择](/guide/core-features/model-selection)、[消息自定义渲染](/guide/core-features/custom-message-rendering)、[侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization)、[原子组件组装](/guide/integration-modes/atomic-composition)
+- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[业务管理器](/api/ai-blueking/managers)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)、[chat-helper SDK](/api/chat-helper/sdk)、[FAQ](/faq)
+
+### 升级建议
+
+- 自定义 `#message` 时可用 `renderDefault()` 回退默认渲染，并用 `onAction` / `onInputConfirm` 接用户消息工具栏
+- 原子组装要关掉定位器：给 `ChatContainer` 传 `:enable-message-minimap="false"`。`ChatBot` / `AIBlueking` 没有这个 prop，默认开启
+- 思考深度：每轮 `agent.chat` 第 7 个参数传当前档；不要和 `model` 写在同一次会话更新里
 
 ---
 
