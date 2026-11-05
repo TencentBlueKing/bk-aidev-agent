@@ -205,7 +205,11 @@ class SubAgentConfig(BaseModel):
 
 
 class KnowledgeReference(BaseModel):
-    """Related source retrieved during a child run, available for answer attribution."""
+    """Related source retrieved during a child run, available for answer attribution.
+
+    ``url`` is the original link of web knowledge. Uploaded files and ZIP imports have no original link
+    and only carry ``preview_url``.
+    """
 
     model_config = ConfigDict(frozen=True)
 

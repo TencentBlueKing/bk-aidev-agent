@@ -36,6 +36,7 @@ logger = logging.getLogger("aidev-agent")
 
 
 def _dispatch_knowledge_references(result: AgentResult, config: RunnableConfig | None) -> None:
+    """Replay child references as one knowledge retrieval so the web UI creates the reference message live."""
     if not result.references or not config or not config.get("callbacks"):
         return
     documents = [
@@ -46,11 +47,13 @@ def _dispatch_knowledge_references(result: AgentResult, config: RunnableConfig |
         }
         for reference in result.references
     ]
+    dispatch_custom_event(CustomMessageType.KNOWLEDGE_RAG_START.value, data={}, config=config)
     dispatch_custom_event(
         CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
         data={"message_id": uuid.uuid4().hex, "data": documents},
         config=config,
     )
+    dispatch_custom_event(CustomMessageType.KNOWLEDGE_RAG_END.value, data={}, config=config)
 
 
 class AgentBackendResolver:

@@ -25,6 +25,7 @@ from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
+from aidev_agent.core.ag_ui.reference_documents import history_reference_documents
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     ReasoningLangChainMessage,
@@ -133,6 +134,18 @@ def _clear_tool_call_placeholder(payload: dict) -> None:
         return
     if payload.get("content") == TOOL_CALLING_PLACEHOLDER:
         payload["content"] = ""
+
+
+def _adapt_reference_activity(payload: dict) -> None:
+    """把引用文档 activity 改写为与实时一致的展示形态，只作用于快照副本，不回写账本。"""
+    if payload.get("role") != PromptRole.ACTIVITY.value:
+        return
+    builtin_property = payload.get("builtin_property")
+    builtin_property = builtin_property if isinstance(builtin_property, dict) else {}
+    activity_type = (
+        builtin_property.get("activity_type") or payload.get("activity_type") or builtin_property.get("type")
+    )
+    payload["content"] = history_reference_documents(payload.get("content"), activity_type)
 
 
 class ChatCompletionAgent(BaseModel):
@@ -1190,6 +1203,8 @@ class ChatCompletionAgent(BaseModel):
         builtin_property/extra 保留、字段名保持后端原样）；仅将旧顶层 docSchema 归一到
         property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
         status 映射 / multimodal 重排。
+        引用文档 activity 只在快照副本上按实时展示契约改写链接：标题打开预览，
+        仅外链知识保留原文链接，落库记录不变。
         用户图片 download_url 与 Markdown 图片中的会话 PV 路径只在快照副本上重签，不写回账本，
         避免执行过程中前端覆盖历史后看到过期图。
         """
@@ -1201,6 +1216,7 @@ class ChatCompletionAgent(BaseModel):
             payload = payload if hasattr(record, "model_dump") else copy.deepcopy(payload)
             normalize_doc_schema_payload(payload)
             _clear_tool_call_placeholder(payload)
+            _adapt_reference_activity(payload)
             base.append(payload)
         file_service = self._pv_file_service()
         if file_service is not None:

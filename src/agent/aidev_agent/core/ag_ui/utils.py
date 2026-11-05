@@ -32,7 +32,6 @@ from langchain_core.messages import (
 from pydantic import ValidationError
 
 from .events import ExtendToolCallResultEvent, ExtendToolCallStartEvent
-from .reference_documents import reference_documents_for_display
 from .types import (
     ExtendActivityMessage as AGUIActivityMessage,
 )
@@ -245,10 +244,10 @@ def parse_reasoning_content_value(content: Any) -> list[str]:
 
 
 def _map_reference_documents(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """保留旧字段映射，并在展示层适配来源、预览及历史预览地址。
+    """将 reference document 数组逐项 ``origin_file_url`` → ``originFileUrl`` 映射（name/url 原样保留）。
 
-    旧 origin_file_url 别名仍映射为 originFileUrl，附加字段完整保留。
-    原始召回及已保存记录不修改，Bot / Agent 通过显式 metadata 读取来源。
+    语义镜像前端 ``transferReferenceDocumentApi2ReferenceDocument``（transform/message.ts:108-113）。
+    仅映射白名单键，name/url/data 等原键透传不丢；非 list 输入原样返回。
     """
     mapped: list[dict[str, Any]] = []
     for item in items:
@@ -259,7 +258,7 @@ def _map_reference_documents(items: list[dict[str, Any]]) -> list[dict[str, Any]
         if "origin_file_url" in doc:
             doc["originFileUrl"] = doc.pop("origin_file_url")
         mapped.append(doc)
-    return reference_documents_for_display(mapped)
+    return mapped
 
 
 def _map_user_multimodal_content(content: list[dict[str, Any]]) -> list[dict[str, Any]]:

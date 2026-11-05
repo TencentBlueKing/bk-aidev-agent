@@ -22,6 +22,7 @@ from collections.abc import Iterable
 from logging import getLogger
 from typing import Any
 
+from aidev_agent.core.ag_ui.reference_documents import resolve_reference_links
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason, KnowledgeReference
 from aidev_agent.pydantic_models import ExecuteKwargs
 
@@ -291,7 +292,10 @@ def sanitize_error_message(message: str) -> str:
 
 
 def collect_knowledge_references(events: Iterable[dict[str, Any]]) -> list[KnowledgeReference]:
-    """Keep references from this run's retrieval events, without replaying history snapshots."""
+    """Keep references from this run's retrieval events, without replaying history snapshots.
+
+    ``url`` is set only for web knowledge; uploaded files and ZIP imports keep only ``preview_url``.
+    """
     references = []
     seen = set()
     for event in events:
@@ -304,21 +308,14 @@ def collect_knowledge_references(events: Iterable[dict[str, Any]]) -> list[Knowl
         else:
             continue
         for document in documents if isinstance(documents, list) else []:
-            if not isinstance(document, dict):
+            links = resolve_reference_links(document)
+            if links is None:
                 continue
-            metadata = document.get("metadata")
-            source = metadata if isinstance(metadata, dict) else document
-            name = source.get("display_name") or source.get("name")
-            url = source.get("path") or source.get("url")
-            preview_url = source.get("preview_path") or source.get("originFile")
-            name = name if isinstance(name, str) else ""
-            url = url.strip() if isinstance(url, str) else ""
-            preview_url = preview_url.strip() if isinstance(preview_url, str) else ""
-            identity = url or preview_url
-            if not identity or identity in seen:
+            identity = links.path or links.preview
+            if identity in seen:
                 continue
             seen.add(identity)
-            references.append(KnowledgeReference(name=name or identity, url=url, preview_url=preview_url))
+            references.append(KnowledgeReference(name=links.name, url=links.external, preview_url=links.preview))
     return references
 
 
