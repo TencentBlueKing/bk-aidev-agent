@@ -38,6 +38,7 @@ export const defaultProps = {
 
   // 容器配置
   defaultWidth: 400,
+  minWidth: 400,
   defaultHeight: undefined,
   defaultTop: 0,
   defaultLeft: undefined,
