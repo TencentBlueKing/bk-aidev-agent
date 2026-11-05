@@ -1220,7 +1220,7 @@ class TestLongConnectionStreaming:
         await asyncio.gather(*(d.task for d in service._resume_deliveries))
         assert "返回原会话" in service._client.send_message_calls[-1][1]["markdown"]["content"]
 
-    async def test_slow_wecom_sender_applies_bounded_backpressure(self, monkeypatch):
+    async def test_slow_wecom_sender_coalesces_progress_and_preserves_final_answer(self, monkeypatch):
         class SlowClient(FakeClient):
             def __init__(self):
                 super().__init__()
@@ -1236,12 +1236,14 @@ class TestLongConnectionStreaming:
         service = _service(client)
         service._view._get_or_create_thread_id.return_value = "thread-1"
         yielded = 0
+        generated = threading.Event()
 
         def generator():
             nonlocal yielded
             for index in range(20):
                 yielded += 1
                 yield f'data: {{"type":"TEXT_MESSAGE_CONTENT","delta":"{index:02d}{"x" * 48}"}}\n'
+            generated.set()
             yield 'data: {"type":"RUN_FINISHED"}\n'
 
         strategy = MagicMock()
@@ -1257,13 +1259,15 @@ class TestLongConnectionStreaming:
             task = service._active_streams["slow"].task
             try:
                 await client.sending.wait()
-                await asyncio.sleep(0.05)
-                assert yielded < 20
+                assert await asyncio.to_thread(generated.wait, 1)
+                assert yielded == 20
             finally:
                 client.release.set()
                 await task
 
         assert service._metrics.completed == 1
+        assert client.reply_stream_calls[-1] == ("".join(f"{index:02d}{'x' * 48}" for index in range(20)), True)
+        assert len(client.reply_stream_calls) < 20
 
     async def test_retries_stream_reply_after_temporary_failure(self, monkeypatch):
         client = FakeClient(failures=1)
@@ -1865,3 +1869,65 @@ class TestLongConnectionSideEffects:
         service._side_tasks.add(task)
         await service._cancel_side_tasks()
         assert task.cancelled()
+
+
+async def _produce_without_consumer(items):
+    output = asyncio.Queue(maxsize=4)
+    cancelled = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def produce():
+        return all(WxAiBotLongConnectionService._put_from_worker(loop, output, item, cancelled) for item in items)
+
+    task = asyncio.create_task(asyncio.to_thread(produce))
+    try:
+        assert await asyncio.wait_for(asyncio.shield(task), timeout=5)
+    finally:
+        cancelled.set()
+        await task
+    buffered = []
+    while not output.empty():
+        buffered.append(output.get_nowait())
+        output.task_done()
+    await asyncio.wait_for(output.join(), timeout=1)
+    return buffered
+
+
+@pytest.mark.asyncio
+async def test_slow_sender_coalesces_snapshots_without_delaying_completion():
+    terminal = long_connection_module.DirectStreamFrame(content="final answer", finish=True)
+    done = long_connection_module._ProducerDone(None)
+    frames = [long_connection_module._PRODUCER_STARTED]
+    frames.extend(long_connection_module.DirectStreamFrame(content="x" * i, finish=False) for i in range(500))
+    frames.extend([terminal, done])
+    buffered = await _produce_without_consumer(frames)
+    assert len(buffered) <= 4
+    assert buffered[0] is long_connection_module._PRODUCER_STARTED
+    assert buffered[-2] is terminal
+    assert buffered[-1] is done
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protected", ["finish", "failed", "approval", "question", "card", "error", "done"])
+async def test_snapshot_coalescing_preserves_control_and_interaction_events(protected):
+    fields = {"content": "protected", "finish": False}
+    fields.update(
+        {
+            "finish": {"finish": True},
+            "failed": {"failed": True},
+            "approval": {"pending_approval": True},
+            "question": {"pending_question": True},
+            "card": {"template_card": {"card_type": "button_interaction"}},
+        }.get(protected, {})
+    )
+    event = (
+        RuntimeError("generation failed")
+        if protected == "error"
+        else long_connection_module._ProducerDone(None)
+        if protected == "done"
+        else long_connection_module.DirectStreamFrame(**fields)
+    )
+    frames = [event, *(long_connection_module.DirectStreamFrame(content=str(i), finish=False) for i in range(20))]
+    buffered = await _produce_without_consumer(frames)
+    assert buffered[0] is event
+    assert buffered[-1].content == "19"
