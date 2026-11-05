@@ -211,6 +211,7 @@ def build_model_node(
         use_tool_call_promotion=node_options.use_tool_call_promotion,
         token_limit=node_options.token_limit,
         token_margin=node_options.token_margin,
+        track_memory_source=node_options.track_memory_source,
     )
 
     def model_node(
