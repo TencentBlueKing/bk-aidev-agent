@@ -2,6 +2,8 @@
 """``AgentBuilder`` OO 入口：装配 event_handler / checkpointer，确保 thread 路径顺序正确。"""
 
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -226,3 +228,98 @@ def test_plugin_resource_manager_forwards_credentials_to_base():
 
     assert (rm.username, rm.model) == ("alice", "hy3-preview")
     assert (rm.app_code, rm.app_secret) == ("ac", "as")
+
+
+@pytest.mark.parametrize("manager_class", [LLMOverrideResourceManager, PluginResourceManager])
+def test_request_token_cache_reuses_success_by_user(manager_class):
+    rm = manager_class(username="alice", tenant_id="tenant-a")
+    with patch(
+        "aidev_agent.packages.resource_manager.base._get_access_token_by_user", side_effect=["a", "b"]
+    ) as lookup:
+        assert [rm.resolve_access_token() for _ in range(20)] == ["a"] * 20
+        assert rm.resolve_access_token("bob") == "b"
+        assert rm.resolve_access_token("alice") == "a"
+    assert lookup.call_count == 2
+    assert rm.access_token == ""
+
+
+@pytest.mark.parametrize("changed_field", ["tenant_id", "app_code", "username"])
+def test_request_token_cache_isolates_identity_changes(changed_field):
+    rm = LLMOverrideResourceManager(username="alice", tenant_id="tenant-a")
+    with patch(
+        "aidev_agent.packages.resource_manager.base._get_access_token_by_user", side_effect=["first", "second"]
+    ) as lookup:
+        assert rm.resolve_access_token() == "first"
+        setattr(rm, changed_field, "different")
+        assert rm.resolve_access_token() == "second"
+    assert lookup.call_count == 2
+
+
+def test_request_token_cache_retries_empty_and_honors_explicit_token():
+    rm = LLMOverrideResourceManager(username="alice")
+    with patch(
+        "aidev_agent.packages.resource_manager.base._get_access_token_by_user", side_effect=[None, "found"]
+    ) as lookup:
+        assert rm.resolve_access_token() == ""
+        assert rm.resolve_access_token() == "found"
+        rm.access_token = "explicit"
+        assert rm.resolve_access_token("bob") == "explicit"
+        rm.access_token = ""
+        assert rm.resolve_access_token() == "found"
+    assert lookup.call_count == 2
+
+
+def test_request_token_cache_isolates_requests_and_leaves_sdk_uncached():
+    with patch("aidev_agent.packages.resource_manager.base._get_access_token_by_user", return_value="token") as lookup:
+        first = LLMOverrideResourceManager(username="alice")
+        second = LLMOverrideResourceManager(username="alice")
+        assert first.resolve_access_token() == second.resolve_access_token() == "token"
+        generic = AgentResourceManager(username="alice")
+        assert generic.resolve_access_token() == generic.resolve_access_token() == "token"
+    assert lookup.call_count == 4
+
+
+def test_request_token_cache_without_username_does_not_lookup():
+    with patch("aidev_agent.packages.resource_manager.base._get_access_token_by_user") as lookup:
+        assert LLMOverrideResourceManager().resolve_access_token() == ""
+    lookup.assert_not_called()
+
+
+def test_concurrent_token_resolutions_share_one_lookup():
+    rm = LLMOverrideResourceManager(username="alice")
+    started, release = Event(), Event()
+
+    def lookup(username):
+        started.set()
+        assert release.wait(5)
+        return "token"
+
+    with (
+        patch(
+            "aidev_agent.packages.resource_manager.base._get_access_token_by_user", side_effect=lookup
+        ) as lookup_mock,
+        ThreadPoolExecutor(max_workers=2) as pool,
+    ):
+        first = pool.submit(rm.resolve_access_token)
+        assert started.wait(5)
+        second = pool.submit(rm.resolve_access_token)
+        release.set()
+        assert first.result() == second.result() == "token"
+    lookup_mock.assert_called_once_with("alice")
+
+
+def test_request_token_cache_retries_oauth_exception():
+    rm = LLMOverrideResourceManager(username="alice")
+    oauth = SimpleNamespace(get_access_token_by_user=None)
+    with (
+        patch("aidev_agent.packages.resource_manager.base.bkoauth", oauth),
+        patch.object(
+            oauth,
+            "get_access_token_by_user",
+            side_effect=[RuntimeError("unavailable"), SimpleNamespace(access_token="ok")],
+        ) as lookup,
+    ):
+        assert rm.resolve_access_token() == ""
+        assert rm.resolve_access_token() == "ok"
+        assert rm.resolve_access_token() == "ok"
+    assert lookup.call_count == 2
