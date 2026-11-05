@@ -79,9 +79,9 @@ Agent 模块负责与 AI Agent 交互，包括获取 Agent 信息和发起聊天
 | --------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `getAgentInfo`        | `() => Promise<IAgentInfo>`                                               | 获取 Agent 信息                                                           |
 | `getLlms`             | `(params?: ILlmListQuery, config?) => Promise<ILlmItem[]>`                | 获取可用模型列表（`GET llms/`，未传 `llm_type` 时默认 `chat.completion`） |
-| `chat`                | `(input, sessionCode, url?, config?, property?, model?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code`；内部 `stream_mode=start`           |
+| `chat`                | `(input, sessionCode, url?, config?, property?, model?, reasoningEffort?) => Promise<void>` | 发起聊天；`model` 为热切换 `llm_code`；`reasoningEffort` 为本轮思考深度；内部 `stream_mode=start` |
 | `stopChat`            | `(sessionCode: string) => Promise<void>`                                  | 停止当前聊天；发请求前同步封口当前流，后续 SSE 不再写入消息列表          |
-| `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?) => Promise<void>`           | 接管已有流（刷新 / 切会话且会话仍 `Running`）；内部 `stream_mode=attach`  |
+| `resumeStreamingChat` | `(sessionCode: string, url?, config?, model?, reasoningEffort?) => Promise<void>` | 接管已有流（刷新 / 切会话且会话仍 `Running`）；内部 `stream_mode=attach`；续流不发送思考深度 |
 | `resendMessage`       | `(id, sessionCode, content?, url?, config?) => Promise<void>`             | 重发消息；内部 `stream_mode=start`                                        |
 | `streamRequest`       | `(options) => Promise<void>`                                              | 底层流式原语；`streamMode` 默认 `'start'`，续流传 `'attach'`              |
 
@@ -103,6 +103,9 @@ await agent.chat("帮我写一个快速排序", "session-123")
 
 // 模型热切换：第 6 个参数为 llm_code（须在 GET llms/ 列表内）
 await agent.chat("换个模型再答", "session-123", undefined, undefined, undefined, "hy3-preview")
+
+// 思考深度：第 7 个参数为本轮档位；模型不支持时传 null
+await agent.chat("再想深一点", "session-123", undefined, undefined, undefined, "hy3-preview", "high")
 
 // 自定义请求参数（如 temperature）走 config.data，不要把 model 塞进 data
 await agent.chat("创意回答", "session-123", undefined, {
@@ -165,6 +168,7 @@ Session 模块管理会话的完整生命周期。
 | `chooseSession`             | `(code: string, options?) => Promise<void>`                   | 选择并切换会话   |
 | `createSession`             | `(session: Partial<ISession>, options?) => Promise<ISession>` | 创建新会话       |
 | `updateSession`             | `(session: Partial<ISession>) => Promise<void>`               | 更新会话信息     |
+| `updateReasoningEffort`     | `(sessionCode: string, reasoningEffort: ReasoningEffort \| 'default') => Promise<ISession>` | 单独写回思考深度；不要和 `model` 写在同一次请求里 |
 | `deleteSession`             | `(code: string) => Promise<void>`                             | 删除会话         |
 | `batchDeleteSessions`       | `(codes: string[]) => Promise<void>`                          | 批量删除会话     |
 | `renameSession`             | `(code: string) => Promise<void>`                             | 重命名会话       |
