@@ -10,7 +10,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 
-import { Message as BkMessage } from 'bkui-vue';
+import { showToast } from '@blueking/chat-x';
 
 import { isBuiltinShareSource } from '../components/composables/use-share-selection';
 import { t } from '../lang';
@@ -70,7 +70,7 @@ export function useShareHandlers(params: UseShareHandlersParams) {
 
       await copyToClipboard(shareUrl);
 
-      BkMessage({
+      showToast({
         message: t('分享链接已复制到剪贴板'),
         theme: 'success',
       });

@@ -204,8 +204,8 @@
 <script setup lang="ts">
   import { cloneVNode, computed, defineComponent, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
-  import { CollapsedAsideIcon, RenderMode } from '@blueking/chat-x';
-  import { Input as BkInput, bkTooltips, Loading, Message } from 'bkui-vue';
+  import { CollapsedAsideIcon, RenderMode, showToast } from '@blueking/chat-x';
+  import { Input as BkInput, bkTooltips, Loading } from 'bkui-vue';
   import { Tippy, directive as vTippy } from 'vue-tippy';
 
   import logo from '../../assets/images/avatar.png';
@@ -345,7 +345,7 @@
           }
         } catch (error) {
           console.error('Failed to create new session:', error);
-          Message({
+          showToast({
             theme: 'error',
             message: t('创建会话失败'),
           });

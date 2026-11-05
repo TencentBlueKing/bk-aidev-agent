@@ -54,6 +54,22 @@ export const SHORTCUT_MENU_Z_INDEX = EDITOR_MENU_Z_INDEX + 1;
 export const SELECTION_Z_INDEX = SHORTCUT_MENU_Z_INDEX + 1;
 
 /**
+ * Toast（bkui Message）目标层级：高于 AIBlueking 浮层（10000）与划词弹层。
+ * bkui Message 本身不接受 zIndex 入参，实际通过挂到 `.ai-blueking-toast-host`（浮层内）进入该层叠上下文。
+ */
+export const TOAST_Z_INDEX = SELECTION_Z_INDEX + 1;
+
+/**
+ * AIBlueking 浮层内 toast 挂载点 class（需配合 pointer-events 处理）
+ */
+export const TOAST_HOST_CLASS = 'ai-blueking-toast-host';
+
+/**
+ * showToast 附加到 bk-message 的 class，确保在 pointer-events: none 的浮层内可点击关闭
+ */
+export const TOAST_MESSAGE_CLASS = 'ai-chat-x-toast';
+
+/**
  * 消息工具
  */
 export const CONST_MESSAGE_TOOLS = [

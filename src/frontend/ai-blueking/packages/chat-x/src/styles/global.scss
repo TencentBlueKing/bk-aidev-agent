@@ -158,3 +158,8 @@ body {
     transform: translateX(37.5%);
   }
 }
+
+/* showToast：浮层 .ai-blueking-v2 为 pointer-events: none，Message 挂入 host 后需显式可点 */
+.bk-message.ai-chat-x-toast {
+  pointer-events: auto;
+}

@@ -132,8 +132,6 @@
 <script setup lang="ts">
   import { computed, ref as deepRef, reactive, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
-  import { Message } from 'bkui-vue';
-
   import {
     type Interrupt,
     type InterruptResume,
@@ -161,6 +159,7 @@
     getUploadFileName,
     getUploadFileSize,
     isFileAcceptedByAccept,
+    showToast,
     toArtifactMenuItem,
     toUploadArtifact,
   } from '../../utils';
@@ -537,13 +536,13 @@
       acceptedItems.push(fileItem);
     }
     if (typeRejectedCount > 0) {
-      Message({
+      showToast({
         message: t('有 {count} 个文件因格式不支持未添加').replace('{count}', String(typeRejectedCount)),
         theme: 'error',
       });
     }
     if (rejectedCount > 0) {
-      Message({
+      showToast({
         message: formatUploadNotAddedMessage(rejectedCount, maxUploadMb, isEn),
         theme: 'error',
       });

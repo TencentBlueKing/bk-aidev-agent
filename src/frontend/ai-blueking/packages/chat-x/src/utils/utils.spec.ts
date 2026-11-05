@@ -25,7 +25,14 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { showToast } from './index';
 import { formatDuration, formatElapsedTime } from './utils';
+
+describe('utils barrel', () => {
+  it('导出 showToast，供组件统一弹出提示', () => {
+    expect(typeof showToast).toBe('function');
+  });
+});
 
 describe('formatDuration', () => {
   it('数字与单位之间、各段之间均不留空格', () => {

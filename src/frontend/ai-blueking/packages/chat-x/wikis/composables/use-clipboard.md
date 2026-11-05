@@ -2,7 +2,7 @@
 name: useClipboard
 slug: use-clipboard
 category: composable
-description: 复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 bkui-vue `Message` 提示复制结果，调用方无需关心成功/失败处理。
+description: 复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 `showToast` 提示复制结果，调用方无需关心成功/失败处理。
 aiSummary: >
   useClipboard 返回 { copy }，copy(text) 将字符串写入剪贴板，返回 Promise<void>。
   优先使用 navigator.clipboard.writeText，失败或不支持时降级为隐藏 textarea + execCommand('copy')。
@@ -35,7 +35,7 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 bkui-vue `Message` 提示复制结果，调用方无需关心成功/失败处理。
+复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 `showToast` 提示复制结果，调用方无需关心成功/失败处理。在 AIBlueking 浮层内，提示会挂到浮层 toast host，避免被浮窗挡住。
 
 ## 执行流程
 
@@ -52,7 +52,7 @@ copy(text)
   └── false → legacyCopy(text)
               （创建隐藏 textarea，document.execCommand('copy')，finally 清理 DOM）
   │
-  └── Message({ message: t('复制成功/失败'), theme: 'success/error' })
+  └── showToast({ message: t('复制成功/失败'), theme: 'success/error' })
 ```
 
 > **注意**：`copy` 返回 `Promise<void>`，调用方无法获取成功/失败结果；通知由内部自动弹出，不可关闭或自定义。
@@ -186,13 +186,13 @@ const copy: (text: string) => Promise<void>;
 | 1. 能力检测  | 模块导入时执行一次：`typeof navigator !== 'undefined' && 'clipboard' in navigator`                             |
 | 2a. 现代路径 | `navigator.clipboard.writeText(text)`，捕获异常后降级到步骤 2b                                                 |
 | 2b. 降级路径 | 创建隐藏 `textarea`（`position: fixed; left: -9999px; opacity: 0`），`execCommand('copy')`，`finally` 清理 DOM |
-| 3. 通知      | 始终调用 `Message({ message: t('复制成功/失败'), theme: 'success/error' })`                                    |
+| 3. 通知      | 始终调用 `showToast({ message: t('复制成功/失败'), theme: 'success/error' })`。有 `.ai-blueking-toast-host` 时挂入浮层，否则挂 `document.body` |
 
 ## 实现源码
 
 ```typescript
-import { Message } from 'bkui-vue';
 import { t } from '../lang/lang';
+import { showToast } from '../utils/show-toast';
 
 // 模块加载时检测一次，SSR 安全
 const isClipboardApiSupported = typeof navigator !== 'undefined' && 'clipboard' in navigator;
@@ -226,7 +226,7 @@ export const useClipboard = () => {
     } else {
       success = legacyCopy(text);
     }
-    Message({
+    showToast({
       message: success ? t('复制成功') : t('复制失败'),
       theme: success ? 'success' : 'error',
     });

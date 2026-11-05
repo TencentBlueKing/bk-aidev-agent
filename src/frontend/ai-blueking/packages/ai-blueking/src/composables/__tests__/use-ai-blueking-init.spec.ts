@@ -15,12 +15,16 @@ let latestBootstrapReturn: {
   isReady: ReturnType<typeof ref<boolean>>;
 } | null = null;
 const mockEmitInternal = vi.fn();
-const mockMessage = vi.fn();
+const mockShowToast = vi.fn();
 const mockLoadRecentSession = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('bkui-vue', () => ({
-  Message: (...args: unknown[]) => mockMessage(...args),
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    showToast: (...args: unknown[]) => mockShowToast(...args),
+  };
+});
 
 vi.mock('../../manager', () => ({
   createComponentManager: vi.fn(() => ({
@@ -200,7 +204,7 @@ describe('useAiBluekingInit error handling', () => {
       source: 'http',
       message: 'init failed',
     });
-    expect(mockMessage).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('reports deferred bare HTTP error as init before bootstrap ready', async () => {
@@ -215,7 +219,7 @@ describe('useAiBluekingInit error handling', () => {
       apiName: 'init',
       source: 'http',
     });
-    expect(mockMessage).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('reports deferred bare HTTP error as chat after bootstrap ready', async () => {
@@ -269,7 +273,7 @@ describe('useAiBluekingInit error handling', () => {
       apiName: 'chat',
       source: 'protocol',
     });
-    expect(mockMessage).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('business reportSdkError cancels deferred HTTP report and uses semantic apiName', async () => {
@@ -286,7 +290,7 @@ describe('useAiBluekingInit error handling', () => {
       action: 'rename',
       source: 'business',
     });
-    expect(mockMessage).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('handleError reports chat with business source', () => {
@@ -313,7 +317,7 @@ describe('useAiBluekingInit error handling', () => {
     await nextTick();
 
     expect(getSdkErrorCalls()).toHaveLength(1);
-    expect(mockMessage).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('registers ignoreErrors on chatHelper.onError', () => {

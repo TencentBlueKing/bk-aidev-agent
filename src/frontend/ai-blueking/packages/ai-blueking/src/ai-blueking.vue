@@ -171,6 +171,15 @@
         @select-shortcut="handleAiSelectionShortcut"
         @selection-change="handleSelectionChange"
       />
+
+      <!--
+        Toast 挂载点：bkui Message 默认挂 body（z-index ~6000），会被本浮层（10000）挡住。
+        showToast 检测到此 host 后挂入本层叠上下文；host 自身 pointer-events: none，不挡面板点击。
+      -->
+      <div
+        :class="TOAST_HOST_CLASS"
+        aria-live="polite"
+      />
     </div>
   </teleport>
 </template>
@@ -178,7 +187,7 @@
 <script setup lang="ts">
   import { computed, useAttrs } from 'vue';
 
-  import { AiSelection } from '@blueking/chat-x';
+  import { AiSelection, TOAST_HOST_CLASS } from '@blueking/chat-x';
 
   import AIHeader from './components/ai-header/index.vue';
   import ChatBot from './components/chat-bot.vue';
@@ -189,7 +198,7 @@
     useSessionHandlers,
     useShareHandlers,
   } from './composables';
-  import { defaultProps } from './config';
+  import { AI_BLUEKING_OVERLAY_Z_INDEX, defaultProps } from './config';
   import { DraggableContainer } from './containers';
   import NimbusButton from './views/nimbus.vue';
 
@@ -199,6 +208,9 @@
 
   // 根节点为 teleport，无法自动继承 class 等透传属性，改为手动合并到内层容器
   defineOptions({ inheritAttrs: false });
+
+  /** 供 scoped style `v-bind` 使用；toast 必须高于此层（见 chat-x TOAST_Z_INDEX） */
+  const overlayZIndex = AI_BLUEKING_OVERLAY_Z_INDEX;
 
   const props = withDefaults(defineProps<AIBluekingProps>(), defaultProps);
   const emit = defineEmits<AIBluekingEmits>();
@@ -369,9 +381,17 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 10000;
+    z-index: v-bind(overlayZIndex);
     width: 100vw;
     height: 100vh;
+    pointer-events: none;
+  }
+
+  /* 全视口透明层：Message absolute 相对此定位；自身不拦截点击 */
+  .ai-blueking-toast-host {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
     pointer-events: none;
   }
 
