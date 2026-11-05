@@ -9,7 +9,7 @@
 
 import { computed, onBeforeUnmount, onMounted, ref, toValue, watch } from 'vue';
 
-import { Message } from 'bkui-vue';
+import { showToast } from '@blueking/chat-x';
 
 import { t } from '../lang';
 import { createComponentManager } from '../manager';
@@ -107,7 +107,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     console.error(`[AIBlueking] ${apiName} error:`, error);
 
     if (shouldToast && props.errorToast !== false) {
-      Message({
+      showToast({
         message: message || t('请求失败'),
         theme: 'error',
       });

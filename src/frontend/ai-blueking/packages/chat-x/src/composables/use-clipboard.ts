@@ -23,9 +23,8 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { Message } from 'bkui-vue';
-
 import { t } from '../lang/lang';
+import { showToast } from '../utils/show-toast';
 const isClipboardApiSupported = typeof navigator !== 'undefined' && 'clipboard' in navigator;
 
 /**
@@ -66,7 +65,7 @@ export const useClipboard = () => {
     } else {
       success = legacyCopy(text);
     }
-    Message({
+    showToast({
       message: success ? t('复制成功') : t('复制失败'),
       theme: success ? 'success' : 'error',
     });

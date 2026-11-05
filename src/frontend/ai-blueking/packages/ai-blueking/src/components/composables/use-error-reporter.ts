@@ -9,7 +9,7 @@
 
 import { toValue } from 'vue';
 
-import { Message } from 'bkui-vue';
+import { showToast } from '@blueking/chat-x';
 
 import { t } from '../../lang';
 import { toError } from '../../utils';
@@ -67,7 +67,7 @@ export function useErrorReporter(
     emit('error', normalized);
 
     if (toValue(options.errorToast) !== false) {
-      Message({
+      showToast({
         message: normalized.message || t('请求失败'),
         theme: 'error',
       });
