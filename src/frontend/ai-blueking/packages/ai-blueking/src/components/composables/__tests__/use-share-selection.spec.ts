@@ -4,9 +4,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMockChatHelper, createMockEmit, createMockAIMessage } from '../../../__tests__/helpers';
 
-vi.mock('bkui-vue', () => ({
-  Message: vi.fn(),
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    showToast: vi.fn(),
+  };
+});
 
 const shareMessagesMock = vi.fn().mockResolvedValue({
   shareUrl: 'https://example.com/share',

@@ -32,8 +32,15 @@ vi.mock('bkui-vue', () => ({
   Input: defineComponent({ name: 'BkInput', template: '<input />' }),
   Loading: defineComponent({ name: 'Loading', template: '<span />' }),
   bkTooltips: {},
-  Message: vi.fn(),
 }));
+
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    showToast: vi.fn(),
+  };
+});
 
 vi.mock('vue-tippy', () => ({
   Tippy: defineComponent({

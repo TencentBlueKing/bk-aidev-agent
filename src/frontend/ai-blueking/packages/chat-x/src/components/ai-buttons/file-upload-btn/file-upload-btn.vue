@@ -28,13 +28,17 @@
 <script setup lang="ts">
   import { computed, useTemplateRef } from 'vue';
 
-  import { Message } from 'bkui-vue';
   import { directive as vTippy } from 'vue-tippy';
 
   import { isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../../common';
   import { FileUploadIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
-  import { formatDefaultUploadAcceptTip, formatUploadNotAddedMessage, isDefaultUploadAccept } from '../../../utils';
+  import {
+    formatDefaultUploadAcceptTip,
+    formatUploadNotAddedMessage,
+    isDefaultUploadAccept,
+    showToast,
+  } from '../../../utils';
 
   import type { AITippyProps } from '../../../types';
 
@@ -90,7 +94,7 @@
       }
       // 上传个数上限由上层（如 ChatInput）统一处理并提示，避免与按钮层「单次截断」各弹一条 Message
       if (sizeRejected > 0) {
-        Message({
+        showToast({
           message: formatUploadNotAddedMessage(sizeRejected, maxUploadMb, isEn),
           theme: 'error',
         });

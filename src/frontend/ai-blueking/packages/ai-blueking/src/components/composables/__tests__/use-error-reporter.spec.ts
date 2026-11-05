@@ -3,13 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockEmit } from '../../../__tests__/helpers';
 import { useErrorReporter } from '../use-error-reporter';
 
-const { mockMessage } = vi.hoisted(() => ({
-  mockMessage: vi.fn(),
+const { mockShowToast } = vi.hoisted(() => ({
+  mockShowToast: vi.fn(),
 }));
 
-vi.mock('bkui-vue', () => ({
-  Message: mockMessage,
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    showToast: mockShowToast,
+  };
+});
 
 vi.mock('../../../lang', () => ({
   t: (key: string) => key,
@@ -18,7 +22,7 @@ vi.mock('../../../lang', () => ({
 describe('useErrorReporter', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockMessage.mockClear();
+    mockShowToast.mockClear();
   });
 
   describe('reportError 归一化', () => {
@@ -91,7 +95,7 @@ describe('useErrorReporter', () => {
 
       reportError(new Error('Bad Request'));
 
-      expect(mockMessage).toHaveBeenCalledWith({
+      expect(mockShowToast).toHaveBeenCalledWith({
         message: 'Bad Request',
         theme: 'error',
       });
@@ -103,7 +107,7 @@ describe('useErrorReporter', () => {
 
       reportError(new Error(''));
 
-      expect(mockMessage).toHaveBeenCalledWith({
+      expect(mockShowToast).toHaveBeenCalledWith({
         message: '请求失败',
         theme: 'error',
       });
@@ -116,7 +120,7 @@ describe('useErrorReporter', () => {
       reportError(new Error('Bad Request'));
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(mockMessage).not.toHaveBeenCalled();
+      expect(mockShowToast).not.toHaveBeenCalled();
     });
 
     it('should toast only once for the same Error instance', () => {
@@ -127,7 +131,7 @@ describe('useErrorReporter', () => {
       reportError(error, 'first');
       reportError(error, 'second');
 
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
 
     it('should follow getter errorToast value', () => {
@@ -136,11 +140,11 @@ describe('useErrorReporter', () => {
       const { reportError } = useErrorReporter(emit, { errorToast: () => enabled });
 
       reportError(new Error('first'));
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
 
       enabled = false;
       reportError(new Error('second'));
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -176,7 +180,7 @@ describe('useErrorReporter', () => {
       reportError(error, 'Failed to stop generation');
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
   });
 });

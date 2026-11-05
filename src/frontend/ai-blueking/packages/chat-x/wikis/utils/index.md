@@ -21,6 +21,7 @@
 | `ArtifactIdentityLike` | `omitArtifactTags` 用来匹配待剥离标签的身份类型 |
 | `isImageFile` / `getFilePreviewUrl` / `getFileExtension` | 文件类型与预览 URL |
 | `formatBytes` / `formatFileSize` / `formatUploadNotAddedMessage` | 体积与「未添加」文案 |
+| `showToast` | 统一弹出 bkui Message。AIBlueking 浮层内会挂到 `.ai-blueking-toast-host`，避免提示被 `z-index: 10000` 的浮窗挡住；没有该节点时仍挂 `document.body` |
 | `normalizeAcceptTokens` / `isDefaultUploadAccept` / `isFileAcceptedByAccept` / `formatDefaultUploadAcceptTip` | accept 校验与提示 |
 | `UploadFileLike` / `getFileIdentity` / `getUploadFileKey` / `isUploadImageFile` | 上传附件身份 |
 | `getUploadFileName` / `getUploadFileSize` / `formatUploadFileSize` / `splitUploadFiles` / `toUploadArtifact` | 上传附件取值与分组 |

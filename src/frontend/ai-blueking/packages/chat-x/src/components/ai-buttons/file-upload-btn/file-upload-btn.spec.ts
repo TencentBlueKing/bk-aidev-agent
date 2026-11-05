@@ -37,8 +37,8 @@ import FileUploadBtn from './file-upload-btn.vue';
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
 const mockMessage = vi.fn();
-vi.mock('bkui-vue', () => ({
-  Message: (...args: unknown[]) => mockMessage(...args),
+vi.mock('../../../utils/show-toast', () => ({
+  showToast: (...args: unknown[]) => mockMessage(...args),
 }));
 
 vi.mock('vue-tippy', () => ({
