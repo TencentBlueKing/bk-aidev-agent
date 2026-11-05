@@ -22,6 +22,9 @@ from langchain_core.messages import ChatMessage
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 from typing_extensions import NotRequired
 
+# 上下文压缩等内部 LLM 调用的 run tag：AG-UI 消费端据此丢弃其模型流事件
+CONTEXT_COMPRESSION_TAG = "context_compression"
+
 
 class LangGraphEventTypes(str, Enum):
     OnChainStart = "on_chain_start"
