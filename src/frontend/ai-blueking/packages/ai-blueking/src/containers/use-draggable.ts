@@ -7,7 +7,7 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import type { PositionAndSize, SidePanelGeometryHooks, UseDraggableOptions, UseDraggableReturn } from './types';
 
@@ -34,7 +34,8 @@ export function useDraggable(
 ): UseDraggableReturn {
   // 初始化参数
   const initWidth = options.initWidth || 400;
-  const minWidth = options.minWidth || 400;
+  /** 收起侧栏时的窗口下限，同时作为侧栏打开后主聊天区的最小宽度 */
+  const baseMinWidth = options.minWidth || 400;
   const minHeight = options.minHeight || 400;
   const maxWidthPercent = options.maxWidthPercent || 40;
   const compressedHeight = options.compressedHeight || 800;
@@ -70,6 +71,31 @@ export function useDraggable(
   /** 最近一次编程式布局的落点，用于识别「用户真的挪了窗」 */
   let committedLayout: null | PositionAndSize = null;
   const isSidePanelExpanded = ref(false);
+  /** 当前侧栏宽度。只在展开时计入窗口下限，收起后主栏回到 baseMinWidth */
+  const sidePanelWidth = ref(0);
+  const reserveSidePanel = (asideWidth: number): void => {
+    sidePanelWidth.value = Math.max(0, asideWidth);
+    isSidePanelExpanded.value = true;
+  };
+  /** 必须先于 updateSize 调用，否则缩宽会被侧栏打开时的下限卡住 */
+  const releaseSidePanel = (): void => {
+    isSidePanelExpanded.value = false;
+    sidePanelWidth.value = 0;
+  };
+  /**
+   * 传给拖拽层的最小宽度。
+   * 侧栏打开时是「主栏下限 + 侧栏宽度」，避免整窗被拉到只剩侧栏、主聊天区被挤没。
+   * 视口或 maxWidth 放不下时停在上限，不再把 min 抬到比窗口还大。
+   */
+  const minWidth = computed(() => {
+    const reserved = isSidePanelExpanded.value ? sidePanelWidth.value : 0;
+    const floor = baseMinWidth + reserved;
+    const limit = Math.min(maxWidth.value, window.innerWidth);
+    if (limit < baseMinWidth) return baseMinWidth;
+    return Math.min(floor, limit);
+  });
+
+  const clampWidth = (w: number): number => Math.max(minWidth.value, Math.min(w, maxWidth.value));
 
   /**
    * 将目标位置和尺寸约束到视口内
@@ -130,8 +156,7 @@ export function useDraggable(
   const handleResizing = (x: number, y: number, w: number, h: number): void => {
     left.value = x;
     top.value = y;
-    // 确保宽度不超过最大值
-    width.value = Math.min(w, maxWidth.value);
+    width.value = clampWidth(w);
     height.value = h;
     noteUserAdjustment(x, width.value);
 
@@ -160,8 +185,7 @@ export function useDraggable(
   const handleResizeStop = (x: number, y: number, w: number, h: number): void => {
     left.value = x;
     top.value = y;
-    // 确保宽度不超过最大值
-    width.value = Math.min(w, maxWidth.value);
+    width.value = clampWidth(w);
     height.value = h;
     noteUserAdjustment(x, width.value);
     if (isSidePanelExpanded.value) {
@@ -210,13 +234,13 @@ export function useDraggable(
       nextTick(() => {
         height.value = initialHeight.value;
         left.value = initialX.value;
-        width.value = initialWidth.value;
+        width.value = Math.max(initialWidth.value, minWidth.value);
       });
     } else {
       // 切换到压缩状态
       top.value = window.innerHeight - compressedHeight - compressedPadding;
       left.value = initialX.value - compressedPadding;
-      width.value = initWidth;
+      width.value = Math.max(initWidth, minWidth.value);
       height.value = compressedHeight;
     }
     isCompressed.value = !isCompressed.value;
@@ -236,7 +260,7 @@ export function useDraggable(
    */
   const updateSize = (w: number, h: number): void => {
     // 确保宽度不超过最大值和最小值
-    width.value = Math.max(minWidth, Math.min(w, maxWidth.value));
+    width.value = clampWidth(w);
     // 确保高度不低于最小值
     height.value = Math.max(minHeight, h);
   };
@@ -305,11 +329,11 @@ export function useDraggable(
     if (isSidePanelExpanded.value) return;
     const current = getPositionAndSize();
     collapsedPosition = { ...current };
-    isSidePanelExpanded.value = true;
+    reserveSidePanel(extraWidth);
     const id = ++sequenceId;
 
     const viewportWidth = window.innerWidth;
-    const minExpandedWidth = minWidth + extraWidth;
+    const minExpandedWidth = baseMinWidth + extraWidth;
 
     if (current.width >= minExpandedWidth) {
       lastExtraWidth = 0;
@@ -322,7 +346,7 @@ export function useDraggable(
 
     let targetWidth = expandedPosition?.width ?? current.width + extraWidth;
     targetWidth = Math.min(targetWidth, maxWidth.value, viewportWidth);
-    targetWidth = Math.max(targetWidth, minExpandedWidth, minWidth);
+    targetWidth = Math.max(targetWidth, minExpandedWidth, baseMinWidth);
 
     const needed = Math.max(0, targetWidth - current.width);
     const rightSpace = viewportWidth - (current.x + current.width);
@@ -352,12 +376,12 @@ export function useDraggable(
     if (!isSidePanelExpanded.value) return;
     const current = getPositionAndSize();
     expandedPosition = { ...current };
-    isSidePanelExpanded.value = false;
+    releaseSidePanel();
     const id = ++sequenceId;
 
     const snapshot = collapsedPosition;
     const shouldRestoreShift = shiftedForSidePanel && snapshot !== null;
-    const targetWidth = snapshot?.width ?? Math.max(minWidth, current.width - lastExtraWidth);
+    const targetWidth = snapshot?.width ?? Math.max(baseMinWidth, current.width - lastExtraWidth);
     const target = clampToViewport({
       x: shouldRestoreShift && snapshot ? snapshot.x : current.x,
       y: current.y,
@@ -371,11 +395,20 @@ export function useDraggable(
   };
 
   /**
+   * 侧栏宽度变化时更新窗口下限，使主栏始终不少于 baseMinWidth。
+   * 收起过程中的 0 不写入，避免把下限提前打掉。
+   */
+  const setSidePanelWidth = (asideWidth: number): void => {
+    if (!Number.isFinite(asideWidth) || asideWidth <= 0) return;
+    sidePanelWidth.value = asideWidth;
+  };
+
+  /**
    * 中止进行中的展开/收起，恢复本次序列开始时的收起布局
    */
   const abortSidePanelSequence = (): void => {
     sequenceId += 1;
-    isSidePanelExpanded.value = false;
+    releaseSidePanel();
     shiftedForSidePanel = false;
     if (collapsedPosition) {
       updatePosition(collapsedPosition.x, collapsedPosition.y);
@@ -419,6 +452,7 @@ export function useDraggable(
     updatePositionAndSize,
     expandForSidePanel,
     collapseSidePanel,
+    setSidePanelWidth,
     abortSidePanelSequence,
   };
 }

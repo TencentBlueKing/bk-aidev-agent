@@ -87,6 +87,7 @@
     updatePositionAndSize,
     expandForSidePanel,
     collapseSidePanel,
+    setSidePanelWidth,
     abortSidePanelSequence,
   } = useDraggable(
     {
@@ -202,6 +203,7 @@
     toggleCompression,
     expandForSidePanel,
     collapseSidePanel,
+    setSidePanelWidth,
     abortSidePanelSequence,
     positionAndSize,
     isCompressed,

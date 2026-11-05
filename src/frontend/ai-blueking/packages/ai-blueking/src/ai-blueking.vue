@@ -13,6 +13,7 @@
         :draggable="props.draggable"
         :max-width="props.maxWidth"
         :max-width-percent="80"
+        :min-width="mainColumnMinWidth"
         :visible="panelVisible"
         @compression-change="handleCompressionChange"
         @drag-stop="handleDragStop"
@@ -93,7 +94,7 @@
             :prompts="props.prompts"
             :render-mode="props.renderMode"
             :request-options="props.requestOptions"
-            :resize-props="props.resizeProps"
+            :resize-props="resolvedResizeProps"
             :resources="props.resources"
             :session-code="props.initialSessionCode"
             :share-loading="isShareLoading"
@@ -213,6 +214,12 @@
   const overlayZIndex = AI_BLUEKING_OVERLAY_Z_INDEX;
 
   const props = withDefaults(defineProps<AIBluekingProps>(), defaultProps);
+  /** 主栏下限。resizeProps.mainMin 优先，否则用浮窗 minWidth */
+  const mainColumnMinWidth = computed(() => props.resizeProps?.mainMin ?? props.minWidth);
+  const resolvedResizeProps = computed(() => ({
+    ...props.resizeProps,
+    mainMin: mainColumnMinWidth.value,
+  }));
   const emit = defineEmits<AIBluekingEmits>();
   const attrs = useAttrs();
   defineSlots<{

@@ -1548,6 +1548,52 @@ describe('ChatContainer', () => {
       expect(resize.props('min')).toBe(200);
     });
 
+    it('容器宽度已知时，侧栏 max 会给主聊天区留出 mainMin', async () => {
+      type ResizeCallback = (entries: Array<{ contentRect: { width: number } }>) => void;
+      const callbacksByTarget = new Map<Element, ResizeCallback>();
+      const OriginalResizeObserver = globalThis.ResizeObserver;
+      class ResizeObserverStub {
+        constructor(private readonly callback: ResizeCallback) {}
+        observe(target: Element) {
+          callbacksByTarget.set(target, this.callback);
+        }
+        disconnect() {}
+      }
+      vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+
+      try {
+        wrapper = mount(ChatContainer, {
+          props: {
+            ...defaultProps,
+            resizeProps: { mainMin: 400, max: 1000, min: 300 },
+          },
+        });
+        await nextTick();
+        callbacksByTarget.get(wrapper.element)?.([{ contentRect: { width: 900 } }]);
+        await nextTick();
+
+        expect(wrapper.findComponent({ name: 'ResizeLayout' }).props('max')).toBe(500);
+        expect(wrapper.findComponent({ name: 'ResizeLayout' }).props('mainMin')).toBeUndefined();
+      } finally {
+        vi.stubGlobal('ResizeObserver', OriginalResizeObserver);
+      }
+    });
+
+    it('拖拽侧栏时 collapseChange 携带当前宽度', async () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          asideCollapsed: false,
+        },
+      });
+      await nextTick();
+
+      wrapper.findComponent({ name: 'ResizeLayout' }).vm.$emit('resizing', 640);
+
+      const events = wrapper.emitted('collapseChange') ?? [];
+      expect(events.at(-1)).toEqual([false, 640]);
+    });
+
     it('resizeProps.initialDivide 支持百分比字符串', () => {
       wrapper = mount(ChatContainer, {
         props: {

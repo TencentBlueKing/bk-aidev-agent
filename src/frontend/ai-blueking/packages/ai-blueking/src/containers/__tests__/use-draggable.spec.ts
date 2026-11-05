@@ -277,4 +277,48 @@ describe('useDraggable side panel geometry', () => {
 
     wrapper.unmount();
   });
+
+  it('refuses to shrink the window below the main column plus the open aside', async () => {
+    const { api, wrapper } = mountDraggable({
+      initWidth: 400,
+      defaultLeft: 100,
+      minWidth: 400,
+      maxWidthPercent: 80,
+    });
+
+    await api.expandForSidePanel(560);
+    expect(api.minWidth.value).toBe(960);
+
+    api.handleResizing(100, 0, 500, 800);
+    expect(api.width.value).toBe(960);
+
+    api.setSidePanelWidth(400);
+    expect(api.minWidth.value).toBe(800);
+    api.handleResizing(100, 0, 700, 800);
+    expect(api.width.value).toBe(800);
+
+    await api.collapseSidePanel();
+    expect(api.minWidth.value).toBe(400);
+    api.handleResizing(100, 0, 300, 800);
+    expect(api.width.value).toBe(400);
+
+    wrapper.unmount();
+  });
+
+  it('keeps an already-wide window from being dragged under the main column floor', async () => {
+    const { api, wrapper } = mountDraggable({
+      initWidth: 1200,
+      defaultLeft: 100,
+      minWidth: 400,
+      maxWidthPercent: 80,
+    });
+
+    await api.expandForSidePanel(560);
+    expect(api.width.value).toBe(1200);
+
+    api.handleResizeStop(100, 0, 900, 800);
+    expect(api.width.value).toBe(960);
+
+    wrapper.unmount();
+  });
 });
