@@ -190,6 +190,17 @@ BKAI_TOOL_LAZY_LOADING_ENABLED = env.bool("BKAI_TOOL_LAZY_LOADING_ENABLED", Fals
 BKAI_TOOL_LAZY_LOADING_THRESHOLD = env.int("BKAI_TOOL_LAZY_LOADING_THRESHOLD", 30)
 if BKAI_TOOL_LAZY_LOADING_THRESHOLD < 1:
     raise ValueError(f"BKAI_TOOL_LAZY_LOADING_THRESHOLD 必须大于等于 1，当前取值: {BKAI_TOOL_LAZY_LOADING_THRESHOLD}")
+# 工具循环调用拒绝：同一 Trace 内「相同工具 + 相同参数」连续调用达到阈值后拒绝执行。
+# 阈值语义为「允许真实执行的次数」，第 T+1 次起拒绝；反馈轮次为拒绝后允许返回的失败反馈次数，
+# 第 T+F+1 次直接终止 run。非整数由 environs 在 import 期抛 EnvValidationError；
+# 越界值（T < 1、F < 0）是 environs 表达不了的类型外约束，紧随其后显式校验，同样在 import 期失败。
+BKAI_TOOL_LOOP_GUARD_ENABLED = env.bool("BKAI_TOOL_LOOP_GUARD_ENABLED", False)
+BKAI_TOOL_LOOP_REPEAT_LIMIT = env.int("BKAI_TOOL_LOOP_REPEAT_LIMIT", 3)
+if BKAI_TOOL_LOOP_REPEAT_LIMIT < 1:
+    raise ValueError(f"BKAI_TOOL_LOOP_REPEAT_LIMIT 必须大于等于 1，当前取值: {BKAI_TOOL_LOOP_REPEAT_LIMIT}")
+BKAI_TOOL_LOOP_FEEDBACK_ROUNDS = env.int("BKAI_TOOL_LOOP_FEEDBACK_ROUNDS", 2)
+if BKAI_TOOL_LOOP_FEEDBACK_ROUNDS < 0:
+    raise ValueError(f"BKAI_TOOL_LOOP_FEEDBACK_ROUNDS 必须大于等于 0，当前取值: {BKAI_TOOL_LOOP_FEEDBACK_ROUNDS}")
 # BKAI 子智能体配置
 BKAI_A2A_SESSION_TEMPORARY = env.bool("BKAI_A2A_SESSION_TEMPORARY", False)
 # LLM 重试策略: "sdk" 由 aidev 自主控制重试, "llm_gw" 由模型网关 Retry-After 头控制重试

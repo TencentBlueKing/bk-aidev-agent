@@ -40,6 +40,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from aidev_agent.config import BKAI_AGENT_MAX_INPUT_ATTRIBUTE_LENGTH, BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
 from aidev_agent.pydantic_models import ExecuteKwargs
+from aidev_agent.utils.tool_result import is_error_content
 
 from .metrics import AgentMetrics, get_agent_metrics
 from .resilience import (
@@ -71,6 +72,10 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 TIMEZONE = "Asia/Shanghai"
+# 内容路径失败的 error.type 取值与状态文案：与拒绝（ToolLoopRejection）、
+# 异常路径（异常类名）区分，监控侧沿用既有 error.type 口径即可识别。
+TOOL_RESULT_ERROR_TYPE = "ToolResultError"
+TOOL_RESULT_ERROR_MESSAGE = "工具返回内容以错误信号开头"
 # 中断回调（Command resume）场景下顶层 span gen_ai.input.messages 的表达文案：
 # 恢复驱动时本轮不存在新的用户消息，以固定文案保留「由中断恢复」这一语义
 INTERRUPT_RESUME_INPUT_TEXT = "来自中断回调"
@@ -1275,6 +1280,12 @@ class BkAidevAgentCallbackHandler(AsyncCallbackHandler):
         operation_scope_token = self._tool_operation_scope_tokens.pop(run_id, None)
         if operation_scope_token is not None:
             reset_operation_scope(operation_scope_token)
+        # 内容路径：工具未抛异常、但正文以错误信号开头时如实标记失败（结果属性仍写入）
+        if is_error_content(getattr(output, "content", output)):
+            _set_span_attribute(span, "error.type", TOOL_RESULT_ERROR_TYPE)
+            span.set_status(Status(StatusCode.ERROR, TOOL_RESULT_ERROR_MESSAGE))
+            self._end_span(span, run_id)
+            return
         span.set_status(Status(StatusCode.OK))
         self._end_span(span, run_id)
 

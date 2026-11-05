@@ -18,7 +18,7 @@ to the current version of the project delivered to anyone in the future.
 
 from pydantic import BaseModel, Field
 
-from aidev_agent.config import settings
+from aidev_agent.config import BKAI_TOOL_LOOP_GUARD_ENABLED, settings
 
 
 class ToolNodeSettings(BaseModel):
@@ -33,6 +33,7 @@ class ToolNodeSettings(BaseModel):
     - ``use_tool_call_proxy``：延迟加载 ``tool_call`` 代理解包；由装配层按是否启用延迟加载注入。
     """
 
+    enable_tool_loop_guard: bool = Field(default=BKAI_TOOL_LOOP_GUARD_ENABLED, description="启用工具连续重复调用防护")
     use_timer: bool = True
     use_result_limit: bool = True
     result_limit_thrd: int = Field(default=settings.TOOL_RESULT_LIMIT_THRD, ge=1, description="结果长度限制阈值")
