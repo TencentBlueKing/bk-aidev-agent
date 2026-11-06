@@ -18,6 +18,9 @@ from aidev_agent.core.citations import (
     select_cited,
     uses_citations,
 )
+from aidev_agent.core.nodes.model.context_assembly import ContextAssembly
+from aidev_agent.core.nodes.model.node import build_model_node
+from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings, ProcessorContext
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, _cite_child_result, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, KnowledgeReference
 from aidev_agent.core.tools.a2a_tools.utils import collect_knowledge_references
@@ -25,7 +28,7 @@ from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.pydantic_models import ChatPrompt, KnowledgeSettings
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.utils.migrations import migration_chat_session_context_from_chat_session_contents_v1
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 SOURCE = "https://example.com/source"
 PREVIEW = "https://example.com/agent-develop/knowledgebase?knowledgeName=a.md"
@@ -96,6 +99,59 @@ def test_select_cited_orders_by_number_and_returns_none_without_citations(answer
 def test_renumber_rewrites_every_marker_once():
     assert renumber_citations("a[1] b[2][1] c[3]", {1: 2, 2: 1}) == "a[2] b[1][2] c[3]"
     assert renumber_citations("a[1]", {}) == "a[1]"
+
+
+@pytest.mark.parametrize(
+    "answer,expected",
+    [
+        ("根据《共享Node优化报告》，内存下降。", [1]),
+        ("参考 共享Node优化报告 的结论", [1]),
+        ("参考《共享Node优化报告》，另一来源[2]", [2]),
+        ("参考《共享Node优化报告》，编号无效[9]", [1]),
+        ("参考《共享Node》", None),
+        ("参考《共享Node优化报告补充版》", None),
+        ("`《共享Node优化报告》`\n```\n《监控设计报告》\n```", None),
+    ],
+)
+def test_title_fallback_prefers_valid_numbers_and_ignores_partial_or_code_mentions(answer, expected):
+    documents = [saved("共享Node优化报告", 1), saved("监控设计报告", 2)]
+    selected = select_cited(iter(documents), answer)
+    assert ([citation_index(item) for item in selected] if selected else None) == expected
+
+
+def test_title_fallback_rejects_ambiguous_titles():
+    assert select_cited([saved("同名文档", 1), saved("同名文档", 2)], "根据《同名文档》") is None
+
+
+def test_title_fallback_reads_display_metadata_and_preserves_snapshot_references():
+    documents = reference_documents_for_display([saved("共享Node优化报告", 1), saved("监控设计报告", 2)])
+    answer = "根据《共享Node优化报告》，内存下降。"
+    arranged = arrange_reference_history([activity(1, documents), message(2, "assistant", answer)])
+    assert arranged[0]["content"] == answer
+    assert [citation_index(item) for item in arranged[1]["content"]] == [1]
+
+
+@pytest.mark.parametrize("mode", [False, True])
+@pytest.mark.parametrize("source", ["tool", "node", "child", "none"])
+def test_model_prompt_includes_citation_policy_for_both_rag_modes_and_child_results(mode, source):
+    tools = [MagicMock(name="retriever")] if source == "tool" else []
+    if tools:
+        tools[0].name = "knowledge_retrieval"
+    state = {"knowledge_content": [CITATION_INSTRUCTION]} if source == "node" else {}
+    if source == "child":
+        state["messages"] = [ToolMessage(content='{"references":[{"citation_index":1}]}', tool_call_id="child")]
+    assembly = ContextAssembly(tools=tools)
+    with patch("aidev_agent.core.nodes.model.node.ContextAssembly", return_value=assembly):
+        build_model_node(llm=MagicMock(), tools=tools, node_options=ModelNodeSettings(use_structured_response=mode))
+    for _ in range(2):
+        context = ProcessorContext(state=state, config={})
+        template = assembly.get_chat_prompt_template(context)
+        variables = dict.fromkeys(template.input_variables, "")
+        variables["agent_scratchpad"] = [] if not mode else ""
+        rendered = template.invoke(variables).to_messages()
+        assert rendered[0].content.count(CITATION_INSTRUCTION) == (0 if source == "none" else 1)
+        if not mode:
+            assert isinstance(rendered[0], SystemMessage)
 
 
 CODE_ANSWER = "用 `items[1]` 取值：\n```python\nprint(rows[2])\n```\n结论[3]"

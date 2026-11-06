@@ -104,6 +104,25 @@ def test_format_lists_only_cited_documents_in_a_separate_section():
     assert text == "\n\n---\n\n**参考文档**\n\n[1] [A](https://example.com/a)\n\n[3] [C](https://example.com/c)\n"
 
 
+@pytest.mark.parametrize("transport", ["queue", "direct"])
+def test_missing_markers_use_named_document_in_both_transports(transport):
+    answer = "根据《共享Node优化报告》，内存占用下降。"
+    event = {**CITED_EVENT, "value": [dict(item) for item in CITED_EVENT["value"]]}
+    event["value"][0]["name"] = "共享Node优化报告"
+    events = [event, {"type": "TEXT_MESSAGE_CONTENT", "delta": answer}, {"type": "RUN_FINISHED"}]
+    if transport == "queue":
+        with patch.object(LlmChunkMsg, "append_to_cache", autospec=True) as append:
+            consume_chat_stream(sse(events), "example-stream", time.time(), Mock())
+        content = append.call_args.args[0].docs_content
+    else:
+        stream = AgentStream(kind="chat", session_code="example-session", generator=sse(events))
+        content = list(iter_direct_stream_frames(stream, "example-stream"))[-1].content
+    assert "**参考文档**" in content
+    assert "[1] [共享Node优化报告](https://example.com/a)" in content
+    assert "https://example.com/b" not in content
+    assert "https://example.com/c" not in content
+
+
 @pytest.mark.parametrize("answer", ["没有标注", "编号对不上[9]"])
 def test_format_falls_back_to_all_retrieved_documents(answer):
     documents = []

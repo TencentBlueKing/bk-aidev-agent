@@ -43,6 +43,7 @@ from .prompt_middleware import (
     DecisionSystemMiddleware,
     HistorySystemPromptMiddleware,
     ImageRenderingMiddleware,
+    KnowledgeCitationPromptMiddleware,
     NoSystemInThinkingMiddleware,
     RoleDefinitionMiddleware,
     StructuredChatFormatMiddleware,
@@ -138,6 +139,10 @@ def build_model_node(
     # 加载由 graph 层注入的额外模板中间件（例如 SkillsPromptMiddleware）
     for middleware in node_options.extra_template_middlewares:
         context_assembly.add_middleware("template", middleware)
+    context_assembly.add_middleware(
+        "template",
+        KnowledgeCitationPromptMiddleware(has_knowledge_tool=any(tool.name == "knowledge_retrieval" for tool in tools)),
+    )
     # 加载和构造 prompt-variables 相关的中间件
     context_assembly.add_middleware("variable", BaseVariablesMiddleware())
     context_assembly.add_middleware(

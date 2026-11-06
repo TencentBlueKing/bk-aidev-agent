@@ -80,9 +80,30 @@ def cited_numbers(text: object) -> set[int]:
 
 
 def select_cited(items: Iterable[Any], text: object) -> list | None:
-    """Return the documents the answer cites, ordered by number; None when it cites none of them."""
+    """Prefer numbered citations, then unambiguous full titles mentioned outside code."""
+    items = list(items)
     cited = cited_numbers(text)
     selected = [item for item in items if citation_index(item) in cited]
+    if not selected and isinstance(text, str):
+        prose = _CODE.sub("", text)
+        titles: dict[str, list] = {}
+        for item in items:
+            if citation_index(item) is None:
+                continue
+            metadata = item.get("metadata")
+            metadata = metadata if isinstance(metadata, Mapping) else {}
+            title = metadata.get("display_name") or item.get("display_name") or item.get("name")
+            if not isinstance(title, str) or not title.strip():
+                continue
+            title = re.sub(r"^\[\d+\]\s*", "", title.strip())
+            titles.setdefault(title, []).append(item)
+        for title, documents in titles.items():
+            if len({citation_index(document) for document in documents}) != 1:
+                continue
+            quoted = f"《{title}》" in prose
+            full_title = len(title) >= 4 and re.search(r"(?<!\w)" + re.escape(title) + r"(?!\w)", prose)
+            if quoted or full_title:
+                selected.extend(documents)
     return sorted(selected, key=citation_index) if selected else None
 
 

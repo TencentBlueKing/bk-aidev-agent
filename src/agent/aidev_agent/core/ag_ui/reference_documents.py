@@ -3,7 +3,7 @@
 from typing import Any, NamedTuple
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
-from aidev_agent.core.citations import citation_index, cited_numbers, select_cited
+from aidev_agent.core.citations import citation_index, select_cited
 
 _KNOWLEDGE_PREVIEW_ROUTE = "/agent-develop/knowledgebase"
 _LINK_ALIASES = ("originFileUrl", "origin_file_url", "originFile", "origin_file")
@@ -184,8 +184,9 @@ def _arrange_turn(turn: list[dict]) -> list[dict]:
         for payload in references
         for item in reference_activity_documents(payload["content"], _activity_type(payload))
     ]
-    if select_cited(documents, answer) is not None:
-        cited = cited_numbers(answer)
+    selected = select_cited(documents, answer)
+    if selected is not None:
+        cited = {citation_index(document) for document in selected}
         for payload in references:
             payload["content"] = keep_cited_documents(payload["content"], _activity_type(payload), cited)
     answers = [index for index, payload in enumerate(turn) if payload.get("role") in _ANSWER_ROLES]
