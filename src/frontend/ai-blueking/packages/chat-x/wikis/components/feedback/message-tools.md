@@ -333,7 +333,7 @@ const CONST_UPDATE_TOOLS = [
 | 值          | 效果                                                                   |
 | ----------- | ---------------------------------------------------------------------- |
 | `undefined` | 默认，按钮正常可点击，hover 有 tooltip                                 |
-| `disabled`  | 按钮显示但不可点击，tooltip 不显示，反馈弹窗无法打开                   |
+| `disabled`  | 除复制（`copy`）外的按钮显示但不可点击，tooltip 不显示，反馈弹窗无法打开；复制按钮保持可用，生成中也能复制已输出内容 |
 | `hidden`    | `MessageContainer` 检测到此值时不渲染 `MessageTools`（组件自身不处理） |
 
 > `hidden` 由 `MessageContainer` 在外部用 `v-if` 判断，`MessageTools` 本身不感知该值。
@@ -357,7 +357,7 @@ const CONST_UPDATE_TOOLS = [
       <MessageToolsComp :on-action="handleAction" @feedback="handleFeedback" />
     </div>
     <div>
-      <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">禁用状态（disabled）— 按钮不可点击</p>
+      <p style="margin: 0 0 4px; font-size: 12px; color: #979ba5;">禁用状态（disabled）— 除复制外的按钮不可点击</p>
       <MessageToolsComp message-tools-status="disabled" :on-action="disabledHandleAction" @feedback="handleFeedback" />
     </div>
   </div>
@@ -432,7 +432,7 @@ const CONST_UPDATE_TOOLS = [
 
   const messageStatus = ref(MessageStatus.Complete);
 
-  // 流式输出时禁用工具栏，避免误操作
+  // 流式输出时禁用工具栏（复制按钮除外），避免误操作
   const messageToolsStatus = computed(() =>
     messageStatus.value === MessageStatus.Streaming ? MessageToolsStatus.Disabled : undefined,
   );
@@ -462,7 +462,7 @@ const CONST_UPDATE_TOOLS = [
 | ------------------ | -------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | messageTools       | `IToolBtn[]`                                                                                             | `CONST_MESSAGE_TOOLS` | 左侧工具列表                                                                                                                         |
 | updateTools        | `IToolBtn[]`                                                                                             | `CONST_UPDATE_TOOLS`  | 右侧工具列表（`like`/`unlike` 弹反馈表单，`delete` 弹确认框，其他直接触发 `onAction`）                                               |
-| messageToolsStatus | `MessageToolsStatus`                                                                                     | —                     | 工具栏状态：`disabled` 禁用按钮和弹窗                                                                                                |
+| messageToolsStatus | `MessageToolsStatus`                                                                                     | —                     | 工具栏状态：`disabled` 禁用除复制外的按钮和弹窗                                                                                              |
 | onAction           | `(tool: IToolBtn, content?: UserMessage['content'], docSchema?: TagSchema) => Promise<string[] \| void>` | —                     | 工具操作回调；`like`/`unlike` 需返回 `string[]` 作为反馈选项；`delete` 确认后触发；`content`、`docSchema` 为可选参数，供上层扩展使用 |
 | tippyOptions       | `AITippyProps`                                                                                           | —                     | 覆盖反馈弹窗和删除确认弹窗的默认配置；可覆盖 `placement` 等                                                                          |
 
@@ -495,7 +495,7 @@ interface IToolBtn {
 }
 
 enum MessageToolsStatus {
-  Disabled = 'disabled', // 禁用：按钮显示但不可点击，弹窗不打开
+  Disabled = 'disabled', // 禁用：除复制（copy）外的按钮显示但不可点击，弹窗不打开
   Hidden = 'hidden', // 隐藏：由 MessageContainer 外部 v-if 控制，组件本身不处理
 }
 ```
