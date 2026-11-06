@@ -167,7 +167,7 @@ enum MessageContentType {
 
 ```typescript
 enum MessageToolsStatus {
-  Disabled = 'disabled', // 禁用状态，按钮显示但不可点击
+  Disabled = 'disabled', // 禁用状态，按钮显示但不可点击（复制按钮除外，始终可用）
   Hidden = 'hidden', // 隐藏状态，工具栏完全隐藏
 }
 ```

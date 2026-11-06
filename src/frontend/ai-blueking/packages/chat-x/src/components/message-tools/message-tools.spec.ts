@@ -564,21 +564,57 @@ describe('MessageTools', () => {
       expect(wrapper.props().messageToolsStatus).toBe(MessageToolsStatus.Disabled);
     });
 
-    it('messageToolsStatus 为 Disabled 时，ToolBtn 应该被禁用', () => {
+    it('messageToolsStatus 为 Disabled 时，非复制的 ToolBtn 应该被禁用', () => {
       wrapper = mount(MessageTools, {
         props: {
-          messageTools: [{ id: 'copy', name: '复制', description: '复制' }],
+          messageTools: [{ id: 'rebuild', name: '重新生成', description: '重新生成' }],
           updateTools: [],
           messageToolsStatus: MessageToolsStatus.Disabled,
         },
       });
 
-      const toolBtn = wrapper.find('[data-tool-id="copy"]');
+      const toolBtn = wrapper.find('[data-tool-id="rebuild"]');
       expect(toolBtn.attributes('data-disabled')).toBe('true');
       expect(toolBtn.classes()).toContain('is-disabled');
     });
 
-    it('messageToolsStatus 为 Disabled 时，点击 ToolBtn 不应该调用 onAction', async () => {
+    it('messageToolsStatus 为 Disabled 时，点击非复制的 ToolBtn 不应该调用 onAction', async () => {
+      const onAction = vi.fn();
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [{ id: 'rebuild', name: '重新生成', description: '重新生成' }],
+          updateTools: [],
+          messageToolsStatus: MessageToolsStatus.Disabled,
+          onAction,
+        },
+      });
+
+      await wrapper.find('[data-tool-id="rebuild"]').trigger('click');
+
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('messageToolsStatus 为 Disabled 时，复制按钮仍应可用，其余按钮禁用', () => {
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [
+            { id: 'copy', name: '复制', description: '复制' },
+            { id: 'rebuild', name: '重新生成', description: '重新生成' },
+          ],
+          updateTools: [{ id: 'like', name: '赞', description: '点赞' }],
+          messageToolsStatus: MessageToolsStatus.Disabled,
+        },
+      });
+
+      const copyBtn = wrapper.find('[data-tool-id="copy"]');
+      expect(copyBtn.attributes('data-disabled')).toBe('false');
+      expect(copyBtn.classes()).not.toContain('is-disabled');
+      expect(wrapper.find('[data-tool-id="rebuild"]').attributes('data-disabled')).toBe('true');
+      expect(wrapper.find('[data-tool-id="like"]').attributes('data-disabled')).toBe('true');
+    });
+
+    it('messageToolsStatus 为 Disabled 时，点击复制按钮仍应调用 onAction', async () => {
       const onAction = vi.fn();
 
       wrapper = mount(MessageTools, {
@@ -592,7 +628,19 @@ describe('MessageTools', () => {
 
       await wrapper.find('[data-tool-id="copy"]').trigger('click');
 
-      expect(onAction).not.toHaveBeenCalled();
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'copy' }));
+    });
+
+    it('messageToolsStatus 为 Disabled 时，放在 updateTools 中的复制按钮同样可用', () => {
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [],
+          updateTools: [{ id: 'copy', name: '复制', description: '复制' }],
+          messageToolsStatus: MessageToolsStatus.Disabled,
+        },
+      });
+
+      expect(wrapper.find('[data-tool-id="copy"]').attributes('data-disabled')).toBe('false');
     });
 
     it('messageToolsStatus 未设置时，ToolBtn 应该正常可用', () => {

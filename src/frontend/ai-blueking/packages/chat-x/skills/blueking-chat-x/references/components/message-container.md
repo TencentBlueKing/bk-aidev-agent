@@ -457,7 +457,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 ## 工具栏状态控制
 
-通过 `messageToolsStatus` 控制消息工具栏的显示状态。常见用法：流式输出期间禁用工具栏：
+通过 `messageToolsStatus` 控制消息工具栏的显示状态。常见用法：流式输出期间禁用工具栏（复制按钮不受 `Disabled` 影响，历史消息与生成中的消息都可复制已输出内容）：
 
 ```vue
 <script setup lang="ts">
