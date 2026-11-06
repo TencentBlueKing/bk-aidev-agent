@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Annotated, Optional
 from langchain_core.callbacks import dispatch_custom_event
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
+from langgraph.prebuilt import InjectedState
 from pydantic import BaseModel
 
 from aidev_agent.core.ag_ui.types import CustomMessageType
@@ -44,6 +45,7 @@ class KnowledgeRetrievalInput(BaseModel):
     """知识库检索工具的输入参数"""
 
     query: Annotated[str, "用于检索私域知识库的查询文本"]
+    state: Annotated[dict | None, InjectedState] = None
 
 
 def make_knowledge_retrieval_tool(
@@ -94,7 +96,9 @@ def make_knowledge_retrieval_tool(
     else:
         description = base_description
 
-    def knowledge_retrieval(query: str, config: RunnableConfig) -> list:
+    def knowledge_retrieval(
+        query: str, config: RunnableConfig, state: Annotated[dict | None, InjectedState] = None
+    ) -> list:
         """执行知识库检索。
 
         Args:
@@ -104,6 +108,7 @@ def make_knowledge_retrieval_tool(
             包含检索决策、知识内容和引用文档的结构化结果
         """
         # 初始化知识库检索器
+        citations.restore(state)
         retriever = KnowledgeRag(llm, kb_retriever)
 
         # 流处理：仅在存在回调时派发自定义事件

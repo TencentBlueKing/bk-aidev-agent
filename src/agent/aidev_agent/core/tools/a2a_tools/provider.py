@@ -363,6 +363,8 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        if citations is not None:
+            citations.restore(state)
         backend_result = _cite_child_result(backend_result, citations)
         _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         wrapper = backend_result.model_dump()
@@ -436,6 +438,8 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        if citations is not None:
+            citations.restore(state)
         backend_result = _cite_child_result(backend_result, citations)
         _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         return json.dumps(backend_result.model_dump(), ensure_ascii=False)

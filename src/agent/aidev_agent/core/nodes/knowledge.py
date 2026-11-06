@@ -148,6 +148,7 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
             config=config,
         )
 
+        self.citations.restore(state)
         query_input = self.get_query_input(state)
         ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
 

@@ -1,5 +1,6 @@
 """Number knowledge sources once per run so answer markers, the web panel and bots point at the same documents."""
 
+import json
 import re
 import threading
 from collections.abc import Iterable, Mapping
@@ -16,7 +17,12 @@ CITATION_INSTRUCTION = (
 _SOURCE_LINE = re.compile(r"^来源链接：(?P<url>[^\n]+)", re.MULTILINE)
 _MARKER = re.compile(r"\[(\d{1,3})\]")
 # Brackets inside fenced code blocks and inline code are indexing, such as items[1], never citations.
-_CODE = re.compile(r"```[\s\S]*?(?:```|$)|`[^`\n]*`")
+_CODE = re.compile(
+    r"(?m)^[ \t>]*(?:(?:[-+*]|\d+[.)])[ \t]+)?(?:(?P<backticks>`{3,})[^`\n]*|(?P<tildes>~{3,})[^\n]*)(?:\n|$)"
+    r"[\s\S]*?(?:^[ \t>]*(?(backticks)(?P=backticks)`*|(?P=tildes)~*)[ \t]*(?=\n|$)|\Z)"
+    r"|(?<!`)(?P<inline>`+)(?!`)[\s\S]*?(?<!`)(?P=inline)(?!`)"
+)
+_SAVED_NUMBER = re.compile(r"^引用编号：\[(\d+)\]\n")
 
 
 class CitationRegistry:
@@ -25,14 +31,66 @@ class CitationRegistry:
     def __init__(self) -> None:
         self._numbers: dict[str, int] = {}
         self._lock = threading.Lock()
+        self._next_number = 1
+        self._restored = False
 
     def number(self, identity: str) -> int:
         with self._lock:
-            return self._numbers.setdefault(identity, len(self._numbers) + 1)
+            if identity not in self._numbers:
+                self._numbers[identity] = self._next_number
+                self._next_number += 1
+            return self._numbers[identity]
 
     def find(self, identity: str) -> int | None:
         with self._lock:
             return self._numbers.get(identity)
+
+    def restore(self, state: Mapping[str, Any] | None) -> None:
+        """Seed a rebuilt graph from this turn's saved tool results and reference activities once."""
+        if not state:
+            return
+        with self._lock:
+            if self._restored:
+                return
+            for message in reversed(state.get("messages") or []):
+                if getattr(message, "type", None) == "human":
+                    break
+                if getattr(message, "role", None) != "activity" and getattr(message, "name", None) not in {
+                    "knowledge_retrieval",
+                    "Agent",
+                    "sendMessages",
+                }:
+                    continue
+                for identity, number in _saved_sources(message.content):
+                    self._numbers.setdefault(identity, number)
+                    self._next_number = max(self._next_number, number + 1)
+            self._restored = True
+
+
+def _saved_sources(content: object) -> Iterable[tuple[str, int]]:
+    if isinstance(content, str):
+        number = _SAVED_NUMBER.match(content)
+        source = _SOURCE_LINE.search(content)
+        if number and int(number[1]) > 0 and source and source["url"].strip():
+            yield source["url"].strip(), int(number[1])
+            return
+        try:
+            content = json.loads(content)
+        except ValueError:
+            return
+    if isinstance(content, list):
+        for item in content:
+            yield from _saved_sources(item)
+    elif isinstance(content, Mapping):
+        metadata = content.get("metadata")
+        metadata = metadata if isinstance(metadata, Mapping) else {}
+        identity = metadata.get("path") or content.get("url") or content.get("preview_url") or content.get("originFile")
+        number = citation_index(content)
+        if isinstance(identity, str) and identity.strip() and number is not None:
+            yield identity.strip(), number
+        for key in ("references", "reference_document"):
+            if isinstance(content.get(key), list):
+                yield from _saved_sources(content[key])
 
 
 def cite_knowledge(

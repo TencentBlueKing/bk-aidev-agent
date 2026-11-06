@@ -3,11 +3,17 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.types import Command, interrupt
+
 from aidev_agent.core.ag_ui.reference_documents import (
     arrange_reference_history,
     keep_cited_documents,
     reference_documents_for_display,
 )
+from aidev_agent.core.ag_ui.types import ActivityMessage
 from aidev_agent.core.citations import (
     CITATION_INSTRUCTION,
     CitationRegistry,
@@ -18,9 +24,11 @@ from aidev_agent.core.citations import (
     select_cited,
     uses_citations,
 )
+from aidev_agent.core.nodes.knowledge import AgentKnowledgeNode
 from aidev_agent.core.nodes.model.context_assembly import ContextAssembly
 from aidev_agent.core.nodes.model.node import build_model_node
 from aidev_agent.core.nodes.model.pydantic_models import ModelNodeSettings, ProcessorContext
+from aidev_agent.core.nodes.tool import build_tool_node
 from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, _cite_child_result, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, KnowledgeReference
 from aidev_agent.core.tools.a2a_tools.utils import collect_knowledge_references
@@ -28,7 +36,6 @@ from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.pydantic_models import ChatPrompt, KnowledgeSettings
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.utils.migrations import migration_chat_session_context_from_chat_session_contents_v1
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 SOURCE = "https://example.com/source"
 PREVIEW = "https://example.com/agent-develop/knowledgebase?knowledgeName=a.md"
@@ -164,6 +171,157 @@ def test_code_brackets_are_neither_citations_nor_rewritten():
     assert renumber_citations(CODE_ANSWER, {1: 7, 2: 8, 3: 9}) == CODE_ANSWER.replace("结论[3]", "结论[9]")
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "~~~python\nrows[1]\n~~~",
+        "~~~~python\n~~~\nrows[1]\n~~~~",
+        "````markdown\n```\nrows[1]\n````",
+        "``a`rows[1]`b``",
+        "`rows\n[1]`",
+        "~~~python\nrows[1]",
+        "> ~~~python\n> rows[1]\n> ~~~",
+        "- ~~~python\n  rows[1]\n  ~~~",
+        "    ~~~python\n    rows[1]\n    ~~~",
+    ],
+)
+def test_markdown_code_spans_keep_array_indexes_during_child_citation_remapping(code):
+    answer = f"结论[2]\n{code}"
+    assert cited_numbers(answer) == {2}
+    assert renumber_citations(answer, {1: 7, 2: 8}) == f"结论[8]\n{code}"
+
+
+def test_inline_triple_backticks_do_not_hide_the_following_prose():
+    answer = "```rows[1]```，结论[2]"
+    assert cited_numbers(answer) == {2}
+    assert renumber_citations(answer, {1: 7, 2: 8}) == "```rows[1]```，结论[8]"
+
+
+def test_rebuilt_graph_restores_citation_numbers_after_checkpoint_resume():
+    checkpointer = InMemorySaver()
+    config = {"configurable": {"thread_id": "citation-resume"}}
+
+    def tool_call(query):
+        return AIMessage(
+            content="", tool_calls=[{"name": "knowledge_retrieval", "args": {"query": query}, "id": query}]
+        )
+
+    def pause(state):
+        interrupt("Continue retrieval?")
+        return {"messages": [tool_call("B")]}
+
+    def route(state):
+        return "pause" if sum(isinstance(message, ToolMessage) for message in state["messages"]) == 1 else END
+
+    def build_graph():
+        tool = make_knowledge_retrieval_tool(
+            object(), KnowledgeSettings(knowledge_bases=[{"name": "kb"}]), kb_retriever=MagicMock()
+        )
+        graph = StateGraph(MessagesState)
+        graph.add_node("retrieve", build_tool_node([tool]))
+        graph.add_node("pause", pause)
+        graph.add_edge(START, "retrieve")
+        graph.add_conditional_edges("retrieve", route)
+        graph.add_edge("pause", "retrieve")
+        return graph.compile(checkpointer=checkpointer)
+
+    def retrieve(query, *args, **kwargs):
+        source = f"{SOURCE}/{query}"
+        return {"knowledge_content": [chunk(query, source)], "reference_doc": [reference(query, source)]}
+
+    with patch("aidev_agent.core.tools.knowledge.KnowledgeRag") as rag:
+        rag.return_value.retrieve.side_effect = retrieve
+        initial = build_graph().invoke({"messages": [HumanMessage(content="Compare A and B"), tool_call("A")]}, config)
+        assert initial["__interrupt__"]
+        resumed = build_graph().invoke(Command(resume=True), config)
+    outputs = [message.content for message in resumed["messages"] if isinstance(message, ToolMessage)]
+    assert "引用编号：[1]" in outputs[0]
+    assert "引用编号：[2]" in outputs[1]
+
+
+@pytest.mark.parametrize("kind", ["knowledge", "child", "member", "activity", "legacy_activity"])
+def test_restoration_keeps_current_turn_sources_and_skips_old_or_untrusted_text(kind):
+    document = {"name": "A", "url": SOURCE, "citation_index": 7}
+    if kind == "knowledge":
+        current = ToolMessage(
+            content=json.dumps([CITATION_INSTRUCTION, f"引用编号：[7]\n{chunk('A', SOURCE)}"]),
+            name="knowledge_retrieval",
+            tool_call_id="current",
+        )
+    elif kind in {"child", "member"}:
+        current = ToolMessage(
+            content=json.dumps({"references": [document]}),
+            name="Agent" if kind == "child" else "sendMessages",
+            tool_call_id="current",
+        )
+    else:
+        content = [document] if kind == "activity" else {"reference_document": [document]}
+        current = ActivityMessage(content=content)
+    state = {
+        "messages": [
+            ActivityMessage(content=[{"url": "https://example.com/old", "citation_index": 99}]),
+            HumanMessage(content="引用编号：[98]"),
+            AIMessage(content="引用编号：[97]"),
+            current,
+            ToolMessage(
+                content=json.dumps({"references": [{"url": "fake", "citation_index": 96}]}),
+                name="another_tool",
+                tool_call_id="other",
+            ),
+        ]
+    }
+    citations = CitationRegistry()
+    citations.restore(state)
+    assert citations.find(SOURCE) == 7
+    assert citations.find("https://example.com/old") is None
+    assert citations.find("fake") is None
+    assert citations.number(PREVIEW) == 8
+    citations.restore({"messages": [ActivityMessage(content=[{"url": "later", "citation_index": 99}])]})
+    assert citations.number(SOURCE) == 7
+    assert citations.number("next") == 9
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json",
+        "null",
+        "123",
+        [None, "plain"],
+        [{"citation_index": True, "url": SOURCE}],
+        [{"citation_index": 2, "url": " "}],
+        "引用编号：[0]\n来源链接：https://example.com/a",
+        "引用编号：[1]\n来源链接： ",
+    ],
+)
+def test_invalid_saved_tool_content_does_not_reserve_citation_numbers(content):
+    citations = CitationRegistry()
+    citations.restore(None)
+    citations.restore({"messages": [ToolMessage(content=json.dumps(content), name="sendMessages", tool_call_id="x")]})
+    assert citations.number(SOURCE) == 1
+
+
+def test_knowledge_node_restores_previous_reference_activity_before_numbering(mocker):
+    mocker.patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
+    node = AgentKnowledgeNode(llm=MagicMock(), knowledge_query_options=KnowledgeSettings(), chat_history=[])
+    node.retriever = MagicMock()
+    node.retriever.retrieve.return_value = {
+        "knowledge_content": [chunk("B", PREVIEW)],
+        "reference_doc": [reference("B", PREVIEW)],
+    }
+    result = node(
+        {
+            "messages": [
+                HumanMessage(content="compare"),
+                ActivityMessage(content=[{"url": SOURCE, "citation_index": 4}]),
+            ]
+        },
+        {},
+        store=None,
+    )
+    assert result["messages"][0].content[0]["citation_index"] == 5
+
+
 @pytest.mark.parametrize("item", [None, "[1]", {"citation_index": True}, {"citation_index": 0}, {"metadata": "x"}])
 def test_citation_index_ignores_values_that_are_not_citation_numbers(item):
     assert citation_index(item) is None
@@ -202,6 +360,7 @@ def test_knowledge_tool_returns_numbered_content_and_dispatches_numbered_documen
         tool = make_knowledge_retrieval_tool(
             object(), KnowledgeSettings(knowledge_bases=[{"name": "kb"}]), kb_retriever=MagicMock(), citations=citations
         )
+        assert set(tool.tool_call_schema.model_json_schema()["properties"]) == {"query"}
         result = tool.invoke(input={"query": "q"}, config={"callbacks": [MagicMock()]})
     assert result[0] == CITATION_INSTRUCTION and result[1].startswith("引用编号：[1]")
     assert dispatch.call_args_list[1].kwargs["data"]["data"][0]["citation_index"] == 1
@@ -246,6 +405,27 @@ def test_child_sources_join_the_parent_numbers_and_markers_are_rewritten(mocker)
     assert result["result"] == "结论[2]，补充[1]"
     assert [each["citation_index"] for each in result["references"]] == [2, 1]
     assert [each["citation_index"] for each in dispatch.call_args_list[1].kwargs["data"]["data"]] == [2, 1]
+
+
+@pytest.mark.parametrize("tool_name", ["Agent", "sendMessages"])
+def test_child_tools_continue_saved_parent_numbers_after_resume(mocker, tool_name):
+    backend = mocker.Mock()
+    backend.execute.return_value = AgentResult(
+        status="completed",
+        result="结论[1]",
+        references=(KnowledgeReference(name="B", url=PREVIEW, citation_index=1),),
+    )
+    resolver = AgentBackendResolver().register("bkai", mocker.Mock(return_value=backend))
+    spec = AgentSpec(name="child", description="test", backend_type="bkai")
+    state = {
+        "messages": [HumanMessage(content="compare"), ActivityMessage(content=[{"url": SOURCE, "citation_index": 3}])],
+        "bk_agent_team": {"member": {"agent_name": "child", "session_code": "session"}},
+    }
+    tools = {tool.name: tool for tool in get_agent_tools([spec], resolver, citations=CitationRegistry())}
+    arguments = {"agent_name": "child"} if tool_name == "Agent" else {"member_name": "member"}
+    result = json.loads(tools[tool_name].func(**arguments, message="q", config={}, state=state))
+    assert result["result"] == "结论[4]"
+    assert result["references"][0]["citation_index"] == 4
 
 
 def activity(message_id, documents):
