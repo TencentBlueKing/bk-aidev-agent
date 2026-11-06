@@ -108,7 +108,6 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
       const transferReferenceDocumentApi2ReferenceDocument = (doc: IReferenceDocumentApi): IReferenceDocument =>
         doc.map(item => ({
           name: item.name,
-          originFile: item.origin_file_url,
           originFileUrl: item.origin_file_url,
           url: item.url,
         }));
@@ -414,7 +413,7 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
       const transferReferenceDocument2ReferenceDocumentApi = (doc: IReferenceDocument): IReferenceDocumentApi =>
         doc.map(item => ({
           name: item.name,
-          origin_file_url: item.originFileUrl ?? item.originFile,
+          origin_file_url: item.originFileUrl,
           url: item.url,
         }));
 
