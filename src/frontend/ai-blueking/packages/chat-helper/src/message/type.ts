@@ -482,6 +482,7 @@ export interface IReasoningMessageApi extends IBaseMessageApi {
 
 export type IReferenceDocument = {
   name: string;
+  originFile?: string;
   originFileUrl?: string;
   url: string;
 }[];

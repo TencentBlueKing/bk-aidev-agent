@@ -284,6 +284,7 @@ export interface IRawEvent extends IBaseEvent {
 
 export type IReferenceDocumentCustomValue = {
   name: string;
+  originFile?: string;
   originFileUrl?: string;
   url: string;
 }[];
