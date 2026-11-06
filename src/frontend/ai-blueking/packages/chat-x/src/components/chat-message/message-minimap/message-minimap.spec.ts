@@ -274,7 +274,13 @@ describe('MessageMinimap', () => {
       await nextTick();
       expect(tippyMock.factory).toHaveBeenCalledTimes(1);
       const options = tippyMock.factory.mock.calls[0][1];
-      expect(options).toMatchObject({ placement: 'right', trigger: 'manual', maxWidth: 'none' });
+      // 预览气泡的圆角与阴影样式挂在这组主题名上
+      expect(options).toMatchObject({
+        placement: 'right',
+        trigger: 'manual',
+        maxWidth: 'none',
+        theme: 'ai-chat-box-light light ai-message-minimap',
+      });
       const content = options.content as HTMLElement;
       expect(content.querySelector('.ai-message-minimap-preview-question')?.textContent).toBe('问题 2');
       expect(content.querySelector('.ai-message-minimap-preview-answer')?.textContent?.trim()).toBe('回答 2');
