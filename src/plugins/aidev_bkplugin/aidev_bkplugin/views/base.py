@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import os
 from logging import getLogger
 from typing import Any, Optional
 
@@ -23,6 +24,7 @@ from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.permissions import AgentPluginPermission
 from aidev_bkplugin.services.agent_builder import LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_helpers import AgentHelper
+from aidev_bkplugin.utils import set_user_access_token
 
 
 def resolve_tenant_id(request) -> str:
@@ -72,6 +74,12 @@ class PluginResourceManager(LLMOverrideResourceManager):
         super().__init__(username=username, model=model, app_code=app_code, app_secret=app_secret, tenant_id=tenant_id)
         self._cached_client = None
 
+    def resolve_access_token(self, username: str = None) -> str:
+        """隔离应用可关用户 token 注入 bkapi client，避免丢掉应用凭据。"""
+        if os.getenv("BKAI_BKAPI_USE_USER_TOKEN", "1") != "1":
+            return ""
+        return super().resolve_access_token(username)
+
     def get_client(self, **kwargs: Any):
         """按实例缓存 ``client``。
 
@@ -115,6 +123,9 @@ class PluginViewSet(ViewSetMixin, APIView):
 
     def get_resource_manager(self) -> Optional[ResourceManagerProtocol]:
         """子类可覆盖，返回自定义的 ``resource_manager``。"""
+        # 聊天等用户态入口先换用户 token，供 craw → MCP 出口使用。
+        # 隔离应用可通过 BKAI_BKAPI_USE_USER_TOKEN=0 保留应用凭据。
+        set_user_access_token(getattr(self, "request", None))
         return PluginResourceManager(username=self.get_username(), tenant_id=resolve_tenant_id(self.request))
 
     def get_client(self, **kwargs: Any):
