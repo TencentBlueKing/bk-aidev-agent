@@ -87,7 +87,8 @@ def format_reference_documents(documents: list[dict], answer: str = "") -> str:
     """把引用文档渲染为回答之后独立的一段，两种企微传输共用。
 
     回答标注了 [n] 时只列被标注的文档并沿用同一编号；未标注时列出本次检索到的全部文档。
-    空行和分隔线让 Markdown 不把这一段并入回答末尾的列表项。
+    空行和分隔线让 Markdown 不把这一段并入回答末尾的列表项；标题与每条文档各自成段，
+    与回答正文保持相同的段落间距，避免整段挤在一起。
     """
     if not documents:
         return ""
@@ -101,7 +102,7 @@ def format_reference_documents(documents: list[dict], answer: str = "") -> str:
         f"({_normalize_url(str(document.get('path', '')))})"
         for number, document in numbered
     ]
-    return f"\n\n---\n**{title}**\n" + "\n".join(lines) + "\n"
+    return f"\n\n---\n\n**{title}**\n\n" + "\n\n".join(lines) + "\n"
 
 
 class LlmChunkMsg(BaseModel):

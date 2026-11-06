@@ -101,7 +101,7 @@ def test_format_lists_only_cited_documents_in_a_separate_section():
     documents = []
     collect_reference_documents(CITED_EVENT, documents)
     text = format_reference_documents(documents, CITED_ANSWER)
-    assert text == "\n\n---\n**参考文档**\n[1] [A](https://example.com/a)\n[3] [C](https://example.com/c)\n"
+    assert text == "\n\n---\n\n**参考文档**\n\n[1] [A](https://example.com/a)\n\n[3] [C](https://example.com/c)\n"
 
 
 @pytest.mark.parametrize("answer", ["没有标注", "编号对不上[9]"])
@@ -109,8 +109,8 @@ def test_format_falls_back_to_all_retrieved_documents(answer):
     documents = []
     collect_reference_documents(CITED_EVENT, documents)
     text = format_reference_documents(documents, answer)
-    assert text.startswith("\n\n---\n**本次检索相关文档**\n")
-    assert [line.split(" ")[0] for line in text.strip().splitlines()[2:]] == ["[1]", "[2]", "[3]"]
+    assert text.startswith("\n\n---\n\n**本次检索相关文档**\n\n")
+    assert [paragraph.split(" ")[0] for paragraph in text.strip().split("\n\n")[2:]] == ["[1]", "[2]", "[3]"]
 
 
 def test_queue_transport_lists_documents_cited_by_the_answer():
@@ -132,7 +132,7 @@ def test_queue_poll_appends_cited_documents_after_the_answer(settings):
     settings.MAX_MESSAGE_TIME = 300
     stream_id = f"example_{int(time.time())}"
     content = LlmChunkMsg(stream_id=stream_id).wxaibot_msg_json_from_cache(client)["stream"]["content"]
-    assert content.startswith("<think>思考</think>" + CITED_ANSWER + "\n\n---\n**参考文档**")
+    assert content.startswith("<think>思考</think>" + CITED_ANSWER + "\n\n---\n\n**参考文档**\n\n")
     assert "https://example.com/b" not in content
 
 
@@ -145,4 +145,6 @@ def test_direct_transport_lists_documents_cited_by_the_answer():
     ]
     stream = AgentStream(kind="chat", session_code="example-session", generator=sse(events))
     content = list(iter_direct_stream_frames(stream, "example-stream"))[-1].content
-    assert content.endswith("\n\n---\n**参考文档**\n[1] [A](https://example.com/a)\n[3] [C](https://example.com/c)\n")
+    assert content.endswith(
+        "\n\n---\n\n**参考文档**\n\n[1] [A](https://example.com/a)\n\n[3] [C](https://example.com/c)\n"
+    )
