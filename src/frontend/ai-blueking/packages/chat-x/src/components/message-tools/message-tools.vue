@@ -17,14 +17,14 @@
         <DeleteTool
           v-if="tool.id === 'delete'"
           v-bind="tool"
-          :disabled="messageToolsStatus === MessageToolsStatus.Disabled"
+          :disabled="isToolDisabled(tool)"
           :tippy-options="tippyOptions"
           @confirm="handleDeleteConfirm(tool)"
         />
         <ToolBtn
           v-else
           v-bind="tool"
-          :disabled="messageToolsStatus === MessageToolsStatus.Disabled"
+          :disabled="isToolDisabled(tool)"
           :tippy-options="tippyOptions"
           @click="handleAction(tool)"
         />
@@ -53,7 +53,7 @@
             v-bind="tool"
             :id="getSubmitToolId(tool.id as 'like' | 'unlike')"
             :active="submitId === tool.id"
-            :disabled="messageToolsStatus === MessageToolsStatus.Disabled"
+            :disabled="isToolDisabled(tool)"
             :tippy-options="{
               ...tippyOptions,
               content: getTippyContent(tool.id as 'like' | 'unlike'),
@@ -73,14 +73,14 @@
         <DeleteTool
           v-else-if="tool.id === 'delete'"
           v-bind="tool"
-          :disabled="messageToolsStatus === MessageToolsStatus.Disabled"
+          :disabled="isToolDisabled(tool)"
           :tippy-options="tippyOptions"
           @confirm="handleDeleteConfirm(tool)"
         />
         <ToolBtn
           v-else
           v-bind="tool"
-          :disabled="messageToolsStatus === MessageToolsStatus.Disabled"
+          :disabled="isToolDisabled(tool)"
           :tippy-options="tippyOptions"
           @click="handleAction(tool)"
         />
@@ -151,6 +151,10 @@
       ...(props.tippyOptions || {}),
     } as InstanceType<typeof Tippy>['$props'];
   });
+
+  // 流式生成期间外部会整体下发 Disabled；复制只读取已输出内容、不改变会话状态，因此始终保持可用
+  const isToolDisabled = (tool: IToolBtn) =>
+    props.messageToolsStatus === MessageToolsStatus.Disabled && tool.id !== 'copy';
 
   const handleAction = async (tool: IToolBtn) => {
     if (tool.id === 'like' || tool.id === 'unlike') {
