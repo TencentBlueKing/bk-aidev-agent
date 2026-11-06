@@ -22,11 +22,11 @@ dependencies = [
     "pydantic>=2.11.7",
     "stackprinter>=0.2.12",
     "pycryptodome>=3.23.0",
-    "requests>=2.32.5",
+    "requests>=2.33.0",
     "pika>=1.3.0,<2.0",
     "aidev-bkplugin>=3.1.0",
     "wecom-aibot-python-sdk-async==1.0.2",
-    "pillow>=10.4.0,<13",
+    "pillow>=10.4.0,<14",
 ]
 
 [dependency-groups]
@@ -49,6 +49,7 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 prerelease = "allow"
+override-dependencies = ["mcp>=1.30.0,<2.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["aidev_wxbot"]

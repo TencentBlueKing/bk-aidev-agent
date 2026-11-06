@@ -32,6 +32,9 @@ includes = ["aidev_bkplugin"]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+[tool.uv]
+override-dependencies = ["mcp>=1.30.0,<2.0"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 addopts = "-vv --maxfail=2 --disable-pytest-warnings"

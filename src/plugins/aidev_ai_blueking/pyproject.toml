@@ -13,6 +13,9 @@ dependencies = [
 [tool.pdm.build]
 includes = ["aidev_ai_blueking"]
 
+[tool.uv]
+override-dependencies = ["mcp>=1.30.0,<2.0"]
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
