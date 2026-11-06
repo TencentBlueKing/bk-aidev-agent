@@ -29,6 +29,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
 from aidev_agent.core.ag_ui.types import ActivityMessage, CustomMessageType
+from aidev_agent.core.citations import CitationRegistry, cite_knowledge
 from aidev_agent.enums import ActivityType
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag, KnowledgeRagRetrieveResult
@@ -119,6 +120,10 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
     - 返回包含 messages 的完整状态（包含 ActivityMessage）
     """
 
+    def __init__(self, *args, citations: CitationRegistry | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.citations = citations or CitationRegistry()
+
     def __call__(
         self,
         state: KnowledgeInputState,
@@ -143,6 +148,7 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
             config=config,
         )
 
+        self.citations.restore(state)
         query_input = self.get_query_input(state)
         ret = self.retriever.retrieve(query_input, self.knowledge_query_options, self.chat_history)
 
@@ -176,16 +182,11 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
         Returns:
             包含 messages、reference_doc 等信息的输出状态
         """
-        reference_doc = ret.get("reference_doc") or []
         message_id = uuid.uuid4().hex
-
-        if reference_doc:
-            # 处理引用文档
-            reference_doc = [each["metadata"] for each in reference_doc]
-            reference_doc = [
-                {"originFile": each["preview_path"], "url": each["path"], "name": each["display_name"]}
-                for each in reference_doc
-            ]
+        # 模型读到的知识与引用文档使用同一组编号，回答里的 [n] 才能对应到文档
+        knowledge_content, reference_doc = cite_knowledge(
+            ret.get("knowledge_content") or [], ret.get("reference_doc") or [], self.citations
+        )
         # 流处理：通过自定义事件向前端推送 reference_doc
         # 如果没有引用文档, 派发空消息，此时 reference_doc 为 []
         dispatch_custom_event(
@@ -195,6 +196,8 @@ class AgentKnowledgeNode(BaseKnowledgeNode):
         )
         # 流处理：为 messages 提供 ActivityMessage
         ret = cast(KnowledgeOutputState, ret)
+        if knowledge_content:
+            ret["knowledge_content"] = knowledge_content
         ret["messages"] = [
             ActivityMessage(
                 activity_type=ActivityType.REFERENCE_DOCUMENT.value,
@@ -276,12 +279,14 @@ def make_knowledge_node(
     chat_history: Optional[list] = None,
     *,
     kb_retriever: BkRetriever | None = None,
+    citations: CitationRegistry | None = None,
 ):
     """构建知识库检索节点。
     Args:
         llm: 语言模型,用于知识库检索中的相关性判断和内容处理
         knowledge_query_options: 知识库检索配置
         kb_retriever: 绑定当前资源上下文的检索器
+        citations: 本轮共享的引用编号
 
     Returns:
         可用于 LangGraph node 的 callable,接受 (state, config, *, store) 参数
@@ -295,4 +300,5 @@ def make_knowledge_node(
         knowledge_query_options=knowledge_query_options,
         chat_history=chat_history,
         kb_retriever=kb_retriever,
+        citations=citations,
     )

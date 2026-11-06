@@ -1342,7 +1342,7 @@ class TestReActAgentBuilder:
             return_value=[sentinel_tool],
         ) as mock:
             tools, _builtin, _catalog = builder._prepare_agent_tools(extra_tools=[], langchain_middleware=[])
-        mock.assert_called_once_with(builder._a2a_specs, builder._a2a_resolver)
+        mock.assert_called_once_with(builder._a2a_specs, builder._a2a_resolver, citations=builder._citations)
         assert sentinel_tool in tools
 
     def test_prepare_agent_tools_no_a2a_tools_without_resolver(self):

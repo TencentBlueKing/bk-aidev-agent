@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from aidev_agent.core.citations import CITATION_INSTRUCTION, uses_citations
 from aidev_agent.enums import Decision
 
 from .pydantic_models import NextFunction, ProcessorContext
@@ -133,6 +134,17 @@ class DecisionSystemMiddleware:
             ctx.metadata["slots_has_no_system_in_thinking"] = True
             ctx.metadata["slots_has_image_rendering"] = True
 
+        next()
+
+
+class KnowledgeCitationPromptMiddleware:
+    def __init__(self, *, has_knowledge_tool: bool):
+        self.has_knowledge_tool = has_knowledge_tool
+
+    def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
+        enabled = self.has_knowledge_tool or uses_citations(ctx.state)
+        if enabled and CITATION_INSTRUCTION not in ctx.prompt_slots.system:
+            ctx.prompt_slots.system += "\n\n" + CITATION_INSTRUCTION
         next()
 
 

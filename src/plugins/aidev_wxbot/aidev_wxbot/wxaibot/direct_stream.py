@@ -12,10 +12,11 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 
 from .approval_cards import build_pending_approval_card
 from .constants import STREAM_ERROR_REPLY
-from .context import CHUNK_FLUSH_THRESHOLD, _escape_markdown_text, _normalize_url
+from .context import CHUNK_FLUSH_THRESHOLD, format_reference_documents
 from .flow_cards import build_flow_action_card
 from .formatters import _task_state_label, format_flow_progress, format_task_outputs
 from .question_cards import build_pending_question_card, pending_question, question_prompt
+from .references import collect_reference_documents
 from .stream import iter_sse_lines
 from .tool_blocks import ChatSegments, is_tool_event
 from .tracing import wxbot_span
@@ -80,6 +81,7 @@ def _run_id_of(event: dict) -> str:
 def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started) -> Generator[DirectStreamFrame]:
     segments = ChatSegments(stream_id)
     thinking = ""
+    answer = ""
     documents: list[dict] = []
     finished = False
     pending_chars = 0
@@ -119,14 +121,13 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
             delta = event.get("delta", "")
             if delta and delta != "正在思考...":
                 segments.append_text(delta)
+                answer += delta
                 pending_chars += len(delta)
                 if pending_chars >= CHUNK_FLUSH_THRESHOLD:
                     yield DirectStreamFrame(content=_render_chat(thinking, segments.render()), finish=False)
                     pending_chars = 0
         elif event_type == EventType.CUSTOM:
-            for document in event.get("documents", []):
-                if isinstance(document, dict) and isinstance(document.get("metadata"), dict):
-                    documents.append(document["metadata"])
+            collect_reference_documents(event, documents)
         elif event_type == EventType.RUN_ERROR:
             yield DirectStreamFrame(content=STREAM_ERROR_REPLY, finish=True, failed=True)
             finished = True
@@ -151,13 +152,13 @@ def _iter_chat_frames(agent_stream: AgentStream, stream_id: str, on_run_started)
                 finished = True
                 continue
             yield DirectStreamFrame(
-                content=_render_chat(thinking, segments.render()) + _format_documents(documents),
+                content=_render_chat(thinking, segments.render()) + format_reference_documents(documents, answer),
                 finish=True,
             )
             finished = True
 
     if not finished:
-        partial = _render_chat(thinking, segments.render()) + _format_documents(documents)
+        partial = _render_chat(thinking, segments.render()) + format_reference_documents(documents, answer)
         yield DirectStreamFrame(
             content=f"{partial}\n\n回答生成提前结束，请重试" if partial else "回答生成提前结束，请重试",
             finish=True,
@@ -266,14 +267,3 @@ def _render_chat(thinking: str, content: str) -> str:
 
 def _render_flow(state: _FlowState) -> str:
     return _render_chat(state.thinking, state.content)
-
-
-def _format_documents(documents: list[dict]) -> str:
-    if not documents:
-        return ""
-    lines = ["\n当前回答参考的文档如下:"]
-    for index, document in enumerate(documents):
-        display_name = _escape_markdown_text(str(document.get("display_name", "")))
-        path = _normalize_url(str(document.get("path", "")))
-        lines.append(f"[{index + 1}][{display_name}]({path})")
-    return "\n".join(lines) + "\n"

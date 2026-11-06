@@ -26,9 +26,11 @@ from typing import TYPE_CHECKING, Annotated, Optional
 from langchain_core.callbacks import dispatch_custom_event
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
+from langgraph.prebuilt import InjectedState
 from pydantic import BaseModel
 
 from aidev_agent.core.ag_ui.types import CustomMessageType
+from aidev_agent.core.citations import CitationRegistry, cite_knowledge
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.langchain_core.retrievers.kb_rag import KnowledgeRag
 from aidev_agent.pydantic_models import KnowledgeSettings
@@ -43,6 +45,7 @@ class KnowledgeRetrievalInput(BaseModel):
     """知识库检索工具的输入参数"""
 
     query: Annotated[str, "用于检索私域知识库的查询文本"]
+    state: Annotated[dict | None, InjectedState] = None
 
 
 def make_knowledge_retrieval_tool(
@@ -51,6 +54,7 @@ def make_knowledge_retrieval_tool(
     chat_history: Optional[list] = None,
     *,
     kb_retriever: BkRetriever | None = None,
+    citations: CitationRegistry | None = None,
 ) -> Optional[StructuredTool]:
     """构建知识库检索工具。
 
@@ -62,6 +66,7 @@ def make_knowledge_retrieval_tool(
         knowledge_query_options: 知识库检索配置
         chat_history: 聊天历史记录
         kb_retriever: 绑定当前资源上下文的检索器
+        citations: 本轮共享的引用编号，同一来源在多次检索中保持同一编号
 
     Returns:
         StructuredTool 实例，如果未配置知识库则返回 None
@@ -76,6 +81,7 @@ def make_knowledge_retrieval_tool(
         return None
     if not knowledge_query_options.knowledge_bases and not knowledge_query_options.knowledge_items:
         return None
+    citations = citations or CitationRegistry()
 
     # 提取知识库名称，用于丰富工具描述
     kb_names = []
@@ -90,7 +96,9 @@ def make_knowledge_retrieval_tool(
     else:
         description = base_description
 
-    def knowledge_retrieval(query: str, config: RunnableConfig) -> list:
+    def knowledge_retrieval(
+        query: str, config: RunnableConfig, state: Annotated[dict | None, InjectedState] = None
+    ) -> list:
         """执行知识库检索。
 
         Args:
@@ -100,6 +108,7 @@ def make_knowledge_retrieval_tool(
             包含检索决策、知识内容和引用文档的结构化结果
         """
         # 初始化知识库检索器
+        citations.restore(state)
         retriever = KnowledgeRag(llm, kb_retriever)
 
         # 流处理：仅在存在回调时派发自定义事件
@@ -117,15 +126,9 @@ def make_knowledge_retrieval_tool(
         try:
             # 执行知识库检索
             ret = retriever.retrieve(query, knowledge_query_options, input=query, chat_history=chat_history)
-
-            # 处理引用文档，用于前端统一消费
-            reference_doc = ret.get("reference_doc") or []
-            if reference_doc:
-                reference_doc = [each["metadata"] for each in reference_doc]
-                reference_doc = [
-                    {"originFile": each["preview_path"], "url": each["path"], "name": each["display_name"]}
-                    for each in reference_doc
-                ]
+            knowledge_content, reference_doc = cite_knowledge(
+                ret.get("knowledge_content", []), ret.get("reference_doc") or [], citations
+            )
 
             if dispatch_config:
                 duration = round(time.time() - t1, 4) * 1000
@@ -142,7 +145,7 @@ def make_knowledge_retrieval_tool(
                     config=dispatch_config,
                 )
 
-        return ret.get("knowledge_content", [])
+        return knowledge_content
 
     return StructuredTool.from_function(
         func=knowledge_retrieval,

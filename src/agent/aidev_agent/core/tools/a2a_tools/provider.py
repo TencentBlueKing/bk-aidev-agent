@@ -21,10 +21,12 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import InjectedState, ToolRuntime
 
-from aidev_agent.core.ag_ui.types import CustomEventNames
+from aidev_agent.core.ag_ui.types import CustomEventNames, CustomMessageType
+from aidev_agent.core.citations import CITATION_KEY, CitationRegistry, renumber_citations
 from aidev_agent.core.tools.a2a_tools.agent_tool import A2AAgentTool
 from aidev_agent.core.tools.a2a_tools.types import (
     AgentBackend,
+    AgentResult,
     AgentSpec,
     AgentToolInput,
     ExitReason,
@@ -32,6 +34,47 @@ from aidev_agent.core.tools.a2a_tools.types import (
 )
 
 logger = logging.getLogger("aidev-agent")
+
+
+def _cite_child_result(result: AgentResult, citations: CitationRegistry | None) -> AgentResult:
+    """Number child sources in the parent run and rewrite the child's [n] markers to those numbers."""
+    if citations is None or not result.references:
+        return result
+    references, numbers = [], {}
+    for reference in result.references:
+        identity = reference.url or reference.preview_url
+        if not identity:
+            references.append(reference)
+            continue
+        number = citations.number(identity)
+        if reference.citation_index is not None:
+            numbers[reference.citation_index] = number
+        references.append(reference.model_copy(update={"citation_index": number}))
+    return result.model_copy(
+        update={"references": tuple(references), "result": renumber_citations(result.result, numbers)}
+    )
+
+
+def _dispatch_knowledge_references(result: AgentResult, config: RunnableConfig | None) -> None:
+    """Replay child references as one knowledge retrieval so the web UI creates the reference message live."""
+    if not result.references or not config or not config.get("callbacks"):
+        return
+    documents = [
+        {
+            "name": reference.name or reference.url or reference.preview_url,
+            "url": reference.url or reference.preview_url,
+            "originFile": reference.preview_url,
+            **({CITATION_KEY: reference.citation_index} if reference.citation_index is not None else {}),
+        }
+        for reference in result.references
+    ]
+    dispatch_custom_event(CustomMessageType.KNOWLEDGE_RAG_START.value, data={}, config=config)
+    dispatch_custom_event(
+        CustomMessageType.KNOWLEDGE_RAG_RESULT.value,
+        data={"message_id": uuid.uuid4().hex, "data": documents},
+        config=config,
+    )
+    dispatch_custom_event(CustomMessageType.KNOWLEDGE_RAG_END.value, data={}, config=config)
 
 
 class AgentBackendResolver:
@@ -227,6 +270,8 @@ def _make_progress_callback(
 def get_agent_tools(
     specs: list[AgentSpec],
     resolver: AgentBackendResolver,
+    *,
+    citations: CitationRegistry | None = None,
 ) -> list[StructuredTool]:
     """创建 A2A Agent 调用工具。
 
@@ -237,6 +282,7 @@ def get_agent_tools(
     Args:
         specs: 已注册的 Agent 规格列表
         resolver: 后端解析器，用于根据 spec.backend_type 路由到具体后端
+        citations: 父智能体本轮的引用编号；传入时子智能体来源并入同一编号，子结果里的 [n] 改写为父编号
 
     Returns:
         包含 "Agent" 工具的列表；若有 member 模式 spec，还包含 "sendMessages" 工具。
@@ -317,6 +363,10 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        if citations is not None:
+            citations.restore(state)
+        backend_result = _cite_child_result(backend_result, citations)
+        _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         wrapper = backend_result.model_dump()
         wrapper["agent_name"] = agent_name
         wrapper.update(extra_response_fields)
@@ -388,6 +438,10 @@ def get_agent_tools(
             progress_callback=progress_callback,
             state=state,
         )
+        if citations is not None:
+            citations.restore(state)
+        backend_result = _cite_child_result(backend_result, citations)
+        _dispatch_knowledge_references(backend_result, tool_runtime.config if tool_runtime else config)
         return json.dumps(backend_result.model_dump(), ensure_ascii=False)
 
     description = _build_tool_description(specs)

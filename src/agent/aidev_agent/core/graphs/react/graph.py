@@ -42,6 +42,7 @@ from langgraph.types import Send
 from typing_extensions import Literal, TypedDict, TypeVar
 
 from aidev_agent.config import settings
+from aidev_agent.core.citations import CitationRegistry
 from aidev_agent.core.graphs.react.skill_middleware import (
     SkillsPromptMiddleware,
     _extract_e2b_params,
@@ -231,6 +232,8 @@ class ReActAgentBuilder:
         self._debug: bool = False
         self._name: str | None = None
         self._cache: BaseCache | None = None
+        # 本轮知识来源编号：知识节点、知识工具与子智能体引用共用，回答里的 [n] 才能对应到同一文档
+        self._citations = CitationRegistry()
         self._enable_query_clarification: Optional[bool] = None
         self._langchain_middleware: Sequence[AgentMiddleware] = ()
         self._tool_node_options: ToolNodeSettings | None = None
@@ -813,6 +816,7 @@ class ReActAgentBuilder:
                 knowledge_query_options=knowledge_query_options,
                 chat_history=chat_history,
                 kb_retriever=BkRetriever(resource_manager=self._resource_manager),
+                citations=self._citations,
             )
         return None
 
@@ -954,7 +958,7 @@ class ReActAgentBuilder:
 
         # 加载 A2A Agent 工具
         if self._a2a_specs and self._a2a_resolver is not None:
-            a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver)
+            a2a_tools = get_agent_tools(self._a2a_specs, self._a2a_resolver, citations=self._citations)
             builtin_tools.extend(a2a_tools)
 
         if self._enable_agentic_rag_tool:
@@ -964,6 +968,7 @@ class ReActAgentBuilder:
                 knowledge_query_options=self._knowledge_query_options,
                 chat_history=self._chat_history,
                 kb_retriever=BkRetriever(resource_manager=self._resource_manager),
+                citations=self._citations,
             )
             if knowledge_tool:
                 builtin_tools.append(knowledge_tool)

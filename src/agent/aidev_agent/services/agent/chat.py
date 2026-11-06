@@ -25,6 +25,7 @@ from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
+from aidev_agent.core.ag_ui.reference_documents import arrange_reference_history
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     ReasoningLangChainMessage,
@@ -37,6 +38,7 @@ from aidev_agent.core.ag_ui.utils import (
     get_schema_keys,
     get_stream_payload_input,
 )
+from aidev_agent.core.citations import uses_citations
 from aidev_agent.core.nodes.model import convert_chat_history_to_messages
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
@@ -1190,6 +1192,9 @@ class ChatCompletionAgent(BaseModel):
         builtin_property/extra 保留、字段名保持后端原样）；仅将旧顶层 docSchema 归一到
         property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
         status 映射 / multimodal 重排。
+        引用文档 activity 只在快照副本上按实时展示契约改写链接：标题打开预览，
+        仅外链知识保留原文链接；回答标注了引用编号时，每轮只保留被标注的文档；
+        已作答的轮次把引用排到最终回答之后，避免被前端折叠进过程区，落库记录不变。
         用户图片 download_url 与 Markdown 图片中的会话 PV 路径只在快照副本上重签，不写回账本，
         避免执行过程中前端覆盖历史后看到过期图。
         """
@@ -1202,6 +1207,7 @@ class ChatCompletionAgent(BaseModel):
             normalize_doc_schema_payload(payload)
             _clear_tool_call_placeholder(payload)
             base.append(payload)
+        base = arrange_reference_history(base)
         file_service = self._pv_file_service()
         if file_service is not None:
             for payload in base:
@@ -1227,8 +1233,9 @@ class ChatCompletionAgent(BaseModel):
         本轮 assistant / tool 记录只经 writer 落库，未并入内存账本，因此与 factory 相同地重读会话内容
         （同一换源与迁移），保证尾帧包含本轮产物且 id 与库一致。读不到记录时返回 None，不下发空快照。
         会话没有 PV 时不会产生需签发的图片，直接返回 None，省掉一次全量读取。
+        本轮知识带引用编号时同样下发：实时面板展示的是检索到的全部文档，尾帧按回答的 [n] 收敛到实际引用。
         """
-        if not has_session_pv(state_values):
+        if not has_session_pv(state_values) and not uses_citations(state_values):
             return None
         raw_records = self.resource_manager.get_chat_session_contents(self.thread_id) or []
         session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)

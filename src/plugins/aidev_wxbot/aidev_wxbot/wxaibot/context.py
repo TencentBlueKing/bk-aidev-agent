@@ -21,6 +21,7 @@ import uuid
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from aidev_agent.core.citations import citation_index, select_cited
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -82,6 +83,28 @@ def text_msg(content):
     return {"msgtype": "text", "text": {"content": content}}
 
 
+def format_reference_documents(documents: list[dict], answer: str = "") -> str:
+    """把引用文档渲染为回答之后独立的一段，两种企微传输共用。
+
+    优先按 [n] 筛选；漏标时匹配完整文档标题，匹配不到才列出本次检索到的全部文档。
+    空行和分隔线让 Markdown 不把这一段并入回答末尾的列表项；标题与每条文档各自成段，
+    与回答正文保持相同的段落间距，避免整段挤在一起。
+    """
+    if not documents:
+        return ""
+    cited = select_cited(documents, answer)
+    if cited:
+        title, numbered = "参考文档", [(citation_index(document), document) for document in cited]
+    else:
+        title, numbered = "本次检索相关文档", list(enumerate(documents, start=1))
+    lines = [
+        f"[{number}] [{_escape_markdown_text(str(document.get('display_name', '')))}]"
+        f"({_normalize_url(str(document.get('path', '')))})"
+        for number, document in numbered
+    ]
+    return f"\n\n---\n\n**{title}**\n\n" + "\n\n".join(lines) + "\n"
+
+
 class LlmChunkMsg(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     is_finish: bool = Field(default=False)
@@ -99,15 +122,7 @@ class LlmChunkMsg(BaseModel):
 
     @property
     def docs_content(self):
-        if self.docs:
-            content = "\n当前回答参考的文档如下:\n"
-            for index, doc in enumerate(self.docs):
-                display_name = _escape_markdown_text(str(doc["display_name"]))
-                path = _normalize_url(str(doc["path"]))
-                content += f"[{index + 1}][{display_name}]({path})\n"
-            return content
-        else:
-            return ""
+        return format_reference_documents(self.docs, self.content)
 
     def _is_think_only_chunk(self, message_data: dict) -> bool:
         return bool(message_data.get("think_content")) and not message_data.get("content")
@@ -221,6 +236,7 @@ class LlmChunkMsg(BaseModel):
             self.is_finish = latest_message_data.get("is_finish", False)
             msg_items = latest_message_data.get("msg_items", []) if self.is_finish else []
             content = latest_message_data.get("content", "")
+            answer = content
             thinking_content = latest_message_data.get("think_content", "")
             if thinking_content:
                 content = f"<think>{thinking_content}</think>{content}"
@@ -229,7 +245,7 @@ class LlmChunkMsg(BaseModel):
                     rabbitmq_client.delete_queue(queue_name)
                     logger.debug(f"stream_id:{self.stream_id} 队列 {queue_name} 已删除")
                     self.docs = latest_message_data.get("docs", [])
-                    content += self.docs_content
+                    content += format_reference_documents(self.docs, answer)
                 except Exception as e:
                     logger.error(f"stream_id:{self.stream_id} 删除队列 {queue_name} 失败: {e}")
             logger.info(f"stream_id:{self.stream_id} 回复的内容: {content}")
