@@ -7,12 +7,16 @@ from typing import Any
 
 CITATION_KEY = "citation_index"
 CITATION_INSTRUCTION = (
-    "引用规则：以下知识带有“引用编号”。回答采用某条知识时，在对应句子末尾标注它的编号，如 [1]，"
-    "多条来源写成 [1][2]。只标注实际采用的知识，不要编造编号，也不要在回答末尾另列参考文档或来源链接。"
+    "引用规则：以下知识带有“引用编号”，编号是回答的证据链。只依据与问题相关的知识作答，"
+    "每一句来自知识的事实都必须在句末标注支撑它的编号，如 [1]，多条来源写成 [1][2]；推断或通用知识不标编号，"
+    "与问题无关的知识不要引用。知识无法支撑的内容要说明知识库未提及，不要编造编号，"
+    "也不要在回答末尾另列参考文档或来源链接，系统会按编号附上文档。"
 )
 # The platform prefixes every knowledge chunk that has a link with this line.
 _SOURCE_LINE = re.compile(r"^来源链接：(?P<url>[^\n]+)", re.MULTILINE)
 _MARKER = re.compile(r"\[(\d{1,3})\]")
+# Brackets inside fenced code blocks and inline code are indexing, such as items[1], never citations.
+_CODE = re.compile(r"```[\s\S]*?(?:```|$)|`[^`\n]*`")
 
 
 class CitationRegistry:
@@ -70,7 +74,9 @@ def citation_index(item: object) -> int | None:
 
 def cited_numbers(text: object) -> set[int]:
     """Collect markers such as [1] and [1][2] from an answer."""
-    return {int(number) for number in _MARKER.findall(text)} if isinstance(text, str) else set()
+    if not isinstance(text, str):
+        return set()
+    return {int(number) for number in _MARKER.findall(_CODE.sub("", text))}
 
 
 def select_cited(items: Iterable[Any], text: object) -> list | None:
@@ -81,10 +87,19 @@ def select_cited(items: Iterable[Any], text: object) -> list | None:
 
 
 def renumber_citations(text: str, numbers: Mapping[int, int]) -> str:
-    """Rewrite markers in one pass so a remapped number is never remapped again."""
+    """Rewrite markers in one pass so a remapped number is never remapped again; code is left untouched."""
     if not numbers:
         return text
-    return _MARKER.sub(lambda match: f"[{numbers.get(int(match[1]), int(match[1]))}]", text)
+
+    def rewrite(prose: str) -> str:
+        return _MARKER.sub(lambda match: f"[{numbers.get(int(match[1]), int(match[1]))}]", prose)
+
+    parts, start = [], 0
+    for code in _CODE.finditer(text):
+        parts.extend((rewrite(text[start : code.start()]), code[0]))
+        start = code.end()
+    parts.append(rewrite(text[start:]))
+    return "".join(parts)
 
 
 def uses_citations(state_values: Mapping[str, Any]) -> bool:

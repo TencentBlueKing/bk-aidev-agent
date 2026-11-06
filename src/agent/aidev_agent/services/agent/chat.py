@@ -25,11 +25,7 @@ from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
-from aidev_agent.core.ag_ui.reference_documents import (
-    history_reference_documents,
-    keep_cited_documents,
-    reference_activity_documents,
-)
+from aidev_agent.core.ag_ui.reference_documents import arrange_reference_history
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     ReasoningLangChainMessage,
@@ -42,7 +38,7 @@ from aidev_agent.core.ag_ui.utils import (
     get_schema_keys,
     get_stream_payload_input,
 )
-from aidev_agent.core.citations import cited_numbers, select_cited, uses_citations
+from aidev_agent.core.citations import uses_citations
 from aidev_agent.core.nodes.model import convert_chat_history_to_messages
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
@@ -139,66 +135,6 @@ def _clear_tool_call_placeholder(payload: dict) -> None:
         return
     if payload.get("content") == TOOL_CALLING_PLACEHOLDER:
         payload["content"] = ""
-
-
-def _activity_type(payload: dict) -> object:
-    builtin_property = payload.get("builtin_property")
-    builtin_property = builtin_property if isinstance(builtin_property, dict) else {}
-    return builtin_property.get("activity_type") or payload.get("activity_type") or builtin_property.get("type")
-
-
-def _adapt_reference_activity(payload: dict) -> None:
-    """把引用文档 activity 改写为与实时一致的展示形态，只作用于快照副本，不回写账本。"""
-    if payload.get("role") != PromptRole.ACTIVITY.value:
-        return
-    payload["content"] = history_reference_documents(payload.get("content"), _activity_type(payload))
-
-
-_USER_ROLES = (PromptRole.USER.value, PromptRole.USER_IMAGE.value)
-_ANSWER_ROLES = (PromptRole.ASSISTANT.value, PromptRole.AI.value)
-
-
-def _keep_cited_references_in_turn(turn: list[dict]) -> list[dict]:
-    activities = [
-        (payload, documents)
-        for payload in turn
-        if payload.get("role") == PromptRole.ACTIVITY.value
-        and (documents := reference_activity_documents(payload.get("content"), _activity_type(payload))) is not None
-    ]
-    answer = "".join(
-        payload["content"]
-        for payload in turn
-        if payload.get("role") in _ANSWER_ROLES and isinstance(payload.get("content"), str)
-    )
-    if not activities or select_cited([item for _, documents in activities for item in documents], answer) is None:
-        return turn
-    cited = cited_numbers(answer)
-    activity_ids = {id(payload) for payload, _ in activities}
-    kept = []
-    for payload in turn:
-        if id(payload) in activity_ids:
-            payload["content"] = keep_cited_documents(payload["content"], _activity_type(payload), cited)
-            # 文档全未被引用的那次检索不再展示，避免出现“引用 0 篇资料”
-            if payload["content"] == []:
-                continue
-        kept.append(payload)
-    return kept
-
-
-def _keep_cited_references(records: list[dict]) -> list[dict]:
-    """每轮只保留回答里 [n] 实际标注的引用文档，只作用于快照副本，不回写账本。
-
-    回答没有标注、或标注的编号对不上任何文档（如未编号的旧记录）时保留全部，即本轮检索到的文档。
-    """
-    kept: list[dict] = []
-    turn: list[dict] = []
-    for payload in records:
-        if payload.get("role") in _USER_ROLES:
-            kept.extend(_keep_cited_references_in_turn(turn))
-            turn = []
-        turn.append(payload)
-    kept.extend(_keep_cited_references_in_turn(turn))
-    return kept
 
 
 class ChatCompletionAgent(BaseModel):
@@ -1257,7 +1193,8 @@ class ChatCompletionAgent(BaseModel):
         property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
         status 映射 / multimodal 重排。
         引用文档 activity 只在快照副本上按实时展示契约改写链接：标题打开预览，
-        仅外链知识保留原文链接；回答标注了引用编号时，每轮只保留被标注的文档，落库记录不变。
+        仅外链知识保留原文链接；回答标注了引用编号时，每轮只保留被标注的文档；
+        已作答的轮次把引用排到最终回答之后，避免被前端折叠进过程区，落库记录不变。
         用户图片 download_url 与 Markdown 图片中的会话 PV 路径只在快照副本上重签，不写回账本，
         避免执行过程中前端覆盖历史后看到过期图。
         """
@@ -1269,9 +1206,8 @@ class ChatCompletionAgent(BaseModel):
             payload = payload if hasattr(record, "model_dump") else copy.deepcopy(payload)
             normalize_doc_schema_payload(payload)
             _clear_tool_call_placeholder(payload)
-            _adapt_reference_activity(payload)
             base.append(payload)
-        base = _keep_cited_references(base)
+        base = arrange_reference_history(base)
         file_service = self._pv_file_service()
         if file_service is not None:
             for payload in base:

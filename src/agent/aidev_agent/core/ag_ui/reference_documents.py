@@ -3,10 +3,12 @@
 from typing import Any, NamedTuple
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
-from aidev_agent.core.citations import citation_index
+from aidev_agent.core.citations import citation_index, cited_numbers, select_cited
 
 _KNOWLEDGE_PREVIEW_ROUTE = "/agent-develop/knowledgebase"
 _LINK_ALIASES = ("originFileUrl", "origin_file_url", "originFile", "origin_file")
+_USER_ROLES = ("user", "user-image")
+_ANSWER_ROLES = ("assistant", "ai")
 
 
 class ReferenceLinks(NamedTuple):
@@ -155,3 +157,63 @@ def keep_cited_documents(content: object, activity_type: object, cited: set[int]
         return content
     kept = [item for item in documents if citation_index(item) in cited]
     return kept if isinstance(content, list) else {**content, "reference_document": kept}
+
+
+def _activity_type(payload: dict) -> object:
+    builtin_property = payload.get("builtin_property")
+    builtin_property = builtin_property if isinstance(builtin_property, dict) else {}
+    return builtin_property.get("activity_type") or payload.get("activity_type") or builtin_property.get("type")
+
+
+def _arrange_turn(turn: list[dict]) -> list[dict]:
+    references = []
+    for payload in turn:
+        activity_type = _activity_type(payload)
+        if payload.get("role") == "activity" and reference_activity_documents(payload.get("content"), activity_type):
+            payload["content"] = history_reference_documents(payload["content"], activity_type)
+            references.append(payload)
+    if not references:
+        return turn
+    answer = "".join(
+        payload["content"]
+        for payload in turn
+        if payload.get("role") in _ANSWER_ROLES and isinstance(payload.get("content"), str)
+    )
+    documents = [
+        item
+        for payload in references
+        for item in reference_activity_documents(payload["content"], _activity_type(payload))
+    ]
+    if select_cited(documents, answer) is not None:
+        cited = cited_numbers(answer)
+        for payload in references:
+            payload["content"] = keep_cited_documents(payload["content"], _activity_type(payload), cited)
+    answers = [index for index, payload in enumerate(turn) if payload.get("role") in _ANSWER_ROLES]
+    if not answers:
+        return turn
+    # The UI folds everything before the final answer; the references come right after it to stay in view.
+    shown = [
+        payload for payload in references if reference_activity_documents(payload["content"], _activity_type(payload))
+    ]
+    ids = {id(payload) for payload in references}
+    before = [payload for payload in turn[: answers[-1] + 1] if id(payload) not in ids]
+    after = [payload for payload in turn[answers[-1] + 1 :] if id(payload) not in ids]
+    return [*before, *shown, *after]
+
+
+def arrange_reference_history(records: list[dict]) -> list[dict]:
+    """Arrange reference activities of saved turns for display, changing the given copies in place.
+
+    Links follow the live display contract. When the answer cites [n], each turn keeps only the cited
+    documents and drops a retrieval none of them came from; otherwise every retrieved document stays.
+    Answered turns list the references right after the final answer. Saved records are never written.
+    """
+    arranged: list[dict] = []
+    turn: list[dict] = []
+    for payload in records:
+        if payload.get("role") in _USER_ROLES:
+            arranged.extend(_arrange_turn(turn))
+            turn = []
+        turn.append(payload)
+    arranged.extend(_arrange_turn(turn))
+    return arranged

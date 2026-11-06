@@ -3,16 +3,22 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_agent.core.ag_ui.reference_documents import reference_documents_for_display
+from aidev_agent.core.ag_ui.reference_documents import (
+    arrange_reference_history,
+    keep_cited_documents,
+    reference_documents_for_display,
+)
 from aidev_agent.core.citations import (
     CITATION_INSTRUCTION,
     CitationRegistry,
+    citation_index,
     cite_knowledge,
+    cited_numbers,
     renumber_citations,
     select_cited,
     uses_citations,
 )
-from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
+from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, _cite_child_result, get_agent_tools
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, KnowledgeReference
 from aidev_agent.core.tools.a2a_tools.utils import collect_knowledge_references
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
@@ -90,6 +96,34 @@ def test_select_cited_orders_by_number_and_returns_none_without_citations(answer
 def test_renumber_rewrites_every_marker_once():
     assert renumber_citations("a[1] b[2][1] c[3]", {1: 2, 2: 1}) == "a[2] b[1][2] c[3]"
     assert renumber_citations("a[1]", {}) == "a[1]"
+
+
+CODE_ANSWER = "用 `items[1]` 取值：\n```python\nprint(rows[2])\n```\n结论[3]"
+
+
+def test_code_brackets_are_neither_citations_nor_rewritten():
+    assert cited_numbers(CODE_ANSWER) == {3}
+    assert cited_numbers("未闭合代码前[1]\n```\nrows[2]") == {1}
+    assert select_cited([{"citation_index": 1}], "先看 `items[1]`") is None
+    assert renumber_citations(CODE_ANSWER, {1: 7, 2: 8, 3: 9}) == CODE_ANSWER.replace("结论[3]", "结论[9]")
+
+
+@pytest.mark.parametrize("item", [None, "[1]", {"citation_index": True}, {"citation_index": 0}, {"metadata": "x"}])
+def test_citation_index_ignores_values_that_are_not_citation_numbers(item):
+    assert citation_index(item) is None
+
+
+def test_child_sources_without_link_or_number_keep_markers_unchanged():
+    citations = CitationRegistry()
+    child = AgentResult(
+        status="completed",
+        result="结论[1]",
+        references=(KnowledgeReference(name="no link"), KnowledgeReference(name="A", url=SOURCE)),
+    )
+    cited = _cite_child_result(child, citations)
+    assert cited.result == "结论[1]"
+    assert [reference.citation_index for reference in cited.references] == [None, 1]
+    assert _cite_child_result(child, None) is child
 
 
 def test_uses_citations_detects_numbered_knowledge_and_child_results():
@@ -178,7 +212,7 @@ def saved(name, number=None):
     return {**document, "citation_index": number} if number else document
 
 
-def test_snapshot_keeps_only_documents_cited_in_each_turn():
+def test_snapshot_keeps_only_cited_documents_after_each_answer():
     records = [
         message("1", "user", "q1"),
         activity("2", [saved("a", 1), saved("b", 2)]),
@@ -195,10 +229,49 @@ def test_snapshot_keeps_only_documents_cited_in_each_turn():
     history = [ChatPrompt.model_validate(each) for each in session_context]
     agent = ChatCompletionAgent(chat_history=history)
     snapshot = agent._build_snapshot_agui_messages()
-    assert [item["id"] for item in snapshot] == ["1", "2", "4", "5", "6", "7", "8", "9", "10"]
+    assert [item["id"] for item in snapshot] == ["1", "4", "2", "5", "7", "6", "8", "10", "9"]
     names = {item["id"]: [each["name"] for each in item["content"]] for item in snapshot if item["role"] == "activity"}
     assert names == {"2": ["[2] b"], "6": ["[1] d", "[2] e"], "9": ["f", "g"]}
     assert len(agent.chat_history[1].content) == 2
+
+
+def rag_activity(message_id, documents):
+    return {
+        "id": message_id,
+        "role": "activity",
+        "activity_type": "knowledge_rag",
+        "content": {"content": "", "reference_document": documents},
+    }
+
+
+def test_history_lists_references_right_after_the_final_answer():
+    records = [
+        message("1", "user", "q"),
+        rag_activity("2", [saved("a", 1), saved("b", 2)]),
+        message("3", "assistant", "先查一下"),
+        activity("4", []),
+        message("5", "assistant", "结论[1]"),
+        {"id": "6", "role": "interrupt", "content": {}},
+    ]
+    arranged = arrange_reference_history(records)
+    assert [item["id"] for item in arranged] == ["1", "3", "4", "5", "2", "6"]
+    assert [each["name"] for each in arranged[4]["content"]["reference_document"]] == ["[1] a"]
+
+
+def test_turn_still_answering_keeps_its_order_and_documents():
+    records = [
+        message("1", "user", "q"),
+        activity("2", [saved("a", 1)]),
+        {"id": "3", "role": "reasoning", "content": "[1]"},
+    ]
+    arranged = arrange_reference_history(records)
+    assert [item["id"] for item in arranged] == ["1", "2", "3"]
+    assert arranged[1]["content"][0]["name"] == "[1] a"
+
+
+def test_keep_cited_documents_leaves_other_activities_unchanged():
+    content = {"artifacts": []}
+    assert keep_cited_documents(content, "artifacts_generated", {1}) is content
 
 
 def test_run_end_snapshot_is_sent_when_the_run_numbered_its_sources():

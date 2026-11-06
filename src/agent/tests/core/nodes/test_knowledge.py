@@ -167,6 +167,16 @@ class TestAgentKnowledgeNodeInGraph:
         assert "reference_doc" in result
         assert "metadata" in result["reference_doc"][0]
 
+    @patch("aidev_agent.core.nodes.knowledge.dispatch_custom_event")
+    def test_process_result_without_knowledge_keeps_retrieved_state(
+        self, mock_dispatch, mock_llm, mock_knowledge_settings
+    ):
+        node = AgentKnowledgeNode(llm=mock_llm, knowledge_query_options=mock_knowledge_settings, chat_history=[])
+        result = node.process_result({"knowledge_content": [], "reference_doc": []}, {}, None, 1.0)
+        assert result["knowledge_content"] == []
+        assert result["messages"][0].content == []
+        assert mock_dispatch.call_args.kwargs["data"]["data"] == []
+
 
 # ============================================================================
 # 测试 AidevKnowledgeNode
