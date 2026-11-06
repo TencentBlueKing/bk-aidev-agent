@@ -2,9 +2,9 @@
 
 > 能力域：对话搭建 ｜ 导入：`import { ChatContainer } from '@blueking/chat-x'` ｜ since 1.0.0
 
-完整对话容器，组合消息列表、输入区、模型选择、快捷指令、执行摘要、分享选择和自定义 Tab。 透传 models / selectedModel；支持 welcomeTitle 与 #welcome。 侧栏展开/折叠由外部 v-model:asideCollapsed 严格受控（传入后以外部值为准，内部展开动作仅发 update 事件），不再依赖执行数据或文件产物有无；无数据时侧栏照常展开并展示空态。 侧栏固定从右侧展开（无 placement prop），且不再内置折叠按钮。 「文件产物」Tab 常驻挂载。 源码位置：src/components/chat-container/chat-container.vue。
+完整对话容器，组合消息列表、输入区、模型选择、快捷指令、文件产物预览、分享选择和自定义 Tab。 透传 models / selectedModel；支持 welcomeTitle 与 #welcome。 侧栏展开/折叠由外部 v-model:asideCollapsed 严格受控（传入后以外部值为准，内部展开动作仅发 update 事件），不再依赖执行数据或文件产物有无；无数据时侧栏照常展开并展示空态。 侧栏固定从右侧展开（无 placement prop），且不再内置折叠按钮。 「文件产物」Tab 常驻挂载。 enableMessageMinimap（默认 true）把内部消息定位器挂在主栏左侧；提问超过 4 条且未替换默认消息槽时展示，hover 预览问答，点击只滚动消息列表。 源码位置：src/components/chat-container/chat-container.vue。
 
-**关联**：message-container（消息列表与滚动区域）、chat-input（对话输入与快捷指令入口）、model-selector（透传 models / selectedModel，在输入区展示模型选择器）、shortcut-render（快捷指令表单浮层）、execution-summary（执行摘要侧栏与定位）、selection-footer（多选分享底部操作栏）
+**关联**：message-container（默认消息列表；expose getScrollElement 与 locate，供定位器判断可视区并滚动）、use-message-minimap（消息定位器的轮次划分与可视区计算）、chat-input（对话输入与快捷指令入口）、model-selector（透传 models / selectedModel，在输入区展示模型选择器）、shortcut-render（快捷指令表单浮层）、file-artifact-panel（侧栏默认文件产物面板）、selection-footer（多选分享底部操作栏）
 
 ---
 
@@ -12,17 +12,17 @@
 
 > **能力域**：对话搭建 ｜ **源码**：`src/components/chat-container/chat-container.vue`
 
-顶层聊天容器，整合 `MessageContainer`（消息列表）、`ChatInput`（输入框）、`ExecutionSummary`（执行摘要）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏），提供完整 AI 对话界面布局。
+顶层聊天容器，整合 `MessageContainer`（消息列表）、`ChatInput`（输入框）、侧栏自定义 Tab（默认「文件产物」）、`ShortcutRender`（快捷指令表单）和 `SelectionFooter`（多选操作栏），提供完整 AI 对话界面布局。
 
 ## 核心能力
 
-- **分栏布局**：基于 `ResizeLayout`，侧栏固定从右侧展开且无内置折叠按钮；展开 / 折叠由外部通过 `v-model:asideCollapsed` 判断，容器只负责渲染与回写，不再依赖 `executionGroups`、`keyword` 等数据条件。无数据时侧栏照常展开，由各面板展示空态
+- **分栏布局**：基于 `ResizeLayout`，侧栏固定从右侧展开且无内置折叠按钮；未传 `asideCollapsed` 时内部管理展开态，传入后严格受控，通过 `v-model:asideCollapsed` 回写。无文件时也可展开，由面板展示空态
 - **顶部分割线**：容器自身不再绘制 `border-top`。侧栏展开时的顶栏分割线由业务 Header（如 AI 小鲸 `ai-header`）在 `asideCollapsed === false` 时绘制，以保证贯穿全宽
 - **消息分组**：内置 `useMessageGroup`，自动分组、Tool 合并、Loading 注入
 - **输入区状态推导**：对内 `messageStatus` 取 `inputStatus`——分组中存在 `LOADING_MESSAGE_ID`（`'__loading__'`）时用 `MessageStatus.Fetching`，否则用外部 `messageStatus`，保证「已发未流式」阶段也能停止、并避免重复发送
 - **待审批发送阻塞**：存在 `AIDevToolApproval` 且为 `pending` / `draft` 时，输入区上方提示，并通过 `ChatInput.sendDisabledTip` 禁止发送
 - **用户问题中断**：待回答 `UserQuestion` 时挂载 `UserQuestionCard`；结构化作答走 `onInterruptResume`，输入框直接发送走 `onSendMessage`（第三参数带 skip `payload` 与 `interrupt`），且不自动清空输入框
-- **执行摘要 / 侧栏全屏 / 自定义 Tab**：侧栏展示工具调用与 FlowAgent 记录，支持搜索定位；Tab 栏可全屏；`useCustomTabProvider` 支持动态 Tab
+- **文件产物 / 侧栏全屏 / 自定义 Tab**：默认侧栏聚合文件列表与预览；节点详情可通过动态 Tab 打开并定位到对话，Tab 栏支持全屏
 - **模型选择**：透传 `models`、`v-model:selectedModel` 与 `@modelChange` 至 `ChatInput`，传入 `models` 后在发送按钮左侧展示 [ModelSelector](/components/input/model-selector)
 - **输入框菜单**：`menuSources` 透传至 `ChatInput`，并自动把消息里的会话产物补进 `artifact` 分组；同时经 `useGlobalConfig` 下发给消息编辑态的内嵌输入框
 - **资源引用注入**：通过 `useInputMentionProvider` 开放 `insertMention`，让消息区文件卡片与侧栏产物面板可把文件「@ 进输入框」
@@ -30,6 +30,18 @@
 - **字号主题**：`size` 为 `small`（默认 12px）/ `normal`（14px）；根节点 `data-ai-size`，浮层同步 `document.body.dataset.aiSize`
 - **消息时间时区**：`timezone` 经 `useGlobalConfig` 下传给 `MessageTime`，统一整个会话的时间展示时区；未配置时按浏览器时区
 - **空状态欢迎页**：无消息时展示 Banner、`welcomeTitle`（默认「你好，我是小鲸」）与 `openingRemark`
+
+`enableMessageCollapse` 默认为 `true`，控制所有轮次消息组的顶层折叠及过程状态栏。设为 `false` 后完整展示每组消息，并隐藏整个过程状态栏，包括折叠箭头、状态文案（如「已完成」「处理中」）和耗时；工具栏及消息内部的折叠行为保持不变。动态重新开启时恢复折叠、状态栏和耗时。分享模式同样遵循此配置。
+
+```vue
+<ChatContainer :messages="messages" :enable-message-collapse="false" />
+```
+
+`enableMessageMinimap` 默认为 `true`，由容器自己挂载[消息定位器](#消息定位器)，不再透传给 `MessageContainer`。设为 `false` 关闭。
+
+```vue
+<ChatContainer :messages="messages" :enable-message-minimap="false" />
+```
 
 ## 组件结构
 
@@ -40,18 +52,49 @@ ai-chat-container（:data-ai-size="size"）
     ├── aside（侧边栏，固定右侧）
     │   └── .ai-full-screen-wrapper（全屏目标容器，ref=fullScreenRef）
     │   │   ├── Tab 标签页
-    │   │   │   ├── 执行情况（默认 Tab）
+    │   │   │   ├── 文件产物（默认 Tab）
     │   │   │   ├── 自定义 Tab × N（可关闭；标签可由 getSideTabRenderComponent 自定义）
     │   │   │   └── #setting → 全屏/退出全屏 ToolBtn
-    │   │   ├── ExecutionSummary（执行情况 Tab 内容）
+    │   │   ├── FileArtifactPanel（文件产物 Tab 内容）
     │   │   └── 自定义 Tab 组件（getSideRenderComponent 优先，否则 data.component；可注入 #locateButton）
     └── main（主内容区）
-        ├── MessageContainer（有消息时；#group / #message 可自定义）
+        ├── MessageMinimap（enableMessageMinimap 且内置 MessageContainer 已挂载；贴左缘，不占位）
+        ├── #default（有消息时；未自定义时为 MessageContainer，#group / #message 可再自定义组内内容）
         ├── 欢迎页（无消息时 .ai-welcome-content）
         │   └── #welcome（默认：Banner + welcomeTitle + openingRemark；自定义则整块替换）
         ├── SelectionFooter（分享模式）
         ├── ShortcutRender（有快捷指令时）
         └── ChatInput（透传 models / selectedModel / menuSources；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
+```
+
+## 消息定位器
+
+`enableMessageMinimap` 是 `ChatContainer` 自己的 prop，默认 `true`。内部组件 `MessageMinimap` 不从包入口导出，挂在主栏上，不占布局。单独使用 `MessageContainer` 时不会出现定位器。
+
+- **出现条件**：开关打开、已有消息，且默认消息槽里的 `MessageContainer` 已经挂上（能拿到它的滚动容器）。提问超过 4 条才画出刻度。用 `#default` 换掉默认消息列表后没有内置滚动容器，定位器不会出现。
+- **位置**：绝对定位贴主栏左缘，垂直范围跟消息可视区对齐，不把输入框算进去。
+- **当前位置**：未 hover 时，落在可视区的问答对应刻度高亮。
+- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，并在右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用不参与。最长刻度压到消息正文时，hover 会遮住被压住的左侧消息；只碰到左侧空白或消息容器的左内边距时不盖。hover 期间不显示可视区高亮。
+- **点击定位**：点击刻度后调用 `MessageContainer` 的 `locate`，只滚动消息列表到对应提问，并暂停流式输出时的自动贴底。
+- **滚轮**：滚轮留在定位器内，消息列表不跟随滚动。刻度超出定位器高度（最高为消息可视区的 2/3）时，只滚动定位器自己的列表，两端渐隐。
+- **分享模式**：定位器与消息列表共用同一过滤规则。分享态会去掉 Loading 组，加载占位不会算进轮次。
+
+```vue
+<template>
+  <ChatContainer :messages="messages" :enable-message-minimap="true" />
+</template>
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatContainer, type Message } from '@blueking/chat-x';
+
+  const topics = ['服务发布流程', '灰度策略', '回滚方案', '监控告警', '容量评估', '变更复盘'];
+  const messages = ref<Message[]>(
+    topics.flatMap((topic, index) => [
+      { id: `user-${index}`, messageId: `user-${index}`, role: 'user', content: `请介绍一下${topic}`, status: 'complete' },
+      { id: `assistant-${index}`, messageId: `assistant-${index}`, role: 'assistant', content: `**${topic}**主要包含以下要点……`, status: 'complete' },
+    ]) as Message[],
+  );
+</script>
 ```
 
 ## 基础用法
@@ -126,13 +169,13 @@ ai-chat-container（:data-ai-size="size"）
 
 > CSS 变量与档位取值详见 [主题配置 — 字号主题](../../theme/theme#字号主题)。
 
-## 侧边栏与执行摘要
+## 侧边栏
 
-侧边栏默认包含「执行情况」Tab，展示所有工具调用和 FlowAgent 类型的 Activity 消息。支持关键词搜索过滤和点击定位到对话中的消息位置。Tab 标签内 `.ai-execution-summary-icon` 固定 16×16px，避免被 flex 压缩。
+侧边栏默认包含「文件产物」Tab（`order: -1`、不可关闭、`loadOnSelect: false`）。Tab 标签内 `.ai-side-tab-icon` 固定 16×16px，避免被 flex 压缩。节点详情、有效证据等由对话流按需 `addCustomTab`，Tab 自带 `icon` 与 `data.component`。
 
-面板内的消息虽与对话流复用同一套渲染链路，但按**只读回看**呈现：`ExecutionSummary` 会 provide 面板上下文，FlowAgent 失败节点在面板内不展示「重试 / 跳过」，只保留「详情」；对话流内不受影响。详见 [ExecutionSummary](/components/agent/execution-summary)。
+侧栏内容由当前选中 Tab 的 `data.component`（或业务 `getSideRenderComponent`）渲染，容器不再按 Tab name 特判。文件产物 Tab 自持数据，面板通过 `ARTIFACT_PREVIEW_TOKEN` 注入产物列表。
 
-**展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与 `executionGroups`、`keyword`、是否有文件产物均无关。无执行数据时 `ExecutionSummary` 展示自身空态，无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看流程智能体详情/证据/执行情况），仅底部输入区保持隐藏。
+**展示条件**：侧栏是否渲染只取决于折叠态与是否存在可见 Tab —— `asideCollapsed === false` 且 `displayTabs` 非空即展开，与是否有文件产物无关。无文件产物时 `FileArtifactPanel` 展示整块空态。`renderMode === Share` 分享态同样按折叠态展示侧栏（开放只读查看节点详情/证据/文件产物），仅底部输入区保持隐藏。
 
 **展开 / 折叠由外部判断（严格受控）**：只要传入了 `asideCollapsed`，折叠态就**一律以外部值为准**。容器内部的展开动作（点击文件卡片预览、`addCustomTab` 打开节点详情等）只发出 `update:asideCollapsed` 请求，外部不改值就不会展开 —— 所以务必用 `v-model:asideCollapsed` 绑定，只写 `:aside-collapsed` 会让这些内部入口失效。完全不传该 prop 时退化为组件内部状态（默认折叠），内部入口照常生效。容器不会因为数据变空而自动收起或重置自定义 Tab。
 
@@ -166,7 +209,7 @@ ai-chat-container（:data-ai-size="size"）
 </script>
 ```
 
-**渲染效果**（包含工具调用消息时，侧边栏自动展示「执行情况」）
+**渲染效果**（工具调用在消息中展示；侧栏默认收起，可由业务控制展开）
 
 侧边栏固定从**右侧**展开（内部 `ResizeLayout` 的 `placement` 恒为 `right`），不再支持左侧布局，也不再内置折叠按钮 —— 展开 / 收起入口由业务方自行提供，通过 `v-model:asideCollapsed` 驱动。
 
@@ -192,12 +235,12 @@ ai-chat-container（:data-ai-size="size"）
 
 | 字段 | 默认值 | 说明 |
 | ---- | ------ | ---- |
-| `order` | `100` | 排序权重，升序，越小越靠前。「执行情况」固定 `0`；FlowAgent「有效证据」固定 `10`（紧随执行情况），节点详情走默认 `100` |
+| `order` | `100` | 排序权重，升序，越小越靠前。「文件产物」为 `-1`；FlowAgent「有效证据」为 `10`，节点详情走默认 `100` |
 | `visible` | `true` | 是否在 Tab 栏展示。`false` 时从栏内隐藏，但仍可被 `addCustomTab` / `selectCustomTab` 程序化选中；若被隐藏的 Tab 当前正被选中，则自动切到首个可见 Tab、内容不再渲染 |
-| `closable` | `true` | 是否展示关闭按钮。「执行情况」强制不可关闭 |
+| `closable` | `true` | 是否展示默认关闭按钮；「文件产物」配置为 `false` |
 
 - 排序为稳定排序，`order` 相同的 Tab 保持插入先后顺序。
-- 「执行情况」Tab 的显隐统一由 `executionTabVisible` Prop 控制（见 Props 表），不通过 `visible` 字段配置。
+- 侧栏不再内建「执行情况」Tab；常驻默认 Tab 为「文件产物」。
 - 同名（同 `name`）`addCustomTab` 会**合并更新**已有 Tab，可用于运行时调整 `order` / `visible` / `label`。
 
 ### 侧栏渲染扩展
@@ -242,15 +285,15 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 内置「文件产物」Tab
 
-除「执行情况」外，容器内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话具有 `outputId` 的助手产物、用户消息附件及输入框中上传成功的待发送附件（按 `outputId` 去重）：
+容器默认内置一个常驻固定 Tab —— **「文件产物」**（`name: 'file-artifact'`），用于聚合预览当前会话具有 `outputId` 的助手产物、用户消息附件及输入框中上传成功的待发送附件（按 `outputId` 去重）：
 
-- **常驻挂载 / 默认选中**：容器初始化即通过 `ensureCustomTab` 挂上该 Tab（不展开侧栏）；因 `order: -1` 排在 Tab 栏首位，在用户未主动切换过 Tab 时它就是侧栏的默认面板。不随产物有无增删，无产物时由面板展示整块空态
+- **常驻挂载 / 默认选中**：容器通过 `useCustomTabProvider({ defaultTab: FILE_ARTIFACT_TAB })` 初始化该 Tab（不展开侧栏）；`order: -1` 排在 Tab 栏首位。不随产物有无增删，无产物时由面板展示整块空态
 - **默认图标**：`ArtifactTabIcon`，16×16 线性折角文档，`fill` 走 `currentColor` 以继承 Tab 选中/默认色
 - **主动打开**：点击 AI 回复中的文件卡片（[ArtifactFileCard](/components/message/assistant-message)）时，容器通过 `useArtifactPreviewProvider` 以 `outputId` 命中该文件，再 `addCustomTab` 展开侧栏并选中「文件产物」
-- **排序 / 关闭**：`order: -1` 排在「执行情况」之前，`closable: false` 不可关闭
+- **排序 / 关闭**：`order: -1` 排在缺省权重 `100` 的自定义 Tab 之前，`closable: false` 隐藏默认关闭按钮
 - **命中态维护**：产物列表为空时清空命中；命中项已不在列表时回落到第一个 `outputId`
-- **内容**：由 [FileArtifactPanel](/components/message/file-artifact-panel) 渲染列表与下载头（无产物时为整块空态），预览委托内部 `ArtifactPreviewHost`；`download_url` / `preview_url` 通过 `onArtifactClick` 异步获取。文本类（`html` / `markdown` / `md` / `txt` / `json`）拉 `download_url` 正文直渲染（`md` 与 `markdown` 等价）；其余类型用 `preview_url` iframe（一般为后台转好的 PDF）
-- **状态管理**：命中、切换与 URL 缓存由 [useArtifactPreview](/composables/use-artifact-preview) 提供（Provider 在容器内、Consumer 在文件卡片 / 面板内）；正文加载与分类型渲染由 Host 内部完成
+- **内容**：`loadOnSelect: false`，由 `data.component` 中的 [FileArtifactPanel](/components/message/file-artifact-panel) 消费 Provider，无需 `onCustomTabChange`。预览委托内部 `ArtifactPreviewHost`：代码 / Markdown / HTML / 文本拉取 `download_url` 正文，图片使用 `preview_url` 展示，其余二进制文件用 `preview_url` iframe（一般为后台转好的 PDF）
+- **状态管理**：命中、切换与 URL 解析由 [useArtifactPreview](/composables/use-artifact-preview) 提供（每次重新取链，不缓存结果；同文件进行中的请求去重）；正文加载与分类型渲染由 Host 内部完成
 - **未传 `onArtifactClick`**：下载按钮隐藏，预览区展示无数据
 
 详见 [FileArtifactPanel 文件产物预览](/components/message/file-artifact-panel) 与 [useArtifactPreview 文件产物预览](/composables/use-artifact-preview)。
@@ -263,7 +306,7 @@ ai-chat-container（:data-ai-size="size"）
     v-model="input"
     :messages="messages"
     :on-artifact-click="onArtifactClick"
-    @send-message="handleSend"
+    :on-send-message="handleSend"
   />
 </template>
 
@@ -313,7 +356,7 @@ ai-chat-container（:data-ai-size="size"）
     }
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
     /* ... */
   }
 </script>
@@ -544,7 +587,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 分享模式
 
-点击消息工具栏的「分享」按钮后进入分享模式，底部出现 `SelectionFooter` 操作栏：
+点击消息工具栏的「分享」按钮后进入分享模式，并默认勾选当前轮次；底部出现 `SelectionFooter` 操作栏：
 
 ```vue
 <template>
@@ -612,7 +655,7 @@ ai-chat-container（:data-ai-size="size"）
 **分享流程**：
 
 1. 用户点击消息工具栏中的「分享」按钮（或任意 `triggerSelection: true` 的自定义按钮）
-2. 进入多选模式，用户勾选要分享的消息
+2. 进入多选模式，并默认勾选当前轮次（用户问题 + 对应回复）；`enterShareMode()` 进入时不预选
 3. 底部 `SelectionFooter` 提供全选、取消、确认操作
 4. 确认后触发 `confirmShare` 事件，携带选中的消息列表与触发按钮对象（`source`）
 
@@ -624,7 +667,7 @@ ai-chat-container（:data-ai-size="size"）
 
 **2. 资源引用入口**：容器通过 [useInputMention](/composables/use-input-mention) 提供 `insertMention`，消息区的文件卡片与侧栏产物面板因此能直接把文件「@ 进输入框」，无需逐层透传输入框实例。没有输入框的场景（`Share` 只读态）自动不显示引用按钮。
 
-**3. 编辑态菜单下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」项。
+**3. 编辑态菜单与上传下发**：`menuSources` 经 [useGlobalConfig](/composables/use-global-config) 注入，用户消息进入编辑态时就地渲染的 `ChatInput` 也能拿到同一份数据源。`supportUpload` 同样下发，编辑态输入框也会出现内置「文件」项。主输入框的 `onUpload` 与 `deleteFile` 一并注入，编辑态新选文件会走同一套 upload / DELETE，无需再向 `UserMessage` 透传。
 
 ```vue
 <template>
@@ -655,7 +698,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ## 模型选择
 
-`ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。
+`ChatContainer` 将 `models`、`v-model:selected-model` 与 `@model-change` 透传至内部 [ChatInput](/components/input/chat-input)。传入 `models` 后，发送按钮左侧展示 [ModelSelector](/components/input/model-selector)；选中值为模型的 `llm_name`，发送时可读取当前 `selectedModel`。模型支持思考深度时，`v-model:reasoning-effort` 与 `@reasoning-effort-change` 同样透传，用法见 [ModelSelector 思考深度](/components/input/model-selector#思考深度)。
 
 ```vue
 <template>
@@ -733,13 +776,14 @@ ai-chat-container（:data-ai-size="size"）
 
 ### Props
 
-ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection` 和 `messageGroups`），另外新增：
+ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`（排除 `enableSelection`、`messageGroups`、`messageToolsTippyOptions`），另外新增：
 
 | 属性名                    | 类型                                                                                     | 默认值    | 说明                                                                                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
+| enableMessageCollapse     | `boolean`                                                                                | `true`    | 继承自 MessageContainer，是否启用所有轮次消息的顶层折叠及过程状态栏。关闭时展示全部消息并隐藏状态栏和耗时，工具栏和消息内部的折叠行为不变 |
+| enableMessageMinimap      | `boolean`                                                                                | `true`    | 是否在主栏左侧挂[消息定位器](#消息定位器)。提问超过 4 条且使用默认消息列表时展示；hover 预览问答，点击只滚动消息列表。替换 `#default` 后不出现 |
 | commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件。原样透传，仅全屏态强制把 `appendTo` 改为全屏容器；未传 `appendTo` 时不注入该字段，各浮层沿用自身默认挂载点 |
-| executionTabVisible       | `boolean`                                                                                | `true`    | 「执行情况」Tab 是否展示；为 `false` 时从 Tab 栏隐藏，若正被选中则切到首个可见 Tab                                                   |
 | getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
 | models                    | `IModelOption[]`                                                                         | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
@@ -751,7 +795,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。`enableMessageMinimap`（默认 `true`）同样透传给 `MessageContainer`，提问超过 4 条时在消息区左侧展示消息定位器，设为 `false` 关闭。
+> 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 
 ### v-model
 
@@ -762,6 +806,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | cite             | `string`              | 引用内容                                                                                                                                          |
 | renderMode       | `RenderMode`          | 渲染模式（默认 `Chat`）。`Share` 开放侧栏只读查看并隐藏底部输入与交互操作；`Test` 隐藏分享按钮                                                    |
 | selectedModel    | `string`              | 当前选中模型的 `llm_name`，透传至 ChatInput 的 ModelSelector                                                                                      |
+| reasoningEffort  | `null \| ReasoningEffort` | 当前模型的思考深度档位，透传至 ChatInput 的 ModelSelector；为空时按模型默认档位展示，切换模型时清空                                           |
 | asideCollapsed   | `boolean`             | 侧栏折叠态，**严格受控**：传入后一律以外部值为准，内部展开动作（文件预览、`addCustomTab`）只发 `update:asideCollapsed`，外部不改则不展开；不传时由组件内部自持（默认折叠）  |
 
 ### Events
@@ -778,13 +823,14 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
 | deleteFile     | `(file: Partial<UploadFile>)`          | 取消输入框附件（继承自 ChatInput）；业务方根据 `file.id` 调用删除接口，UI 立即移除，不等待结果 |
 | modelChange    | `(model: IModelOption)`                | 切换模型（继承自 ChatInput）         |
+| reasoningEffortChange | `(model: IModelOption, effort: ReasoningEffort)` | 调整思考深度（继承自 ChatInput）     |
 
 ### Slots
 
 | 插槽名            | 参数                                                                                         | 说明                                                                                                     |
 | ----------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域，经 MessageContainer 透传给默认 MessageRender                                   |
-| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`                                                  |
+| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`。替换后没有内置滚动容器，[消息定位器](#消息定位器)不会出现 |
 | group             | `{ group: MessageGroup }`                                                                    | 自定义单个消息组，透传至 MessageContainer `#group`；替换默认 Checkbox、消息列表与工具栏                  |
 | interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                           | 自定义 UserQuestion 单题渲染，透传至 UserQuestionCard `#question`                                        |
 | message           | `MessageSlotProps`（同 MessageContainer `#default`）                                          | 自定义单条消息，会接管全部角色；不需要自定义的消息用 `<MessageRender v-bind="slotProps" />` 保持默认渲染与工具栏回调 |
@@ -798,7 +844,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | addCustomTab    | `(tab: CustomTab) => void`  | 添加自定义 Tab |
 | removeCustomTab | `(tabName: string) => void` | 移除自定义 Tab |
 | selectCustomTab | `(tab: CustomTab) => void`  | 切换到指定 Tab |
-| enterShareMode  | `() => void`                | 手动进入分享多选模式 |
+| enterShareMode  | `() => void`                | 手动进入分享多选模式（不预选消息） |
 | exitShareMode   | `() => void`                | 退出分享多选模式，并清空已选消息 |
 
 ## 渲染模式
@@ -808,7 +854,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | `renderMode` | 侧边栏 Tab             | 底部输入区域                      | MessageTools 工具栏   | 说明                             |
 | ------------ | ---------------------- | --------------------------------- | --------------------- | -------------------------------- |
 | `Chat`       | 正常显示               | 正常显示（ChatInput / ShortcutRender / SelectionFooter） | 全部工具按钮          | 默认对话模式                     |
-| `Share`      | 正常显示（开放只读查看） | **隐藏**             | **隐藏**（多选模式）  | 分享预览模式；开放流程智能体侧栏详情/证据/执行情况与耗时，仅隐藏「重试/跳过」等交互 |
+| `Share`      | 正常显示（开放只读查看） | **隐藏**             | **隐藏**（多选模式）  | 分享预览模式；开放侧栏详情/证据、消息中的执行情况与耗时，隐藏「重试/跳过」等交互 |
 | `Test`       | 正常显示               | 正常显示                          | 过滤掉「分享」按钮    | 测试/嵌入模式，隐藏分享入口     |
 
 ```vue
@@ -833,14 +879,13 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 ## 类型定义
 
 ```typescript
+import type { Component } from 'vue';
 import {
   ChatContainer,
   RenderMode,
   MessageRole,
-  type CustomTab,
-  type IModelOption,
-  type MessageGroup,
-  type Shortcut,
+  type CustomTabData,
+  type ShortcutComponent,
   type Message,
 } from '@blueking/chat-x';
 
@@ -853,18 +898,18 @@ interface MessageGroup {
   startTime?: number;
   type: MessageRole;
   uid: string;
-  userMessageTitle?: number | string;
 }
 
 // 自定义 Tab（data 可与 messageUid 组合，供侧栏定位主对话）
-interface CustomTab<T = Record<string, unknown>> {
+interface CustomTab<T extends CustomTabData<Record<string, unknown>>> {
   label: string;
   name: string;
-  icon?: string;
-  order?: number; // 缺省 100；「执行情况」固定 0
-  visible?: boolean; // 缺省 true；false 时栏内隐藏，仍可程序化选中
-  closable?: boolean; // 缺省 true；「执行情况」强制不可关闭
-  data?: T & { messageUid?: string; component?: Component; props?: Record<string, unknown> };
+  icon?: Component;
+  order?: number; // 升序，缺省 100；文件产物为 -1
+  visible?: boolean; // 缺省 true；false 时不展示标签和内容，自动选中首个可见 Tab
+  closable?: boolean; // 缺省 true；false 时隐藏默认关闭按钮
+  loadOnSelect?: boolean; // 缺省 true；false 时跳过 onCustomTabChange 和 getSideRenderComponent
+  data?: T & { messageUid?: string };
 }
 
 // 模型选项（透传至 ChatInput / ModelSelector，贴合后端接口结构；能力标签由 property 派生）
@@ -899,11 +944,12 @@ interface Shortcut {
 
 ## 关联组件
 
-- [MessageContainer](/components/setup/message-container) — 消息列表区域
+- [MessageContainer](/components/setup/message-container) — 默认消息列表；`getScrollElement` / `locate` 供消息定位器使用
+- [useMessageMinimap](/composables/use-message-minimap) — 消息定位器的轮次划分与可视区计算
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
 - [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModel`）
 - [ShortcutRender](/components/input/shortcut-render) — 快捷指令表单
-- [ExecutionSummary](/components/agent/execution-summary) — 执行摘要侧栏
+- [FileArtifactPanel](/components/message/file-artifact-panel) — 文件产物侧栏
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制

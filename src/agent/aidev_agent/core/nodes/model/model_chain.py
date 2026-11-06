@@ -32,6 +32,7 @@ from tenacity import RetryError
 
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
+from aidev_agent.packages.opentelemetry.context_obs import measure_context, observe_assembly
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_model_rate_limit, record_model_retry
@@ -177,6 +178,8 @@ def _build_model_chain(
     use_structured_response: bool,
     enable_parallel_tool_calls: bool,
     use_tool_call_promotion: bool,
+    token_limit: int | None = None,
+    token_margin: int | None = None,
 ) -> Runnable:
     """构建共享的 LCEL 模型链。
 
@@ -195,6 +198,8 @@ def _build_model_chain(
         use_structured_response: 是否使用结构化响应模式
         enable_parallel_tool_calls: 是否启用并行工具调用
         use_tool_call_promotion: 是否启用工具调用提升
+        token_limit: 上下文 token 预算（原值上报，未配置为 None）
+        token_margin: 上下文 token 余量（原值上报，未配置为 None）
 
     Returns:
         Runnable，支持 .invoke() 和 .ainvoke()
@@ -203,32 +208,45 @@ def _build_model_chain(
     retry_strategy = _resolve_retry_strategy(llm)
 
     # ------------------------------------------------------------------
-    # 内部函数：消息渲染
+    # 内部函数：上下文装配（模板 + 变量 + 渲染 + 工具选择）
     # ------------------------------------------------------------------
-    def _render_messages(ctx: ProcessorContext) -> ProcessorContext:
-        """渲染 prompt 模板为消息列表，填入 ctx.messages (D-07/D-08)。
+    def _assemble(ctx: ProcessorContext) -> ProcessorContext:
+        """装配 prompt 模板为消息列表并完成工具选择，填入 ctx.messages / ctx.tools。
 
         复用入口 ctx（不构造临时 ProcessorContext——D-08）。原地变更
         ctx.messages 并返回同一对象，使重试边界重新执行时消息保留。
+
+        一次装配只产生一条 ``context.assembly`` span，覆盖模板构建、变量装配
+        （含压缩）、消息渲染与工具选择；span 在本次模型调用开始前结束。
         """
-        chat_prompt_template = context_assembly.get_chat_prompt_template(ctx)
-        context_variables = context_assembly.get_chat_prompt_variables(ctx)
-        image_contents: list[dict[str, Any]] = []
-        query, image_contents = _extract_query_text_and_images(context_variables.get("query"))
-        if image_contents:
-            context_variables = {**context_variables, "query": query}
-        prompt_value = chat_prompt_template.invoke(context_variables, config=ctx.config)
-        messages: list[BaseMessage] = prompt_value.to_messages()
-        _attach_images_to_last_human_message(messages, image_contents)
-        ctx.messages = messages  # 原地变更 ctx，返回同一对象
-        return ctx
+        with observe_assembly(ctx, token_limit=token_limit, token_margin=token_margin) as observation:
+            chat_prompt_template = context_assembly.get_chat_prompt_template(ctx)
+            context_variables = context_assembly.get_chat_prompt_variables(ctx)
+            image_contents: list[dict[str, Any]] = []
+            query, image_contents = _extract_query_text_and_images(context_variables.get("query"))
+            if image_contents:
+                context_variables = {**context_variables, "query": query}
+            prompt_value = chat_prompt_template.invoke(context_variables, config=ctx.config)
+            messages: list[BaseMessage] = prompt_value.to_messages()
+            _attach_images_to_last_human_message(messages, image_contents)
+            ctx.messages = messages  # 原地变更 ctx，返回同一对象
+            # 工具选择前移到装配步骤：一次装配只选一次，结果留在 ctx.tools，
+            # 重试时 _call_llm / _acall_llm 直接读取，不再重选。
+            ctx.tools = context_assembly.get_choice_tools(ctx)
+            if observation is not None:
+                observation.record_chars(measure_context(ctx, query_text=query))
+            return ctx
 
     # ------------------------------------------------------------------
     # 内部函数：LLM 调用步骤
     # ------------------------------------------------------------------
     def _call_llm(ctx: ProcessorContext) -> ProcessorContext:
-        """从原始 LLM 构建 chain 并调用，处理 RateLimitError。"""
-        tools = context_assembly.get_choice_tools(ctx)
+        """从原始 LLM 构建 chain 并调用，处理 RateLimitError。
+
+        依赖装配步骤（``_assemble``）已填充 ``ctx.tools``：单独复用该 lambda
+        会退化为不绑定工具。
+        """
+        tools = ctx.tools
         llm_with_tools = build_llm_with_tools(
             llm=llm,
             tools=tools,
@@ -291,8 +309,11 @@ def _build_model_chain(
         return ctx
 
     async def _acall_llm(ctx: ProcessorContext) -> ProcessorContext:
-        """从原始 LLM 异步构建 chain 并调用，处理 RateLimitError。"""
-        tools = context_assembly.get_choice_tools(ctx)
+        """从原始 LLM 异步构建 chain 并调用，处理 RateLimitError。
+
+        同 ``_call_llm``：依赖装配步骤已填充 ``ctx.tools``。
+        """
+        tools = ctx.tools
         llm_with_tools = build_llm_with_tools(
             llm=llm,
             tools=tools,
@@ -367,9 +388,9 @@ def _build_model_chain(
         return ctx
 
     # ------------------------------------------------------------------
-    # 链组合：_render_messages（仅一次）| model_chain（含重试 + 回退）
+    # 链组合：_assemble（仅一次）| model_chain（含重试 + 回退）
     # ------------------------------------------------------------------
-    # _render_messages 不参与重试——消息渲染是幂等的、只应跑一次，
+    # _assemble 不参与重试——装配是幂等的、只应跑一次，
     # 重试时只需重建 model_chain（llm | capture | quality）。
     # with_fallbacks 也只包裹 model_chain——耗尽时返回最后响应。
     model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(quality_gate)
@@ -383,7 +404,7 @@ def _build_model_chain(
 
     # _exhaustion_fallback 是模块级函数（无闭包依赖）
 
-    model_chain = RunnableLambda(_render_messages) | retryable_model_chain.with_fallbacks(
+    model_chain = RunnableLambda(_assemble) | retryable_model_chain.with_fallbacks(
         [RunnableLambda(_exhaustion_fallback)],
         exceptions_to_handle=(RetryError,),
     )

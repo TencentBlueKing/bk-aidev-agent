@@ -17,24 +17,28 @@ to the current version of the project delivered to anyone in the future.
 """
 
 import asyncio
+import contextvars
 import json
 import re
+import threading
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from aidev_agent.packages.opentelemetry.callback_handler import (
-    AGENT_SDK_VERSION,
-    BkAidevAgentCallbackHandler,
-    BkAidevAgentInjector,
-)
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, messages_to_dict
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langgraph.types import Command
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import NoOpTracerProvider
+from opentelemetry.trace import INVALID_SPAN, NoOpTracerProvider, set_span_in_context, use_span
+
+from aidev_agent.packages.opentelemetry.callback_handler import (
+    AGENT_SDK_VERSION,
+    BkAidevAgentCallbackHandler,
+    BkAidevAgentInjector,
+)
+from aidev_agent.packages.opentelemetry.span_utils import generation_to_dict
 
 
 @pytest.fixture
@@ -1769,3 +1773,121 @@ class TestBkAidevAgentCallbackHandler:
         assert root_span is not None and root_span.name == "agent.execution"
         assert root_span.attributes["agent.session.input"] == str({"input": "x"})
         assert "input.value" not in chain_span.attributes
+
+
+class TestCreateCustomSpanParentContext:
+    def test_current_context_overrides_handler_fallbacks(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        workflow_id = uuid4()
+        workflow = handler._create_span(workflow_id, None, "workflow")
+        handler._current_workflow_run_id = workflow_id
+        handler._injector = MagicMock(root_span=workflow)
+        handler.parent_context = set_span_in_context(workflow)
+        with tracer.start_as_current_span("active") as active, handler.create_custom_span("custom"):
+            pass
+        handler._end_span(workflow, workflow_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent.span_id == active.get_span_context().span_id
+        assert not handler.spans
+
+    def test_explicit_run_id_overrides_current_context(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        parent_id = uuid4()
+        parent = handler._create_span(parent_id, None, "explicit")
+        with (
+            tracer.start_as_current_span("active"),
+            handler.create_custom_span("custom", parent_run_id=parent_id),
+        ):
+            pass
+        handler._end_span(parent, parent_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent.span_id == parent.get_span_context().span_id
+        assert not handler.spans
+
+    def test_without_current_span_does_not_use_workflow(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        parent_id = uuid4()
+        parent = handler._create_span(parent_id, None, "workflow")
+        handler._current_workflow_run_id = parent_id
+        handler._injector = MagicMock(root_span=parent)
+        handler.parent_context = set_span_in_context(parent)
+        with use_span(INVALID_SPAN), handler.create_custom_span("custom"):
+            pass
+        handler._end_span(parent, parent_id)
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert spans["custom"].parent is None
+
+    def test_current_parent_across_thread(self, tracer_and_exporter):
+        tracer, exporter = tracer_and_exporter
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        errors = []
+
+        def worker():
+            try:
+                with handler.create_custom_span("compression"):
+                    pass
+            except BaseException as error:
+                errors.append(error)
+
+        with handler.create_custom_span("assembly"):
+            thread = threading.Thread(target=contextvars.copy_context().run, args=(worker,))
+            thread.start()
+            thread.join()
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        assert not errors
+        assert spans["compression"].parent.span_id == spans["assembly"].context.span_id
+        assert not handler.spans
+class TestReasoningPartsRegression:
+    """AC9: 变更只新增 reasoning part，既有 part 与 llm.* 属性的序列化结果不变。"""
+
+    @staticmethod
+    def _history(with_reasoning: bool):
+        reasoning_blocks = [{"type": "reasoning", "reasoning": "第一段思考"}] if with_reasoning else []
+        return [
+            HumanMessage(content="你好"),
+            AIMessage(
+                content=[
+                    *reasoning_blocks,
+                    {"type": "text", "text": "旧结论"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                    {"type": "image", "media_type": "image/png", "data": "YmFzZTY0"},
+                ],
+                tool_calls=[{"name": "search", "args": {"q": 1}, "id": "c1", "type": "tool_call"}],
+            ),
+            ToolMessage(content="工具结果", tool_call_id="c1"),
+        ]
+
+    @staticmethod
+    def _run(tracer, exporter, history):
+        handler = BkAidevAgentCallbackHandler(tracer=tracer)
+        run_id = uuid4()
+        response = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="完成"))]])
+        asyncio.run(handler.on_chat_model_start(serialized={"name": "m"}, messages=[history], run_id=run_id))
+        asyncio.run(handler.on_llm_end(response=response, run_id=run_id))
+        attributes = exporter.get_finished_spans()[-1].attributes
+        exporter.clear()
+        return attributes, response
+
+    def test_parts_only_add_reasoning_and_llm_attributes_stay_identical(self, tracer_and_exporter):
+        """同一组 fixture：除 reasoning part 外各消息 role 与 text/uri/blob/tool_call 逐项相同"""
+        tracer, exporter = tracer_and_exporter
+        attrs_with, response = self._run(tracer, exporter, self._history(with_reasoning=True))
+        attrs_without, _ = self._run(tracer, exporter, self._history(with_reasoning=False))
+
+        messages_with = json.loads(attrs_with["gen_ai.input.messages"])
+        messages_without = json.loads(attrs_without["gen_ai.input.messages"])
+        assert [msg["role"] for msg in messages_with] == [msg["role"] for msg in messages_without]
+        for msg_with, msg_without in zip(messages_with, messages_without):
+            assert [part for part in msg_with["parts"] if part["type"] != "reasoning"] == msg_without["parts"]
+
+        assistant_parts = messages_with[1]["parts"]
+        assert assistant_parts[0] == {"type": "reasoning", "content": "第一段思考"}
+        assert [part["type"] for part in assistant_parts[1:]] == ["text", "uri", "blob", "tool_call"]
+        assert messages_with[2]["parts"] == [{"type": "tool_call_response", "id": "c1", "response": "工具结果"}]
+
+        # llm.input / llm.output 仍走 messages_to_dict / generation_to_dict 原样序列化
+        assert attrs_with["llm.input"] == json.dumps(messages_to_dict(self._history(with_reasoning=True)))
+        assert attrs_with["llm.output"] == json.dumps([generation_to_dict(response.generations[0][0])])

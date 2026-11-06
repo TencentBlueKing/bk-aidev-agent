@@ -472,3 +472,217 @@ def test_set_chat_request_writes_tool_definitions(span_and_attributes, tools, ex
     attrs = attributes()
     assert json.loads(attrs["gen_ai.tool.definitions"]) == expected
     assert "gen_ai.request.tools" not in attrs
+
+
+def _set_response_messages(span, attributes, message):
+    """把单条消息作为 chat 输出写入 span，返回解析后的 output messages。"""
+    set_chat_response(span, LLMResult(generations=[[ChatGeneration(message=message)]]))
+    return json.loads(attributes()["gen_ai.output.messages"])
+
+
+def test_set_chat_response_reasoning_part_precedes_text_and_tool_call(span_and_attributes):
+    """AC1: additional_kwargs 来源的 reasoning 写为首个 part，位于 text / tool_call 之前"""
+    span, attributes = span_and_attributes
+    message = AIMessage(
+        content="两步操作均已成功。",
+        additional_kwargs={"reasoning_content": "先确认封板策略是全局还是单仓"},
+        tool_calls=[{"name": "get_commit_block_status", "args": {"a": 1}, "id": "c1", "type": "tool_call"}],
+    )
+    assert _set_response_messages(span, attributes, message) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "reasoning", "content": "先确认封板策略是全局还是单仓"},
+                {"type": "text", "content": "两步操作均已成功。"},
+                {"type": "tool_call", "id": "c1", "name": "get_commit_block_status", "arguments": {"a": 1}},
+            ],
+        }
+    ]
+
+
+def test_set_chat_response_reasoning_part_on_tool_call_only_output(span_and_attributes):
+    """REQ-3: content 为空、只有 tool_calls 的输出仍带 reasoning part"""
+    span, attributes = span_and_attributes
+    message = AIMessage(
+        content="",
+        additional_kwargs={"reasoning_content": "需要先查状态"},
+        tool_calls=[{"name": "get_status", "args": {}, "id": "c1", "type": "tool_call"}],
+    )
+    assert _set_response_messages(span, attributes, message) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "reasoning", "content": "需要先查状态"},
+                {"type": "tool_call", "id": "c1", "name": "get_status", "arguments": {}},
+            ],
+        }
+    ]
+
+
+def test_set_chat_response_reasoning_part_from_content_block(span_and_attributes):
+    """AC2: content 中的 reasoning 块转成 reasoning part，且不再产出块 JSON 文本 part"""
+    span, attributes = span_and_attributes
+    message = AIMessage(
+        content=[
+            {"type": "reasoning", "reasoning": "先看配置再下结论"},
+            {"type": "text", "text": "结论是可行"},
+        ]
+    )
+    assert _set_response_messages(span, attributes, message) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "reasoning", "content": "先看配置再下结论"},
+                {"type": "text", "content": "结论是可行"},
+            ],
+        }
+    ]
+
+
+def test_set_chat_response_prefers_additional_kwargs_over_content_block(span_and_attributes):
+    """AC3: 两来源并存时只留一个 reasoning part，内容取 additional_kwargs 原文"""
+    span, attributes = span_and_attributes
+    message = AIMessage(
+        content=[
+            {"type": "reasoning", "reasoning": "块内思考"},
+            {"type": "text", "text": "结论"},
+        ],
+        additional_kwargs={"reasoning_content": "provider 原文"},
+    )
+    assert _set_response_messages(span, attributes, message) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "reasoning", "content": "provider 原文"},
+                {"type": "text", "content": "结论"},
+            ],
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "content, tool_calls, expected_parts",
+    [
+        ("答案", None, [{"type": "text", "content": "答案"}]),
+        (
+            [
+                {"type": "text", "text": "答案"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "image", "media_type": "image/png", "data": "YmFzZTY0"},
+            ],
+            None,
+            [
+                {"type": "text", "content": "答案"},
+                {"type": "uri", "modality": "image", "uri": "https://example.com/a.png"},
+                {"type": "blob", "modality": "image", "mime_type": "image/png", "content": "YmFzZTY0"},
+            ],
+        ),
+        (
+            "答案",
+            [{"name": "t", "args": {"a": 1}, "id": "c1", "type": "tool_call"}],
+            [
+                {"type": "text", "content": "答案"},
+                {"type": "tool_call", "id": "c1", "name": "t", "arguments": {"a": 1}},
+            ],
+        ),
+    ],
+)
+def test_set_chat_response_parts_unchanged_without_reasoning(span_and_attributes, content, tool_calls, expected_parts):
+    """AC4: 无 reasoning 的消息 parts 与变更前逐项一致，且不出现 reasoning part"""
+    span, attributes = span_and_attributes
+    message = AIMessage(content=content, tool_calls=tool_calls or [])
+    messages = _set_response_messages(span, attributes, message)
+    assert messages == [{"role": "assistant", "parts": expected_parts}]
+    assert all(part["type"] != "reasoning" for part in messages[0]["parts"])
+
+
+@pytest.mark.parametrize("reasoning_content", [None, "", "   ", {"text": "字典"}, ["列表"], 123])
+def test_set_chat_response_skips_invalid_reasoning_content(span_and_attributes, reasoning_content):
+    """REQ-1/REQ-2: reasoning_content 为空值、空白串或非字符串时不写 reasoning part"""
+    span, attributes = span_and_attributes
+    message = AIMessage(content="答案", additional_kwargs={"reasoning_content": reasoning_content})
+    assert _set_response_messages(span, attributes, message) == [
+        {"role": "assistant", "parts": [{"type": "text", "content": "答案"}]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "reasoning"},
+        {"type": "reasoning", "reasoning": ""},
+        {"type": "reasoning", "reasoning": "  "},
+        {"type": "reasoning", "reasoning": 123},
+    ],
+)
+def test_reasoning_block_without_string_text_produces_no_part(span_and_attributes, block):
+    """REQ-2: reasoning 字段缺失或非字符串的块既不产 reasoning part，也不产 JSON 文本 part"""
+    span, attributes = span_and_attributes
+    message = AIMessage(content=[block, {"type": "text", "text": "结论"}])
+    assert _set_response_messages(span, attributes, message) == [
+        {"role": "assistant", "parts": [{"type": "text", "content": "结论"}]}
+    ]
+
+
+def test_blank_reasoning_content_falls_back_to_content_block(span_and_attributes):
+    """空白 reasoning_content 视同缺失，回落到 content 中的 reasoning 块"""
+    span, attributes = span_and_attributes
+    message = AIMessage(
+        content=[{"type": "reasoning", "reasoning": "块内思考"}, {"type": "text", "text": "结论"}],
+        additional_kwargs={"reasoning_content": "  "},
+    )
+    assert _set_response_messages(span, attributes, message) == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "reasoning", "content": "块内思考"},
+                {"type": "text", "content": "结论"},
+            ],
+        }
+    ]
+
+
+def test_set_chat_request_history_assistant_messages_carry_reasoning(span_and_attributes):
+    """AC5: 同轮历史的每条 assistant 消息各自带 reasoning part；tool 消息短路分支不变"""
+    span, attributes = span_and_attributes
+    history = [
+        HumanMessage(content="问题"),
+        AIMessage(content="旧结论", additional_kwargs={"reasoning_content": "旧思考"}),
+        ToolMessage(content="工具结果", tool_call_id="c1", additional_kwargs={"reasoning_content": "不该出现"}),
+        AIMessage(content="新结论", additional_kwargs={"reasoning_content": "新思考"}),
+    ]
+
+    set_chat_request(span, {}, [history], {}, _make_holder(span))
+
+    assert json.loads(attributes()["gen_ai.input.messages"]) == [
+        {"role": "user", "parts": [{"type": "text", "content": "问题"}]},
+        {
+            "role": "assistant",
+            "parts": [{"type": "reasoning", "content": "旧思考"}, {"type": "text", "content": "旧结论"}],
+        },
+        {"role": "tool", "parts": [{"type": "tool_call_response", "id": "c1", "response": "工具结果"}]},
+        {
+            "role": "assistant",
+            "parts": [{"type": "reasoning", "content": "新思考"}, {"type": "text", "content": "新结论"}],
+        },
+    ]
+
+
+def test_set_chat_response_truncation_keeps_tail_tool_call(span_and_attributes):
+    """AC7: reasoning 与正文同池竞争上限，超限仍按整串从尾部保留，尾部 tool_call 保留"""
+    span, attributes = span_and_attributes
+    reasoning = "r" * (BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH + 1000)
+    message = AIMessage(
+        content="答案",
+        additional_kwargs={"reasoning_content": reasoning},
+        tool_calls=[{"name": "t", "args": {"a": 1}, "id": "c1", "type": "tool_call"}],
+    )
+
+    set_chat_response(span, LLMResult(generations=[[ChatGeneration(message=message)]]))
+
+    attrs = attributes()
+    assert len(attrs["gen_ai.output.messages"]) == BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
+    assert attrs["llm.output_truncated"] is True
+    assert attrs["llm.output_original_length"] > BKAI_AGENT_MAX_OUTPUT_ATTRIBUTE_LENGTH
+    assert '"type": "tool_call"' in attrs["gen_ai.output.messages"]
+    assert '"id": "c1"' in attrs["gen_ai.output.messages"]

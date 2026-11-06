@@ -84,6 +84,7 @@ new ChatBusinessManager(agentModule, sessionModule, chatbotInit)
 | `isModelsLoading` | `Ref<boolean>` | 模型列表加载中 |
 | `selectedLlmCode` | `Ref<string \| undefined>` | 当前选中模型的 `llm_code`（发送时透传） |
 | `selectedModelName` | `ComputedRef<string>` | 当前选中模型的 `llm_name`（绑定 `v-model:selected-model`） |
+| `reasoningEffort` | `Ref<ReasoningEffort \| null>` | 当前会话显式选择的思考深度；为空时按模型默认档展示 |
 
 ### 方法
 
@@ -133,6 +134,7 @@ chatBizManager.setSelectedModelByName('混元预览');
 | `selectedLlmCode` | `Ref<string \| undefined>` | 当前选中 `llm_code` |
 | `selectedModelName` | `ComputedRef<string>` | 当前选中 `llm_name` |
 | `selectedModelSupportsVision` | `ComputedRef<boolean>` | 当前选中模型是否支持 vision（图生文能力标签，不再用于附件入口） |
+| `reasoningEffort` | `Ref<ReasoningEffort \| null>` | 当前会话显式选择的思考深度 |
 
 ### 方法
 
@@ -146,6 +148,9 @@ chatBizManager.setSelectedModelByName('混元预览');
 | `persistSessionModel` | `(llmCode?: string, session?: ISession \| null) => Promise<void>` | 写回 `session.model` 的唯一出口 |
 | `resolveModelForSession` | `(preferred?: string) => string \| undefined` | 解析建会话用的合法 `model`；启用模型选择但列表为空时抛 `ModelUnavailableError` |
 | `ensureLoaded` | `() => Promise<void>` | 幂等等待列表就绪 |
+| `setReasoningEffort` | `(effort: ReasoningEffort \| null) => void` | 同步选择器档位；清空时取消尚未发出的写回 |
+| `commitReasoningEffort` | `(effort: ReasoningEffort) => Promise<void>` | 用户选定档位后防抖写入会话 |
+| `resolveReasoningEffortForChat` | `() => ReasoningEffort \| null` | 本轮 `chat_completion` 要带的档位；未显式选择时用模型 `default_effort` |
 
 ## SessionBusinessManager
 

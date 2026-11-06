@@ -1,6 +1,3 @@
-import { type Ref, defineComponent, h, nextTick } from 'vue';
-
-import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
@@ -26,6 +23,9 @@ import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import { type Ref, defineComponent, h, nextTick } from 'vue';
+
+import { type ComponentMountingOptions, type VueWrapper, mount } from '@vue/test-utils';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -263,8 +263,8 @@ vi.mock('../../composables/use-custom-tab', () => {
     DEFAULT_TAB_ORDER,
     useCustomTabProvider: vi.fn(
       (_options: {
-        defaultTab: { label: string; name: string; order?: number };
         collapsed?: { value: boolean };
+        defaultTab: { label: string; name: string; order?: number };
         onTabChange?: (tab: unknown) => void;
       }) => {
         const { defaultTab } = _options;
@@ -475,6 +475,25 @@ vi.mock('../chat-message/interrupt-message/user-question', () => ({
   }),
 }));
 
+vi.mock('../chat-message/message-minimap/message-minimap.vue', () => ({
+  default: defineComponent({
+    name: 'MessageMinimap',
+    props: {
+      container: { type: Object, default: null },
+      messageGroups: { type: Array, default: () => [] },
+    },
+    emits: ['locate'],
+    setup(props) {
+      return () =>
+        h('div', {
+          class: 'mock-message-minimap',
+          'data-group-count': (props.messageGroups as unknown[]).length,
+          'data-has-container': props.container ? 'true' : undefined,
+        });
+    },
+  }),
+}));
+
 vi.mock('../chat-message/message-container/message-container.vue', () => ({
   default: defineComponent({
     name: 'MessageContainer',
@@ -499,7 +518,11 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       userMessageTools: Array,
     },
     emits: ['stopStreaming', 'update:selectedUserMessages'],
-    setup(props, { slots }) {
+    setup(props, { slots, expose }) {
+      expose({
+        getScrollElement: () => document.createElement('div'),
+        locate: () => undefined,
+      });
       type LooseMessage = { content?: unknown; id?: string };
       type LooseHandler = (...args: never[]) => unknown;
       const callHandler = (handler: unknown, args: unknown[]): unknown => {
@@ -999,14 +1022,59 @@ describe('ChatContainer', () => {
       expect(messageContainer.props('enableMessageCollapse')).toBe(true);
     });
 
-    it('消息定位器应默认开启，并将开关透传给 MessageContainer', async () => {
+    it('消息定位器应默认挂在主栏，关闭开关后不渲染', async () => {
       const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
       wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
-      const messageContainer = wrapper.findComponent({ name: 'MessageContainer' });
+      await nextTick();
 
-      expect(messageContainer.props('enableMessageMinimap')).toBe(true);
+      const minimap = wrapper.find('.mock-message-minimap');
+      expect(minimap.exists()).toBe(true);
+      expect(minimap.attributes('data-has-container')).toBe('true');
+
       await wrapper.setProps({ enableMessageMinimap: false });
-      expect(messageContainer.props('enableMessageMinimap')).toBe(false);
+      expect(wrapper.find('.mock-message-minimap').exists()).toBe(false);
+    });
+
+    it('分享态定位器不包含 Loading 组', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'assistant-1' },
+        { messages: [], type: MessageRole.Loading, uid: 'loading-1' },
+      ];
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, renderMode: RenderMode.Share },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('2');
+    });
+
+    it('消息分组变化后定位器跟随同一过滤结果', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      mockMessageGroupsRef.value = [{ messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' }];
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
+      await nextTick();
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('1');
+
+      mockMessageGroupsRef.value = [
+        { messages: [{ id: '1' }], type: MessageRole.User, uid: 'user-1' },
+        { messages: [{ id: '2' }], type: MessageRole.Assistant, uid: 'assistant-1' },
+      ];
+      await nextTick();
+      expect(wrapper.find('.mock-message-minimap').attributes('data-group-count')).toBe('2');
+    });
+
+    it('替换默认消息槽时不渲染定位器', async () => {
+      const messages = [createUserMessage('1', 'Hello'), createAssistantMessage('2', 'Hi')];
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages },
+        slots: { default: () => h('div', { class: 'custom-messages' }) },
+      });
+      await nextTick();
+
+      expect(wrapper.find('.mock-message-minimap').exists()).toBe(false);
+      expect(wrapper.find('.custom-messages').exists()).toBe(true);
     });
 
     it('应该将 menuSources 属性透传给 ChatInput', () => {
@@ -1673,7 +1741,7 @@ describe('ChatContainer', () => {
 
     it('无产物时 asideCollapsed 为 false 仍应展开并渲染 Tab', async () => {
       mockSessionArtifactsRef.value = [];
-    mockUploadedArtifactsRef.value = [];
+      mockUploadedArtifactsRef.value = [];
 
       wrapper = mount(ChatContainer, {
         props: { ...defaultProps, asideCollapsed: false },
@@ -1685,7 +1753,6 @@ describe('ChatContainer', () => {
     });
 
     it('会话内容变化时不应调用 resetCustomTab', async () => {
-
       wrapper = mount(ChatContainer, {
         props: {
           ...defaultProps,
@@ -1859,9 +1926,7 @@ describe('ChatContainer', () => {
       await nextTick();
 
       expect(wrapper.find('.mock-selection-footer').exists()).toBe(true);
-      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('selectedUserMessages')).toEqual([
-        userMessage,
-      ]);
+      expect(wrapper.findComponent({ name: 'MessageContainer' }).props('selectedUserMessages')).toEqual([userMessage]);
     });
 
     it('普通工具（无 triggerSelection）不应进入多选态且应调用 onAgentAction', async () => {

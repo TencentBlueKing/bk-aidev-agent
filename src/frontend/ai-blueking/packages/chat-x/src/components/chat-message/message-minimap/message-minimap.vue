@@ -2,25 +2,30 @@
   <div
     v-if="visible"
     class="ai-message-minimap"
-    :class="{ 'is-hover': hoverIndex !== -1 }"
-    :style="{ '--ai-message-minimap-viewport-height': `${viewportHeight}px` }"
+    :class="{ 'is-hover': hoverIndex !== -1, 'is-overlap': overlapsMessage }"
+    :style="{
+      '--ai-message-minimap-viewport-height': `${viewportHeight}px`,
+      '--ai-message-minimap-top': `${minimapTop}px`,
+      '--ai-message-minimap-mask-left': `${maskLeft}px`,
+    }"
+    @wheel.prevent.stop="handleWheel"
   >
     <!-- hover 时盖住消息左侧的白色渐变，只做视觉遮挡，不拦截事件 -->
     <div class="ai-message-minimap-mask" />
     <nav
       ref="listRef"
+      :aria-label="t('消息定位')"
       class="ai-message-minimap-list"
       :class="{ 'is-fade-top': isFadeTop, 'is-fade-bottom': isFadeBottom }"
-      :aria-label="t('消息定位')"
       @mouseleave="handleListLeave"
       @scroll="handleListScroll"
     >
       <button
         v-for="(round, index) in rounds"
         :key="index"
-        class="ai-message-minimap-item"
-        :class="{ 'is-active': activeIndexSet.has(index), 'is-hover': hoverIndex === index }"
         :aria-label="questionTexts[index] || undefined"
+        class="ai-message-minimap-item"
+        :class="{ 'is-active': hoverIndex < 0 && activeIndexSet.has(index), 'is-hover': hoverIndex === index }"
         type="button"
         @click="emit('locate', round.userGroup.uid)"
         @mouseenter="handleItemEnter($event, index)"
@@ -62,20 +67,22 @@
 
   import 'tippy.js/dist/tippy.css';
 
+  export type MessageMinimapEmits = {
+    (e: 'locate', uid: string): void;
+  };
+
   export type MessageMinimapProps = {
     /** 消息滚动容器，用作可视区判断的 root */
     container?: HTMLElement | null;
     messageGroups: MessageGroup[];
   };
 
-  export type MessageMinimapEmits = {
-    (e: 'locate', uid: string): void;
-  };
-
   // 设计稿刻度宽度：常态 6px，hover 的刻度 30px，向两侧每隔一根递减 6px
   const LINE_MIN_WIDTH = 6;
   const LINE_MAX_WIDTH = 30;
   const LINE_WIDTH_STEP = 6;
+  // 贴主栏左边缘，留出 4px，避免刻度被面板边框切掉
+  const EDGE_LEFT = 4;
 
   const props = defineProps<MessageMinimapProps>();
   const emit = defineEmits<MessageMinimapEmits>();
@@ -90,6 +97,10 @@
   const tipContentRef = useTemplateRef<HTMLElement>('tipContentRef');
 
   const viewportHeight = shallowRef(0);
+  const minimapTop = shallowRef(0);
+  const maskLeft = shallowRef(0);
+  // 最长刻度的右端越过消息正文左缘时，hover 需要遮住被压住的消息
+  const overlapsMessage = shallowRef(true);
   const hoverIndex = shallowRef(-1);
   const isFadeTop = shallowRef(false);
   const isFadeBottom = shallowRef(false);
@@ -107,17 +118,37 @@
     return Math.max(LINE_MIN_WIDTH, LINE_MAX_WIDTH - LINE_WIDTH_STEP * Math.abs(index - hoverIndex.value));
   };
 
+  /**
+   * 定位器贴在主栏左边缘，垂直范围跟消息可视区走，不把输入框算进去。
+   * 主栏变窄、消息列铺满时，最长刻度会压到消息，这时才需要遮罩。
+   */
+  const updatePlacement = (container: HTMLElement) => {
+    viewportHeight.value = container.clientHeight;
+    const anchor = container.parentElement;
+    if (!anchor) {
+      minimapTop.value = 0;
+      maskLeft.value = 0;
+      overlapsMessage.value = true;
+      return;
+    }
+    const gutter = container.getBoundingClientRect().left - anchor.getBoundingClientRect().left;
+    // 消息正文从容器 border-box 再往右一个左内边距开始，这段空白不算被刻度压住
+    const contentInset = Number.parseFloat(getComputedStyle(container).paddingLeft) || 0;
+    minimapTop.value = container.offsetTop;
+    maskLeft.value = Math.round(gutter);
+    overlapsMessage.value = gutter + contentInset < EDGE_LEFT + LINE_MAX_WIDTH;
+  };
+
   // 定位器以消息可视区为基准垂直居中、限制最大高度，需跟随容器尺寸变化
   watch(
     () => props.container,
     (container, _, onCleanup) => {
       if (!container) return;
-      const updateViewportHeight = () => {
-        viewportHeight.value = container.clientHeight;
-      };
-      updateViewportHeight();
-      const resizeObserver = new ResizeObserver(updateViewportHeight);
+      const update = () => updatePlacement(container);
+      update();
+      const resizeObserver = new ResizeObserver(update);
       resizeObserver.observe(container);
+      if (container.parentElement) resizeObserver.observe(container.parentElement);
       onCleanup(() => resizeObserver.disconnect());
     },
     { immediate: true },
@@ -207,6 +238,20 @@
     });
   };
 
+  /**
+   * 滚轮留在定位器内：消息容器不跟随滚动。
+   * 刻度超出定位器高度时，只滚动定位器自己的列表。
+   */
+  const handleWheel = (event: WheelEvent) => {
+    const list = listRef.value;
+    if (!list) return;
+    const maxScrollTop = list.scrollHeight - list.clientHeight;
+    if (maxScrollTop <= 0) return;
+    // 鼠标滚轮常以「行」为单位，按一行约 16px 换算，触控板仍用像素
+    const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY;
+    list.scrollTop = Math.min(maxScrollTop, Math.max(0, list.scrollTop + delta));
+  };
+
   const handleItemEnter = (event: MouseEvent, index: number) => {
     hoverIndex.value = index;
     if (event.currentTarget instanceof HTMLElement) {
@@ -239,22 +284,20 @@
   // 刻度颜色按设计稿取 bkui 标准灰：常态 #c4c6cc，可视区高亮 #63656e，hover 为标题色
   $line-color: #c4c6cc;
   $line-active-color: #63656e;
+
   // 首尾渐隐区覆盖约三根刻度
   $fade-size: 24px;
   $fade-color: rgb(0 0 0 / 20%);
 
-  // 放在消息滚动容器首位，sticky 固定在可视区顶部且不占高度
+  // 挂在主栏上，贴左边缘且不占位；垂直位置跟消息滚动容器对齐
   .ai-message-minimap {
-    position: sticky;
-    top: 0;
+    position: absolute;
+    top: var(--ai-message-minimap-top, 0);
+    left: 0;
     z-index: 10;
-    flex: 0 0 0;
-    align-self: flex-start;
     width: 0;
     height: 0;
-
-    // 抵消消息容器的左内边距，以会话区左边为基准
-    margin-left: -16px;
+    pointer-events: none;
 
     &-mask {
       position: absolute;
@@ -275,10 +318,11 @@
       display: flex;
       flex-direction: column;
 
-      // 常态只占容器左内边距，不挡消息内容和多选框；hover 时放宽到最长刻度
+      // 贴主栏左边缘；hover 时放宽到最长刻度
       width: 12px;
       max-height: calc(var(--ai-message-minimap-viewport-height, 0px) * 2 / 3);
       overflow-y: auto;
+      pointer-events: auto;
       scrollbar-width: none;
       transform: translateY(-50%);
 
@@ -306,13 +350,15 @@
     }
 
     &.is-hover {
-      .ai-message-minimap-mask {
-        opacity: 1;
-      }
-
       .ai-message-minimap-list {
         width: 30px;
       }
+    }
+
+    // 刻度压到消息正文时才遮住左侧消息；只压到左侧空白或容器内边距时不盖
+    &.is-hover.is-overlap .ai-message-minimap-mask {
+      left: var(--ai-message-minimap-mask-left, 0);
+      opacity: 1;
     }
 
     // 每根刻度占 8px 高（2px 横线 + 6px 间距），整行可点击
@@ -353,10 +399,10 @@
 
   // 预览内容被 tippy 移到浮层里，不在 .ai-message-minimap 下
   .ai-message-minimap-preview {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    box-sizing: border-box;
     max-width: 356px;
     padding: 12px 16px;
     font-size: var(--ai-font-size, 12px);
@@ -364,17 +410,17 @@
 
     &-question {
       overflow: hidden;
-      color: variables.$color-text;
       text-overflow: ellipsis;
+      color: variables.$color-text;
       white-space: nowrap;
     }
 
     &-answer {
       display: -webkit-box;
       overflow: hidden;
+      -webkit-line-clamp: 2;
       color: variables.$color-text-secondary;
       word-break: break-all;
-      -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
     }
   }

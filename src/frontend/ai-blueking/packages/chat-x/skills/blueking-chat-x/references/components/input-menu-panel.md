@@ -4,7 +4,7 @@
 
 InputMenuPanel 渲染输入框菜单：分组标题 + InputMenuOption 条目 + 「更多 +N」折叠开关， 内置键盘上下导航与 Esc 关闭；分组数据由 useInputMenu 纯数据逻辑算出（按触发方式筛类型 → 关键字过滤 → 分组 → 折叠 → 扁平化）。 源码位置：src/components/chat-input/input-menu/（input-menu.vue、input-menu-panel.vue、input-menu-option.vue、use-input-menu.ts、constants.ts）。
 
-**关联**：chat-input（上层持有触发态与数据源，通过 InputMenu / vue-tippy 渲染本面板）、ai-slash-input（触发方式与过滤关键字由编辑器 menuChange 抛出）、add-menu-btn（+ 号唤起 plus 触发的聚合菜单）、resource-icon（条目左侧图标由 ResourceIcon 渲染）
+**关联**：chat-input（上层持有触发态与数据源，通过 InputMenu（vue-tippy）渲染本面板）、ai-slash-input（触发方式与过滤关键字由编辑器 menuChange 抛出）、add-menu-btn（+ 号唤起 plus 触发的聚合菜单）、resource-icon（条目左侧图标由 ResourceIcon 渲染）
 
 ---
 

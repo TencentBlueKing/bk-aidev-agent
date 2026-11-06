@@ -7,9 +7,11 @@ description: 负责按传入的 `messageGroups` 渲染、过程状态栏、滚�
 aiSummary: >
   负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
   每一轮助手组默认展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认保留最后一条 assistant 或更早的 flow_agent / 第三方审批及后续全部消息。enableMessageCollapse 为 false 时展示全部消息并隐藏过程状态栏和耗时。
-  enableMessageMinimap（默认 true）在提问超过 4 条时于左侧展示消息定位器，hover 预览问答，点击定位到对应提问。
+  不渲染消息定位器。expose getScrollElement 与 locate，供定位器判断可视区并滚动。visibleMessageGroups 是当前实际渲染的分组，分享态不含 Loading，定位器使用同一规则、不回读这份 expose。
   源码位置：src/components/chat-message/message-container/message-container.vue。
 relatedComponents:
+  - slug: chat-container
+    relation: 消息定位器由 ChatContainer 挂载；本组件提供滚动容器与 locate
   - slug: message-render
     relation: 按组渲染每条消息时委托 MessageRender
   - slug: chat-input
@@ -274,27 +276,6 @@ sinceVersion: 1.0.0
     },
   ]);
 
-  // 消息定位器示例：提问超过 4 条才展示
-  const minimapTopics = ['服务发布流程', '灰度策略', '回滚方案', '监控告警', '容量评估', '变更复盘'];
-  const messagesMinimap = ref(
-    minimapTopics.flatMap((topic, index) => [
-      {
-        id: `minimap-user-${index}`,
-        messageId: `minimap-user-${index}`,
-        role: 'user',
-        content: `请介绍一下${topic}`,
-        status: 'complete',
-      },
-      {
-        id: `minimap-assistant-${index}`,
-        messageId: `minimap-assistant-${index}`,
-        role: 'assistant',
-        content: `**${topic}**主要包含以下要点：\n\n1. 明确目标与范围\n2. 制定执行步骤并评审\n3. 执行后检查结果并沉淀经验\n\n如需细化，可以继续追问具体环节。`,
-        status: 'complete',
-      },
-    ]),
-  );
-
   const groupsBasic = createGroups(messagesBasic);
   const groupsReasoning = createGroups(messagesReasoning);
   const groupsProcess = createGroups(messagesProcess);
@@ -304,7 +285,6 @@ sinceVersion: 1.0.0
   const groupsStreaming = createGroups(messagesStreaming);
   const groupsMultiRound = createGroups(messagesMultiRound);
   const groupsLoading = createGroups(messagesLoading);
-  const groupsMinimap = createGroups(messagesMinimap);
 
   const handleAgentAction = async (tool, messages) => {
     console.log('AI 消息操作:', tool.id);
@@ -867,47 +847,9 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 ## 消息定位器
 
-`enableMessageMinimap` 默认为 `true`。当前可见消息组中的提问超过 4 条时，消息区左侧会出现消息定位器（内部组件 `MessageMinimap`，不从包入口导出），每条提问对应一条刻度：
+本组件不再接收 `enableMessageMinimap`，也不再渲染 `MessageMinimap`。定位器由 [ChatContainer](/components/setup/chat-container#消息定位器) 挂在主栏左侧。
 
-- **当前位置**：落在可视区的问答对应的刻度高亮。
-- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，并在右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用等不参与。
-- **点击定位**：点击刻度后，只滚动消息列表到对应提问，并暂停流式输出时的自动贴底。
-- **刻度过多**：列表最高为可视区的 2/3，超出后可以滚动，两端渐隐。
-
-设为 `false` 可关闭；`ChatContainer` 同名 prop 会透传到这里。
-
-```vue
-<template>
-  <MessageContainer :messages="messages" :message-groups="messageGroups" :enable-message-minimap="true" />
-</template>
-<script setup lang="ts">
-  import { computed, ref } from 'vue';
-  import { MessageContainer, useMessageGroup, type Message } from '@blueking/chat-x';
-
-  const topics = ['服务发布流程', '灰度策略', '回滚方案', '监控告警', '容量评估', '变更复盘'];
-  const messages = ref<Message[]>(
-    topics.flatMap((topic, index) => [
-      { id: `user-${index}`, messageId: `user-${index}`, role: 'user', content: `请介绍一下${topic}`, status: 'complete' },
-      { id: `assistant-${index}`, messageId: `assistant-${index}`, role: 'assistant', content: `**${topic}**主要包含以下要点……`, status: 'complete' },
-    ]) as Message[],
-  );
-  const { messageGroups } = useMessageGroup({
-    messages: computed(() => messages.value),
-    selectedUserMessages: ref([]),
-  });
-</script>
-```
-
-<div class="demo">
-  <div style="height: 480px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
-    <MessageContainerComp
-      :messages="messagesMinimap"
-      :message-groups="groupsMinimap"
-      :enable-message-minimap="true"
-      message-status="complete"
-    />
-  </div>
-</div>
+单独使用 `MessageContainer` 时不会出现定位器。需要接入时，用 expose：`getScrollElement()` 交出滚动容器，`locate(uid)` 只滚动到对应消息组并暂停自动贴底。`visibleMessageGroups` 是当前实际渲染的分组，分享态不含 Loading。详见 [Expose](#expose)。
 
 ## 自定义消息工具栏
 
@@ -1244,7 +1186,6 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
 | messageGroups            | `MessageGroup[]`                                                                             | —       | **必填**。本组件不分组；由调用方用 `useMessageGroup` 算好后传入。`ChatContainer` 会代为计算。 |
 | enableMessageCollapse    | `boolean`                                                                                   | `true`  | 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息并隐藏状态栏和耗时，工具栏及消息自身的折叠行为不变 |
-| enableMessageMinimap     | `boolean`                                                                                   | `true`  | 是否启用左侧[消息定位器](#消息定位器)；提问超过 4 条时展示，hover 预览问答，点击后只滚动消息列表定位到对应提问 |
 | messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态。为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，并让最后一组助手过程状态显示「处理中」。`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入 |
 | messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
 | updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
@@ -1271,6 +1212,14 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | 事件名        | 参数 | 说明                       |
 | ------------- | ---- | -------------------------- |
 | stopStreaming | —    | 点击「停止生成」按钮时触发 |
+
+### Expose
+
+| 方法               | 类型                          | 说明                                                                                                                                 |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| getScrollElement     | `() => HTMLElement \| null`   | 消息列表的滚动容器。`ChatContainer` 把它交给消息定位器，作为可视区判断的 root                                                       |
+| locate               | `(uid: string) => void`       | 在滚动容器的直接子节点里按 `data-message-group-id` 找到目标，只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
+| visibleMessageGroups | `MessageGroup[]`              | 当前实际渲染的消息组。分享态已去掉 Loading 组。定位器使用同一规则，不回读这份 expose                               |
 
 ### Slots
 
@@ -1322,6 +1271,7 @@ enum MessageToolsStatus {
 
 ## 关联组件
 
+- [ChatContainer](/components/setup/chat-container#消息定位器) — 消息定位器的挂载方；本组件提供 `getScrollElement` 与 `locate`
 - [MessageRender](/components/message/message-render) — 按组渲染每条消息时委托使用
 - [MessageTime](/components/feedback/message-time) — AI 消息组工具栏右侧的时间
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传

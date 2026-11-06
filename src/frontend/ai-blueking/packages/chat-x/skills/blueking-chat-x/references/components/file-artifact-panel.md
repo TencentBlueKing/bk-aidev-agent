@@ -2,9 +2,9 @@
 
 > 能力域：消息系统 ｜ 未从包入口导出：内部组件，请通过上层组件使用 ｜ since 0.0.20
 
-汇总当前会话所有 AssistantMessage 的 artifacts（按 outputId 去重），支持关键词搜索、列表选中、复制、引用到输入框与下载； 预览区委托 ArtifactPreviewHost：由 resolveFileKind 把扩展名归入 code / markdown / html / text / image / binary 六类， 前四类走 text_from_download 拉正文（code 交给 highlight.js 高亮），image / binary 走 preview_url； download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）； 预览重载键为 outputId:type；重试再次调用 load() 重新取链。 源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
+汇总当前会话的 AI 文件产物、用户附件及输入区已上传待发送文件（按 outputId 去重），支持关键词搜索、列表选中、复制、引用到输入框与下载； 预览区委托 ArtifactPreviewHost：由 resolveFileKind 把扩展名归入 code / markdown / html / text / image / binary 六类， 前四类走 text_from_download 拉正文（code 交给 highlight.js 高亮），image / binary 走 preview_url； download_url / preview_url 经 onArtifactClick 每次异步获取（无 URL 缓存，并发去重）； 预览重载键为 outputId:type；重试再次调用 load() 重新取链。 源码位置：src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue。
 
-**关联**：assistant-message（文件产物来源于 AssistantMessage.property.artifacts）、chat-container（面板挂载在侧栏「文件产物」Tab（固定、不可关闭），并通过 onArtifactClick 异步取链）、execution-summary（同为 ChatContainer 侧栏 Tab 面板，交互形态一致）、message-loading（ArtifactPreviewHost 取链 / 拉取正文过程使用 MessageLoading）、mention-tag（引用后文件以资源标签形态进入输入框）
+**关联**：assistant-message（文件产物来源于 AssistantMessage.property.artifacts）、chat-container（面板挂载在侧栏「文件产物」Tab（固定、不可关闭），并通过 onArtifactClick 异步取链）、message-loading（ArtifactPreviewHost 取链 / 拉取正文过程使用 MessageLoading）、mention-tag（引用后文件以资源标签形态进入输入框）
 
 ---
 
@@ -18,13 +18,13 @@
 
 > **导出说明**：内部侧栏面板组件，**通常不直接使用**；由 `ChatContainer` 在「文件产物」Tab 内自动挂载。预览加载与渲染为同目录下 `artifact-preview/` 内部实现，不单独导出。
 
-点击 AI 回复中的[文件卡片](/components/message/assistant-message)后，`ChatContainer` 侧栏会弹出固定的「文件产物」Tab，聚合展示当前会话**所有** `AssistantMessage` 的文件产物（按 `outputId` 去重），并命中被点击的文件进行预览。
+点击 AI 回复中的[文件卡片](/components/message/assistant-message)后，`ChatContainer` 侧栏会弹出固定的「文件产物」Tab，展示当前会话的 AI 文件产物、用户消息附件及输入区已上传待发送文件（按 `outputId` 去重），并命中被点击的文件进行预览。
 
 面板左侧为可搜索的文件列表，右侧为预览区。通常不需要直接使用，由 `ChatContainer` 在侧栏内自动渲染。
 
 ## 核心能力
 
-- **会话级聚合**：拍平当前会话所有 `AssistantMessage.property.artifacts`，以 `outputId` 去重后统一在一个列表内展示
+- **会话级聚合**：`useMessageGroup.sessionArtifacts` 聚合 AI 文件产物和带 `outputId` 的用户附件，容器再合并输入区已上传待发送文件，以 `outputId` 去重后展示
 - **唯一命中**：以 `outputId` 作为会话内唯一键（同 `outputId` 视为同一文件）；文件名可能重复，不可作唯一键
 - **关键词搜索**：按文件名实时过滤列表
 - **整块空态**：`artifacts` 为空时不渲染列表与预览区，整块展示 bkui `Exception`「暂无数据」（Tab 常驻，无数据也可正常打开侧栏）
@@ -37,25 +37,21 @@
 
 ## 基础用法
 
-面板**未从包入口导出**，业务侧请走下方「业务接入」；下列示例仅用于文档站 / 本地调试（与 `ExecutionSummary` 文档站写法一致：相对路径引入 + 自行挂 Provider）。
+面板**未从包入口导出**，业务侧请走下方「业务接入」；下列示例仅用于文档站 / 本地调试（相对路径引入 + 自行挂 Provider）。
 
 ```vue
 <template>
   <div style="height: 480px; border: 1px solid #dcdee5; border-radius: 8px; overflow: hidden;">
-    <FileArtifactPanel
-      :active-id="activeArtifactId"
-      :artifacts="sessionArtifacts"
-      @select="handleSelect"
-    />
+    <FileArtifactPanel />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { shallowRef } from 'vue'
+  import { computed } from 'vue'
   import { useArtifactPreviewProvider } from '@blueking/chat-x'
-  import type { AIFileInfo, SessionArtifact } from '@blueking/chat-x'
+  import type { SessionArtifact } from '@blueking/chat-x'
   // 内部组件：仅文档 / 调试；业务请用 ChatContainer 自动挂载
-  import FileArtifactPanel from './message-artifacts/file-artifact-panel.vue'
+  import FileArtifactPanel from '../../../src/components/chat-message/assistant-message/message-artifacts/file-artifact-panel.vue'
 
   const sessionArtifacts: SessionArtifact[] = [
     { name: '周报.html', outputId: 'a-html', size: 10240, type: 'html' },
@@ -65,7 +61,8 @@
     { name: '立项.pdf', outputId: 'a-pdf', size: 204800, type: 'pdf' },
   ]
 
-  useArtifactPreviewProvider({
+  const { setActiveArtifactId } = useArtifactPreviewProvider({
+    artifacts: computed(() => sessionArtifacts),
     getOnArtifactClick: () => async file => {
       // 文本类返回可 fetch 的 download_url；iframe 类返回 preview_url
       const res = await api.getArtifactUrls(file.outputId)
@@ -74,10 +71,7 @@
     onOpen: () => {},
   })
 
-  const activeArtifactId = shallowRef(sessionArtifacts[0].outputId)
-  const handleSelect = (id: string) => {
-    activeArtifactId.value = id
-  }
+  setActiveArtifactId(sessionArtifacts[0]?.outputId ?? '')
 </script>
 ```
 
@@ -93,7 +87,7 @@
     v-model="input"
     :messages="messages"
     :on-artifact-click="onArtifactClick"
-    @send-message="handleSend"
+    :on-send-message="handleSend"
   />
 </template>
 
@@ -142,7 +136,7 @@
     }
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
     /* ... */
   }
 </script>
@@ -155,22 +149,22 @@ ArtifactFileCard（点击文件卡片）
   └─ useArtifactPreviewConsumer().openPreview({ file })
        └─ useArtifactPreviewProvider（ChatContainer 内）
             ├─ 记录命中文件 activeArtifactId = file.outputId
-            └─ onOpen → addCustomTab('file-artifact') 展开并选中侧栏 Tab
+            └─ onOpen → addCustomTab(FILE_ARTIFACT_TAB) 展开并选中侧栏 Tab
                  └─ FileArtifactPanel
-                      ├─ 列表 @select → setActiveArtifactId(outputId)
+                      ├─ 点击列表 → setActiveArtifactId(outputId)
                       ├─ 下载 → resolveArtifactUrls + triggerArtifactDownload
                       └─ ArtifactPreviewHost
                            ├─ useArtifactPreviewLoader（策略 + fetch / 取链，防竞态）
-                           └─ HtmlPreview | MarkdownPreview | TxtPreview | UrlIframePreview
+                           └─ CodePreview | HtmlPreview | ImagePreview | MarkdownPreview | TxtPreview | UrlIframePreview
 
 容器初始化
-  └─ ensureCustomTab('file-artifact') 常驻挂上（不展开侧栏）；因 order:-1 排在首位，
+  └─ useCustomTabProvider({ defaultTab: FILE_ARTIFACT_TAB }) 常驻挂载（不展开侧栏）；order:-1 排在首位，
      未主动切换过 Tab 时会成为默认选中面板；无产物时由面板展示整块空态
 ```
 
 - 文件卡片通过 `useArtifactPreviewConsumer` 注入预览上下文，无 Provider 时卡片不可点击（兜底 `undefined`）
 - `ChatContainer` 通过 `useArtifactPreviewProvider` 提供上下文，并把「打开侧栏 Tab」这一副作用以 `onOpen` 注入，保持 composable 职责单一
-- 侧栏「文件产物」Tab 固定不可关闭，`order: -1` 排在「执行情况」之前；**常驻不随产物有无增删**，无产物时由面板展示整块空态
+- 侧栏「文件产物」Tab 默认不显示关闭按钮，`order: -1` 排在缺省权重 `100` 的自定义 Tab 之前；**常驻不随产物有无增删**，无产物时由面板展示整块空态
 
 ## 引用到输入框
 
@@ -192,7 +186,7 @@ ArtifactFileCard（点击文件卡片）
 会话内以 **`outputId`** 作为文件产物唯一键：
 
 - 同一 `outputId` 在多条消息中出现时，聚合列表去重并保留最后一次出现的文件信息
-- `activeId`、列表 `:key`、`select` 事件参数均使用 `outputId`
+- 命中态与列表 `:key` 均使用 `outputId`，由 `ARTIFACT_PREVIEW_TOKEN` 注入
 - 文件名可能重复，**不可**作为唯一键
 
 ## 预览机制
@@ -257,18 +251,7 @@ message-artifacts/
 
 ## API
 
-### Props
-
-| 属性名    | 类型                | 必填 | 说明                                   |
-| --------- | ------------------- | ---- | -------------------------------------- |
-| activeId  | `string`            | ✓    | 当前命中的文件 `outputId`              |
-| artifacts | `SessionArtifact[]` | ✓    | 当前会话全部文件产物（已按 `outputId` 去重） |
-
-### Events
-
-| 事件名 | 参数              | 说明                       |
-| ------ | ----------------- | -------------------------- |
-| select | `(id: string)`    | 列表内切换选中文件，参数为文件 `outputId` |
+面板无 Props / Events。`artifacts`、`activeArtifactId`、`setActiveArtifactId` 均通过 `ARTIFACT_PREVIEW_TOKEN` 注入；无 Provider 时按空列表降级为空态。
 
 ### Slots / Expose
 
@@ -277,7 +260,7 @@ message-artifacts/
 ## 类型定义
 
 ```typescript
-import type { AIFileInfo, SessionArtifact } from '@blueking/chat-x';
+// 以下为类型结构节选；业务可从 @blueking/chat-x 导入 AIFileInfo、SessionArtifact
 
 // 会话级文件产物：拍平去重后即为 AIFileInfo
 type SessionArtifact = AIFileInfo;
@@ -302,6 +285,5 @@ type AIFileInfo = {
 - [AssistantMessage](/components/message/assistant-message) — 文件产物来源（`property.artifacts`）
 - [ChatContainer](/components/setup/chat-container) — 侧栏「文件产物」Tab 挂载场景，提供 `onArtifactClick`
 - [MessageLoading](/components/helper/message-loading) — Host 预览区异步加载态
-- [ExecutionSummary](/components/agent/execution-summary) — 同为侧栏 Tab 面板
 - [MentionTag](/components/rendering/mention-tag) — 引用后在输入框内的标签形态
 - [useInputMention](/composables/use-input-mention) — 引用入口的上下文来源

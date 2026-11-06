@@ -2,7 +2,7 @@
 
 > 导入：`import { useMenuKeydown } from '@blueking/chat-x'` ｜ since 1.0.0
 
-useMenuKeydown 接收 items、menuRef、onSelect，以及可选的 onActive。在 window 捕获阶段监听 keydown；菜单不可见（offsetParent 为空）或列表为空时不响应。维护 activeIndex，处理 ArrowUp/ArrowDown 循环与 Enter 选中，并 scrollIntoView 当前 .is-active 项。上下键在 scrollIntoView 之后调用 onActive，Enter 不触发；不传 onActive 时行为不变。InputMenuPanel（输入框统一菜单）与 ModelSelectorPanel（模型下拉）内部使用。
+useMenuKeydown 接收 items、menuRef、onSelect，以及可选的 onActive。在 window 捕获阶段监听 keydown；菜单不可见（offsetParent 为空）或列表为空时不响应。 维护 activeIndex，处理 ArrowUp/ArrowDown 循环与 Enter 选中，并 scrollIntoView 当前 .is-active 项。 上下键在 scrollIntoView 之后调用 onActive，Enter 不触发；不传 onActive 时行为不变。 InputMenuPanel（输入框统一菜单）与 ModelSelectorPanel（模型下拉）内部使用。
 
 **关联**：input-menu-panel（输入框菜单的键盘导航）、model-selector（模型下拉的键盘导航）
 

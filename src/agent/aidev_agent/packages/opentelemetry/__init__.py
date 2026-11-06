@@ -16,19 +16,22 @@ We undertake not to change the open source license (MIT license) applicable
 to the current version of the project delivered to anyone in the future.
 """
 
-from .callback_handler import BkAidevAgentCallbackHandler
-from .config import OTelConfig
-from .instrumentor import BkAidevAgentInstrumentor
-from .otel_service import BkAgentOTelService
-from .utils import ExporterType
+try:
+    from .callback_handler import BkAidevAgentCallbackHandler
+    from .config import OTelConfig
+    from .instrumentor import BkAidevAgentInstrumentor
+    from .otel_service import BkAgentOTelService
+    from .utils import ExporterType
 
-__all__ = [
-    # 配置
-    "OTelConfig",
-    "ExporterType",
-    # 核心类
-    "BkAgentOTelService",
-    "BkAidevAgentCallbackHandler",
-    # 自动插桩
-    "BkAidevAgentInstrumentor",
-]
+    __all__ = [
+        # 配置
+        "OTelConfig",
+        "ExporterType",
+        # 核心类
+        "BkAgentOTelService",
+        "BkAidevAgentCallbackHandler",
+        # 自动插桩
+        "BkAidevAgentInstrumentor",
+    ]
+except ImportError:  # OTel extra 缺失或安装不完整时，仍允许导入轻量子模块。
+    __all__ = []

@@ -8,6 +8,9 @@ ChatInput 底部附件区布局，承载快捷按钮、文件与发送图标。 
 
 # InputAttachment 输入附件区
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ChatInput](/components/input/chat-input) 使用。
+
 > **能力域**：输入交互
 
 ## 源码事实

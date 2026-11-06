@@ -1,17 +1,37 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 from aidev_agent.packages.langchain_core.models.llm_gateway import ChatModel
-from aidev_agent.packages.opentelemetry import resilience
+from aidev_agent.packages.opentelemetry import resilience, span_utils
+from aidev_agent.packages.opentelemetry.callback_handler import BkAidevAgentCallbackHandler
+from aidev_agent.packages.opentelemetry.span_utils import SpanHolder, set_chat_request, set_chat_response
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.outputs import ChatGeneration, ChatResult, LLMResult
 from langchain_openai.chat_models import ChatOpenAI as RawChatOpenAI
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import NoOpTracerProvider
 
 
 class RateLimitError(Exception):
     pass
+
+
+@pytest.fixture
+def tracer_and_exporter():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    yield provider.get_tracer(__name__), exporter
+    exporter.clear()
+
+
+def _raise_parts_error(_msg):
+    raise RuntimeError("parts construction failed")
 
 
 def test_fallback_events_include_models_but_metric_dimensions_do_not(monkeypatch):
@@ -214,3 +234,88 @@ def test_fallback_failure_propagates_primary_rate_limit_for_outer_deduplication(
     resilience.record_model_rate_limit(retry_strategy="sdk", error=error_info.value)
 
     recorder.record_llm_rate_limit.assert_called_once()
+
+
+async def test_parts_failure_does_not_block_span_end_or_response_attributes(tracer_and_exporter, monkeypatch):
+    """REQ-5/AC8: 请求期 parts 构造异常被 @dont_throw 兜住，不阻断响应属性写入与 span 结束"""
+    tracer, exporter = tracer_and_exporter
+    handler = BkAidevAgentCallbackHandler(tracer=tracer)
+    run_id = uuid4()
+
+    monkeypatch.setattr(span_utils, "_chat_message_to_parts_dict", _raise_parts_error)
+    await handler.on_chat_model_start(
+        serialized={"name": "model-a"},
+        messages=[[HumanMessage(content="hello")]],
+        run_id=run_id,
+    )
+    # 异常未向调用方抛出，仅该属性缺失
+    assert "gen_ai.input.messages" not in handler.spans[run_id].span.attributes
+
+    monkeypatch.undo()
+    await handler.on_llm_end(
+        response=LLMResult(generations=[[ChatGeneration(message=AIMessage(content="answer"))]]),
+        run_id=run_id,
+    )
+
+    spans = exporter.get_finished_spans()
+    assert [span.name for span in spans] == ["chat_model.generate"]
+    assert spans[0].attributes["gen_ai.output.messages"] == (
+        '[{"role": "assistant", "parts": [{"type": "text", "content": "answer"}]}]'
+    )
+    assert run_id not in handler.spans
+
+
+def test_model_call_result_unaffected_when_parts_construction_fails(tracer_and_exporter, monkeypatch):
+    """AC8: 请求期与响应期 parts 构造异常都不向业务传播，模型返回结果与变更前一致"""
+    tracer, _ = tracer_and_exporter
+    monkeypatch.setattr(
+        RawChatOpenAI,
+        "_generate",
+        lambda model, *_args, **_kwargs: ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="fallback response"))]
+        ),
+    )
+    monkeypatch.setattr(span_utils, "_chat_message_to_parts_dict", _raise_parts_error)
+    model = ChatModel.get_setup_instance(model="primary-model")
+    handler = BkAidevAgentCallbackHandler(tracer=tracer)
+
+    response = model.invoke([HumanMessage(content="hello")], config={"callbacks": [handler]})
+
+    assert response.content == "fallback response"
+
+
+def test_model_call_result_unaffected_without_handler(tracer_and_exporter, monkeypatch):
+    """AC8: 无 callback handler 时模型调用结果不变，且不产生 span"""
+    _, exporter = tracer_and_exporter
+    monkeypatch.setattr(
+        RawChatOpenAI,
+        "_generate",
+        lambda model, *_args, **_kwargs: ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="no handler response"))]
+        ),
+    )
+    model = ChatModel.get_setup_instance(model="primary-model")
+
+    response = model.invoke([HumanMessage(content="hello")])
+
+    assert response.content == "no handler response"
+    assert exporter.get_finished_spans() == ()
+
+
+def test_parts_helpers_are_silent_on_non_recording_span():
+    """tracing 关闭（非记录 span）时 set_chat_request / set_chat_response 照常返回 None 且无异常"""
+    span = NoOpTracerProvider().get_tracer(__name__).start_span("chat_model.generate")
+    holder = SpanHolder(span=span, token=None, context=None, children=[], entity_name=None, entity_path="")
+
+    assert set_chat_request(span, {}, [[HumanMessage(content="hi")]], {}, holder) is None
+    assert (
+        set_chat_response(
+            span,
+            LLMResult(
+                generations=[
+                    [ChatGeneration(message=AIMessage(content="答案", additional_kwargs={"reasoning_content": "思考"}))]
+                ]
+            ),
+        )
+        is None
+    )

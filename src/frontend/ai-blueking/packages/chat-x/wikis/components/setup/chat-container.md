@@ -10,10 +10,13 @@ aiSummary: >
   侧栏展开/折叠由外部 v-model:asideCollapsed 严格受控（传入后以外部值为准，内部展开动作仅发 update 事件），不再依赖执行数据或文件产物有无；无数据时侧栏照常展开并展示空态。
   侧栏固定从右侧展开（无 placement prop），且不再内置折叠按钮。
   「文件产物」Tab 常驻挂载。
+  enableMessageMinimap（默认 true）把内部消息定位器挂在主栏左侧；提问超过 4 条且未替换默认消息槽时展示，hover 预览问答，点击只滚动消息列表。
   源码位置：src/components/chat-container/chat-container.vue。
 relatedComponents:
   - slug: message-container
-    relation: 消息列表与滚动区域
+    relation: 默认消息列表；expose getScrollElement 与 locate，供定位器判断可视区并滚动
+  - slug: use-message-minimap
+    relation: 消息定位器的轮次划分与可视区计算
   - slug: chat-input
     relation: 对话输入与快捷指令入口
   - slug: model-selector
@@ -199,6 +202,27 @@ sinceVersion: 1.0.0
     },
   ]);
 
+  const inputMinimap = ref('');
+  const minimapTopics = ['服务发布流程', '灰度策略', '回滚方案', '监控告警', '容量评估', '变更复盘'];
+  const messagesMinimap = ref(
+    minimapTopics.flatMap((topic, index) => [
+      {
+        id: `minimap-user-${index}`,
+        messageId: `minimap-user-${index}`,
+        role: 'user',
+        content: `请介绍一下${topic}`,
+        status: 'complete',
+      },
+      {
+        id: `minimap-assistant-${index}`,
+        messageId: `minimap-assistant-${index}`,
+        role: 'assistant',
+        content: `**${topic}**主要包含以下要点：\n\n1. 明确目标与范围\n2. 制定执行步骤并评审\n3. 执行后检查结果并沉淀经验\n\n如需细化，可以继续追问具体环节。`,
+        status: 'complete',
+      },
+    ]),
+  );
+
   const handleSendMessage = async (content, docSchema) => {
     console.log('发送消息:', content);
   };
@@ -259,7 +283,7 @@ sinceVersion: 1.0.0
 <ChatContainer :messages="messages" :enable-message-collapse="false" />
 ```
 
-`enableMessageMinimap` 默认为 `true`，透传给 `MessageContainer`：提问超过 4 条时在消息区左侧展示[消息定位器](/components/setup/message-container#消息定位器)，hover 预览问答、点击定位到对应提问。设为 `false` 关闭。
+`enableMessageMinimap` 默认为 `true`，由容器自己挂载[消息定位器](#消息定位器)，不再透传给 `MessageContainer`。设为 `false` 关闭。
 
 ```vue
 <ChatContainer :messages="messages" :enable-message-minimap="false" />
@@ -280,13 +304,54 @@ ai-chat-container（:data-ai-size="size"）
     │   │   ├── FileArtifactPanel（文件产物 Tab 内容）
     │   │   └── 自定义 Tab 组件（getSideRenderComponent 优先，否则 data.component；可注入 #locateButton）
     └── main（主内容区）
-        ├── MessageContainer（有消息时；#group / #message 可自定义）
+        ├── MessageMinimap（enableMessageMinimap 且内置 MessageContainer 已挂载；贴左缘，不占位）
+        ├── #default（有消息时；未自定义时为 MessageContainer，#group / #message 可再自定义组内内容）
         ├── 欢迎页（无消息时 .ai-welcome-content）
         │   └── #welcome（默认：Banner + welcomeTitle + openingRemark；自定义则整块替换）
         ├── SelectionFooter（分享模式）
         ├── ShortcutRender（有快捷指令时）
         └── ChatInput（透传 models / selectedModel / menuSources；interrupt 槽展示 UserQuestionCard / InputInfoAlert）
 ```
+
+## 消息定位器
+
+`enableMessageMinimap` 是 `ChatContainer` 自己的 prop，默认 `true`。内部组件 `MessageMinimap` 不从包入口导出，挂在主栏上，不占布局。单独使用 `MessageContainer` 时不会出现定位器。
+
+- **出现条件**：开关打开、已有消息，且默认消息槽里的 `MessageContainer` 已经挂上（能拿到它的滚动容器）。提问超过 4 条才画出刻度。用 `#default` 换掉默认消息列表后没有内置滚动容器，定位器不会出现。
+- **位置**：绝对定位贴主栏左缘，垂直范围跟消息可视区对齐，不把输入框算进去。
+- **当前位置**：未 hover 时，落在可视区的问答对应刻度高亮。
+- **hover 预览**：鼠标移入时刻度按鱼眼效果展开，并在右侧浮层展示提问（单行）与回答摘要（最多两行）。回答只取 assistant 的文本，代码块、图片及工具调用不参与。最长刻度压到消息正文时，hover 会遮住被压住的左侧消息；只碰到左侧空白或消息容器的左内边距时不盖。hover 期间不显示可视区高亮。
+- **点击定位**：点击刻度后调用 `MessageContainer` 的 `locate`，只滚动消息列表到对应提问，并暂停流式输出时的自动贴底。
+- **滚轮**：滚轮留在定位器内，消息列表不跟随滚动。刻度超出定位器高度（最高为消息可视区的 2/3）时，只滚动定位器自己的列表，两端渐隐。
+- **分享模式**：定位器与消息列表共用同一过滤规则。分享态会去掉 Loading 组，加载占位不会算进轮次。
+
+```vue
+<template>
+  <ChatContainer :messages="messages" :enable-message-minimap="true" />
+</template>
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { ChatContainer, type Message } from '@blueking/chat-x';
+
+  const topics = ['服务发布流程', '灰度策略', '回滚方案', '监控告警', '容量评估', '变更复盘'];
+  const messages = ref<Message[]>(
+    topics.flatMap((topic, index) => [
+      { id: `user-${index}`, messageId: `user-${index}`, role: 'user', content: `请介绍一下${topic}`, status: 'complete' },
+      { id: `assistant-${index}`, messageId: `assistant-${index}`, role: 'assistant', content: `**${topic}**主要包含以下要点……`, status: 'complete' },
+    ]) as Message[],
+  );
+</script>
+```
+
+<div class="demo">
+  <div style="height: 480px; border: 1px solid #eaebf0; border-radius: 8px; overflow: hidden;">
+    <ChatContainerComp
+      v-model="inputMinimap"
+      :messages="messagesMinimap"
+      message-status="complete"
+    />
+  </div>
+</div>
 
 ## 基础用法
 
@@ -1160,7 +1225,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | ------------------------- | ---------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | chatLoading               | `boolean`                                                                                | —         | 整体加载状态，`true` 时显示 Loading 遮罩                                                                                             |
 | enableMessageCollapse     | `boolean`                                                                                | `true`    | 继承自 MessageContainer，是否启用所有轮次消息的顶层折叠及过程状态栏。关闭时展示全部消息并隐藏状态栏和耗时，工具栏和消息内部的折叠行为不变 |
-| enableMessageMinimap      | `boolean`                                                                                | `true`    | 继承自 MessageContainer，是否启用左侧消息定位器；提问超过 4 条时展示，hover 预览问答、点击定位到对应提问 |
+| enableMessageMinimap      | `boolean`                                                                                | `true`    | 是否在主栏左侧挂[消息定位器](#消息定位器)。提问超过 4 条且使用默认消息列表时展示；hover 预览问答，点击只滚动消息列表。替换 `#default` 后不出现 |
 | commonTippyOptions        | `AITippyProps`                                                                           | —         | 通用 Tippy 配置，注入到所有使用 `v-overflow-tips` 的子组件。原样透传，仅全屏态强制把 `appendTo` 改为全屏容器；未传 `appendTo` 时不注入该字段，各浮层沿用自身默认挂载点 |
 | getSideRenderComponent    | `(h, props?) => VNode \| undefined`                                                      | —         | 自定义侧栏内容区渲染；未返回时使用 `selectedTab.data.component`                                                                      |
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
@@ -1208,7 +1273,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | 插槽名            | 参数                                                                                         | 说明                                                                                                     |
 | ----------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域，经 MessageContainer 透传给默认 MessageRender                                   |
-| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`                                                  |
+| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`。替换后没有内置滚动容器，[消息定位器](#消息定位器)不会出现 |
 | group             | `{ group: MessageGroup }`                                                                    | 自定义单个消息组，透传至 MessageContainer `#group`；替换默认 Checkbox、消息列表与工具栏                  |
 | interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                           | 自定义 UserQuestion 单题渲染，透传至 UserQuestionCard `#question`                                        |
 | message           | `MessageSlotProps`（同 MessageContainer `#default`）                                          | 自定义单条消息，会接管全部角色；不需要自定义的消息用 `<MessageRender v-bind="slotProps" />` 保持默认渲染与工具栏回调 |
@@ -1322,7 +1387,8 @@ interface Shortcut {
 
 ## 关联组件
 
-- [MessageContainer](/components/setup/message-container) — 消息列表区域
+- [MessageContainer](/components/setup/message-container) — 默认消息列表；`getScrollElement` / `locate` 供消息定位器使用
+- [useMessageMinimap](/composables/use-message-minimap) — 消息定位器的轮次划分与可视区计算
 - [ChatInput](/components/input/chat-input) — 输入与快捷指令
 - [ModelSelector](/components/input/model-selector) — 模型选择器（透传 `models` / `selectedModel`）
 - [ShortcutRender](/components/input/shortcut-render) — 快捷指令表单

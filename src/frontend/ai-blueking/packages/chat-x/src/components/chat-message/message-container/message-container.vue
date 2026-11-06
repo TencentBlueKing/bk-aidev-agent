@@ -3,12 +3,6 @@
     ref="messageContainerRef"
     class="ai-message-container"
   >
-    <MessageMinimap
-      v-if="enableMessageMinimap"
-      :container="messageContainerRef"
-      :message-groups="visibleMessageGroups"
-      @locate="handleMinimapLocate"
-    />
     <div
       v-for="(group, groupIndex) in visibleMessageGroups"
       :id="group.uid"
@@ -156,8 +150,8 @@
   import MessageTools, { type MessageToolsProps } from '../../message-tools/message-tools.vue';
   import MessageProcessList from '../message-process/message-process-list.vue';
   import { isMessageGenerating, shouldShowMessageProcess } from '../message-process/message-process-status';
-  import MessageMinimap from '../message-minimap/message-minimap.vue';
   import MessageRender from '../message-render/message-render.vue';
+  import { getVisibleMessageGroups } from './get-visible-message-groups';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { IToolBtn, MessageSlotProps, TagSchema } from '../../../types';
@@ -170,8 +164,6 @@
   export type MessageContainerProps = {
     /** 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息，消息内部的折叠行为不变 */
     enableMessageCollapse?: boolean;
-    /** 是否启用左侧消息定位器；提问超过 4 条时展示，可预览并定位到历史问答 */
-    enableMessageMinimap?: boolean;
     enableSelection?: boolean; // 是否启用多选模式
     messageGroups: MessageGroup[]; // 消息分组列表
     messages: Message[];
@@ -219,7 +211,6 @@
 
   const props = withDefaults(defineProps<MessageContainerProps>(), {
     enableMessageCollapse: true,
-    enableMessageMinimap: true,
     enableSelection: false,
   });
   // 选中的消息
@@ -288,6 +279,14 @@
     container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   };
 
+  const visibleMessageGroups = computed(() => getVisibleMessageGroups(props.messageGroups, props.renderMode));
+
+  defineExpose({
+    getScrollElement: () => messageContainerRef.value,
+    locate: handleMinimapLocate,
+    visibleMessageGroups,
+  });
+
   // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
   // 再在首帧布局后补一次，避免历史消息渲染过程中出现从顶部滚到底部的动画
   onMounted(() => {
@@ -302,12 +301,6 @@
     return tools.filter(tool => props.renderMode !== RenderMode.Test || tool.id !== 'share');
   });
   const updateTools = computed(() => mergeToolsById(CONST_UPDATE_TOOLS, props.updateTools));
-  // Share 模式仅展示历史消息，过滤自动注入或外部传入的 Loading 占位组
-  const visibleMessageGroups = computed(() =>
-    props.renderMode === RenderMode.Share
-      ? props.messageGroups.filter(group => group.type !== MessageRole.Loading)
-      : props.messageGroups,
-  );
   // 「停止生成」按钮的显示条件；生成中时最后一组的过程状态栏显示「处理中」，其余各组都已结束
   const isGenerating = computed(
     () => props.renderMode !== RenderMode.Share && isMessageGenerating(props.messageStatus),

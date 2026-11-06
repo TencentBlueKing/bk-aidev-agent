@@ -424,7 +424,7 @@ const blocks = parseCustomBlocks(`
 至此，当 AI 回复中出现 ` ```custom-component ` 代码块时，就会被自动识别并渲染为对应组件。可交互示例见 [示例 · 消息自定义渲染](/demos/custom-message)。
 
 ::: warning 当前行为
-`#message` 插槽会接管**全部**消息（包括用户消息），作用域只提供 `message`、`messageToolsStatus`、`onInterruptResume`。用户消息工具栏（复制 / 编辑 / 删除）所需的回调不在作用域内，自定义渲染时这些操作不可用；AI 消息工具栏在插槽外渲染，不受影响。
+`#message` 插槽会接管**全部**消息（包括用户消息）。作用域是 chat-x 的 `MessageSlotProps`：`message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`tippyOptions`。`ChatBot` / `AIBlueking` 再补一份 `renderDefault()`，可回退默认 `MessageRender`。AI 消息工具栏仍在插槽外渲染。
 :::
 
 ::: info 过程折叠

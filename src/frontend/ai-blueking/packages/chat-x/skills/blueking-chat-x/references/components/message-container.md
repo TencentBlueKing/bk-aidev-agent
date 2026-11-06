@@ -2,9 +2,9 @@
 
 > 能力域：对话搭建 ｜ 导入：`import { MessageContainer } from '@blueking/chat-x'` ｜ since 1.0.0
 
-负责消息分组渲染、滚动控制、工具栏和消息插槽透传。 源码位置：src/components/chat-message/message-container/message-container.vue。
+负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。 每一轮助手组默认展示过程状态栏：生成中为「处理中」，终态按最后一条显示已完成 / 失败 / 已停止 / 已禁用，默认保留最后一条 assistant 或更早的 flow_agent / 第三方审批及后续全部消息。enableMessageCollapse 为 false 时展示全部消息并隐藏过程状态栏和耗时。 不渲染消息定位器。expose getScrollElement 与 locate，供定位器判断可视区并滚动。visibleMessageGroups 是当前实际渲染的分组，分享态不含 Loading，定位器使用同一规则、不回读这份 expose。 源码位置：src/components/chat-message/message-container/message-container.vue。
 
-**关联**：message-render（按组渲染每条消息时委托 MessageRender）、chat-input（常与 ChatInput 组合构成完整对话界面）、loading-message（末尾为用户消息时自动追加 Loading 消息组）、interrupt-message（透传 onInterruptResume；末条 interrupt 消息不触发组 hover）
+**关联**：chat-container（消息定位器由 ChatContainer 挂载；本组件提供滚动容器与 locate）、message-render（按组渲染每条消息时委托 MessageRender）、chat-input（常与 ChatInput 组合构成完整对话界面）、loading-message（末尾为用户消息时自动追加 Loading 消息组）、interrupt-message（透传 onInterruptResume；末条 interrupt 消息不触发组 hover）
 
 ---
 
@@ -13,7 +13,7 @@
 
 - **源码位置**：`src/components/chat-message/message-container/message-container.vue`
 - **能力域**：对话搭建
-- **能力说明**：负责消息分组渲染、滚动控制、工具栏和消息插槽透传。
+- **能力说明**：负责按传入的 `messageGroups` 渲染、滚动控制、工具栏和消息插槽透传。
 
 > **能力域**：对话搭建
 
@@ -22,7 +22,8 @@
 - **消息分组**：将连续的非用户消息合并为一组，每组共享一个工具栏
 - **Tool 消息关联**：自动将 `role: 'tool'` 消息注入到对应 Assistant 消息的 toolCall 中
 - **Loading 自动注入**：末尾为用户消息时，自动追加 Loading 动画组
-- **滚动管理**：`messageStatus` 为流式、等待响应或请求中（`streaming` / `pending` / `fetching`）时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
+- **过程状态栏**：有内容的助手组在消息上方展示状态。生成中（`streaming` / `stop-loading` / `fetching` / `pending`，且非分享态）最后一组显示「处理中」；终态按组内最后一条显示「失败 / 已停止 / 已禁用」，其余为「已完成」。终态默认保留本轮最后一条 `assistant` 或更早的 `flow_agent` / 第三方审批及后续全部消息，仅折叠展示起点之前的消息；没有 `assistant` 时全部展示
+- **滚动管理**：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，离开底部时显示「返回底部」；`renderMode` 为 `Share` 时不显示「停止生成」，过程状态栏也按终态展示。挂载时通过 `jumpToBottom()` 瞬时贴底，避免切换会话时从顶部平滑滚到底部的动画
 - **多选模式**：支持按消息组勾选，用户消息与 AI 回复联动选中
 
 ## 基础用法
@@ -112,8 +113,8 @@
 
 **关键细节**：
 
-- 每个消息组外层 DOM 的 `id` 为 **`MessageGroup.uid`**（由 `useMessageGroup` 生成），供执行摘要「在对话中定位」、侧栏自定义 Tab 等场景滚动锚定
-- `role: 'tool'` 消息**不会独立渲染**，而是被注入到对应 AssistantMessage 的 `toolCall.toolMessage` 字段
+- 每个消息组外层 DOM 的 `id` 为 **`MessageGroup.uid`**（由 `useMessageGroup` 生成），供侧栏自定义 Tab 的「在对话中定位」等场景滚动锚定
+- `role: 'tool'` 消息匹配到工具调用时，注入对应 AssistantMessage 的 `toolCall.toolMessage` 字段；未匹配时保留在 Assistant 组内并独立渲染
 - 若 `toolMessage.error` 存在，AssistantMessage 的 `status` 会被强制设为 `MessageStatus.Error`
 - 当消息组**最后一条**消息的 `role === 'interrupt'` 时，`mouseenter` **不会**设置 `isHover`，避免 AI 工具栏在审批卡片上误显
 - `MessageTools` 工具栏只在 `type === 'assistant'` 的消息组底部渲染（不依赖鼠标悬停，始终可见），且满足以下条件时**不渲染**：
@@ -143,13 +144,15 @@ document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 
 `.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
 
+启用顶层折叠时，终态的过程状态栏默认折叠本轮[展示起点](#助手过程状态栏)之前的消息，它们不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。最后一条 `assistant` 或更早的 `flow_agent` / 第三方审批及后续全部消息始终保留；没有 `assistant` 时全部展示。`enableMessageCollapse` 为 `false` 时所有消息都参与渲染。
+
 ## 等待响应（Loading 自动注入）
 
 当 `messages` 末尾为 `role: 'user'` 时，自动追加 Loading 消息组，展示 AI 正在处理的加载动画（`renderMode` 为 `Share` 时不追加，且 `MessageContainer` 会过滤 Loading 组）：
 
 ## 流式输出与停止生成
 
-当 `messageStatus` 为 `streaming`、`pending`（等待首包）或 `fetching`（请求中、与末尾 Loading 占位一致）时，底部固定区域显示「停止生成」按钮（`stop-loading` 时按钮展示为正在停止），点击后触发 `@stop-streaming` 事件。`renderMode` 为 `Share` 时不显示「停止生成」按钮。
+当 `messageStatus` 为 `streaming`、`stop-loading`、`fetching` 或 `pending` 时，底部固定区域显示「停止生成」按钮（`stop-loading` 时按钮展示为正在停止），点击后触发 `@stop-streaming` 事件。同一组状态也会让**最后一组**助手过程状态栏显示「处理中」。`renderMode` 为 `Share` 时不显示「停止生成」，过程状态栏按终态展示。
 
 点击下方按钮体验完整的流式输出过程：
 
@@ -226,11 +229,93 @@ document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 
 ## 错误状态
 
-AI 回复状态为 `error` 时，消息以错误样式展示：
+AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程状态栏显示「失败」；下面只有一条助手消息，因此没有折叠箭头：
+
+## 助手过程状态栏
+
+启用 `enableMessageCollapse` 时，有内容的助手消息组会在消息上方显示过程状态栏（内部组件 `MessageProcessList` / `MessageProcessHeader`，不从包入口导出）。用户消息组和空组不显示。
+
+`enableMessageCollapse` 默认为 `true`。设为 `false` 时，所有轮次（包括分享模式）的消息均完整展示，整个过程状态栏不再渲染，包括折叠箭头、状态文案（如「已完成」「处理中」）和耗时。工具栏及消息自身的折叠行为不受影响；动态重新开启时恢复过程状态栏、耗时和以下折叠规则。
+
+| 条件 | 文案 | 消息是否折叠 |
+| ---- | ---- | ------------ |
+| 容器仍在生成，且是最后一组；`renderMode` 不是 `Share` | 「处理中」，文字渐变闪动，不显示耗时 | 否，展示全部消息 |
+| 最后一条 `status` 为 `error` | 「失败」 | 按本轮展示起点折叠前序消息，见下方规则 |
+| 最后一条 `status` 为 `stop` | 「已停止」 | 同上 |
+| 最后一条 `status` 为 `disabled` | 「已禁用」 | 同上 |
+| 其余终态 | 「已完成」 | 同上 |
+
+生成中与底部「停止生成」使用同一判断：`messageStatus` 为 `streaming` / `stop-loading` / `fetching` / `pending`。分享态即使容器仍在生成，也按终态展示。更早的助手组在生成中仍按各自终态折叠。
+
+每轮独立计算终态的**展示起点**，起点消息本身及其后全部消息均不折叠：
+
+- 没有 `assistant` 时全部展示。
+- 默认从本轮最后一条 `assistant` 开始展示。
+- 若更早的位置出现 `flow_agent` 或第三方审批，则提前到其中首次出现的位置；后续新增 `assistant` 不会将该位置重新折叠。
+- `flow_agent` 按 `role === 'activity'` 且 `activityType === 'flow_agent'` 识别。
+- 第三方审批按 `role === 'interrupt'` 且审批类型为 `aidev:tool_approval` 识别，同时覆盖 `outcome.type === 'interrupt'` 的 `interrupts` 和 `outcome.type === 'success'` 的 `result`，已处理或取消的审批回显也保留。其他活动和用户提问中断不影响边界。
+
+耗时只在终态、且能同时取到两端时显示，格式为 `，耗时 2m2s`：
+
+- 起点：紧邻的上一组若是用户消息，取其第一条 `createdAt`
+- 终点：本组内最晚的 `createdAt`
+- 缺少任一端、或间隔为 0 时不显示；不足 1 秒显示 `<1s`；其余先舍去毫秒再格式化
+- 生成中不显示耗时，也不用当前时间刷新
+
+可折叠时点击状态栏展开或收起。从生成中进入终态会自动收回展示起点之前的消息。若没有 `assistant`，或展示起点位于首位，则全部展示且没有折叠箭头。
+
+提供 `#group` 会替换整组默认内容，过程状态栏不再出现。`#default` 仍包在状态栏里面，折叠时只把当前可见消息传给插槽。
+
+```vue
+<template>
+  <MessageContainer
+    :messages="messages"
+    message-status="complete"
+    :on-agent-action="handleAgentAction"
+    :on-agent-feedback="handleAgentFeedback"
+    :on-user-action="handleUserAction"
+    @stop-streaming="handleStopStreaming"
+  />
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { MessageContainer, type Message } from '@blueking/chat-x';
+
+  const messages = ref<Message[]>([
+    {
+      id: 'process-user',
+      messageId: 'process-user',
+      role: 'user',
+      content: '帮我查一下发布单',
+      status: 'complete',
+      createdAt: 1710000000000,
+    },
+    {
+      id: 'process-reasoning',
+      messageId: 'process-reasoning',
+      role: 'reasoning',
+      content: ['先定位发布单，再核对变更项。'],
+      status: 'complete',
+      createdAt: 1710000060000,
+    },
+    {
+      id: 'process-assistant',
+      messageId: 'process-assistant',
+      role: 'assistant',
+      content: '发布单已核对，本次变更包含 2 个服务。',
+      status: 'complete',
+      createdAt: 1710000122000,
+    },
+  ]);
+</script>
+```
+
+下面示例终态可折叠，默认保留最后一条 `assistant`（此例也是最后一条消息），状态栏为「已完成，耗时 2m2s」。点击状态栏可看到前面的 reasoning。
 
 ## 推理过程消息
 
-`role: 'reasoning'` 消息会被归入当前 AI 消息组，带有折叠/展开效果和思考耗时展示：
+`role: 'reasoning'` 消息会被归入当前 AI 消息组，消息自身带有折叠/展开和思考耗时（`duration`）。整组还会套上[过程状态栏](#助手过程状态栏)：下面的示例终态默认只渲染最后一条 assistant，点击「已完成，耗时 2m2s」后才能看到 reasoning。
 
 ```vue
 <script setup lang="ts">
@@ -241,6 +326,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
       role: MessageRole.User,
       content: '分析一下这段代码的问题',
       status: MessageStatus.Complete,
+      createdAt: 1710000000000,
     },
     {
       id: '2',
@@ -249,6 +335,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
       content: ['首先，我需要理解代码意图...', '看起来是数据处理函数...', '发现几个潜在问题...'],
       status: MessageStatus.Complete,
       duration: 3500,
+      createdAt: 1710000035000,
     },
     {
       id: '3',
@@ -256,6 +343,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
       role: MessageRole.Assistant,
       content: '根据分析，存在以下问题：\n\n1. 变量命名不规范...',
       status: MessageStatus.Complete,
+      createdAt: 1710000122000,
     },
   ]);
 </script>
@@ -315,6 +403,12 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 ## 多轮对话
 
 连续多轮问答，组件按角色自动分组，每个 AI 组独立显示工具栏：
+
+## 消息定位器
+
+本组件不再接收 `enableMessageMinimap`，也不再渲染 `MessageMinimap`。定位器由 [ChatContainer](/components/setup/chat-container#消息定位器) 挂在主栏左侧。
+
+单独使用 `MessageContainer` 时不会出现定位器。需要接入时，用 expose：`getScrollElement()` 交出滚动容器，`locate(uid)` 只滚动到对应消息组并暂停自动贴底。`visibleMessageGroups` 是当前实际渲染的分组，分享态不含 Loading。详见 [Expose](#expose)。
 
 ## 自定义消息工具栏
 
@@ -425,9 +519,9 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 ## 自定义消息组渲染
 
-使用 `#group` 插槽可替换单个消息组的默认内容（Checkbox、消息列表、`MessageTools`）。外层 `.message-group` 容器（含 `id`、hover 状态、选中背景色）仍由 `MessageContainer` 管理。
+使用 `#group` 插槽可替换单个消息组的默认内容（Checkbox、过程状态栏、消息列表、`MessageTools`）。外层 `.message-group` 容器（含 `id`、hover 状态、选中背景色）仍由 `MessageContainer` 管理。
 
-> **注意**：提供 `#group` 后需自行编排组内全部 UI；若只需替换单条消息，请使用 `#default` 插槽。
+> **注意**：提供 `#group` 后需自行编排组内全部 UI，过程状态栏不会自动出现。若只需替换单条消息，请使用 `#default` 插槽，折叠规则仍然生效。
 
 ```vue
 <template>
@@ -458,7 +552,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 
 ## 自定义消息渲染
 
-使用默认插槽替换单条消息的渲染，插槽参数包含 `message`、`messageToolsStatus` 和 `onInterruptResume`：
+使用默认插槽替换单条消息的渲染，插槽参数包含 `message`、`messageToolsStatus` 和 `onInterruptResume`。终态折叠时只把当前可见消息传给该插槽：
 
 ```vue
 <template>
@@ -560,9 +654,9 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | 属性名                   | 类型                                                                                         | 默认值  | 说明                                                                                                                                     |
 | ------------------------ | -------------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | messages                 | `Message[]`                                                                                  | —       | **必填**，消息列表                                                                                                                       |
-| messageGroups            | `MessageGroup[]`                                                                             | —       | 预计算的消息分组；传入时跳过内部分组逻辑，由 `ChatContainer` 通过 `useMessageGroup` 提供                                                 |
-| enableMessageMinimap     | `boolean`                                                                                    | `true`  | 是否启用左侧消息定位器；提问超过 4 条时展示，hover 预览问答，点击后只滚动消息列表定位到对应提问 |
-| messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态，控制底部「停止生成」按钮显示；`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入                                                                                                   |
+| messageGroups            | `MessageGroup[]`                                                                             | —       | **必填**。本组件不分组；由调用方用 `useMessageGroup` 算好后传入。`ChatContainer` 会代为计算。 |
+| enableMessageCollapse    | `boolean`                                                                                   | `true`  | 是否启用消息组的顶层折叠及过程状态栏；关闭时展示全部消息并隐藏状态栏和耗时，工具栏及消息自身的折叠行为不变 |
+| messageStatus            | `MessageStatus`                                                                              | —       | 当前整体消息状态。为 `streaming` / `stop-loading` / `fetching` / `pending` 时显示「停止生成」，并让最后一组助手过程状态显示「处理中」。`ChatContainer` 会结合末尾 Loading 占位推导 `fetching` 等再传入 |
 | messageTools             | `IToolBtn[]`                                                                                 | —       | AI 消息左侧工具（复制/引用等）的自定义配置；按 `id` 与内置 `CONST_MESSAGE_TOOLS` 合并（覆盖同 id、追加新 id、`hidden` 过滤），详见「自定义消息工具栏」 |
 | updateTools              | `IToolBtn[]`                                                                                 | —       | AI 消息右侧反馈工具（点赞/踩/删除等）的自定义配置；按 `id` 与内置 `CONST_UPDATE_TOOLS` 合并，规则同上                                     |
 | userMessageTools         | `IToolBtn[]`                                                                                 | —       | 自定义用户消息工具组，透传给 `MessageRender` → `UserMessage`；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏     |
@@ -575,7 +669,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
 | onInterruptResume        | `OnInterruptResume`                                                                          | —       | AG-UI human-in-the-loop 中断响应回调，透传给 `MessageRender` → `InterruptMessageRender`                                                  |
-| renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式并隐藏工具栏与「停止生成」按钮；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为                              |
+| renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式，隐藏工具栏与「停止生成」，过程状态栏按终态展示；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为 |
 
 ### v-model
 
@@ -589,21 +683,29 @@ AI 回复状态为 `error` 时，消息以错误样式展示：
 | ------------- | ---- | -------------------------- |
 | stopStreaming | —    | 点击「停止生成」按钮时触发 |
 
+### Expose
+
+| 方法               | 类型                          | 说明                                                                                                                                 |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| getScrollElement     | `() => HTMLElement \| null`   | 消息列表的滚动容器。`ChatContainer` 把它交给消息定位器，作为可视区判断的 root                                                       |
+| locate               | `(uid: string) => void`       | 在滚动容器的直接子节点里按 `data-message-group-id` 找到目标，只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
+| visibleMessageGroups | `MessageGroup[]`              | 当前实际渲染的消息组。分享态已去掉 Loading 组。定位器使用同一规则，不回读这份 expose                               |
+
 ### Slots
 
 | 插槽名           | 参数                                                                                                        | 说明                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | answeredQuestion | `{ item, index, status }`                                                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
 | codeHeader       | `{ language: string; token: Token[] }`                                                                      | 代码块头部，透传给默认 MessageRender                                                      |
-| default          | `MessageSlotProps`：`{ message, messageTools, messageToolsStatus, tippyOptions, onAction, onInputConfirm, onShortcutConfirm, onInterruptResume }` | 自定义单条消息渲染；字段与 MessageRender props 对齐，可 `<MessageRender v-bind="slotProps" />`，回调已绑定当前消息；消息分组外层容器与 `#group` 未覆盖时的工具栏仍由容器管理 |
-| group            | `{ group: MessageGroup }`                                                                                   | 自定义单个消息组内容，替换默认 Checkbox、消息列表与 `MessageTools`；外层组容器仍由组件管理 |
+| default          | `MessageSlotProps`：`{ message, messageTools, messageToolsStatus, tippyOptions, onAction, onInputConfirm, onShortcutConfirm, onInterruptResume }` | 自定义单条消息渲染；字段与 MessageRender props 对齐，可 `<MessageRender v-bind="slotProps" />`，回调已绑定当前消息。终态折叠时只传入当前可见消息；消息分组外层容器与 `#group` 未覆盖时的过程状态栏、工具栏仍由容器管理 |
+| group            | `{ group: MessageGroup }`                                                                                   | 自定义单个消息组内容，替换默认 Checkbox、过程状态栏、消息列表与 `MessageTools`；外层组容器仍由组件管理 |
 
 ## 类型定义
 
 ```typescript
 import { MessageRole, MessageStatus, MessageToolsStatus, type Message, type MessageGroup, type IToolBtn } from '@blueking/chat-x';
 
-// 消息组（由 useMessageGroup 生成，也可手动传入 messageGroups）
+// 消息组（必须传入 useMessageGroup 的结果）
 interface MessageGroup {
   checked: boolean;
   isHover: boolean;
@@ -612,7 +714,6 @@ interface MessageGroup {
   startTime?: number;
   type: MessageRole;
   uid: string;
-  userMessageTitle?: number | string;
 }
 
 // onAgentAction 回调类型
@@ -640,6 +741,7 @@ enum MessageToolsStatus {
 
 ## 关联组件
 
+- [ChatContainer](/components/setup/chat-container#消息定位器) — 消息定位器的挂载方；本组件提供 `getScrollElement` 与 `locate`
 - [MessageRender](/components/message/message-render) — 按组渲染每条消息时委托使用
 - [MessageTime](/components/feedback/message-time) — AI 消息组工具栏右侧的时间
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传

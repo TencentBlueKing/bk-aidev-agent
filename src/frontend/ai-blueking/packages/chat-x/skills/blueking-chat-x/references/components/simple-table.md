@@ -10,6 +10,8 @@ FlowAgent 节点详情中的轻量表格展示组件。 源码位置：src/compo
 
 # SimpleTable 简易表格
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+
 > **能力域**：Agent 能力
 
 `SimpleTable` 是 FlowAgent 节点详情中的轻量只读表格，用于展示参数名、参数值、插件输出定义等结构化信息。组件只根据 `columns` 和 `data` 渲染表格，不提供排序、筛选、分页或编辑能力。
@@ -39,7 +41,7 @@ FlowAgent 节点详情中的轻量表格展示组件。 源码位置：src/compo
 </template>
 
 <script setup lang="ts">
-  import SimpleTable from '@blueking/chat-x/src/components/chat-content/flow-agent-content/simple-table.vue';
+  // SimpleTable 未从包入口导出；文档站 demo 使用页面顶部相对路径
 
   const columns = [
     { key: 'key', label: '参数名' },

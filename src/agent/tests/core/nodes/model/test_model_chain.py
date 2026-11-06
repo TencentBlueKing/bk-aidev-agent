@@ -907,3 +907,57 @@ class TestTerminalSecuritySteps:
             model_chain_state=ModelChainState(max_retries=3),
             response=None,
         )
+
+
+class TestToolSelectionMovedToAssembly:
+    """工具选择前移（D-3）：一次装配只选一次，重试不重选。"""
+
+    @staticmethod
+    def _make_ca(tools: list) -> Mock:
+        ca = Mock()
+        ca.get_chat_prompt_variables = Mock(return_value={})
+        ca.get_chat_prompt_template = Mock(
+            return_value=Mock(
+                invoke=Mock(return_value=Mock(to_messages=Mock(return_value=[HumanMessage(content="hi")])))
+            )
+        )
+
+        def _choose(ctx):
+            ctx.tools = tools
+            return tools
+
+        ca.get_choice_tools = Mock(side_effect=_choose)
+        return ca
+
+    def test_choice_tools_called_once_across_retries(self):
+        """重试 3 次（共 4 次尝试）时 get_choice_tools 仅调用 1 次，ctx.tools 对象不变。"""
+        tools = [_make_real_tool()]
+        ca = self._make_ca(tools)
+        llm = _make_response_queue_llm([AIMessage(content="") for _ in range(4)])
+
+        chain = _build_model_chain(
+            llm=llm,
+            context_assembly=ca,
+            max_retries=3,
+            quality_gate=QualityGate(enable_judge_response=False),
+            use_structured_response=False,
+            enable_parallel_tool_calls=False,
+            use_tool_call_promotion=False,
+        )
+
+        ctx = ProcessorContext(
+            state={"messages": []},
+            config=RunnableConfig(),
+            store=Mock(),
+            messages=[],
+            model_chain_state=ModelChainState(max_retries=3),
+            response=None,
+        )
+        chain.invoke(ctx)
+
+        assert llm._invoke_count[0] == 4
+        assert ca.get_choice_tools.call_count == 1
+        assert ctx.tools is tools
+        # 每次尝试仍按同一工具集重建绑定
+        assert llm.bind_tools.call_count == 4
+        assert all(call.args[0] is tools for call in llm.bind_tools.call_args_list)

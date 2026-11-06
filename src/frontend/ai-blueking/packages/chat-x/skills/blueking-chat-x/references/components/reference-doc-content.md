@@ -10,6 +10,8 @@
 
 # ReferenceDocContent 引用文档活动
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+
 > **能力域**：Agent 能力
 
 `ReferenceDocContent` 用于渲染“引用 N 篇资料作为参考”这类活动消息。组件基于 `ActivityLayout` 提供折叠外壳，并将文档数组交给 `ReferenceContent` 展示。
@@ -40,7 +42,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import ReferenceDocContent from '@blueking/chat-x/src/components/chat-content/reference-doc-content/reference-doc-content.vue';
+  // ReferenceDocContent 未从包入口导出；文档站 demo 使用页面顶部相对路径
   import type { ReferenceDocumentContent } from '@blueking/chat-x';
 
   const collapsed = ref(false);

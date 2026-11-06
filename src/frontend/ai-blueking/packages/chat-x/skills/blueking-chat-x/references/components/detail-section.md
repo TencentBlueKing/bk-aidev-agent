@@ -10,6 +10,8 @@ FlowAgent 节点详情中的标题/内容分段容器。 源码位置：src/comp
 
 # DetailSection 详情分段
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+
 > **能力域**：Agent 能力
 
 `DetailSection` 是 FlowAgent 节点详情页中的轻量分段容器，用于给一组相关信息提供统一标题样式。组件自身只负责渲染标题和默认插槽，不处理数据格式、折叠、空态或表格逻辑。
@@ -37,7 +39,7 @@ FlowAgent 节点详情中的标题/内容分段容器。 源码位置：src/comp
 </template>
 
 <script setup lang="ts">
-  import DetailSection from '@blueking/chat-x/src/components/chat-content/flow-agent-content/detail-section.vue';
+  // DetailSection 未从包入口导出；文档站 demo 使用页面顶部相对路径
 </script>
 ```
 

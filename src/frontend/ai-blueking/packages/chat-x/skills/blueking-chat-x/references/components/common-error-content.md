@@ -1,4 +1,4 @@
-# CommonErrorContent 错误内容
+# commonErrorContent 错误内容
 
 > 能力域：内容渲染 ｜ 导入：`import { commonErrorContent } from '@blueking/chat-x'` ｜ since 1.0.0
 
@@ -8,7 +8,13 @@
 
 ---
 
-# CommonErrorContent 通用错误内容
+# commonErrorContent 通用错误内容
+
+| 名称 | 种类 |
+| --- | --- |
+| `CommonErrorContent` | 源码 SFC / 模板别名 |
+| `commonErrorContent` | 包入口导出名 |
+
 ## 源码事实
 
 - **源码位置**：`src/components/chat-content/common-error-content/common-error-content.vue`
@@ -38,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-  import { CommonErrorContent } from '@blueking/chat-x';
+  import { commonErrorContent as CommonErrorContent } from '@blueking/chat-x';
 </script>
 ```
 

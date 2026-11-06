@@ -8,6 +8,9 @@ ChatInput 上方的信息提示条。 源码位置：src/components/chat-input/i
 
 # InputInfoAlert 输入提示条
 
+> **导出状态**：内部实现，未从 `@blueking/chat-x` 包入口导出。
+> 业务请通过 [ChatInput](/components/input/chat-input) 使用。
+
 > **能力域**：输入交互
 
 ## 源码事实

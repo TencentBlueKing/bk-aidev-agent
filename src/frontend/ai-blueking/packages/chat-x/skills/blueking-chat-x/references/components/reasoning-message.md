@@ -206,6 +206,7 @@ const { stop } = watch(
 | `complete`         | 已思考完成（含 duration 则追加耗时） | ✗        | `#f0f1f5`       |
 | `success`          | 已思考完成（同 complete）            | ✗        | `#f0f1f5`       |
 | `error`            | 思考失败                             | ✗        | `#fff0f0`（红） |
+| `stop`             | 思考已停止（用户停止生成）           | ✗        | `#f0f1f5`       |
 
 ## 类型定义
 
