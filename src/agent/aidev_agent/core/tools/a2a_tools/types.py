@@ -208,7 +208,8 @@ class KnowledgeReference(BaseModel):
     """Related source retrieved during a child run, available for answer attribution.
 
     ``url`` is the original link of web knowledge. Uploaded files and ZIP imports have no original link
-    and only carry ``preview_url``.
+    and only carry ``preview_url``. ``citation_index`` is the number the answer uses to cite it, when the
+    run numbered its sources.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -216,6 +217,15 @@ class KnowledgeReference(BaseModel):
     name: str = ""
     url: str = ""
     preview_url: str = ""
+    citation_index: int | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_reference(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Keep the unnumbered wire shape when the source carries no citation number."""
+        data = handler(self)
+        if self.citation_index is None:
+            data.pop("citation_index", None)
+        return data
 
 
 class AgentResult(BaseModel):

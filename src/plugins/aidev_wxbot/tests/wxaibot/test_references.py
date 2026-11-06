@@ -4,13 +4,22 @@ from unittest.mock import Mock, patch
 
 import pytest
 from aidev_agent.core.ag_ui.reference_documents import reference_documents_for_display
-from aidev_wxbot.wxaibot.context import LlmChunkMsg
+from aidev_wxbot.wxaibot.context import LlmChunkMsg, format_reference_documents
 from aidev_wxbot.wxaibot.direct_stream import AgentStream, iter_direct_stream_frames
 from aidev_wxbot.wxaibot.references import collect_reference_documents
 from aidev_wxbot.wxaibot.stream import consume_chat_stream
 
 REFERENCE = {"name": "Guide", "url": "https://example.com/source", "originFile": "https://example.com/preview"}
 EVENT = {"type": "CUSTOM", "name": "knowledge_rag_result", "value": [REFERENCE]}
+CITED_EVENT = {
+    **EVENT,
+    "value": [
+        {"name": "A", "url": "https://example.com/a", "citation_index": 1},
+        {"name": "B", "url": "https://example.com/b", "citation_index": 2},
+        {"name": "C", "url": "https://example.com/c", "citation_index": 3},
+    ],
+}
+CITED_ANSWER = "- 结论一[3]\n- 结论二[1][3]"
 
 
 def sse(events):
@@ -74,3 +83,66 @@ def test_direct_transport_appends_sdk_references_once(display_adapted):
     assert "answer" in frames[-1].content
     assert "本次检索相关文档" in frames[-1].content
     assert frames[-1].content.count(REFERENCE["url"]) == 1
+
+
+@pytest.mark.parametrize("display_adapted", [False, True])
+def test_citation_numbers_survive_collection(display_adapted):
+    event = {**CITED_EVENT, "value": reference_documents_for_display(CITED_EVENT["value"])}
+    documents = []
+    collect_reference_documents(event if display_adapted else CITED_EVENT, documents)
+    assert [(document["display_name"], document["citation_index"]) for document in documents] == [
+        ("A", 1),
+        ("B", 2),
+        ("C", 3),
+    ]
+
+
+def test_format_lists_only_cited_documents_in_a_separate_section():
+    documents = []
+    collect_reference_documents(CITED_EVENT, documents)
+    text = format_reference_documents(documents, CITED_ANSWER)
+    assert text == "\n\n---\n**参考文档**\n[1] [A](https://example.com/a)\n[3] [C](https://example.com/c)\n"
+
+
+@pytest.mark.parametrize("answer", ["没有标注", "编号对不上[9]"])
+def test_format_falls_back_to_all_retrieved_documents(answer):
+    documents = []
+    collect_reference_documents(CITED_EVENT, documents)
+    text = format_reference_documents(documents, answer)
+    assert text.startswith("\n\n---\n**本次检索相关文档**\n")
+    assert [line.split(" ")[0] for line in text.strip().splitlines()[2:]] == ["[1]", "[2]", "[3]"]
+
+
+def test_queue_transport_lists_documents_cited_by_the_answer():
+    events = [CITED_EVENT, {"type": "TEXT_MESSAGE_CONTENT", "delta": CITED_ANSWER}]
+    with patch.object(LlmChunkMsg, "append_to_cache", autospec=True) as append:
+        consume_chat_stream(sse(events), "example-stream", time.time(), Mock())
+    message = append.call_args.args[0]
+    assert "**参考文档**" in message.docs_content
+    assert "https://example.com/b" not in message.docs_content
+
+
+def test_queue_poll_appends_cited_documents_after_the_answer(settings):
+    documents = []
+    collect_reference_documents(CITED_EVENT, documents)
+    body = {"content": CITED_ANSWER, "think_content": "思考", "is_finish": True, "docs": documents}
+    client = Mock()
+    client.get_queue_info.return_value = {"message_count": 1}
+    client.get_message.side_effect = [{"body": body}]
+    settings.MAX_MESSAGE_TIME = 300
+    stream_id = f"example_{int(time.time())}"
+    content = LlmChunkMsg(stream_id=stream_id).wxaibot_msg_json_from_cache(client)["stream"]["content"]
+    assert content.startswith("<think>思考</think>" + CITED_ANSWER + "\n\n---\n**参考文档**")
+    assert "https://example.com/b" not in content
+
+
+def test_direct_transport_lists_documents_cited_by_the_answer():
+    events = [
+        {"type": "RUN_STARTED", "runId": "example-run"},
+        CITED_EVENT,
+        {"type": "TEXT_MESSAGE_CONTENT", "delta": CITED_ANSWER},
+        {"type": "RUN_FINISHED"},
+    ]
+    stream = AgentStream(kind="chat", session_code="example-session", generator=sse(events))
+    content = list(iter_direct_stream_frames(stream, "example-stream"))[-1].content
+    assert content.endswith("\n\n---\n**参考文档**\n[1] [A](https://example.com/a)\n[3] [C](https://example.com/c)\n")

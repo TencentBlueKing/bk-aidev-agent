@@ -1,0 +1,213 @@
+import json
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock, patch
+
+import pytest
+from aidev_agent.core.ag_ui.reference_documents import reference_documents_for_display
+from aidev_agent.core.citations import (
+    CITATION_INSTRUCTION,
+    CitationRegistry,
+    cite_knowledge,
+    renumber_citations,
+    select_cited,
+    uses_citations,
+)
+from aidev_agent.core.tools.a2a_tools.provider import AgentBackendResolver, get_agent_tools
+from aidev_agent.core.tools.a2a_tools.types import AgentResult, AgentSpec, KnowledgeReference
+from aidev_agent.core.tools.a2a_tools.utils import collect_knowledge_references
+from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
+from aidev_agent.pydantic_models import ChatPrompt, KnowledgeSettings
+from aidev_agent.services.agent.chat import ChatCompletionAgent
+from aidev_agent.utils.migrations import migration_chat_session_context_from_chat_session_contents_v1
+from langchain_core.messages import AIMessage, ToolMessage
+
+SOURCE = "https://example.com/source"
+PREVIEW = "https://example.com/agent-develop/knowledgebase?knowledgeName=a.md"
+
+
+def chunk(title, url):
+    return f"文档标题：{title}\n来源链接：{url}\n\n{title} 正文"
+
+
+def reference(title, path, preview=""):
+    return {"metadata": {"display_name": title, "path": path, "preview_path": preview}}
+
+
+def test_model_reads_numbered_sources_and_documents_carry_the_same_numbers():
+    content, documents = cite_knowledge(
+        [chunk("A", SOURCE), chunk("B", PREVIEW)],
+        [reference("A", SOURCE, PREVIEW), reference("B", PREVIEW, PREVIEW)],
+        CitationRegistry(),
+    )
+    assert content[0] == CITATION_INSTRUCTION
+    assert content[1].startswith("引用编号：[1]\n文档标题：A")
+    assert content[2].startswith("引用编号：[2]\n文档标题：B")
+    assert documents == [
+        {"originFile": PREVIEW, "url": SOURCE, "name": "A", "citation_index": 1},
+        {"originFile": PREVIEW, "url": PREVIEW, "name": "B", "citation_index": 2},
+    ]
+
+
+def test_chunks_without_a_source_line_keep_the_previous_prompt_and_shape():
+    content, documents = cite_knowledge(["plain"], [reference("A", SOURCE, PREVIEW)], CitationRegistry())
+    assert content == ["plain"]
+    assert documents == [{"originFile": PREVIEW, "url": SOURCE, "name": "A"}]
+
+
+def test_repeated_retrievals_keep_stable_numbers_for_the_same_source():
+    citations = CitationRegistry()
+    cite_knowledge([chunk("A", SOURCE)], [reference("A", SOURCE)], citations)
+    content, documents = cite_knowledge(
+        [chunk("B", PREVIEW), chunk("A", SOURCE)], [reference("B", PREVIEW), reference("A", SOURCE)], citations
+    )
+    assert [document["citation_index"] for document in documents] == [2, 1]
+    assert content[1].startswith("引用编号：[2]")
+    assert content[2].startswith("引用编号：[1]")
+
+
+def test_parallel_numbering_never_hands_out_one_number_twice():
+    citations = CitationRegistry()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        numbers = list(pool.map(citations.number, [f"https://example.com/{index % 20}" for index in range(200)]))
+    assert sorted(set(numbers)) == list(range(1, 21))
+
+
+@pytest.mark.parametrize(
+    "answer,expected",
+    [("结论[2]，另见[1][2]", [1, 2]), ("只用了[3]", [3]), ("没有标注", None), ("编造[9]", None), (None, None)],
+)
+def test_select_cited_orders_by_number_and_returns_none_without_citations(answer, expected):
+    items = [{"citation_index": 2}, {"citation_index": 1}, {"metadata": {"citation_index": 3}}, {"name": "plain"}]
+    selected = select_cited(items, answer)
+    numbers = (
+        None
+        if selected is None
+        else [item.get("citation_index") or item["metadata"]["citation_index"] for item in selected]
+    )
+    assert numbers == expected
+
+
+def test_renumber_rewrites_every_marker_once():
+    assert renumber_citations("a[1] b[2][1] c[3]", {1: 2, 2: 1}) == "a[2] b[1][2] c[3]"
+    assert renumber_citations("a[1]", {}) == "a[1]"
+
+
+def test_uses_citations_detects_numbered_knowledge_and_child_results():
+    assert uses_citations({"knowledge_content": [CITATION_INSTRUCTION]})
+    child = ToolMessage(content=json.dumps({"references": [{"citation_index": 1}]}), tool_call_id="call")
+    assert uses_citations({"messages": [AIMessage(content="x"), child]})
+    assert not uses_citations({"knowledge_content": ["plain"], "messages": [AIMessage(content="[1]")]})
+
+
+def test_knowledge_tool_returns_numbered_content_and_dispatches_numbered_documents():
+    citations = CitationRegistry()
+    with (
+        patch("aidev_agent.core.tools.knowledge.KnowledgeRag") as rag,
+        patch("aidev_agent.core.tools.knowledge.dispatch_custom_event") as dispatch,
+    ):
+        rag.return_value.retrieve.return_value = {
+            "knowledge_content": [chunk("A", SOURCE)],
+            "reference_doc": [reference("A", SOURCE, PREVIEW)],
+        }
+        tool = make_knowledge_retrieval_tool(
+            object(), KnowledgeSettings(knowledge_bases=[{"name": "kb"}]), kb_retriever=MagicMock(), citations=citations
+        )
+        result = tool.invoke(input={"query": "q"}, config={"callbacks": [MagicMock()]})
+    assert result[0] == CITATION_INSTRUCTION and result[1].startswith("引用编号：[1]")
+    assert dispatch.call_args_list[1].kwargs["data"]["data"][0]["citation_index"] == 1
+    assert citations.find(SOURCE) == 1
+
+
+def test_display_title_carries_the_number_while_metadata_keeps_the_bare_title():
+    document = {"name": "A", "url": SOURCE, "originFile": PREVIEW, "citation_index": 2}
+    once = reference_documents_for_display([document])
+    assert once[0]["name"] == "[2] A"
+    assert once[0]["metadata"]["display_name"] == "A"
+    assert reference_documents_for_display(once) == once
+    assert reference_documents_for_display([{**document, "citation_index": None}])[0]["name"] == "A"
+
+
+def test_child_references_keep_their_number_through_collection():
+    event = {"type": "CUSTOM", "name": "knowledge_rag_result"}
+    value = reference_documents_for_display([{"name": "A", "url": SOURCE, "originFile": PREVIEW, "citation_index": 3}])
+    references = collect_knowledge_references([{**event, "value": value}])
+    assert references == [KnowledgeReference(name="A", url=SOURCE, preview_url=PREVIEW, citation_index=3)]
+    assert "citation_index" not in KnowledgeReference(name="A", url=SOURCE).model_dump()
+
+
+def test_child_sources_join_the_parent_numbers_and_markers_are_rewritten(mocker):
+    citations = CitationRegistry()
+    citations.number(PREVIEW)
+    child = AgentResult(
+        status="completed",
+        result="结论[1]，补充[2]",
+        references=(
+            KnowledgeReference(name="A", url=SOURCE, preview_url="https://example.com/p/a", citation_index=1),
+            KnowledgeReference(name="B", preview_url=PREVIEW, citation_index=2),
+        ),
+    )
+    backend = mocker.Mock()
+    backend.execute.return_value = child
+    resolver = AgentBackendResolver().register("bkai", mocker.Mock(return_value=backend))
+    spec = AgentSpec(name="child", description="test", backend_type="bkai")
+    dispatch = mocker.patch("aidev_agent.core.tools.a2a_tools.provider.dispatch_custom_event")
+    tool = get_agent_tools([spec], resolver, citations=citations)[0]
+    result = json.loads(tool.func(agent_name="child", message="q", config={"callbacks": [object()]}, state={}))
+    assert result["result"] == "结论[2]，补充[1]"
+    assert [each["citation_index"] for each in result["references"]] == [2, 1]
+    assert [each["citation_index"] for each in dispatch.call_args_list[1].kwargs["data"]["data"]] == [2, 1]
+
+
+def activity(message_id, documents):
+    return {
+        "id": message_id,
+        "role": "activity",
+        "status": "success",
+        "content": documents,
+        "activity_type": "reference_document",
+        "property": {"builtin_property": {"type": "reference_document", "message_id": f"ref-{message_id}"}},
+    }
+
+
+def message(message_id, role, content):
+    return {"id": message_id, "role": role, "content": content}
+
+
+def saved(name, number=None):
+    document = {"name": name, "url": f"https://example.com/{name}", "origin_file_url": ""}
+    return {**document, "citation_index": number} if number else document
+
+
+def test_snapshot_keeps_only_documents_cited_in_each_turn():
+    records = [
+        message("1", "user", "q1"),
+        activity("2", [saved("a", 1), saved("b", 2)]),
+        activity("3", [saved("c", 3)]),
+        message("4", "assistant", "结论[2]"),
+        message("5", "user", "q2"),
+        activity("6", [saved("d", 1), saved("e", 2)]),
+        message("7", "assistant", "没有标注"),
+        message("8", "user", "q3"),
+        activity("9", [saved("f"), saved("g")]),
+        message("10", "assistant", "旧记录[1]"),
+    ]
+    session_context = migration_chat_session_context_from_chat_session_contents_v1(records)
+    history = [ChatPrompt.model_validate(each) for each in session_context]
+    agent = ChatCompletionAgent(chat_history=history)
+    snapshot = agent._build_snapshot_agui_messages()
+    assert [item["id"] for item in snapshot] == ["1", "2", "4", "5", "6", "7", "8", "9", "10"]
+    names = {item["id"]: [each["name"] for each in item["content"]] for item in snapshot if item["role"] == "activity"}
+    assert names == {"2": ["[2] b"], "6": ["[1] d", "[2] e"], "9": ["f", "g"]}
+    assert len(agent.chat_history[1].content) == 2
+
+
+def test_run_end_snapshot_is_sent_when_the_run_numbered_its_sources():
+    resource_manager = MagicMock()
+    resource_manager.get_chat_session_contents.return_value = [
+        {"id": 1, "role": "user", "content": "q"},
+        {"id": 2, "role": "assistant", "content": "结论[1]"},
+    ]
+    agent = ChatCompletionAgent(thread_id="session-1", resource_manager=resource_manager, executor_info={})
+    snapshot = agent._build_run_end_snapshot_agui_messages({"knowledge_content": [CITATION_INSTRUCTION]})
+    assert [item["id"] for item in snapshot] == ["1", "2"]
+    assert agent._build_run_end_snapshot_agui_messages({"knowledge_content": ["plain"]}) is None

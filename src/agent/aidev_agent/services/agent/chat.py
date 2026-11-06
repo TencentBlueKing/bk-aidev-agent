@@ -25,7 +25,11 @@ from aidev_agent.api.bk_agent import BkAgentApi
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.aidev_agent import AidevAGUIAgent
 from aidev_agent.core.ag_ui.events import ExtendToolCallResultEvent
-from aidev_agent.core.ag_ui.reference_documents import history_reference_documents
+from aidev_agent.core.ag_ui.reference_documents import (
+    history_reference_documents,
+    keep_cited_documents,
+    reference_activity_documents,
+)
 from aidev_agent.core.ag_ui.types import (
     AgentInput,
     ReasoningLangChainMessage,
@@ -38,6 +42,7 @@ from aidev_agent.core.ag_ui.utils import (
     get_schema_keys,
     get_stream_payload_input,
 )
+from aidev_agent.core.citations import cited_numbers, select_cited, uses_citations
 from aidev_agent.core.nodes.model import convert_chat_history_to_messages
 from aidev_agent.core.tools.a2a_tools.types import AgentBackendType, AgentSpec
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
@@ -136,16 +141,64 @@ def _clear_tool_call_placeholder(payload: dict) -> None:
         payload["content"] = ""
 
 
+def _activity_type(payload: dict) -> object:
+    builtin_property = payload.get("builtin_property")
+    builtin_property = builtin_property if isinstance(builtin_property, dict) else {}
+    return builtin_property.get("activity_type") or payload.get("activity_type") or builtin_property.get("type")
+
+
 def _adapt_reference_activity(payload: dict) -> None:
     """把引用文档 activity 改写为与实时一致的展示形态，只作用于快照副本，不回写账本。"""
     if payload.get("role") != PromptRole.ACTIVITY.value:
         return
-    builtin_property = payload.get("builtin_property")
-    builtin_property = builtin_property if isinstance(builtin_property, dict) else {}
-    activity_type = (
-        builtin_property.get("activity_type") or payload.get("activity_type") or builtin_property.get("type")
+    payload["content"] = history_reference_documents(payload.get("content"), _activity_type(payload))
+
+
+_USER_ROLES = (PromptRole.USER.value, PromptRole.USER_IMAGE.value)
+_ANSWER_ROLES = (PromptRole.ASSISTANT.value, PromptRole.AI.value)
+
+
+def _keep_cited_references_in_turn(turn: list[dict]) -> list[dict]:
+    activities = [
+        (payload, documents)
+        for payload in turn
+        if payload.get("role") == PromptRole.ACTIVITY.value
+        and (documents := reference_activity_documents(payload.get("content"), _activity_type(payload))) is not None
+    ]
+    answer = "".join(
+        payload["content"]
+        for payload in turn
+        if payload.get("role") in _ANSWER_ROLES and isinstance(payload.get("content"), str)
     )
-    payload["content"] = history_reference_documents(payload.get("content"), activity_type)
+    if not activities or select_cited([item for _, documents in activities for item in documents], answer) is None:
+        return turn
+    cited = cited_numbers(answer)
+    activity_ids = {id(payload) for payload, _ in activities}
+    kept = []
+    for payload in turn:
+        if id(payload) in activity_ids:
+            payload["content"] = keep_cited_documents(payload["content"], _activity_type(payload), cited)
+            # 文档全未被引用的那次检索不再展示，避免出现“引用 0 篇资料”
+            if payload["content"] == []:
+                continue
+        kept.append(payload)
+    return kept
+
+
+def _keep_cited_references(records: list[dict]) -> list[dict]:
+    """每轮只保留回答里 [n] 实际标注的引用文档，只作用于快照副本，不回写账本。
+
+    回答没有标注、或标注的编号对不上任何文档（如未编号的旧记录）时保留全部，即本轮检索到的文档。
+    """
+    kept: list[dict] = []
+    turn: list[dict] = []
+    for payload in records:
+        if payload.get("role") in _USER_ROLES:
+            kept.extend(_keep_cited_references_in_turn(turn))
+            turn = []
+        turn.append(payload)
+    kept.extend(_keep_cited_references_in_turn(turn))
+    return kept
 
 
 class ChatCompletionAgent(BaseModel):
@@ -1204,7 +1257,7 @@ class ChatCompletionAgent(BaseModel):
         property.docSchema，不经 AG-UI 消息转换器，不做 role 归一 / camelCase 改名 /
         status 映射 / multimodal 重排。
         引用文档 activity 只在快照副本上按实时展示契约改写链接：标题打开预览，
-        仅外链知识保留原文链接，落库记录不变。
+        仅外链知识保留原文链接；回答标注了引用编号时，每轮只保留被标注的文档，落库记录不变。
         用户图片 download_url 与 Markdown 图片中的会话 PV 路径只在快照副本上重签，不写回账本，
         避免执行过程中前端覆盖历史后看到过期图。
         """
@@ -1218,6 +1271,7 @@ class ChatCompletionAgent(BaseModel):
             _clear_tool_call_placeholder(payload)
             _adapt_reference_activity(payload)
             base.append(payload)
+        base = _keep_cited_references(base)
         file_service = self._pv_file_service()
         if file_service is not None:
             for payload in base:
@@ -1243,8 +1297,9 @@ class ChatCompletionAgent(BaseModel):
         本轮 assistant / tool 记录只经 writer 落库，未并入内存账本，因此与 factory 相同地重读会话内容
         （同一换源与迁移），保证尾帧包含本轮产物且 id 与库一致。读不到记录时返回 None，不下发空快照。
         会话没有 PV 时不会产生需签发的图片，直接返回 None，省掉一次全量读取。
+        本轮知识带引用编号时同样下发：实时面板展示的是检索到的全部文档，尾帧按回答的 [n] 收敛到实际引用。
         """
-        if not has_session_pv(state_values):
+        if not has_session_pv(state_values) and not uses_citations(state_values):
             return None
         raw_records = self.resource_manager.get_chat_session_contents(self.thread_id) or []
         session_context_data = migration_chat_session_context_from_chat_session_contents_v1(raw_records)

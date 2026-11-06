@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from aidev_agent.core.citations import CITATION_KEY, citation_index
+
 
 def collect_reference_documents(event: dict[str, Any], documents: list[dict]) -> None:
     payload = event.get("documents")
@@ -28,4 +30,7 @@ def collect_reference_documents(event: dict[str, Any], documents: list[dict]) ->
         normalized.update(display_name=name if isinstance(name, str) and name else path, path=path)
         if isinstance(preview_path, str) and preview_path:
             normalized["preview_path"] = preview_path
+        number = citation_index(document)
+        if number is not None:
+            normalized[CITATION_KEY] = number
         documents.append(normalized)

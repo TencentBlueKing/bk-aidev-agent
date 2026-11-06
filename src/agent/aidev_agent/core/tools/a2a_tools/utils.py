@@ -23,6 +23,7 @@ from logging import getLogger
 from typing import Any
 
 from aidev_agent.core.ag_ui.reference_documents import resolve_reference_links
+from aidev_agent.core.citations import citation_index
 from aidev_agent.core.tools.a2a_tools.types import AgentResult, ExitReason, KnowledgeReference
 from aidev_agent.pydantic_models import ExecuteKwargs
 
@@ -315,7 +316,14 @@ def collect_knowledge_references(events: Iterable[dict[str, Any]]) -> list[Knowl
             if identity in seen:
                 continue
             seen.add(identity)
-            references.append(KnowledgeReference(name=links.name, url=links.external, preview_url=links.preview))
+            references.append(
+                KnowledgeReference(
+                    name=links.name,
+                    url=links.external,
+                    preview_url=links.preview,
+                    citation_index=citation_index(document),
+                )
+            )
     return references
 
 

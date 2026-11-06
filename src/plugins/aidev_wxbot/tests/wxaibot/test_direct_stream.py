@@ -62,7 +62,7 @@ def test_chat_sse_is_converted_to_direct_frames_with_thinking_docs_and_terminal(
     assert frames[0].content == f"<think>{'先查询' * 20}</think>"
     assert frames[1].content == f"<think>{'先查询' * 20}</think>{'查询完成' * 20}"
     assert frames[-1].finish
-    assert "[1][日志](https://example.com/a%20b)" in frames[-1].content
+    assert "[1] [日志](https://example.com/a%20b)" in frames[-1].content
 
 
 def test_terminal_frame_still_drains_the_agent_iterator_to_its_natural_end():

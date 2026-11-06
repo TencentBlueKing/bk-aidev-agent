@@ -3,6 +3,8 @@
 from typing import Any, NamedTuple
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
+from aidev_agent.core.citations import citation_index
+
 _KNOWLEDGE_PREVIEW_ROUTE = "/agent-develop/knowledgebase"
 _LINK_ALIASES = ("originFileUrl", "origin_file_url", "originFile", "origin_file")
 
@@ -81,7 +83,8 @@ def resolve_reference_links(item: object) -> ReferenceLinks | None:
     if not source and not preview:
         return None
     source, preview = _normalize_preview_url(source), _normalize_preview_url(preview)
-    name = _text(item.get("name") or metadata.get("display_name")) or source or preview
+    # display_name keeps the bare title; the display adapter may prefix name with the citation number.
+    name = _text(metadata.get("display_name") or item.get("name")) or source or preview
     is_external = bool(source) and source != preview and not _is_knowledge_preview(source)
     return ReferenceLinks(name=name, path=source, preview=preview, external=source if is_external else "")
 
@@ -94,11 +97,13 @@ def _display_document(item: dict[str, Any]) -> dict[str, Any] | None:
     links = resolve_reference_links(item) if has_links else None
     if links is None:
         return None
+    number = citation_index(item)
     # The existing UI opens url from the title and shows the preview/source icons only when originFile is set.
-    # Explicit metadata preserves source identity for SDK and bot consumers.
+    # The title carries the citation number so it matches the [n] markers in the answer.
+    # Explicit metadata preserves source identity and the bare title for SDK and bot consumers.
     return {
         **item,
-        "name": links.name,
+        "name": f"[{number}] {links.name}" if number else links.name,
         "url": links.preview or links.path,
         "originFile": links.external if links.preview else "",
         "metadata": {**metadata, "display_name": links.name, "path": links.path, "preview_path": links.preview},
@@ -133,3 +138,20 @@ def history_reference_documents(content: object, activity_type: object) -> objec
     if activity_type == "knowledge_rag" and isinstance(documents, list):
         return {**content, "reference_document": [_history_document(item) for item in documents]}
     return content
+
+
+def reference_activity_documents(content: object, activity_type: object) -> list | None:
+    """Documents of a saved reference activity, or None for other activities."""
+    if activity_type == "reference_document" and isinstance(content, list):
+        return content
+    documents = content.get("reference_document") if isinstance(content, dict) else None
+    return documents if activity_type == "knowledge_rag" and isinstance(documents, list) else None
+
+
+def keep_cited_documents(content: object, activity_type: object, cited: set[int]) -> object:
+    """Return a copy of a reference activity that keeps only the documents with a cited number."""
+    documents = reference_activity_documents(content, activity_type)
+    if documents is None:
+        return content
+    kept = [item for item in documents if citation_index(item) in cited]
+    return kept if isinstance(content, list) else {**content, "reference_document": kept}
