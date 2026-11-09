@@ -229,7 +229,9 @@ def _build_model_chain(
     retry_strategy = _resolve_retry_strategy(llm)
 
     def _with_completion_callback(runnable: Runnable) -> Runnable:
-        """为模型调用挂载完成时间回调；仅接入记忆时把原始输出标记为待结算。"""
+        """仅在接入个人记忆时挂载完成时间回调并标记待结算，普通模型调用保持原链。"""
+        if not track_memory_source:
+            return runnable
         return runnable.with_config(
             merge_configs(
                 getattr(runnable, "config", None),

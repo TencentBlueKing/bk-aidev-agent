@@ -103,7 +103,9 @@ def test_disabled_memory_adds_no_finalization_update_or_duplicate_body(structure
     text = '{"action":"Final Answer","action_input":"Plain answer"}' if structured else "Plain answer"
     events, answer = chain_events(text, track=False, structured=structured)
     assert SessionPersistenceEventNames.MemorySourceFinalized.value not in {event.name for event in events}
-    assert not {"memory_source_pending", "memory_source_complete", "source_text"} & set(answer.response_metadata)
+    assert not {"memory_source_pending", "memory_source_complete", "source_text", "source_timestamp"} & set(
+        answer.response_metadata
+    )
     client, rows = persist(events)
     assert client.api.create_chat_session_content.call_count == 1
     client.api.update_chat_session_content.assert_not_called()
