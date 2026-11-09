@@ -18,21 +18,35 @@ to the current version of the project delivered to anyone in the future.
 
 import logging
 from collections.abc import Awaitable, Sequence
-from typing import Callable
+from inspect import signature
+from typing import Callable, Union, get_type_hints
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as create_tool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
-from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, ToolCallWrapper
+from langgraph.prebuilt.tool_node import (
+    TOOL_CALL_ERROR_TEMPLATE,
+    AsyncToolCallWrapper,
+    ToolCallRequest,
+    ToolCallWrapper,
+)
 from langgraph.types import Command
 
+from aidev_agent.config import BKAI_TOOL_LOOP_FEEDBACK_ROUNDS, BKAI_TOOL_LOOP_REPEAT_LIMIT
 from aidev_agent.pydantic_models import SecuritySettings
+from aidev_agent.utils.tool_result import is_error_content
 
 from .approval_wrapper import itsm_approval_async_wrapper, itsm_approval_sync_wrapper
 from .deduplication import KnowledgeToolNode, deduplicate_async, deduplicate_sync
 from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
+from .loop_guard import (
+    LoopGuardPolicy,
+    ToolLoopTerminationError,
+    build_loop_guard_async_wrapper,
+    build_loop_guard_sync_wrapper,
+)
 from .pydantic_models import ToolNodeSettings
 from .result_limit_wrapper import build_result_limit_async_wrapper, build_result_limit_sync_wrapper
 from .security_wrapper import (
@@ -86,6 +100,52 @@ def default_tool_call_handler(error: Exception) -> str:
         error_message = "工具执行失败"
 
     return error_message
+
+
+def _with_loop_termination_handler(flag):
+    """保持原工具错误策略，仅让循环终止异常穿过 ToolNode 的 wrapper 兜底。"""
+    if not flag:
+        return flag
+
+    def handler(error: Exception) -> str:
+        if isinstance(error, ToolLoopTerminationError):
+            raise error
+        if isinstance(flag, str):
+            return flag
+        if callable(flag) and not isinstance(flag, type):
+            return flag(error)
+        return TOOL_CALL_ERROR_TEMPLATE.format(error=repr(error))
+
+    if isinstance(flag, tuple):
+        handled = Union[(*flag, ToolLoopTerminationError)]
+    elif isinstance(flag, type) and issubclass(flag, Exception):
+        handled = flag | ToolLoopTerminationError
+    elif callable(flag):
+        parameters = list(signature(flag).parameters.values())
+        error_type = get_type_hints(flag).get(parameters[0].name, Exception) if parameters else Exception
+        handled = error_type | ToolLoopTerminationError
+    else:
+        handled = Exception
+    handler.__annotations__["error"] = handled
+    return handler
+
+
+def _mark_content_error(result: ToolMessage | Command) -> ToolMessage | Command:
+    messages = [result] if isinstance(result, ToolMessage) else []
+    if isinstance(result, Command) and isinstance(result.update, dict):
+        messages = result.update.get("messages", []) or []
+    for message in messages:
+        if isinstance(message, ToolMessage) and is_error_content(message.content):
+            message.status = "error"
+    return result
+
+
+def _content_error_sync_wrapper(request, execute):
+    return _mark_content_error(execute(request))
+
+
+async def _content_error_async_wrapper(request, execute):
+    return _mark_content_error(await execute(request))
 
 
 # ============================================================================
@@ -296,7 +356,19 @@ def build_tool_node(
         async_wrapper_list.insert(0, build_tool_call_unwrap_async_wrapper(tools_by_name))
         sync_wrapper_list.append(tool_call_rename_sync_wrapper)
         async_wrapper_list.append(tool_call_rename_async_wrapper)
-    # 构建wrapper链
+    # 在结果改名、限长、净化和事件发送前识别原始错误内容。
+    sync_wrapper_list.append(_content_error_sync_wrapper)
+    async_wrapper_list.append(_content_error_async_wrapper)
+    if node_options.enable_tool_loop_guard:
+        loop_guard = LoopGuardPolicy(
+            repeat_limit=BKAI_TOOL_LOOP_REPEAT_LIMIT,
+            feedback_rounds=BKAI_TOOL_LOOP_FEEDBACK_ROUNDS,
+            result_limit=node_options.result_limit_thrd,
+        )
+        # 拒绝不进入内层执行链；守卫自行发送一次完成事件供 AGUI 回写。
+        sync_wrapper_list.insert(0, build_loop_guard_sync_wrapper(loop_guard, messages_key))
+        async_wrapper_list.insert(0, build_loop_guard_async_wrapper(loop_guard, messages_key))
+        handle_tool_errors = _with_loop_termination_handler(handle_tool_errors)
     final_sync_wrapper = _chain_tool_call_wrappers(sync_wrapper_list)
     final_async_wrapper = _chain_async_tool_call_wrappers(async_wrapper_list)
     return KnowledgeToolNode(

@@ -87,11 +87,13 @@ def make_env(
     checkpoint=False,
     result_limit=None,
     use_timer=False,
+    enable_tool_loop_guard=False,
 ):
     catalog = LazyToolCatalog(deferred_tools=tools)
     describe_tool, proxy = make_meta_tools(catalog)
     options = ToolNodeSettings(
         use_timer=use_timer,
+        enable_tool_loop_guard=enable_tool_loop_guard,
         use_tool_redaction=False,
         use_tool_untrusted_sanitize=False,
         use_tool_call_proxy=True,
@@ -306,3 +308,27 @@ class TestTimerEvent:
         result = await invoke(app, tool_input("echo", {"text": "x"}), is_async)
         assert sent == [("tool_call", "回显")]
         assert result["messages"][-1].name == "tool_call"
+
+
+class TestLoopRejectionEvent:
+    @pytest.mark.parametrize("is_async", [False, True])
+    @pytest.mark.parametrize("use_timer", [False, True])
+    async def test_rejection_keeps_proxy_identity_at_send(self, is_async, use_timer, monkeypatch):
+        sent = []
+
+        def record(name, data, config):
+            sent.append((name, data.name, data.status, data.id, data.tool_call_id))
+
+        monkeypatch.setattr(timer_wrapper, "dispatch_custom_event", record)
+        target = EchoTool()
+        _, _, _, app = make_env([target], use_timer=use_timer, enable_tool_loop_guard=True)
+        messages = []
+        for index in range(4):
+            messages.extend(tool_input("echo", {"text": "x"}, call_id=f"call-{index}")["messages"])
+            if index < 3:
+                messages.append(ToolMessage("echo:x", tool_call_id=f"call-{index}", name="tool_call"))
+        result = await invoke(app, {"messages": messages}, is_async)
+        message = result["messages"][-1]
+        assert target.calls == []
+        assert sent == [("on_tool_node_finish", "tool_call", "error", message.id, "call-3")]
+        assert message.id and message.name == "tool_call"

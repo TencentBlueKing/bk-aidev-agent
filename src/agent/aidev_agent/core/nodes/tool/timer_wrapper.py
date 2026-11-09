@@ -49,7 +49,7 @@ def _add_metadata_to_tool_message(
         msg.id = uuid.uuid4().hex
 
 
-def _process_result(
+def process_tool_result(
     request: ToolCallRequest,
     msg: ToolMessage | Command,
     duration: int,
@@ -76,7 +76,7 @@ def timer_sync_wrapper(
     t1 = int(time.monotonic() * 1000)
     msg = execute(request)
     duration = int(time.monotonic() * 1000) - t1
-    return _process_result(request, msg, duration)
+    return process_tool_result(request, msg, duration)
 
 
 async def timer_async_wrapper(
@@ -86,4 +86,4 @@ async def timer_async_wrapper(
     t1 = int(time.monotonic() * 1000)
     msg = await execute(request)
     duration = int(time.monotonic() * 1000) - t1
-    return _process_result(request, msg, duration)
+    return process_tool_result(request, msg, duration)
