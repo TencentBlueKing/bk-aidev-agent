@@ -178,6 +178,47 @@ class ChatPrompt(BaseModel):
         return values
 
 
+class HandoffSettings(BaseModel):
+    """Handoff 上下文压缩配置。"""
+
+    enabled: bool = Field(
+        default=os.getenv("ENABLE_HANDOFF", "false").strip().lower() in {"1", "true", "yes", "on"},
+        description="是否启用 Handoff 压缩；关闭时不估 token、不发事件、不注入历史检索工具",
+    )
+    summary_ratio: float = Field(
+        default=float(os.getenv("HANDOFF_SUMMARY_RATIO", "0.3")),
+        gt=0,
+        le=1,
+        description="交接文本 token 预算占比（相对扣除系统提示词等固定开销后的可用上下文），其余留给保留尾部",
+    )
+    keep_last: int = Field(
+        default=int(os.getenv("HANDOFF_KEEP_LAST", "20")),
+        ge=0,
+        description="保留的最近完整交互组数（AI 调用及对应 Tool 结果为一组）；0 表示不保留原文",
+    )
+    tail_char_limit: int = Field(
+        default=int(os.getenv("HANDOFF_TAIL_CHAR_LIMIT", "30000")),
+        gt=0,
+        description="固定保留尾部的字符数上限，超限按完整消息组缩减",
+    )
+    key_message_char_limit: int = Field(
+        default=int(os.getenv("HANDOFF_KEY_MESSAGE_CHAR_LIMIT", "30000")),
+        gt=0,
+        description="交接中单条关键原文的字符上限，超出部分截断并提示通过历史读取工具续读",
+    )
+    max_retries: int = Field(
+        default=int(os.getenv("HANDOFF_MAX_RETRIES", "2")),
+        ge=0,
+        le=5,
+        description="摘要生成失败的最大重试次数",
+    )
+    keep_user_messages: int = Field(
+        default=int(os.getenv("HANDOFF_KEEP_USER_MESSAGES", "3")),
+        ge=0,
+        description="交接中原文拼接的最近用户输入条数；0 表示不拼接",
+    )
+
+
 class ModelContextSettings(BaseModel):
     """模型上下文配置。
 
@@ -187,7 +228,7 @@ class ModelContextSettings(BaseModel):
     """
 
     llm_token_limit: int = Field(
-        default=int(os.getenv("LLM_TOKEN_LIMIT", "36000")),
+        default=int(os.getenv("LLM_TOKEN_LIMIT", "200000")),
         description="LLM最大Token限制",
     )
     token_limit_margin: int = Field(
@@ -203,6 +244,8 @@ class ModelContextSettings(BaseModel):
     )
     enable_judge_response: bool = Field(default=False, description="是否启用任务完成度评估")
     context_window: int = Field(default=16, description="上下文窗口轮数上限（user 消息条数），超限在装配期截断")
+
+    handoff: HandoffSettings = Field(default_factory=HandoffSettings, description="Handoff 上下文压缩配置")
 
 
 class KnowledgeSettings(BaseModel):
