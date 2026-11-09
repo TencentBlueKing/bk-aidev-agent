@@ -3,15 +3,13 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qsl
 
 import pytest
-from bkapi_client_core.exceptions import HTTPResponseError
-from requests import HTTPError as RequestsHTTPError
-
 from aidev_agent.services import sandbox_pv_files as module
 from aidev_agent.services.sandbox_pv_files import (
     MAX_SESSION_UPLOAD_FILE_SIZE,
@@ -32,6 +30,8 @@ from aidev_agent.services.sandbox_pv_files import (
     validate_session_upload_files,
     validate_session_upload_stats,
 )
+from bkapi_client_core.exceptions import HTTPResponseError
+from requests import HTTPError as RequestsHTTPError
 
 # ---------------------------------------------------------------------------
 # 工具函数 & fixture
@@ -120,9 +120,17 @@ def service(resource_manager):
 
 @pytest.fixture(autouse=True)
 def _no_sleep():
-    """所有测试禁用 time.sleep，避免翻页测试变慢。"""
-    with patch("aidev_agent.services.sandbox_pv_files.time.sleep") as m:
-        yield m
+    """仅替换沙箱模块的 sleep，避免干扰其他线程的全局时钟。"""
+    with patch("aidev_agent.services.sandbox_pv_files.time", wraps=module.time) as clock:
+        clock.sleep.return_value = None
+        yield clock.sleep
+
+
+def test_sleep_stub_does_not_intercept_other_modules(_no_sleep):
+    time.sleep(0)
+    _no_sleep.assert_not_called()
+    module.time.sleep(0)
+    _no_sleep.assert_called_once_with(0)
 
 
 @pytest.fixture(autouse=True)
@@ -235,6 +243,7 @@ class TestEnsureVolume:
             path_params={"app_code": "test-app", "volume_id": "vol-loser"}
         )
 
+
 # ---------------------------------------------------------------------------
 # _to_iso8601_z / _parse_paas_code / _map_paas_error
 # ---------------------------------------------------------------------------
@@ -287,8 +296,12 @@ class TestErrorMapping:
         assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(404, "")) is True
         assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(400, "SANDBOX_NOT_FOUND")) is True
         assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(413, "AGENT_SANDBOX_FILE_TOO_LARGE")) is False
-        assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(415, "AGENT_SANDBOX_FILE_NOT_PREVIEWABLE")) is False
-        assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(400, "AGENT_SANDBOX_FILE_OPERATION_FAILED")) is False
+        assert (
+            SandboxPvFileService._is_sandbox_gone(_mock_http_error(415, "AGENT_SANDBOX_FILE_NOT_PREVIEWABLE")) is False
+        )
+        assert (
+            SandboxPvFileService._is_sandbox_gone(_mock_http_error(400, "AGENT_SANDBOX_FILE_OPERATION_FAILED")) is False
+        )
         assert SandboxPvFileService._is_sandbox_gone(_mock_http_error(502, "AGENT_SANDBOX_SERVICE_NOT_READY")) is False
 
     @pytest.mark.parametrize(
@@ -522,9 +535,7 @@ class TestUploadFiles:
         backend = mock_backend_cls.return_value
         backend.create_sandbox.return_value = "sandbox-upload"
         backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="", exit_code=0)
-        mock_client.get_download_url.request.return_value = _mock_raise_for_status_error(
-            400, message="路径不合法"
-        )
+        mock_client.get_download_url.request.return_value = _mock_raise_for_status_error(400, message="路径不合法")
 
         result = service.upload_files(
             "s1",
@@ -800,9 +811,7 @@ class TestSafeFileName:
         assert SandboxPvFileService._safe_file_name(".gitignore") == ".gitignore"
 
     def test_upload_uses_sanitized_path_for_download_url(self, service, mock_client):
-        mock_client.get_download_url.request.return_value = _mock_paas_response(
-            {"download_url": "https://cdn/x.png"}
-        )
+        mock_client.get_download_url.request.return_value = _mock_paas_response({"download_url": "https://cdn/x.png"})
         with patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend") as mock_backend_cls:
             backend = mock_backend_cls.return_value
             backend.create_sandbox.return_value = "sandbox-upload"
@@ -900,9 +909,7 @@ class TestValidateSessionUploadFiles:
 
     def test_rejects_oversized_file(self):
         with pytest.raises(SandboxFileInvalidArgumentError, match="超过单文件大小限制"):
-            validate_session_upload_files(
-                [{"name": "large.txt", "content": b"x" * (MAX_SESSION_UPLOAD_FILE_SIZE + 1)}]
-            )
+            validate_session_upload_files([{"name": "large.txt", "content": b"x" * (MAX_SESSION_UPLOAD_FILE_SIZE + 1)}])
 
 
 class TestVolumeIdCache:
@@ -1044,9 +1051,7 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert payload["content"][1]["url"] == "https://cdn/a.png"
-        file_service.get_download_url.assert_called_once_with(
-            session_code="s1", path="files/a.png", expires_in=3600
-        )
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path="files/a.png", expires_in=3600)
 
     def test_prefers_output_id_over_upload_id(self):
         file_service = MagicMock()
@@ -1067,9 +1072,7 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload)
 
         assert payload["content"][0]["url"] == "https://cdn/a.png"
-        file_service.get_download_url.assert_called_once_with(
-            session_code="s1", path="files/a.png", expires_in=3600
-        )
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path="files/a.png", expires_in=3600)
 
     def test_signs_url_for_legacy_camel_case_mime_type_without_rewriting_payload(self):
         """写路径认得 mimeType 并补 URL，但不改 mime_type——payload 要原样落库。"""
@@ -1154,9 +1157,7 @@ class TestFillUserImageUrls:
         fill_user_image_urls(file_service, payload, only_missing=False)
 
         assert payload["content"][0]["url"] == "https://cdn/fresh.png"
-        file_service.get_download_url.assert_called_once_with(
-            session_code="s1", path="files/a.png", expires_in=3600
-        )
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path="files/a.png", expires_in=3600)
 
     def test_refreshes_nested_image_url_from_explicit_path(self):
         """标准 image_url.url 形态按显式会话 PV 路径重签并写回嵌套字段。"""
@@ -1179,9 +1180,7 @@ class TestFillUserImageUrls:
         assert payload["content"][0]["image_url"]["url"] == "https://cdn/fresh.png"
         assert payload["content"][0]["image_url"]["detail"] == "high"
         assert payload["content"][0]["mime_type"] == "image/png"
-        file_service.get_download_url.assert_called_once_with(
-            session_code="s1", path="files/a.png", expires_in=3600
-        )
+        file_service.get_download_url.assert_called_once_with(session_code="s1", path="files/a.png", expires_in=3600)
 
     def test_ignores_external_image_url_without_session_identity(self):
         """外部图片 URL 没有显式会话路径时不反推当前会话文件。"""
