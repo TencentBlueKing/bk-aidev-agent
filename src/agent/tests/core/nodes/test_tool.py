@@ -211,7 +211,7 @@ class TestBuildToolNode:
         assert tool_msg.additional_kwargs["description"] == "Add two numbers."
 
     def test_timer_wrapper_can_be_disabled(self):
-        """测试2++: 关闭 timer_wrapper 后不应注入元数据"""
+        """测试2++: 关闭 timer_wrapper 后不添加计时元数据"""
         tool_node = build_tool_node(
             tools=[calculator],
             node_options=ToolNodeSettings(use_timer=False),
@@ -864,7 +864,7 @@ class TestBuildToolNodeAsync:
         assert tool_msg.additional_kwargs["description"] == "Add two numbers."
 
     async def test_timer_wrapper_can_be_disabled_async(self):
-        """测试2++: 关闭 timer_wrapper 后不应注入元数据（异步）"""
+        """测试2++: 关闭 timer_wrapper 后不添加计时元数据（异步）"""
         tool_node = build_tool_node(
             tools=[calculator],
             node_options=ToolNodeSettings(use_timer=False),
@@ -1508,7 +1508,7 @@ class TestToolNodeRedactionAssembly:
         assert ("[REDACTED:" in tool_msg.content) is redacted
 
     def test_non_redaction_node_options_unaffected(self):
-        """node_options 非脱敏行为不变：显式关闭 timer 时不注入 duration 元数据。"""
+        """node_options 非脱敏行为不变：显式关闭 timer 时时长口径固定为 0、不写工具描述。"""
         node = build_tool_node(
             tools=[secret_echo_tool],
             node_options=ToolNodeSettings(use_timer=False),
@@ -1517,6 +1517,7 @@ class TestToolNodeRedactionAssembly:
         result = run_tool_node_in_graph(node, self._state())
         tool_msg = next(m for m in result["messages"] if isinstance(m, ToolMessage))
         assert "duration" not in tool_msg.additional_kwargs
+        assert "description" not in tool_msg.additional_kwargs
         assert _SECRET not in tool_msg.content
 
 

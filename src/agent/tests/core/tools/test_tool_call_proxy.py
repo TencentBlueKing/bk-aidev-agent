@@ -297,7 +297,7 @@ class TestBuildCallErrorHint:
 class TestTimerEvent:
     @pytest.mark.parametrize("is_async", [False, True])
     async def test_result_event_named_as_proxy_with_target_description(self, is_async, monkeypatch):
-        """计时器派发时刻的结果名已是 tool_call（派发即被消费，不能靠外层事后原地改名），描述取自目标工具。"""
+        """事件派发时刻结果名已是 tool_call（解包 wrapper 返回即改名），描述取自目标工具。"""
         sent = []
 
         def record(name, data, config):
@@ -307,6 +307,20 @@ class TestTimerEvent:
         _, _, _, app = make_env([EchoTool()], use_timer=True)
         result = await invoke(app, tool_input("echo", {"text": "x"}), is_async)
         assert sent == [("tool_call", "回显")]
+        assert result["messages"][-1].name == "tool_call"
+
+    @pytest.mark.parametrize("is_async", [False, True])
+    async def test_event_dispatched_without_timer(self, is_async, monkeypatch):
+        """关计时不再吞事件：独立事件 wrapper 仍派发一次，名字仍是 tool_call。"""
+        sent = []
+
+        def record(name, data, config):
+            sent.append((name, data.name, data.additional_kwargs))
+
+        monkeypatch.setattr(timer_wrapper, "dispatch_custom_event", record)
+        _, _, _, app = make_env([EchoTool()], use_timer=False)
+        result = await invoke(app, tool_input("echo", {"text": "x"}), is_async)
+        assert sent == [("on_tool_node_finish", "tool_call", {})]
         assert result["messages"][-1].name == "tool_call"
 
 
@@ -330,5 +344,6 @@ class TestLoopRejectionEvent:
         result = await invoke(app, {"messages": messages}, is_async)
         message = result["messages"][-1]
         assert target.calls == []
-        assert sent == [("on_tool_node_finish", "tool_call", "error", message.id, "call-3")]
-        assert message.id and message.name == "tool_call"
+        expected = [("on_tool_node_finish", "tool_call", "error", message.id, "call-3")]
+        assert sent == expected
+        assert message.id and message.name == "tool_call" and message.additional_kwargs["duration"] == 0

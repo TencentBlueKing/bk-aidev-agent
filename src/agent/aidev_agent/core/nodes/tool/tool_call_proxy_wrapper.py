@@ -17,19 +17,17 @@ to the current version of the project delivered to anyone in the future.
 
 延迟加载 ``tool_call`` 代理的解包 wrapper（由 ``ToolNodeSettings.use_tool_call_proxy`` 开启）。
 
-一次代理调用对应链首、链尾两个 wrapper，二者经 ContextVar 共享「当前调用来自代理」：
+解包在链首：把 ``tool_call(name=X, arguments=A)`` 换成对目标工具 X 的直接调用（调用 ID 不变），
+其后的审批 / 安全 / 计时 / 截断 / 去重都按目标工具判定、只走一次。改名在解包 wrapper 返回时
+原地完成，覆盖不经过工具执行的结果（审批拒绝、去重复用、wrapper 异常转换等）。
 
-- 解包（链首）：把 ``tool_call(name=X, arguments=A)`` 换成对目标工具 X 的直接调用（调用 ID 不变），
-  其后的审批 / 安全 / 计时 / 截断 / 去重都按目标工具判定、只走一次；返回时兜底改名，
-  覆盖不经过工具执行的结果（审批拒绝、去重复用、wrapper 异常转换等）。
-- 改名（链尾）：目标工具一返回就把结果名改回 ``tool_call``。计时 wrapper 在返回途中派发结果事件，
-  事件一经派发即被转换、落库、推送，必须在派发前改好名，不能依赖链首事后原地改名。
+链尾不再有改名 wrapper，也不再经 ContextVar 传递代理状态：解包位于链首，返回时即已改名，
+最外层事件 wrapper 派发时结果名已是 ``tool_call``。
 
 目标不可执行（不存在 / 不在延迟目录 / 参数形状非法）时不解包，交回 ``ToolCallTool`` 本体报错。
 """
 
 from collections.abc import Awaitable, Callable, Mapping
-from contextvars import ContextVar
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
@@ -37,8 +35,6 @@ from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCallRequest, 
 from langgraph.types import Command
 
 from aidev_agent.core.tools.tool_lazy_loading.meta_tools import CALL_TOOL_NAME
-
-_proxied: ContextVar[bool] = ContextVar("tool_call_proxied", default=False)
 
 
 def _rename(output: ToolMessage | Command) -> ToolMessage | Command:
@@ -75,11 +71,7 @@ def build_tool_call_unwrap_sync_wrapper(tools_by_name: Mapping[str, BaseTool]) -
         target = _unwrap(request, tools_by_name)
         if target is None:
             return execute(request)
-        token = _proxied.set(True)
-        try:
-            return _rename(execute(target))
-        finally:
-            _proxied.reset(token)
+        return _rename(execute(target))
 
     return wrapper
 
@@ -93,26 +85,6 @@ def build_tool_call_unwrap_async_wrapper(tools_by_name: Mapping[str, BaseTool]) 
         target = _unwrap(request, tools_by_name)
         if target is None:
             return await execute(request)
-        token = _proxied.set(True)
-        try:
-            return _rename(await execute(target))
-        finally:
-            _proxied.reset(token)
+        return _rename(await execute(target))
 
     return wrapper
-
-
-def tool_call_rename_sync_wrapper(
-    request: ToolCallRequest, execute: Callable[[ToolCallRequest], ToolMessage | Command]
-) -> ToolMessage | Command:
-    """链尾改名 wrapper：仅在代理调用内生效。"""
-    output = execute(request)
-    return _rename(output) if _proxied.get() else output
-
-
-async def tool_call_rename_async_wrapper(
-    request: ToolCallRequest, execute: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]]
-) -> ToolMessage | Command:
-    """链尾改名 wrapper（异步）。"""
-    output = await execute(request)
-    return _rename(output) if _proxied.get() else output

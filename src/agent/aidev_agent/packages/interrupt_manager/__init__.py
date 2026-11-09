@@ -27,6 +27,7 @@ import logging
 
 from aidev_agent.packages.interrupt_manager.approval import (
     TOOL_APPROVAL_REASON,
+    TOOL_APPROVAL_REJECTED_KEY,
     TOOL_APPROVAL_STATE_KEY,
     ApprovalHandler,
     ApprovalOutcomeBuilder,
@@ -101,6 +102,7 @@ __all__ = [
     "ItsmApprovalTicket",
     "ApprovalStateHandler",
     "TOOL_APPROVAL_STATE_KEY",
+    "TOOL_APPROVAL_REJECTED_KEY",
     "ApprovalTarget",
     "is_approval_configured",
     "ItsmTicketCreator",

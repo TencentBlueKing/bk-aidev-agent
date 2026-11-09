@@ -5,9 +5,9 @@
 时累计次数：前 ``T`` 次放行真实执行，第 ``T+1`` 至 ``T+F`` 次拒绝并以失败反馈回给
 模型，第 ``T+F+1`` 次直接终止本次 run。
 
-拒绝不进入工具本体或内层执行 wrapper（无副作用、不审批、不计时），但仍发送工具结果事件，并在
-Trace 上留下一条以 ERROR 结束的 ``tool.execution`` span，让「循环拒绝」可按既有
-``span_name='tool.execution'`` + ``error.type`` 口径统计。
+拒绝不进入工具本体或内层执行 wrapper（无副作用、不审批、不计时），但会以 duration=0 的结果
+被最外层事件 wrapper 正常派发一次，并在 Trace 上留下一条以 ERROR 结束的 ``tool.execution`` span，
+让「循环拒绝」可按既有 ``span_name='tool.execution'`` + ``error.type`` 口径统计。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMes
 from langgraph.prebuilt.tool_node import AsyncToolCallWrapper, ToolCall, ToolCallRequest, ToolCallWrapper
 from langgraph.types import Command
 
-from .timer_wrapper import process_tool_result
+from .timer_wrapper import _apply_timing_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -266,12 +266,18 @@ def _decide(request: ToolCallRequest, policy: LoopGuardPolicy, messages_key: str
 
 
 def _reject(request: ToolCallRequest, feedback: str) -> ToolMessage:
-    return ToolMessage(
+    """构造拒绝结果，并按「不计时」口径（duration=0）补齐元数据与 id。
+
+    结果事件由链首事件 wrapper 统一派发，这里只写元数据，避免同一调用派发两次。
+    """
+    message = ToolMessage(
         content=feedback,
         name=request.tool_call.get("name"),
         tool_call_id=request.tool_call["id"],
         status="error",
     )
+    _apply_timing_metadata(request, message, duration=0, include_description=False)
+    return message
 
 
 def build_loop_guard_sync_wrapper(policy: LoopGuardPolicy, messages_key: str = "messages") -> ToolCallWrapper:
@@ -287,7 +293,7 @@ def build_loop_guard_sync_wrapper(policy: LoopGuardPolicy, messages_key: str = "
         if decision.action == REJECT:
             feedback = _build_rejection_feedback(request.tool_call, decision, policy)
             _emit_rejection_span_sync(request.runtime.config, request.tool_call, request.tool, feedback)
-            return process_tool_result(request, _reject(request, feedback), duration=0)
+            return _reject(request, feedback)
         return execute(request)
 
     return wrapper
@@ -306,7 +312,7 @@ def build_loop_guard_async_wrapper(policy: LoopGuardPolicy, messages_key: str = 
         if decision.action == REJECT:
             feedback = _build_rejection_feedback(request.tool_call, decision, policy)
             await _emit_rejection_span_async(request.runtime.config, request.tool_call, request.tool, feedback)
-            return process_tool_result(request, _reject(request, feedback), duration=0)
+            return _reject(request, feedback)
         return await execute(request)
 
     return wrapper

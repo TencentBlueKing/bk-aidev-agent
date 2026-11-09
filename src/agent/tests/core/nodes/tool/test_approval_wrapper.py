@@ -11,7 +11,7 @@ from aidev_agent.core.nodes.tool.approval_wrapper import (
 )
 from aidev_agent.core.nodes.tool.node import build_tool_node
 from aidev_agent.core.tools.ask_user_question import _ask_user_question, ask_user_question
-from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_REASON
+from aidev_agent.packages.interrupt_manager import ASK_USER_QUESTION_REASON, TOOL_APPROVAL_REJECTED_KEY
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
@@ -249,6 +249,7 @@ class TestItsmApprovalWrapper:
         assert len(executed) == 0
         assert result.status == "error"
         assert "审批未通过" in result.content
+        assert result.additional_kwargs.get(TOOL_APPROVAL_REJECTED_KEY) is True
 
 
 class TestUserQuestionToolDirectInterrupt:
@@ -347,6 +348,7 @@ class TestItsmApprovalWrapperAsync:
             result = await wrapper(request, execute)
         assert len(executed) == 0
         assert result.status == "error"
+        assert result.additional_kwargs.get(TOOL_APPROVAL_REJECTED_KEY) is True
 
     @pytest.mark.asyncio
     async def test_async_wrapper_approves_and_executes(self):
@@ -373,6 +375,34 @@ class TestItsmApprovalWrapperAsync:
             result = await wrapper(request, execute)
         assert len(executed) == 1
         assert result.content == "ok"
+
+
+class TestExecutedErrorResultUnmarked:
+    """已执行工具返回的 error 结果不带审批拒绝标记（持久化侧照常落库）。"""
+
+    @pytest.mark.parametrize("async_mode", [False, True])
+    async def test_executed_error_result_has_no_rejected_marker(self, async_mode):
+        tool = MagicMock()
+        tool.name = "calculator"
+        tool.metadata = {}
+        request = _make_request(
+            {"id": "call_1", "name": "calculator", "args": {}, "type": "tool_call"},
+            state={"messages": [AIMessage(content="")]},
+            tool=tool,
+        )
+        error_message = ToolMessage(content="boom", tool_call_id="call_1", status="error")
+
+        if async_mode:
+
+            async def execute(req):
+                return error_message
+
+            result = await itsm_approval_async_wrapper(request, execute)
+        else:
+            result = itsm_approval_sync_wrapper(request, lambda req: error_message)
+
+        assert result.status == "error"
+        assert TOOL_APPROVAL_REJECTED_KEY not in result.additional_kwargs
 
 
 # ============================================================================

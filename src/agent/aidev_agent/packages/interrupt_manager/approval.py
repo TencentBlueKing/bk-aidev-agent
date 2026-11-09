@@ -69,6 +69,11 @@ logger = logging.getLogger(__name__)
 #: 审批状态在 assistant message additional_kwargs 中的存储 key。
 TOOL_APPROVAL_STATE_KEY = "tool_approval"
 
+#: 审批拒绝结果在 ToolMessage additional_kwargs 中的语义标记 key。
+#: 值为 True 表示该结果由审批拒绝短路产生（工具并未执行），持久化层据此跳过落库；
+#: LangGraph messages / checkpoint、事件派发与快照均保留该消息。
+TOOL_APPROVAL_REJECTED_KEY = "tool_approval_rejected"
+
 
 class ApprovalTarget(BaseModel):
     """审批目标抽象（Pydantic 承载，alias 协议名对齐 AG-UI）。
@@ -1228,6 +1233,7 @@ __all__ = [
     "ItsmApprovalResult",
     "ItsmApprovalTicket",
     "TOOL_APPROVAL_STATE_KEY",
+    "TOOL_APPROVAL_REJECTED_KEY",
     "ApprovalTarget",
     "TOOL_APPROVAL_REASON",
     "is_approval_configured",
