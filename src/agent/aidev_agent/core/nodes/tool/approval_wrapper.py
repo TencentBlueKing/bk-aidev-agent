@@ -12,6 +12,7 @@ from langgraph.types import interrupt
 from aidev_agent.enums import ExecutorIdentity
 from aidev_agent.packages.interrupt_manager.approval import (
     TOOL_APPROVAL_REASON,
+    TOOL_APPROVAL_REJECTED_KEY,
     TOOL_APPROVAL_STATE_KEY,
     ApprovalIdentityError,
     ApprovalTarget,
@@ -115,11 +116,17 @@ def _is_approved(decision: Any) -> bool:
 
 
 def _rejected_message(request: ToolCallRequest) -> ToolMessage:
+    """构造审批拒绝的 ToolMessage。
+
+    ``additional_kwargs`` 打上 ``TOOL_APPROVAL_REJECTED_KEY`` 语义标记，标识该结果由审批
+    拒绝短路产生（工具未执行），供持久化层跳过落库；消息本身仍进 messages / checkpoint。
+    """
     return ToolMessage(
         content="工具审批未通过，已取消执行。",
         tool_call_id=_tool_call_id(request),
         name=_tool_name(request),
         status="error",
+        additional_kwargs={TOOL_APPROVAL_REJECTED_KEY: True},
     )
 
 
@@ -250,6 +257,7 @@ __all__ = [
     "ApprovalTarget",
     "TOOL_APPROVAL_REASON",
     "TOOL_APPROVAL_STATE_KEY",
+    "TOOL_APPROVAL_REJECTED_KEY",
     "is_approval_configured",
     "get_itsm_approval_target",
     "get_tool_call_approval_record_from_state",

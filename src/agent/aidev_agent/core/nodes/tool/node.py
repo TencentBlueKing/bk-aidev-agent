@@ -55,12 +55,15 @@ from .security_wrapper import (
     build_untrusted_sanitize_async_wrapper,
     build_untrusted_sanitize_sync_wrapper,
 )
-from .timer_wrapper import timer_async_wrapper, timer_sync_wrapper
+from .timer_wrapper import (
+    dispatch_tool_result_event,
+    dispatch_tool_result_event_async,
+    timer_async_wrapper,
+    timer_sync_wrapper,
+)
 from .tool_call_proxy_wrapper import (
     build_tool_call_unwrap_async_wrapper,
     build_tool_call_unwrap_sync_wrapper,
-    tool_call_rename_async_wrapper,
-    tool_call_rename_sync_wrapper,
 )
 
 logger = logging.getLogger(__name__)
@@ -259,8 +262,10 @@ def build_tool_node(
 ) -> ToolNode:
     """构造带有中间件支持的 ToolNode。
 
-    该函数会自动添加计时包装器，为每次工具调用收集执行时长和工具描述，
-    并将这些元数据添加到 ToolMessage 的 additional_kwargs 中。
+    计时元数据（``use_timer``）与结果事件由两个独立 wrapper 提供：计时 wrapper 只写
+    ``duration`` / ``description``，关计时时时长口径固定为 0；结果事件 wrapper 无开关，置于链首，
+    覆盖包括循环拒绝在内的每一次工具调用，且每次成功返回只派发一次（interrupt / 终止以异常
+    抛出，无返回值可派发）。
 
     Args:
         tools: 可供此节点调用的工具序列。支持 BaseTool 实例和普通函数。
@@ -347,15 +352,13 @@ def build_tool_node(
     # Keep approval and custom wrappers outside result reuse.
     sync_wrapper_list.append(deduplicate_sync)
     async_wrapper_list.append(deduplicate_async)
-    # tool_call 代理解包：解包置链首（其后所有 wrapper 按目标工具判定），改名置链尾（计时派发前改好名）。
+    # tool_call 代理解包：解包置链首（其后所有 wrapper 按目标工具判定），返回时即改名回 tool_call。
     if node_options.use_tool_call_proxy:
         # 预先实例化，保证解包换入的目标工具与 ToolNode 注册的是同一实例
         tools = [tool if isinstance(tool, BaseTool) else create_tool(tool) for tool in tools]
         tools_by_name = {tool.name: tool for tool in tools}
         sync_wrapper_list.insert(0, build_tool_call_unwrap_sync_wrapper(tools_by_name))
         async_wrapper_list.insert(0, build_tool_call_unwrap_async_wrapper(tools_by_name))
-        sync_wrapper_list.append(tool_call_rename_sync_wrapper)
-        async_wrapper_list.append(tool_call_rename_async_wrapper)
     # 在结果改名、限长、净化和事件发送前识别原始错误内容。
     sync_wrapper_list.append(_content_error_sync_wrapper)
     async_wrapper_list.append(_content_error_async_wrapper)
@@ -365,10 +368,16 @@ def build_tool_node(
             feedback_rounds=BKAI_TOOL_LOOP_FEEDBACK_ROUNDS,
             result_limit=node_options.result_limit_thrd,
         )
-        # 拒绝不进入内层执行链；守卫自行发送一次完成事件供 AGUI 回写。
+        # 拒绝不进入内层执行链；拒绝结果由链首事件 wrapper 派发，守卫只负责判定与元数据。
         sync_wrapper_list.insert(0, build_loop_guard_sync_wrapper(loop_guard, messages_key))
         async_wrapper_list.insert(0, build_loop_guard_async_wrapper(loop_guard, messages_key))
         handle_tool_errors = _with_loop_termination_handler(handle_tool_errors)
+    # 结果事件 wrapper 永远作为最后一笔插入到链首：响应流最后执行，派发时脱敏 / 限长 / 错误标记 /
+    # 代理改名 / 循环守卫判定均已完成；包在循环守卫之外，才能让被拒绝的调用也恰好派发一次。
+    # 位置不依赖 enable_tool_loop_guard —— 守卫关闭时同样是链首，两种装配形状一致。
+    # 无开关：工具执行成功返回即派发；interrupt / 终止以异常抛出，无返回值即无派发。
+    sync_wrapper_list.insert(0, dispatch_tool_result_event)
+    async_wrapper_list.insert(0, dispatch_tool_result_event_async)
     final_sync_wrapper = _chain_tool_call_wrappers(sync_wrapper_list)
     final_async_wrapper = _chain_async_tool_call_wrappers(async_wrapper_list)
     return KnowledgeToolNode(

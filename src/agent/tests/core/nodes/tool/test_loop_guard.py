@@ -324,11 +324,12 @@ class TestLoopGuardEvents:
     @pytest.mark.parametrize("use_timer", [False, True])
     async def test_rejection_event_is_written_once(self, use_async, use_timer):
         counter, recorder = [], _ResultEvents()
-        graph = _graph(_tools(counter), settings=ToolNodeSettings(use_timer=use_timer, enable_tool_loop_guard=True))
-        result = await _invoke(graph, _state(3), recorder, use_async)
+        settings = ToolNodeSettings(use_timer=use_timer, enable_tool_loop_guard=True)
+        result = await _invoke(_graph(_tools(counter), settings=settings), _state(3), recorder, use_async)
         assert counter == [] and len(recorder.messages) == 1
         sent = recorder.messages[0]
         assert sent.status == "error" and sent.id == _last_tool_message(result).id
+        assert sent.additional_kwargs["duration"] == 0
         event = await _result_event(sent)
         assert event.is_error and not event.skip_db and event.duration == 0
         writer = Mock(spec=BaseSessionWriter)
@@ -340,6 +341,16 @@ class TestLoopGuardEvents:
         assert payload["status"] == "error" and payload["content"] == sent.content
         assert payload["builtin_property"]["tool_call_id"] == sent.tool_call_id
         writer._flush_deferred_tool_call.assert_not_called()
+
+    @pytest.mark.parametrize("use_async", [False, True])
+    async def test_rejection_skips_inner_timer(self, use_async):
+        """拒绝不进入内层计时：工具真实执行次数为 0，也没有任何 duration>0 的痕迹。"""
+        counter, recorder = [], _ResultEvents()
+        settings = ToolNodeSettings(use_timer=True, enable_tool_loop_guard=True)
+        result = await _invoke(_graph(_tools(counter), settings=settings), _state(3), recorder, use_async)
+        assert counter == [] and len(recorder.messages) == 1
+        assert recorder.messages[0].additional_kwargs["duration"] == 0
+        assert _last_tool_message(result).additional_kwargs["duration"] == 0
 
     @pytest.mark.parametrize("use_async", [False, True])
     @pytest.mark.parametrize(

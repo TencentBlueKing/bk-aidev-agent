@@ -31,6 +31,8 @@ class ToolNodeSettings(BaseModel):
     - ``use_tool_redaction``：结果脱敏（所有工具结果按 MODEL_OUTPUT purpose 掩码凭据）。
     - ``use_tool_untrusted_sanitize``：不可信工具结果净化（原型污染清理 + 注入扫描 + 包裹）。
     - ``use_tool_call_proxy``：延迟加载 ``tool_call`` 代理解包；由装配层按是否启用延迟加载注入。
+    - ``use_timer``：工具计时，只决定 ``duration`` / ``description`` 元数据是否按真实耗时写入。
+      工具结果事件（``on_tool_node_finish``）不受该开关影响，始终派发一次。
     """
 
     enable_tool_loop_guard: bool = Field(default=BKAI_TOOL_LOOP_GUARD_ENABLED, description="启用工具连续重复调用防护")
