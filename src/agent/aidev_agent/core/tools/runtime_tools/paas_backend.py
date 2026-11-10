@@ -66,8 +66,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _NOT_READY_MSG = "AGENT_SANDBOX_SERVICE_NOT_READY"
-_NOT_READY_MAX_RETRIES = 5
-_NOT_READY_SLEEP_SECONDS = 2
 
 
 class PaasSandboxError(Exception):
@@ -500,7 +498,6 @@ class PaasSandboxBackend(RuntimeBackend):
                 ttl_seconds=self._ttl_seconds,
                 volume_mounts=volume_mounts,
             )
-            sleep(settings.SBX_PAAS_NOT_READY_SLEEP_SECONDS)
             logger.info("PaaS Sandbox 已创建: %s", self._sandbox_id)
             return self._sandbox_id
 
