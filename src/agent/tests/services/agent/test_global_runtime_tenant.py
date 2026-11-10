@@ -21,7 +21,7 @@ def runtime_builder(mocker):
         chat_model="same-code",
         non_thinking_llm="same-code",
         fast_llm="same-code",
-        resource_tenant_id="system",
+        tenant_id="system",
         agent_info={"prompt_setting": {"fallback_vision_model": "same-code"}},
     )
     ctx = SimpleNamespace(
@@ -40,7 +40,7 @@ def runtime_builder(mocker):
 )
 @pytest.mark.parametrize("resource_tenant,expected", [("system", "system"), ("", "abc")])
 def test_all_models_use_config_owner(runtime_builder, mocker, method, resource_tenant, expected):
-    runtime_builder.ctx.agent_config.resource_tenant_id = resource_tenant
+    runtime_builder.ctx.agent_config.tenant_id = resource_tenant
     mocker.patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "https://gateway.example.com/v1")
     factory = mocker.patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
     getattr(runtime_builder, method)()
@@ -59,7 +59,7 @@ def test_skill_sandbox_uses_original_executor(runtime_builder, mocker, caller_te
     assert executor["executor"] == "caller"
     assert executor["access_token"] == "caller-token"
     client.update_headers.assert_called_once_with({TENANT_HEADER: caller_tenant})
-    assert runtime_builder.ctx.agent_config.resource_tenant_id == "system"
+    assert runtime_builder.ctx.agent_config.tenant_id == "system"
 
 
 @pytest.mark.parametrize("caller_tenant", ["abc", "other"])
@@ -74,5 +74,5 @@ def test_mcp_execution_keeps_original_tenant(runtime_builder, mocker, caller_ten
     manager.construct_mcp(config, username="caller", executor_info=executor)
     headers = factory.call_args.args[0]["tool"]["headers"]
     assert headers[TENANT_HEADER] == caller_tenant
-    assert runtime_builder.ctx.agent_config.resource_tenant_id == "system"
+    assert runtime_builder.ctx.agent_config.tenant_id == "system"
     assert "headers" not in config["tool"]

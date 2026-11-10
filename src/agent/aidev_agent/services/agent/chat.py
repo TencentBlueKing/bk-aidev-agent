@@ -1865,9 +1865,7 @@ class ChatAgentBuilder:
         if self.ctx.session_code:
             kwargs["session_code"] = self.ctx.session_code
 
-        kwargs["tenant_id"] = self.ctx.agent_config.resource_tenant_id or getattr(
-            self.ctx.resource_manager, "tenant_id", ""
-        )
+        kwargs["tenant_id"] = self.ctx.agent_config.tenant_id or getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -1903,9 +1901,7 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
-        kwargs["tenant_id"] = self.ctx.agent_config.resource_tenant_id or getattr(
-            self.ctx.resource_manager, "tenant_id", ""
-        )
+        kwargs["tenant_id"] = self.ctx.agent_config.tenant_id or getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -1936,9 +1932,7 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
-        kwargs["tenant_id"] = self.ctx.agent_config.resource_tenant_id or getattr(
-            self.ctx.resource_manager, "tenant_id", ""
-        )
+        kwargs["tenant_id"] = self.ctx.agent_config.tenant_id or getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -1978,9 +1972,7 @@ class ChatAgentBuilder:
         if chat.default_headers:
             kwargs["default_headers"] = chat.default_headers
 
-        kwargs["tenant_id"] = self.ctx.agent_config.resource_tenant_id or getattr(
-            self.ctx.resource_manager, "tenant_id", ""
-        )
+        kwargs["tenant_id"] = self.ctx.agent_config.tenant_id or getattr(self.ctx.resource_manager, "tenant_id", "")
 
         retry_strategy = chat.retry_strategy or settings.LLM_RETRY_STRATEGY
         kwargs["retry_strategy"] = retry_strategy
@@ -2425,7 +2417,7 @@ class ChatAgentBuilder:
             info["app_code"] = self.ctx.resource_manager.app_code
         if self.ctx.resource_manager.app_secret:
             info["app_secret"] = self.ctx.resource_manager.app_secret
-        # 工具执行始终使用原调用租户；不能使用 agent_config.resource_tenant_id。
+        # 工具执行始终使用原调用租户；不能使用 agent_config.tenant_id。
         tenant_id = getattr(self.ctx.resource_manager, "tenant_id", "")
         if tenant_id:
             info["tenant_id"] = tenant_id

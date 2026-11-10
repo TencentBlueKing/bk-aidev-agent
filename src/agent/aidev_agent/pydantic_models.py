@@ -1086,7 +1086,7 @@ class AgentExecutorKwargs(BaseModel):
 class AgentConfig(BaseModel):
     """智能体配置"""
 
-    resource_tenant_id: str = Field(default="", description="平台确认的资源与模型租户，不用于 MCP/Skill 执行")
+    tenant_id: str = Field(default="", description="平台确认的资源与模型租户，不用于 MCP/Skill 执行")
     agent_code: str = Field(..., description="智能体代码")
     agent_name: str = Field(..., description="智能体名称")
     chat_model: str = Field(..., description="LLM模型名称")
