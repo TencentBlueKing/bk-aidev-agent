@@ -93,7 +93,8 @@
         arrow: false,
         interactive: true,
         offset: [0, 6],
-        placement: 'top-end',
+        // 默认向下展开；下方空间不足时由 tippy 内置 flip 自动翻到上方
+        placement: 'bottom-end',
         theme: 'ai-model-selector',
         trigger: 'click',
         appendTo: () => document.body,

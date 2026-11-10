@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-10 12:40:00
+
+模型选择器下拉改为默认向下展开。
+
+### Changed
+
+- `ModelSelector`：下拉默认 `placement` 由 `top-end` 改为 `bottom-end`，在触发器下方展开、右边缘对齐；下方空间不足时自动翻转到上方。接入方通过 `tippyOptions.placement`（经 `ChatContainer` 时为 `commonTippyOptions.placement`）指定的方向仍优先生效。描述卡片定位不变。
+
 ## 2026-11-03 16:20:00
 
 修复模型描述卡片出现在选项上方时，鼠标移入卡片就会消失、无法调节思考深度的问题。

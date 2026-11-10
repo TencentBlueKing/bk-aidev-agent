@@ -70,7 +70,7 @@ vi.mock('vue-tippy', () => ({
       offset: { type: Array, default: () => [0, 0] },
       onClickOutside: { type: Function, default: undefined },
       onHide: { type: Function, default: undefined },
-      placement: { type: String, default: 'top-end' },
+      placement: { type: String, default: undefined },
       theme: { type: String, default: '' },
       trigger: { type: String, default: 'click' },
     },
@@ -345,6 +345,27 @@ describe('ModelSelector', () => {
       });
 
       expect(wrapper.findComponent(ModelSelectorPanel).props('tippyOptions')).toEqual(tippyOptions);
+    });
+
+    it('下拉默认 placement 应为 bottom-end（向下展开）', () => {
+      wrapper = mount(ModelSelector, {
+        props: {
+          models: mockModels,
+        },
+      });
+
+      expect(wrapper.findComponent({ name: 'Tippy' }).props('placement')).toBe('bottom-end');
+    });
+
+    it('tippyOptions.placement 应覆盖下拉默认 placement', () => {
+      wrapper = mount(ModelSelector, {
+        props: {
+          models: mockModels,
+          tippyOptions: { placement: 'top-start' },
+        },
+      });
+
+      expect(wrapper.findComponent({ name: 'Tippy' }).props('placement')).toBe('top-start');
     });
 
     it('disabled 为 true 时 trigger 应有禁用样式', () => {
