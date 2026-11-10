@@ -302,6 +302,7 @@
     nextTick,
     onUnmounted,
     shallowRef,
+    toValue,
     useTemplateRef,
     watch,
     withDirectives,
@@ -318,6 +319,7 @@
   import { useFullScreen } from '../../composables/use-full-screen';
   import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { useInputMentionProvider } from '../../composables/use-input-mention';
+  import { useToastContainerInject, useToastContainerProvider } from '../../composables/use-toast';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, NodeTabIcon } from '../../icons';
@@ -533,6 +535,12 @@
     return { ...props.commonTippyOptions };
   });
   useCommonTippyProvider({ tippyOptions: commonTippyOptions });
+
+  // 浏览器全屏只渲染全屏元素子树，toast 同样需要挂进全屏容器才能看到
+  const parentToastContainer = useToastContainerInject();
+  useToastContainerProvider(() =>
+    isFullScreen.value && fullScreenRef.value ? fullScreenRef.value : toValue(parentToastContainer),
+  );
 
   /**
    * 「文件产物」Tab 元信息：侧栏常驻默认 Tab，order 最小排在最前、不可关闭，

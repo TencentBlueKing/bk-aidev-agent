@@ -2,7 +2,7 @@
 name: useClipboard
 slug: use-clipboard
 category: composable
-description: 复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 `showToast` 提示复制结果，调用方无需关心成功/失败处理。
+description: 复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 `useToast` 提示复制结果，调用方无需关心成功/失败处理。
 aiSummary: >
   useClipboard 返回 { copy }，copy(text) 将字符串写入剪贴板，返回 Promise<void>。
   优先使用 navigator.clipboard.writeText，失败或不支持时降级为隐藏 textarea + execCommand('copy')。
@@ -35,7 +35,7 @@ sinceVersion: 1.0.0
 
 > **分类**：composable
 
-复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 `showToast` 提示复制结果，调用方无需关心成功/失败处理。在 AIBlueking 浮层内，提示会挂到浮层 toast host，避免被浮窗挡住。
+复制文本到剪贴板的组合式函数。内置两级降级策略，并自动通过 [`useToast`](./use-toast.md) 提示复制结果，调用方无需关心成功/失败处理。宿主用 `useToastContainerProvider` 声明了容器时（如 AIBlueking 浮层），提示挂进该容器，避免被浮窗挡住。`useClipboard` 需要在 setup 中调用。
 
 ## 执行流程
 
@@ -186,13 +186,13 @@ const copy: (text: string) => Promise<void>;
 | 1. 能力检测  | 模块导入时执行一次：`typeof navigator !== 'undefined' && 'clipboard' in navigator`                             |
 | 2a. 现代路径 | `navigator.clipboard.writeText(text)`，捕获异常后降级到步骤 2b                                                 |
 | 2b. 降级路径 | 创建隐藏 `textarea`（`position: fixed; left: -9999px; opacity: 0`），`execCommand('copy')`，`finally` 清理 DOM |
-| 3. 通知      | 始终调用 `showToast({ message: t('复制成功/失败'), theme: 'success/error' })`。有 `.ai-blueking-toast-host` 时挂入浮层，否则挂 `document.body` |
+| 3. 通知      | 始终调用 `showToast({ message: t('复制成功/失败'), theme: 'success/error' })`。`showToast` 来自 `useToast()`，挂到祖先注入的 toast 容器，无注入时挂 `document.body` |
 
 ## 实现源码
 
 ```typescript
 import { t } from '../lang/lang';
-import { showToast } from '../utils/show-toast';
+import { useToast } from './use-toast';
 
 // 模块加载时检测一次，SSR 安全
 const isClipboardApiSupported = typeof navigator !== 'undefined' && 'clipboard' in navigator;
@@ -214,6 +214,7 @@ const legacyCopy = (text: string): boolean => {
 };
 
 export const useClipboard = () => {
+  const showToast = useToast(); // 须在 setup 中调用，才能取到注入的 toast 容器
   const copy = async (text: string) => {
     let success = false;
     if (isClipboardApiSupported) {

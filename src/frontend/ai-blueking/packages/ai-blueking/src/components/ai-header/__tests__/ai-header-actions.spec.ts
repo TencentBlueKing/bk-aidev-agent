@@ -34,14 +34,6 @@ vi.mock('bkui-vue', () => ({
   bkTooltips: {},
 }));
 
-vi.mock('@blueking/chat-x', async importOriginal => {
-  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
-  return {
-    ...actual,
-    showToast: vi.fn(),
-  };
-});
-
 vi.mock('vue-tippy', () => ({
   Tippy: defineComponent({
     name: 'Tippy',
@@ -69,6 +61,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
   return {
     ...actual,
     RenderMode: { Chat: 'chat', Share: 'share', Test: 'test' },
+    useToast: () => vi.fn(),
     CollapsedAsideIcon: defineComponent({
       name: 'CollapsedAsideIcon',
       setup() {

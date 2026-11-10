@@ -26,17 +26,20 @@ import type { DraggableContainerExpose } from '../containers';
 import type { AIBluekingProps, IShortcut, ReportSdkErrorOptions, SdkErrorApiName } from '../types';
 import type { UseEventBridgeReturn } from './use-event-bridge';
 import type { ILlmItem } from '@blueking/chat-helper';
+import type { ToastFn } from '@blueking/chat-x';
 
 export type EventForwarders = ReturnType<typeof createEventForwarders>;
 export type ForwardToManagerFn = UseEventBridgeReturn['forwardToManager'];
 
 export interface UseAiBluekingInitParams {
   props: AIBluekingProps;
+  /** 错误提示出口；缺省挂 document.body */
+  toast?: ToastFn;
   emit: (event: string, ...args: unknown[]) => void;
 }
 
 export function useAiBluekingInit(params: UseAiBluekingInitParams) {
-  const { props, emit } = params;
+  const { props, emit, toast = showToast } = params;
 
   // ==================== Template Refs ====================
   const draggableContainerRef = ref<DraggableContainerExpose>();
@@ -70,12 +73,12 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const reportedErrors = new WeakSet<Error>();
 
   /** 延迟上报裸 HTTP 错误，给业务 catch 优先上报语义化 apiName 的机会 */
-  let pendingHttpErrorReport: {
+  let pendingHttpErrorReport: null | {
     error: Error;
     timer: ReturnType<typeof setTimeout>;
-  } | null = null;
+  } = null;
 
-  let httpErrorApiNameContext: SdkErrorApiName | null = null;
+  let httpErrorApiNameContext: null | SdkErrorApiName = null;
 
   const cancelPendingHttpErrorReport = () => {
     if (pendingHttpErrorReport) {
@@ -107,7 +110,7 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
     console.error(`[AIBlueking] ${apiName} error:`, error);
 
     if (shouldToast && props.errorToast !== false) {
-      showToast({
+      toast({
         message: message || t('请求失败'),
         theme: 'error',
       });
@@ -259,15 +262,11 @@ export function useAiBluekingInit(params: UseAiBluekingInitParams) {
   const isWelcomeState = computed(() => chatHelper.message.list.value.length === 0);
 
   const effectiveEnableChatSession = computed(
-    () =>
-      props.enableChatSession !== false &&
-      agentInfo.value?.conversationSettings?.enableChatSession !== false,
+    () => props.enableChatSession !== false && agentInfo.value?.conversationSettings?.enableChatSession !== false,
   );
 
   const effectiveEnablePopup = computed(
-    () =>
-      props.enablePopup !== false &&
-      agentInfo.value?.conversationSettings?.enableWordSelectionPopup !== false,
+    () => props.enablePopup !== false && agentInfo.value?.conversationSettings?.enableWordSelectionPopup !== false,
   );
 
   // 监听 Bootstrap 初始化失败（如 Agent 信息获取失败）

@@ -204,7 +204,7 @@
 <script setup lang="ts">
   import { cloneVNode, computed, defineComponent, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 
-  import { CollapsedAsideIcon, RenderMode, showToast } from '@blueking/chat-x';
+  import { CollapsedAsideIcon, RenderMode, useToast } from '@blueking/chat-x';
   import { Input as BkInput, bkTooltips, Loading } from 'bkui-vue';
   import { Tippy, directive as vTippy } from 'vue-tippy';
 
@@ -259,6 +259,7 @@
   }>();
 
   const vBkTooltips = bkTooltips;
+  const showToast = useToast();
 
   // Refs
   const headerRef = ref<HTMLElement | null>(null);

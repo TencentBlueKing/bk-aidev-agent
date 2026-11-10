@@ -9,6 +9,7 @@
 - `export *`：`ag-ui/types`、`common`、`components`、`composables`、`directives`、`edix`、`icons`、`lang/lang`、`plugins`、`types`、`utils`
 - **对外组件**：见 `src/components/index.ts`（下文「组件导入」完整列表）
 - **未从 `composables/index.ts` 再导出的内部能力**：如 `composables/use-common.ts`（`useKeywordProvider` 等）需深路径引用，一般不写入应用侧文档
+- **统一提示（`composables/use-toast.ts`）**：`useToastContainerProvider(container)` 由宿主声明 toast 挂载容器；`useToast()` 在 setup 中返回绑定该容器的 `(options) => void`；`showToast(options, container?)` 为显式传容器的纯函数。无 Provider 时挂 `document.body`。`ChatContainer` 全屏时把容器覆盖为全屏元素。chat-x 组件内一律走 `useToast`，不直接调用 bkui `Message()`
 
 ---
 

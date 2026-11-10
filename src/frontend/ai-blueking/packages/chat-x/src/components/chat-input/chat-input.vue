@@ -140,6 +140,7 @@
     MessageStatus,
   } from '../../ag-ui/types';
   import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import { useToast } from '../../composables/use-toast';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
   import { t } from '../../lang/lang';
@@ -159,7 +160,6 @@
     getUploadFileName,
     getUploadFileSize,
     isFileAcceptedByAccept,
-    showToast,
     toArtifactMenuItem,
     toUploadArtifact,
   } from '../../utils';
@@ -182,6 +182,7 @@
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
   const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
+  const showToast = useToast();
   const citeModel = defineModel<string>('cite', {
     required: false,
     default: '',

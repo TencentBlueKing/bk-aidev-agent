@@ -20,18 +20,20 @@ import type ChatBot from '../components/chat-bot.vue';
 import type { ShareBusinessManager } from '../manager/business/share-business-manager';
 import type { IMessage, ReportSdkErrorOptions } from '../types';
 import type { EventForwarders } from './use-ai-blueking-init';
-import type { IToolBtn, Message } from '@blueking/chat-x';
+import type { IToolBtn, Message, ToastFn } from '@blueking/chat-x';
 
 export interface UseShareHandlersParams {
   chatBotRef: Ref<InstanceType<typeof ChatBot> | undefined>;
-  emit: (event: 'confirm-share', messages: Message[], source?: IToolBtn) => void;
   forwarders: EventForwarders;
   shareBusinessManager: ShareBusinessManager;
+  /** 分享结果提示出口；缺省挂 document.body */
+  toast?: ToastFn;
+  emit: (event: 'confirm-share', messages: Message[], source?: IToolBtn) => void;
   reportSdkError: (options: ReportSdkErrorOptions) => void;
 }
 
 export function useShareHandlers(params: UseShareHandlersParams) {
-  const { shareBusinessManager, chatBotRef, emit, forwarders, reportSdkError } = params;
+  const { shareBusinessManager, chatBotRef, emit, forwarders, reportSdkError, toast = showToast } = params;
 
   const isShareLoading = ref(false);
 
@@ -70,7 +72,7 @@ export function useShareHandlers(params: UseShareHandlersParams) {
 
       await copyToClipboard(shareUrl);
 
-      showToast({
+      toast({
         message: t('分享链接已复制到剪贴板'),
         theme: 'success',
       });

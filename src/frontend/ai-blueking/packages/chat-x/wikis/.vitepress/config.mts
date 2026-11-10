@@ -207,6 +207,7 @@ function sidebarAPI() {
       items: [
         { text: '概览', link: 'composables/' },
         { text: 'useClipboard 剪贴板', link: 'composables/use-clipboard' },
+        { text: 'useToast 统一提示', link: 'composables/use-toast' },
         { text: 'useContainerScroll 滚动控制', link: 'composables/use-container-scroll' },
         { text: 'useAnimationText 文本动画', link: 'composables/use-animation-text' },
         { text: 'useMessageGroup 消息分组', link: 'composables/use-message-group' },

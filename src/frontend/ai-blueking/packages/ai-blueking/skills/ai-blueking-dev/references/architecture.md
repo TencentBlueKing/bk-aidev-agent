@@ -309,6 +309,8 @@ chat-bot.vue（组装层 — 创建共享 ref，按拓扑顺序组装）
 
 > **错误处理约定**：composable 里的 `catch` 一律调用注入的 `reportError(error, '上下文描述')`，不要写 `console.error` + `emit('error', error as Error)`。`reportError` 已包含日志、`toError` 归一化、去重，以及（`errorToast !== false` 时）Message toast。
 
+> **Toast 挂载约定**：AIBlueking 外壳是 `position: fixed; z-index: 10000`，bkui `Message` 挂 body 时层级约 6000 会被挡住。`ai-blueking.vue` 在外壳内放了 `.ai-blueking-toast-host`，并通过 chat-x `useToastContainerProvider` 向后代声明。子组件（ChatBot、AIHeader 及其 composable）一律用 chat-x `useToast()`；`ai-blueking.vue` 自身 setup 里的 composable（`useAiBluekingInit`、`useShareHandlers`）inject 不到自己的 provide，改由参数 `toast` 传入 `showToast(options, toastHostRef.value)`。不要直接 `import { Message } from 'bkui-vue'`。
+
 ### 关键设计决策
 
 1. **共享 ref 由组装层创建并注入**：`selectedShortcut` 被 `useMessageSender`（读 id 构建 extra）和 `useShortcuts`（写入选中状态）共同使用，由 `chat-bot.vue` 创建后传给两者。

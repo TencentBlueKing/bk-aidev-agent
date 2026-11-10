@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 import { t } from '../lang/lang';
-import { showToast } from '../utils/show-toast';
+import { useToast } from './use-toast';
 const isClipboardApiSupported = typeof navigator !== 'undefined' && 'clipboard' in navigator;
 
 /**
@@ -52,6 +52,7 @@ const legacyCopy = (text: string): boolean => {
 };
 
 export const useClipboard = () => {
+  const showToast = useToast();
   const copy = async (text: string) => {
     let success = false;
     // 优先使用现代 Clipboard API
