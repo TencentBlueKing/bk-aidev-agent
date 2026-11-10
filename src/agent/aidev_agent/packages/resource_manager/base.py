@@ -556,6 +556,7 @@ class BaseResourceManager(abc.ABC):
 
         support_upload = prompt_setting.get("support_upload") or {}
         return AgentConfig(
+            resource_tenant_id=res.get("resource_tenant_id") or "",
             agent_code=agent_code,
             agent_name=res["agent_name"],
             chat_model=prompt_setting.get("llm_code", ""),
