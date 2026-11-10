@@ -1262,6 +1262,35 @@ class WxAiBotLongConnectionService:
         stream_registry.cancel(drain.stream_id)
 
     @staticmethod
+    async def _put_stream_item(output_queue: asyncio.Queue, item: Any) -> None:
+        """Keep cumulative snapshots current when network delivery is slower than generation.
+
+        Only superseded progress snapshots may be discarded. Control messages,
+        terminal results and interaction cards retain their order and backpressure.
+        Queue draining and restoration contain no await, so they run atomically
+        on the consumer's event loop.
+        """
+        if output_queue.full():
+            removed = output_queue.qsize()
+            retained = []
+            while not output_queue.empty():
+                previous = output_queue.get_nowait()
+                if not (
+                    isinstance(previous, DirectStreamFrame)
+                    and not previous.finish
+                    and not previous.failed
+                    and not previous.pending_approval
+                    and not previous.pending_question
+                    and previous.template_card is None
+                ):
+                    retained.append(previous)
+            for previous in retained:
+                output_queue.put_nowait(previous)
+            for _ in range(removed):
+                output_queue.task_done()
+        await output_queue.put(item)
+
+    @staticmethod
     def _put_from_worker(
         loop: asyncio.AbstractEventLoop,
         output_queue: asyncio.Queue,
@@ -1270,7 +1299,9 @@ class WxAiBotLongConnectionService:
     ) -> bool:
         if cancel_event.is_set() or loop.is_closed():
             return False
-        future = asyncio.run_coroutine_threadsafe(output_queue.put(item), loop)
+        future = asyncio.run_coroutine_threadsafe(
+            WxAiBotLongConnectionService._put_stream_item(output_queue, item), loop
+        )
         while not cancel_event.is_set():
             try:
                 future.result(timeout=0.1)

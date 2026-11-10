@@ -23,16 +23,20 @@ import logging
 import time
 from typing import Any
 
+from langchain_core.callbacks import adispatch_custom_event, dispatch_custom_event
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import Runnable, RunnableLambda
+from langchain_core.runnables.config import merge_configs
 from langchain_core.tools import BaseTool
 from openai import RateLimitError
 from tenacity import RetryError
 
 from aidev_agent.config import settings
+from aidev_agent.core.ag_ui.types import SessionPersistenceEventNames
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
 from aidev_agent.packages.opentelemetry.context_obs import measure_context, observe_assembly
+from aidev_agent.utils.message_metadata import AssistantCompletionTimestamp, finalize_memory_source
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_model_rate_limit, record_model_retry
@@ -46,7 +50,7 @@ from .pydantic_models import (
     RetryableRateLimitError,
 )
 from .quality_gate import QualityGate
-from .utils import promote_plain_text_tool_call_message
+from .utils import has_content_after_think_block, promote_plain_text_tool_call_message
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +126,7 @@ def build_llm_with_tools(
     use_structured_response: bool,
     enable_parallel_tool_calls: bool,
     use_tool_call_promotion: bool,
+    track_memory_source: bool = False,
 ) -> Runnable:
     """从原始 LLM 构建可执行的 chain。
 
@@ -153,6 +158,7 @@ def build_llm_with_tools(
         chain = llm | StructuredOutputToToolMessageParser(
             llm=llm,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
+            keep_memory_source=track_memory_source,
         )
     else:
         chain = llm.bind_tools(tools)
@@ -169,6 +175,19 @@ def _exhaustion_fallback(ctx: ProcessorContext) -> ProcessorContext:
     return ctx
 
 
+def _accepted_memory_source(ctx: ProcessorContext) -> dict | None:
+    """对通过质量门禁的最终响应结算记忆来源资格。
+
+    终端恢复路由仍可能返回仅含思考内容的响应，因此只有在 think 块外有非空正文时才视为被接受；
+    返回 `finalize_memory_source` 的结算 payload，响应未处于待结算状态时返回 `None`。
+    """
+    content = getattr(ctx.response, "content", None)
+    return finalize_memory_source(
+        ctx.response,
+        accepted=isinstance(content, str) and has_content_after_think_block(content),
+    )
+
+
 def _build_model_chain(
     *,
     llm,
@@ -180,6 +199,7 @@ def _build_model_chain(
     use_tool_call_promotion: bool,
     token_limit: int | None = None,
     token_margin: int | None = None,
+    track_memory_source: bool = False,
 ) -> Runnable:
     """构建共享的 LCEL 模型链。
 
@@ -200,12 +220,24 @@ def _build_model_chain(
         use_tool_call_promotion: 是否启用工具调用提升
         token_limit: 上下文 token 预算（原值上报，未配置为 None）
         token_margin: 上下文 token 余量（原值上报，未配置为 None）
+        track_memory_source: 本次运行是否接入个人记忆；关闭时不标记待结算、不派发记忆来源结算事件
 
     Returns:
         Runnable，支持 .invoke() 和 .ainvoke()
     """
 
     retry_strategy = _resolve_retry_strategy(llm)
+
+    def _with_completion_callback(runnable: Runnable) -> Runnable:
+        """仅在接入个人记忆时挂载完成时间回调并标记待结算，普通模型调用保持原链。"""
+        if not track_memory_source:
+            return runnable
+        return runnable.with_config(
+            merge_configs(
+                getattr(runnable, "config", None),
+                {"callbacks": [AssistantCompletionTimestamp(pending_transform=track_memory_source)]},
+            )
+        )
 
     # ------------------------------------------------------------------
     # 内部函数：上下文装配（模板 + 变量 + 渲染 + 工具选择）
@@ -253,7 +285,9 @@ def _build_model_chain(
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
+            track_memory_source=track_memory_source,
         )
+        llm_with_tools = _with_completion_callback(llm_with_tools)
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
         # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
         invoke_kwargs: dict[str, Any] = {}
@@ -320,7 +354,9 @@ def _build_model_chain(
             use_structured_response=use_structured_response,
             enable_parallel_tool_calls=enable_parallel_tool_calls,
             use_tool_call_promotion=use_tool_call_promotion,
+            track_memory_source=track_memory_source,
         )
+        llm_with_tools = _with_completion_callback(llm_with_tools)
         # max_tokens 在 invoke 时传入，避免 bind(max_tokens) 与 bind_tools
         # 组合时 max_tokens 被 RunnableBinding.__getattr__ 代理丢弃。
         invoke_kwargs: dict[str, Any] = {}
@@ -387,13 +423,48 @@ def _build_model_chain(
         ctx.response = response
         return ctx
 
+    def _finalize_response(ctx: ProcessorContext) -> ProcessorContext:
+        """质量门禁通过后结算记忆来源，有结果时同步派发 `MemorySourceFinalized` 事件，原样返回 ctx。"""
+        source = _accepted_memory_source(ctx)
+        if source is not None:
+            dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+        return ctx
+
+    async def _afinalize_response(ctx: ProcessorContext) -> ProcessorContext:
+        """`_finalize_response` 的异步版本，通过 `adispatch_custom_event` 派发结算事件。"""
+        source = _accepted_memory_source(ctx)
+        if source is not None:
+            await adispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+        return ctx
+
+    def _check_quality(ctx: ProcessorContext) -> ProcessorContext:
+        """执行质量门禁；门禁抛出（含恢复重试类）异常时，先把本次响应结算为非记忆来源并派发事件再重新抛出。
+
+        原始模型结束事件仍处于待结算状态，显式发布拒绝结果，供独立观察结算事件的宿主使用。
+        """
+        try:
+            return quality_gate(ctx)
+        except Exception:
+            # Raw model-end events remain pending; publish rejection explicitly
+            # for hosts that observe finalization events independently.
+            source = finalize_memory_source(ctx.response, accepted=False)
+            if source is not None:
+                dispatch_custom_event(SessionPersistenceEventNames.MemorySourceFinalized.value, source)
+            raise
+
     # ------------------------------------------------------------------
     # 链组合：_assemble（仅一次）| model_chain（含重试 + 回退）
     # ------------------------------------------------------------------
     # _assemble 不参与重试——装配是幂等的、只应跑一次，
     # 重试时只需重建 model_chain（llm | capture | quality）。
     # with_fallbacks 也只包裹 model_chain——耗尽时返回最后响应。
-    model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(quality_gate)
+    # Keep every raw result ineligible until transforms and quality recovery accept it.
+    # Rejected attempts and exhausted retry fallbacks never reach finalization.
+    model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(
+        _check_quality if track_memory_source else quality_gate
+    )
+    if track_memory_source:
+        model_chain = model_chain | RunnableLambda(_finalize_response, _afinalize_response)
     # 用重试包装 — 捕获所有 RETRYABLE_EXCEPTIONS
     retryable_model_chain = model_chain.with_retry(
         retry_if_exception_type=RETRYABLE_EXCEPTIONS,

@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import enum
 import logging
+from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMessage
+from langchain_core.runnables.config import ensure_config, get_callback_manager_for_config
 
 from aidev_agent.packages.langgraph.streaming.utils import conditional_dispatch_custom_event
 
@@ -34,7 +36,6 @@ from .pydantic_models import (
     TruncationError,
 )
 from .utils import (
-    detect_thinking_exhaustion,
     extract_text_from_content,
     has_content_after_think_block,
     has_inline_thinking,
@@ -62,6 +63,19 @@ THINKING_EXHAUSTED_MESSAGE = (
     "Model used all output tokens on reasoning with none left for the response. "
     "Try increasing max_tokens or lowering reasoning effort."
 )
+
+
+def _is_thinking_only_response(response: AIMessage) -> bool:
+    content = response.content or ""
+    return (
+        isinstance(content, str)
+        and not has_content_after_think_block(content)
+        and bool(
+            getattr(response, "reasoning_content", None)
+            or response.additional_kwargs.get("reasoning_content")
+            or has_inline_thinking(content)
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -315,11 +329,12 @@ class QualityGate:
         路由决策顺序（由高到低优先级）：
         1. 有工具调用 → TOOL_EXECUTION
         2. 有有效内容 → NORMAL_COMPLETION（若启用判断 LLM，需先通过完成度判断）
-        3. 工具后空响应 → RECOVERY_NUDGE
-        4. 仅思考响应 → RECOVERY_PREFILL
-        5. 截断响应 → RECOVERY_TRUNCATION
-        6. 空内容 → RECOVERY_RETRY
-        7. 恢复选项耗尽 → NORMAL_COMPLETION
+        3. 仅思考且输出预算耗尽 → RECOVERY_TRUNCATION（提示并结束）
+        4. 工具后空响应 → RECOVERY_NUDGE
+        5. 仅思考响应 → RECOVERY_PREFILL
+        6. 截断响应 → RECOVERY_TRUNCATION
+        7. 空内容 → RECOVERY_RETRY
+        8. 恢复选项耗尽 → NORMAL_COMPLETION
         """
         response = ctx.response
         recovery = ctx.model_chain_state
@@ -361,6 +376,12 @@ class QualityGate:
 
         # 从这里开始：消息没有可用内容。
 
+        # A reasoning-only length limit cannot be recovered by replaying the
+        # same prompt. Handle it before both post-tool nudges and prefill retries.
+        thinking_only = _is_thinking_only_response(response)
+        if thinking_only and is_truncated(response):
+            return ResponseRoute.RECOVERY_TRUNCATION
+
         # 4. 工具后提示。
         if (
             has_prior_tool_results(working_messages)
@@ -371,13 +392,7 @@ class QualityGate:
             return ResponseRoute.RECOVERY_NUDGE
 
         # 5. 仅思考：有推理内容但无文本输出。
-        has_reasoning = bool(getattr(response, "reasoning_content", None))
-        if (
-            has_reasoning
-            or (
-                isinstance(content, str) and has_inline_thinking(content) and not has_content_after_think_block(content)
-            )
-        ) and recovery.thinking_prefill_retries < recovery.max_retries:
+        if thinking_only and recovery.thinking_prefill_retries < recovery.max_retries:
             logger.info(
                 "Recovery: thinking-only response (prefill retry %d/%d)",
                 recovery.thinking_prefill_retries + 1,
@@ -454,9 +469,21 @@ class QualityGate:
             content = response.content or ""
 
             # 思考预算耗尽
-            if isinstance(content, str) and detect_thinking_exhaustion(content):
+            if not response.tool_calls and _is_thinking_only_response(response):
                 logger.warning("Recovery: thinking-budget exhaustion detected")
-                ctx.response = AIMessage(content=THINKING_EXHAUSTED_MESSAGE)
+                ctx.response = response.model_copy(
+                    update={"content": THINKING_EXHAUSTED_MESSAGE, "id": response.id or str(uuid4())}
+                )
+                # This response is synthesized after provider streaming has ended.
+                # Emit it explicitly so streaming clients receive the same failure
+                # explanation as invoke/ainvoke callers.
+                if ctx.metadata.get("enable_custom_event", True):
+                    callbacks = get_callback_manager_for_config(ensure_config())
+                    if callbacks.parent_run_id is not None:
+                        conditional_dispatch_custom_event(
+                            "manually_emit_message",
+                            {"message_id": ctx.response.id, "message": THINKING_EXHAUSTED_MESSAGE},
+                        )
                 return ctx
 
             # 工具调用截断：设置 max_tokens_override，下次 _call_llm 会使用增强的 max_tokens

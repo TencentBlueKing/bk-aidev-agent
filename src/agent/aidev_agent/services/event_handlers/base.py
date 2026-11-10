@@ -47,6 +47,7 @@ from aidev_agent.packages.interrupt_manager.ask_user_question import (
 )
 from aidev_agent.packages.interrupt_manager.types import InterruptReason
 from aidev_agent.utils.event import RunId
+from aidev_agent.utils.message_metadata import message_timestamp
 from aidev_agent.utils.tracing import get_current_trace_id
 
 logger = getLogger(__name__)
@@ -177,6 +178,12 @@ class BaseSessionWriter(ABC):
         # 用于追踪已写入的 assistant 消息的 builtin_property，以便后续追加 tool_calls 时合并
         # key: assistant_message_id, value: builtin_property dict
         self._assistant_builtin_properties: dict[str, dict] = {}
+        self._assistant_message_properties: dict[str, dict] = {}
+        self._assistant_contents: dict[str, str] = {}
+        self._memory_source_completions: dict[str, bool] = {}
+        self._memory_source_texts: dict[str, str] = {}
+        self._memory_source_timestamps: dict[str, str] = {}
+        self._memory_source_lock = threading.RLock()
 
     # ---------- 公共事件入口 ----------
 
@@ -230,7 +237,9 @@ class BaseSessionWriter(ABC):
         """
         event_name = event.event.get("name", "")
 
-        if event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
+        if event_name == SessionPersistenceEventNames.MemorySourceFinalized.value:
+            self.handle_memory_source_finalized(event)
+        elif event_name == CustomMessageType.KNOWLEDGE_RAG_RESULT.value:
             self.handle_reference_document(event)
         elif event_name == CustomMessageType.FLOW_AGENT_START.value:
             self.handle_flow_agent_start(event)
@@ -252,6 +261,8 @@ class BaseSessionWriter(ABC):
 
         if event_name == SessionPersistenceEventNames.ChatModelEnd.value:
             self.handle_model_end(event)
+        elif event_name == SessionPersistenceEventNames.MemorySourceFinalized.value:
+            self.handle_memory_source_finalized(event)
         elif event_name == SessionPersistenceEventNames.ArtifactsGenerated.value:
             self.handle_artifacts_generated(event)
         elif event_name == SessionPersistenceEventNames.AskUserQuestionFinalized.value:
@@ -323,6 +334,11 @@ class BaseSessionWriter(ABC):
     def handle_user_input_saved(self, event) -> None:
         """处理 user 输入落库事件（所有带 input 路径）：直调 _do_create_content 写 user 记录。"""
         value = event.value if isinstance(event.value, dict) else {}
+        prop = {"turn_id": value.get("turn_id") or ""}
+        if value.get("message_id"):
+            prop["builtin_property"] = {"message_id": value["message_id"]}
+            if value.get("source_timestamp"):
+                prop["builtin_property"]["source_timestamp"] = value["source_timestamp"]
         try:
             self._do_create_content(
                 payload={
@@ -330,7 +346,7 @@ class BaseSessionWriter(ABC):
                     "role": PromptRole.USER.value,
                     "content": value.get("content") or "",
                     "status": "success",
-                    "property": {"turn_id": value.get("turn_id") or ""},
+                    "property": prop,
                 },
                 headers=self._get_headers(),
             )
@@ -549,11 +565,13 @@ class BaseSessionWriter(ABC):
                     reasoning_content=thinking_content,
                 )
 
-            # 回写 assistant 消息（status="complete"，不区分取消/非取消）
+            # Preserve display status while keeping cancelled fragments out of memory.
             self._write_assistant_message(
                 message_id=message_id,
                 content=content if content else "",
                 tool_calls=[],
+                memory_source_complete=False,
+                **({"finish_reason": "cancelled"} if self._is_cancelled else {}),
             )
 
             # 标记为已写入
@@ -750,6 +768,7 @@ class BaseSessionWriter(ABC):
                     message_id=message_id,
                     content=content if content else "",
                     tool_calls=[],
+                    finish_reason="cancelled",
                 )
                 if self._write_error_count == errors_before:
                     self._written_message_ids.add(message_id)
@@ -787,7 +806,61 @@ class BaseSessionWriter(ABC):
             self._thinking_content = ""
             self._thinking_active = False
 
+    def handle_memory_source_finalized(self, event: RawEvent | CustomEvent) -> None:
+        """处理 `MemorySourceFinalized` 事件，记录并回写 assistant 消息的记忆来源结算结果。
+
+        payload 缺少 `message_id`、`memory_source_complete` 不是 bool，或判为完整但 `source_text` 为空时忽略。
+        在 `_memory_source_lock` 内按消息 ID 以首次结算为准缓存结果（含正文与时间戳），供稍后的模型结束回写使用；
+        若该消息已落库，则把结算结果合并进 `builtin_property` 并更新会话内容，内容未变化时跳过，
+        写入失败不抛异常（计入写错误数），且不更新本地属性缓存。
+        """
+        payload = event.value if isinstance(event, CustomEvent) else event.event.get("data", {})
+        message_id = payload.get("message_id") if isinstance(payload, dict) else None
+        complete = payload.get("memory_source_complete") if isinstance(payload, dict) else None
+        if not message_id or type(complete) is not bool:
+            return
+        text = payload.get("source_text")
+        if complete and (not isinstance(text, str) or not text.strip()):
+            return
+        with self._memory_source_lock:
+            complete = self._memory_source_completions.setdefault(message_id, complete)
+            if complete:
+                self._memory_source_texts.setdefault(message_id, text)
+                if timestamp := message_timestamp(payload.get("source_timestamp")):
+                    self._memory_source_timestamps.setdefault(message_id, timestamp)
+            existing = self._assistant_builtin_properties.get(message_id)
+            content_id = self._content_ids_by_message_id.get(message_id)
+            if existing is None or content_id is None:
+                return
+            merged = {**existing, "memory_source_complete": complete}
+            if complete:
+                if self._memory_source_texts[message_id] != self._assistant_contents.get(message_id):
+                    merged["source_text"] = self._memory_source_texts[message_id]
+                else:
+                    merged.pop("source_text", None)
+                if message_id in self._memory_source_timestamps:
+                    merged["source_timestamp"] = self._memory_source_timestamps[message_id]
+            if merged == existing:
+                return
+            prop = {**self._assistant_message_properties.get(message_id, {}), "builtin_property": merged}
+            errors_before = self._write_error_count
+            self._safe_call(
+                self._do_update_memory_source,
+                message_id,
+                "finalize_memory_source",
+                content_id=content_id,
+                payload={"property": prop},
+                headers=self._get_headers(),
+            )
+            if self._write_error_count == errors_before:
+                self._assistant_builtin_properties[message_id] = merged
+                self._assistant_message_properties[message_id] = prop
+
     def handle_model_end(self, event: RawEvent | CustomEvent) -> None:
+        with self._memory_source_lock:
+            self._handle_model_end(event)
+
+    def _handle_model_end(self, event: RawEvent | CustomEvent) -> None:
         """处理模型输出结束事件，回写 assistant 消息
 
         Args:
@@ -836,6 +909,12 @@ class BaseSessionWriter(ABC):
             message_id=message_id,
             content=content,
             tool_calls=tool_calls,
+            **({"finish_reason": payload["finish_reason"]} if "finish_reason" in payload else {}),
+            source_timestamp=self._memory_source_timestamps.get(message_id, payload.get("source_timestamp")),
+            source_text=self._memory_source_texts.get(message_id, payload.get("source_text")),
+            memory_source_complete=self._memory_source_completions.get(
+                message_id, False if tool_calls or deferred_tool_calls else payload.get("memory_source_complete")
+            ),
         )
 
         # 记录需要审批但尚未执行的 tool_calls，待工具实际执行后补充写入
@@ -987,6 +1066,7 @@ class BaseSessionWriter(ABC):
                 message_id=message_id,
                 content=content if content else "",
                 tool_calls=[],
+                finish_reason="error",
             )
             self._written_message_ids.add(message_id)
 
@@ -1307,6 +1387,10 @@ class BaseSessionWriter(ABC):
         content: str,
         tool_calls: list,
         status: str = "complete",
+        finish_reason: str | None = None,
+        source_timestamp: str | None = None,
+        source_text: str | None = None,
+        memory_source_complete: bool | None = None,
     ) -> None:
         """回写 assistant 消息
 
@@ -1320,9 +1404,18 @@ class BaseSessionWriter(ABC):
             "message_id": message_id,
             "tool_calls": tool_calls,
         }
+        if finish_reason is not None:
+            assistant_property["finish_reason"] = finish_reason
+        if source_timestamp is not None:
+            assistant_property["source_timestamp"] = source_timestamp
+        if source_text is not None and source_text != content:
+            assistant_property["source_text"] = source_text
+        if memory_source_complete is not None:
+            assistant_property["memory_source_complete"] = memory_source_complete
 
         # 记录 builtin_property，以便后续追加审批 tool_calls 时合并
         self._assistant_builtin_properties[message_id] = dict(assistant_property)
+        self._assistant_contents[message_id] = content
 
         self._create_session_content(
             message_id=message_id,
@@ -1333,6 +1426,10 @@ class BaseSessionWriter(ABC):
         )
 
     def _flush_deferred_tool_call(self, tool_call_id: str, tool_name: str | None = None) -> None:
+        with self._memory_source_lock:
+            self._flush_deferred_tool_call_locked(tool_call_id, tool_name)
+
+    def _flush_deferred_tool_call_locked(self, tool_call_id: str, tool_name: str | None = None) -> None:
         """将延迟写入的审批 tool_call 补充到对应的 assistant 消息
 
         当需要审批的工具实际执行完成后（handle_tool_finish），调用此方法
@@ -1482,6 +1579,8 @@ class BaseSessionWriter(ABC):
         )
         if content_id is not None:
             self._content_ids_by_message_id[message_id] = content_id
+            if role == PromptRole.ASSISTANT.value:
+                self._assistant_message_properties.setdefault(message_id, dict(payload["property"]))
         return content_id
 
     def _update_session_content(
@@ -1544,6 +1643,10 @@ class BaseSessionWriter(ABC):
             payload: 更新数据，包含 content, property 等字段
             headers: HTTP 头信息
         """
+
+    def _do_update_memory_source(self, content_id: int, payload: dict[str, Any], headers: dict[str, str]) -> None:
+        """回写记忆来源结算结果；默认复用 `_do_update_content`，需要限制等待时间的子类单独覆盖。"""
+        self._do_update_content(content_id=content_id, payload=payload, headers=headers)
 
     # ---------- 断点续传支持（基于会话状态判断） ----------
 

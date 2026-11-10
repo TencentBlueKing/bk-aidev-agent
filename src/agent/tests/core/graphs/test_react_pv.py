@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """Test module for PV-related graph routing changes.
 
-测试 _should_continue 路由变更和 DefaultState PV 字段。
-
-由于 aidev_agent.core.graphs.react.graph 模块在 Python 3.10 环境下
-可能因 langchain_core.pydantic_v1 依赖问题无法直接导入，
-这些测试通过内联复制核心逻辑来验证正确性。
+测试 PV 字段、路由及开启记忆前后的实际执行顺序。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
+import pytest
+from aidev_agent.core.graphs.react.graph import ReActAgentBuilder
 from aidev_agent.core.nodes.pv import add_pv_info
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -96,8 +95,8 @@ def test_graph_source_contains_resource_manager_retention():
     assert "client=self._resource_manager" in source
 
 
-def test_graph_source_contains_platform_pv_restore_wiring():
-    """graph.py 不再包含平台 PV 恢复节点；START 直接连接 knowledge 或 model。
+def test_graph_does_not_restore_platform_pv():
+    """graph.py 不再包含平台 PV 恢复节点。
 
     平台 PV 恢复逻辑已上移至服务层（chat.py），图构建器仅负责
     纯图拓扑组装。
@@ -110,9 +109,39 @@ def test_graph_source_contains_platform_pv_restore_wiring():
     assert "sandbox_pv_id" not in source
     assert '"source": "platform"' not in source
 
-    # START 应直接连接到 knowledge 或 model
-    assert 'graph.add_edge(START, "model")' in source
-    assert 'graph.add_edge(START, "knowledge")' in source
+
+@pytest.mark.parametrize("memory_enabled", [False, True])
+@pytest.mark.parametrize("with_knowledge", [False, True])
+def test_memory_entry_preserves_knowledge_and_model_order(memory_enabled, with_knowledge):
+    visited = []
+
+    def visit(name):
+        def node(state, config=None):
+            visited.append(name)
+            return state
+
+        return node
+
+    builder = ReActAgentBuilder()
+    if memory_enabled:
+        builder.enable_personal_memory(SimpleNamespace(prepare=visit("memory"), complete=visit("complete")))
+    graph, config = builder._build_graph(
+        state_schema=dict,
+        callbacks=[],
+        debug=False,
+        checkpointer=None,
+        store=None,
+        interrupt_before=None,
+        interrupt_after=None,
+        name="entry-order",
+        cache=None,
+        knowledge_node=visit("knowledge") if with_knowledge else None,
+        model_node=visit("model"),
+        tool_node=None,
+    )
+    graph.invoke({"messages": [HumanMessage(content="hello")]}, config)
+    expected = (["memory"] if memory_enabled else []) + (["knowledge"] if with_knowledge else []) + ["model"]
+    assert visited == expected + (["complete"] if memory_enabled else [])
 
 
 def test_graph_source_passes_resource_manager_to_pv_node():
