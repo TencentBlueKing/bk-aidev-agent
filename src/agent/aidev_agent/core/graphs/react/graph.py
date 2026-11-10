@@ -35,6 +35,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END, START
 from langgraph.graph import add_messages
+from langgraph.graph.message import REMOVE_ALL_MESSAGES, RemoveMessage
 from langgraph.graph.state import StateGraph
 from langgraph.prebuilt.tool_node import ToolCallWithContext
 from langgraph.store.memory import InMemoryStore
@@ -57,6 +58,7 @@ from aidev_agent.core.graphs.react.tool_loading_mode import (
     filter_tools_by_loading_mode,
     filter_tools_by_request,
 )
+from aidev_agent.core.hook.runner import HookRunner
 from aidev_agent.core.nodes.knowledge import make_knowledge_node
 from aidev_agent.core.nodes.model import ModelNodeSettings
 from aidev_agent.core.nodes.model import build_model_node as std_make_model_node
@@ -181,6 +183,30 @@ def _send_dispatch_route(state: dict):
     return END
 
 
+def _make_turn_start_node(hook_runner: HookRunner):
+    """``turn_start`` 节点：图层入口触发一次，处理器可返回新的输入消息列表。"""
+
+    def turn_start(state: dict, config: RunnableConfig) -> dict:
+        messages = list(state.get("messages") or [])
+        hooked = hook_runner.turn_start(config, messages)
+        if hooked is None:
+            return {}
+        # 输入是整表替换语义：先清空 state 中的历史，再写入处理器给出的列表。
+        return {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *hooked]}
+
+    return turn_start
+
+
+def _make_turn_end_node(hook_runner: HookRunner):
+    """``turn_end`` 节点：本轮走到终点时触发一次；中断与异常不会到达此节点。"""
+
+    def turn_end(state: dict, config: RunnableConfig) -> dict:
+        hook_runner.turn_end(config)
+        return {}
+
+    return turn_end
+
+
 class ReActAgentBuilder:
     """LangGraph V1 QA Agent 构建器。
 
@@ -251,10 +277,17 @@ class ReActAgentBuilder:
         self._execute_kwargs: ExecuteKwargs = ExecuteKwargs()
         self._resource_manager = None
         self._personal_memory: PersonalMemoryRuntime | None = None
+        # 进程内 hook 处理器集合（HookSet）；None 表示未注入，装配形状与基线一致
+        self._hook_handlers = None
 
     # ====================================================================================================
     # 模型设置
     # ====================================================================================================
+    def set_hook_handlers(self, hook_handlers) -> "ReActAgentBuilder":
+        """注入 hook 处理器集合（HookSet）；``None`` 表示不启用 hook。"""
+        self._hook_handlers = hook_handlers
+        return self
+
     def enable_personal_memory(self, runtime: PersonalMemoryRuntime) -> "ReActAgentBuilder":
         """启用自动个人记忆：注入使用宿主请求上下文的 `PersonalMemoryRuntime`。
 
@@ -661,6 +694,10 @@ class ReActAgentBuilder:
         if options.execute_kwargs is not None:
             self._execute_kwargs = options.execute_kwargs
 
+        # hook 处理器集合（由 AgentInstanceFactory 注入）；None 时不改变装配形状
+        if options.hook_handlers is not None:
+            self.set_hook_handlers(options.hook_handlers)
+
         # RuntimeBackendResolver（由调用方构造并注入）——必须先于 skills 块内
         # enable_runtime_paas/local（新方案下这些调用要求 resolver 已存在）
         if options.runtime_backend_resolver is not None:
@@ -849,6 +886,7 @@ class ReActAgentBuilder:
         judge_llm: BaseChatModel | None,
         tools: List[BaseTool],
         node_options_kwargs: dict[str, Any] | None = None,
+        hook_runner: HookRunner | None = None,
     ):
         """创建模型节点。
 
@@ -862,6 +900,7 @@ class ReActAgentBuilder:
             tools: 模型节点绑定的工具列表
             node_options_kwargs: 调用方追加的 ModelNodeSettings 参数，覆盖 SDK 推导值；
                 其中的 extra_*_middlewares 排在 SDK 自带中间件之后
+            hook_runner: hook 执行器；None 时模型链不插入任何 hook 步骤
 
         Returns:
             model_node: 模型节点
@@ -926,13 +965,16 @@ class ReActAgentBuilder:
         node_options.extra_template_middlewares[:0] = sdk_template_middlewares
 
         # 创建模型节点
-        model_node = std_make_model_node(
-            llm=llm,
-            non_thinking_llm=non_thinking_llm,
-            judge_llm=judge_llm,
-            tools=tools,
-            node_options=node_options,
-        )
+        model_node_kwargs: dict[str, Any] = {
+            "llm": llm,
+            "non_thinking_llm": non_thinking_llm,
+            "judge_llm": judge_llm,
+            "tools": tools,
+            "node_options": node_options,
+        }
+        if hook_runner is not None:
+            model_node_kwargs["hook_runner"] = hook_runner
+        model_node = std_make_model_node(**model_node_kwargs)
 
         return model_node
 
@@ -1129,9 +1171,6 @@ class ReActAgentBuilder:
 
         仅在启用 paas_sandbox runtime 时注入真实的 BkPaaSSandboxApi client；
         否则仍返回 pv_node callable（无 PV 支持），保持图结构一致。
-
-        Returns:
-            pv_node callable
         """
         paas_client = None
         paas_app_code = ""
@@ -1175,6 +1214,7 @@ class ReActAgentBuilder:
         tags: List[str] | None = None,
         langchain_middleware: Sequence[AgentMiddleware],
         node_options: ToolNodeSettings,
+        hook_runner: HookRunner | None = None,
     ):
         middleware_w_wrap_tool_call = [
             m.wrap_tool_call
@@ -1213,6 +1253,7 @@ class ReActAgentBuilder:
                 async_wrappers=middleware_w_awrap_tool_call,
                 node_options=node_options,
                 security_settings=security_settings,
+                **({"hook_runner": hook_runner} if hook_runner is not None else {}),
             )
         return None
 
@@ -1266,6 +1307,18 @@ class ReActAgentBuilder:
         return _resolve_task_state_schema(schemas)
 
     @staticmethod
+    def _make_dispatch_route(end_node: str):
+        """构造 pv_node 的 Send 分派路由；无 pending 时走图出口（注入 hooks 时为 turn_end）。"""
+        if end_node == END:
+            return _send_dispatch_route
+
+        def route(state: dict):
+            result = _send_dispatch_route(state)
+            return result if isinstance(result, list) else end_node
+
+        return route
+
+    @staticmethod
     def _should_continue(state: dict) -> Literal["pv_node", "end"]:
         """条件路由函数：决定 model 节点后的下一步。
 
@@ -1307,6 +1360,7 @@ class ReActAgentBuilder:
         tool_node,
         pv_node=None,
         tools: "List[BaseTool] | None" = None,
+        hook_runner: HookRunner | None = None,
     ) -> Tuple["Runnable", RunnableConfig]:
         """构建 LangGraph 图。
 
@@ -1330,6 +1384,7 @@ class ReActAgentBuilder:
             tool_node: 工具节点
             pv_node: PV 节点 callable，由 _prepare_agent_pv_node 构造
             tools: 绑定的工具列表
+            hook_runner: hook 执行器；注入时在入口与出口各插入一个 turn 节点
 
         Returns:
             (CompiledGraph, RunnableConfig) 元组
@@ -1348,10 +1403,21 @@ class ReActAgentBuilder:
             graph.add_edge("memory_complete", END)
             end_node = "memory_complete"
 
+        # turn 点位：入口 / 出口各一个节点；只在注入 hooks 时入图，未注入时拓扑与基线一致。
+        if hook_runner is not None:
+            graph.add_node("turn_start", _make_turn_start_node(hook_runner))
+            graph.add_node("turn_end", _make_turn_end_node(hook_runner))
+            graph.add_edge("turn_end", end_node)
+            end_node = "turn_end"
+
         start_node = START
         if self._personal_memory is not None:
             graph.add_edge(START, "memory_prepare")
             start_node = "memory_prepare"
+
+        if hook_runner is not None:
+            graph.add_edge(start_node, "turn_start")
+            start_node = "turn_start"
 
         # 如果配置了知识库,添加 knowledge 节点
         if knowledge_node:
@@ -1383,7 +1449,7 @@ class ReActAgentBuilder:
                 },
             )
             # pv_node →(Send 分派)→ tools → model (形成 ReAct 循环)
-            graph.add_conditional_edges("pv_node", _send_dispatch_route)
+            graph.add_conditional_edges("pv_node", self._make_dispatch_route(end_node))
             graph.add_edge("tools", "model")
         else:
             # 无工具时直接结束
@@ -1426,6 +1492,9 @@ class ReActAgentBuilder:
 
         self._prepare_agent_options()
 
+        # hook 执行器为每次 build() 新建；未注入时全链路保持 None
+        hook_runner = HookRunner(self._hook_handlers) if self._hook_handlers is not None else None
+
         # Skills / runtime tools setup (must run before preparing tools)
         if self._enable_skills:
             self._prepare_skills()
@@ -1450,18 +1519,21 @@ class ReActAgentBuilder:
         )
 
         # 统一处理 model_node
-        model_node = self._prepare_agent_model_node(
-            llm=self._llm,
-            non_thinking_llm=non_thinking_llm,
-            judge_llm=judge_llm,
+        model_node_kwargs: dict[str, Any] = {
+            "llm": self._llm,
+            "non_thinking_llm": non_thinking_llm,
+            "judge_llm": judge_llm,
             # 延迟加载时模型只绑定内置 + 元工具，目录经模板中间件注入；ToolNode 仍持全量 tools
-            tools=builtin_tools if lazy_catalog is not None else tools,
-            node_options_kwargs=(
+            "tools": builtin_tools if lazy_catalog is not None else tools,
+            "node_options_kwargs": (
                 {"extra_template_middlewares": [ToolDirectoryMiddleware(catalog=lazy_catalog)]}
                 if lazy_catalog is not None
                 else None
             ),
-        )
+        }
+        if hook_runner is not None:
+            model_node_kwargs["hook_runner"] = hook_runner
+        model_node = self._prepare_agent_model_node(**model_node_kwargs)
 
         # 构造 PV Node
         pv_node = self._prepare_agent_pv_node()
@@ -1469,11 +1541,13 @@ class ReActAgentBuilder:
         # 统一处理 tool_node：tool_call 代理解包与延迟加载同生共死，由装配层推导、无条件覆盖
         tool_node_options = self._tool_node_options or ToolNodeSettings()
         tool_node_options.use_tool_call_proxy = lazy_catalog is not None
-        tool_node = self._prepare_agent_tool_node(
-            tools,
-            langchain_middleware=self._langchain_middleware,
-            node_options=tool_node_options,
-        )
+        tool_node_kwargs: dict[str, Any] = {
+            "langchain_middleware": self._langchain_middleware,
+            "node_options": tool_node_options,
+        }
+        if hook_runner is not None:
+            tool_node_kwargs["hook_runner"] = hook_runner
+        tool_node = self._prepare_agent_tool_node(tools, **tool_node_kwargs)
 
         # 初始化 Store
         store = self._prepare_store(store=self._store, file_store=self._file_store)
@@ -1507,6 +1581,7 @@ class ReActAgentBuilder:
             tool_node=tool_node,
             pv_node=pv_node,
             tools=tools if tools else None,
+            hook_runner=hook_runner,
         )
 
         # 添加适配器

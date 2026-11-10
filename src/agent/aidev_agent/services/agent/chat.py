@@ -184,6 +184,14 @@ class ChatCompletionAgent(BaseModel):
     字段名保留为 ``agent_cls`` 避免外部破坏，但语义已是「实例」。"""
     messages: list[BaseMessage] = Field(default_factory=list)
     checkpointer: BaseCheckpointSaver | None = None
+    hook_handlers: Any = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "hook 处理器集合（HookSet）；由 AgentInstanceFactory.build_agent(hook_handlers=...) 经 ChatBuildExtras "
+            "注入。None 表示不启用 hook，运行态不写任何键。"
+        ),
+    )
 
     event_handler: Callable[[BaseEvent], None] | None = None
     mcp_fetch_failures: list[dict] = Field(default_factory=list, description="MCP 工具拉取失败记录，用于流式事件")
@@ -297,6 +305,8 @@ class ChatCompletionAgent(BaseModel):
 
         if chat.agent_cls is not None:
             self.agent_cls = chat.agent_cls
+        if chat.hook_handlers is not None:
+            self.hook_handlers = chat.hook_handlers
         if ctx.session_code is not None:
             self.thread_id = ctx.session_code
         if ctx.event_handler is not None:
@@ -1037,6 +1047,10 @@ class ChatCompletionAgent(BaseModel):
             execute_kwargs.max_spawn_depth = self.max_spawn_depth
         execute_kwargs.tool_deny = execute_kwargs.tool_deny or []
         execute_kwargs.tool_allow = execute_kwargs.tool_allow or []
+        # 本轮所属智能体：下游（hook 等）从同一个 execute_kwargs 读取，不再单独写 config 键。
+        execute_kwargs.agent_code = (
+            execute_kwargs.agent_code or self.memory_agent_code or ((self.agent_info or {}).get("agent_code") or "")
+        )
         # U-06（48）：恢复到 294ff5d55——_get_agent 在 _execute 内构建，双参签名（无 agent_e/cfg）。
         agent_e, cfg = self._get_agent(messages, execute_kwargs=execute_kwargs)
         cfg.setdefault("configurable", {})
@@ -1059,15 +1073,13 @@ class ChatCompletionAgent(BaseModel):
         if execute_kwargs.stream:
             if execute_kwargs.legacy_streaming:
                 return self._stream_with_legacy(agent_e, cfg, state, messages)
-            else:
-                return self._stream(agent_e, cfg, state, messages, execute_kwargs)
+            return self._stream(agent_e, cfg, state, messages, execute_kwargs)
 
-        else:
-            from aidev_agent.services.resume_events import uses_resume_event_stream
+        from aidev_agent.services.resume_events import uses_resume_event_stream
 
-            if uses_resume_event_stream(self.resource_manager, execute_kwargs):
-                return self._invoke_resume_with_events(agent_e, cfg, state, messages, execute_kwargs)
-            return self._invoke(agent_e, cfg, state, messages, execute_kwargs)
+        if uses_resume_event_stream(self.resource_manager, execute_kwargs):
+            return self._invoke_resume_with_events(agent_e, cfg, state, messages, execute_kwargs)
+        return self._invoke(agent_e, cfg, state, messages, execute_kwargs)
 
     def _invoke_resume_with_events(self, agent_e, cfg, state, messages, execute_kwargs):
         """Keep a non-stream HTTP response while using the AG-UI resume/persistence path.
@@ -1656,6 +1668,7 @@ class ChatCompletionAgent(BaseModel):
             resource_manager=self.resource_manager,
             security_settings=self.security_settings,
             runtime_backend_resolver=self.runtime_backend_resolver,
+            hook_handlers=self.hook_handlers,
         )
 
     def _refresh_llm_history_image_urls(self, chat_history: list[ChatPrompt]) -> None:

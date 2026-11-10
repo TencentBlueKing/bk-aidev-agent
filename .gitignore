@@ -202,6 +202,7 @@ notes/
 src/plugins/aidev_ai_blueking/aidev_ai_blueking/static/
 
 # harness files
+specs/
 src/agent/harness
 src/agent/openspec
 src/agent/.codebuddy

@@ -66,6 +66,7 @@ class AgentInstanceFactory:
         username: str | None = None,
         version: Optional[str] = None,
         reasoning_effort: str | None = None,
+        hook_handlers: Any = None,
         *,
         _token: object = None,
     ):
@@ -92,6 +93,7 @@ class AgentInstanceFactory:
             命令切换出去的子 agent_code 各有独立版本语义，统一走最新版，不继承本字段。
         :param reasoning_effort: 本轮主模型思考深度（none/minimal/low/medium/high/xhigh/max）；为 None 时回落
             智能体默认档（仅默认模型），仍为空则不传，上游按模板默认
+        :param hook_handlers: 进程内 hook 处理器集合（HookSet）；None 表示不注入，行为与基线一致
         :param _token: 私有构造凭证；仅 ``build_agent`` 与同包测试持有。
         """
         if _token is not _FACTORY_TOKEN:
@@ -116,6 +118,7 @@ class AgentInstanceFactory:
         self.username = username
         self.version = version
         self.reasoning_effort = reasoning_effort or None
+        self.hook_handlers = hook_handlers
 
     @classmethod
     def build_agent(
@@ -140,6 +143,7 @@ class AgentInstanceFactory:
         username: str | None = None,
         version: Optional[str] = None,
         reasoning_effort: str | None = None,
+        hook_handlers: Any = None,
         **extra: Any,
     ):
         """
@@ -166,6 +170,7 @@ class AgentInstanceFactory:
         :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）
         :param reasoning_effort: 本轮主模型思考深度（none/minimal/low/medium/high/xhigh/max）；为 None 时回落
             智能体默认档（仅默认模型），仍为空则不传，上游按模板默认
+        :param hook_handlers: 进程内 hook 处理器集合（HookSet）；None 表示不注入，全链路保持基线行为
         :param extra: 透传到 ``AgentBuildContext.extra``，由各 Agent 类的 ``build`` 自取。
             Chat / Flow 的 producer 执行策略由 resource_manager 的可选能力提供，默认使用后台线程。
             （如 FlowAgent 的 ``task_id`` / ``flow_start_params`` / ``poll_interval`` /
@@ -191,6 +196,7 @@ class AgentInstanceFactory:
             username=username,
             version=version,
             reasoning_effort=reasoning_effort,
+            hook_handlers=hook_handlers,
             _token=_FACTORY_TOKEN,
         )
 
@@ -393,6 +399,7 @@ class AgentInstanceFactory:
                 reasoning_effort=self.reasoning_effort,
                 retry_strategy=self.retry_strategy,
                 checkpointer=self.checkpointer,
+                hook_handlers=self.hook_handlers,
             )
         elif self.agent_type == AgentType.FLOW:
             # FLOW 路径不依赖 agent 配置（与原行为保持一致），跳过预读

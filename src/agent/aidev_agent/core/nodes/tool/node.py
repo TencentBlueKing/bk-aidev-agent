@@ -35,11 +35,18 @@ from langgraph.prebuilt.tool_node import (
 from langgraph.types import Command
 
 from aidev_agent.config import BKAI_TOOL_LOOP_FEEDBACK_ROUNDS, BKAI_TOOL_LOOP_REPEAT_LIMIT
+from aidev_agent.core.hook.runner import HookRunner
 from aidev_agent.pydantic_models import SecuritySettings
 from aidev_agent.utils.tool_result import is_error_content
 
 from .approval_wrapper import itsm_approval_async_wrapper, itsm_approval_sync_wrapper
 from .deduplication import KnowledgeToolNode, deduplicate_async, deduplicate_sync
+from .hook_wrapper import (
+    build_tool_post_async_wrapper,
+    build_tool_post_sync_wrapper,
+    build_tool_pre_async_wrapper,
+    build_tool_pre_sync_wrapper,
+)
 from .json_repair_wrapper import json_repair_on_error_async_wrapper, json_repair_on_error_sync_wrapper
 from .loop_guard import (
     LoopGuardPolicy,
@@ -259,6 +266,7 @@ def build_tool_node(
     security_settings: SecuritySettings | None = None,
     wrappers: Sequence[ToolCallWrapper] | None = None,
     async_wrappers: Sequence[AsyncToolCallWrapper] | None = None,
+    hook_runner: HookRunner | None = None,
 ) -> ToolNode:
     """构造带有中间件支持的 ToolNode。
 
@@ -281,6 +289,7 @@ def build_tool_node(
             （配置缺失不静默降级为默认规则脱敏）。
         wrappers: 可选的自定义同步包装器列表，会在内置包装器之后执行。
         async_wrappers: 可选的自定义异步包装器列表，会在内置包装器之后执行。
+        hook_runner: hook 执行器；None 时不改变 wrapper 列表形状（零回归）。
 
     Returns:
         配置了中间件的 ToolNode 实例。
@@ -302,9 +311,35 @@ def build_tool_node(
 
     node_options = node_options or ToolNodeSettings()
 
-    # 组合包装器：内置包装器 + 用户自定义包装器
-    sync_wrapper_list: list[ToolCallWrapper] = []
-    async_wrapper_list: list[AsyncToolCallWrapper] = []
+    # 组合包装器：按「请求流外→内」顺序一次构造，列表首元素为最外层。
+    # dispatch 固定最外层（响应流最后执行，被拒绝的调用也能恰好派发一次）；
+    # 其内依次是循环守卫 → 代理解包 → tool_pre → 结果出口净化链 → tool_post（最内层）。
+    sync_wrapper_list: list[ToolCallWrapper] = [dispatch_tool_result_event]
+    async_wrapper_list: list[AsyncToolCallWrapper] = [dispatch_tool_result_event_async]
+
+    if node_options.enable_tool_loop_guard:
+        loop_guard = LoopGuardPolicy(
+            repeat_limit=BKAI_TOOL_LOOP_REPEAT_LIMIT,
+            feedback_rounds=BKAI_TOOL_LOOP_FEEDBACK_ROUNDS,
+            result_limit=node_options.result_limit_thrd,
+        )
+        # 拒绝不进入内层执行链；拒绝结果由链首事件 wrapper 派发，守卫只负责判定与元数据。
+        sync_wrapper_list.append(build_loop_guard_sync_wrapper(loop_guard, messages_key))
+        async_wrapper_list.append(build_loop_guard_async_wrapper(loop_guard, messages_key))
+        handle_tool_errors = _with_loop_termination_handler(handle_tool_errors)
+
+    # tool_call 代理解包：紧随守卫，其后所有 wrapper 按真实工具判定，返回时改名回 tool_call。
+    if node_options.use_tool_call_proxy:
+        # 预先实例化，保证解包换入的目标工具与 ToolNode 注册的是同一实例
+        tools = [tool if isinstance(tool, BaseTool) else create_tool(tool) for tool in tools]
+        tools_by_name = {tool.name: tool for tool in tools}
+        sync_wrapper_list.append(build_tool_call_unwrap_sync_wrapper(tools_by_name))
+        async_wrapper_list.append(build_tool_call_unwrap_async_wrapper(tools_by_name))
+
+    # tool_pre：位于代理解包之后、不可信净化 / 脱敏 / ITSM 审批之前。
+    if hook_runner is not None:
+        sync_wrapper_list.append(build_tool_pre_sync_wrapper(hook_runner))
+        async_wrapper_list.append(build_tool_pre_async_wrapper(hook_runner))
 
     # 安全防护置于结果出口，作为工具结果进入模型前的最后一道净化闸门。
     # 两个维度独立开关：不可信净化在外层、结果脱敏在内层 —— 响应流为「内→外」，
@@ -352,32 +387,14 @@ def build_tool_node(
     # Keep approval and custom wrappers outside result reuse.
     sync_wrapper_list.append(deduplicate_sync)
     async_wrapper_list.append(deduplicate_async)
-    # tool_call 代理解包：解包置链首（其后所有 wrapper 按目标工具判定），返回时即改名回 tool_call。
-    if node_options.use_tool_call_proxy:
-        # 预先实例化，保证解包换入的目标工具与 ToolNode 注册的是同一实例
-        tools = [tool if isinstance(tool, BaseTool) else create_tool(tool) for tool in tools]
-        tools_by_name = {tool.name: tool for tool in tools}
-        sync_wrapper_list.insert(0, build_tool_call_unwrap_sync_wrapper(tools_by_name))
-        async_wrapper_list.insert(0, build_tool_call_unwrap_async_wrapper(tools_by_name))
     # 在结果改名、限长、净化和事件发送前识别原始错误内容。
     sync_wrapper_list.append(_content_error_sync_wrapper)
     async_wrapper_list.append(_content_error_async_wrapper)
-    if node_options.enable_tool_loop_guard:
-        loop_guard = LoopGuardPolicy(
-            repeat_limit=BKAI_TOOL_LOOP_REPEAT_LIMIT,
-            feedback_rounds=BKAI_TOOL_LOOP_FEEDBACK_ROUNDS,
-            result_limit=node_options.result_limit_thrd,
-        )
-        # 拒绝不进入内层执行链；拒绝结果由链首事件 wrapper 派发，守卫只负责判定与元数据。
-        sync_wrapper_list.insert(0, build_loop_guard_sync_wrapper(loop_guard, messages_key))
-        async_wrapper_list.insert(0, build_loop_guard_async_wrapper(loop_guard, messages_key))
-        handle_tool_errors = _with_loop_termination_handler(handle_tool_errors)
-    # 结果事件 wrapper 永远作为最后一笔插入到链首：响应流最后执行，派发时脱敏 / 限长 / 错误标记 /
-    # 代理改名 / 循环守卫判定均已完成；包在循环守卫之外，才能让被拒绝的调用也恰好派发一次。
-    # 位置不依赖 enable_tool_loop_guard —— 守卫关闭时同样是链首，两种装配形状一致。
-    # 无开关：工具执行成功返回即派发；interrupt / 终止以异常抛出，无返回值即无派发。
-    sync_wrapper_list.insert(0, dispatch_tool_result_event)
-    async_wrapper_list.insert(0, dispatch_tool_result_event_async)
+    # tool_post：链最内层，看到未脱敏原文；输出继续流经 _content_error / 去重 / 截断 / 脱敏 / 净化。
+    if hook_runner is not None:
+        sync_wrapper_list.append(build_tool_post_sync_wrapper(hook_runner))
+        async_wrapper_list.append(build_tool_post_async_wrapper(hook_runner))
+
     final_sync_wrapper = _chain_tool_call_wrappers(sync_wrapper_list)
     final_async_wrapper = _chain_async_tool_call_wrappers(async_wrapper_list)
     return KnowledgeToolNode(

@@ -23,6 +23,7 @@ from aidev_agent.packages.interrupt_manager.approval import (
     is_approval_configured,
 )
 from aidev_agent.utils.executor_identity import ApproverIdentity, approver_identity_scope
+from aidev_agent.utils.tool_result import build_tool_rejection_message
 
 logger = logging.getLogger(__name__)
 
@@ -116,17 +117,11 @@ def _is_approved(decision: Any) -> bool:
 
 
 def _rejected_message(request: ToolCallRequest) -> ToolMessage:
-    """构造审批拒绝的 ToolMessage。
-
-    ``additional_kwargs`` 打上 ``TOOL_APPROVAL_REJECTED_KEY`` 语义标记，标识该结果由审批
-    拒绝短路产生（工具未执行），供持久化层跳过落库；消息本身仍进 messages / checkpoint。
-    """
-    return ToolMessage(
-        content="工具审批未通过，已取消执行。",
-        tool_call_id=_tool_call_id(request),
-        name=_tool_name(request),
-        status="error",
-        additional_kwargs={TOOL_APPROVAL_REJECTED_KEY: True},
+    """审批拒绝结果；``skip_persistence`` 供持久化层跳过落库。"""
+    return build_tool_rejection_message(
+        request,
+        "工具审批未通过，已取消执行。",
+        skip_persistence=True,
     )
 
 
