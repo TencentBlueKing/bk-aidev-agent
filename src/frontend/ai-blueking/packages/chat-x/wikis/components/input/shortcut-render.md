@@ -448,16 +448,6 @@ Select 的下拉是 bkui Popover，默认会 Teleport 到 `document.body`，层�
 
 不要把 `boundary` 设成 `'parent'`。`.ai-shortcut-render` 有 `overflow: hidden`，下拉会被裁掉。全屏时 `ChatContainer` 会把 `appendTo` 换成全屏容器，下拉跟着挂到那里。
 
-## Message / Toast
-
-bkui `Message` 默认挂 `document.body`，层级从约 6000 起算，同样会被小鲸浮窗（`z-index: 10000`）挡住（例如「复制成功」）。
-
-组件内请统一走 chat-x 的 `showToast`（`utils/show-toast`），不要再直接 `Message()`：
-
-- AIBlueking 会在浮层内提供 `.ai-blueking-toast-host`；`showToast` 检测到后把 Message 挂进去，进入浮层的层叠上下文
-- 无 host 时（独立 ChatBot 等）仍挂 `body`，行为与原先一致
-
-
 通过 `component.formItemProps` 透传给 `Form.FormItem`：
 
 ```typescript

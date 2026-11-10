@@ -9,7 +9,7 @@
 
 import type { Ref } from 'vue';
 
-import { showToast } from '@blueking/chat-x';
+import { useToast } from '@blueking/chat-x';
 
 import { ShareBusinessManager } from '../../manager/business/share-business-manager';
 import { copyToClipboard } from '../../utils';
@@ -40,6 +40,7 @@ export const isBuiltinShareSource = (source?: IToolBtn): boolean => !source || s
  */
 export function useShareSelection(params: UseShareSelectionParams): UseShareSelectionReturn {
   const { emit, chatHelper, isStandaloneMode } = params;
+  const showToast = useToast();
 
   const doShareMessages = async (messagesToShare: Message[]) => {
     if (!chatHelper.value || messagesToShare.length === 0) return;

@@ -7,7 +7,6 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-export { AI_BLUEKING_OVERLAY_Z_INDEX } from './constants';
 export { defaultProps } from './prop-defaults';
-export { createBluekingProtocol, BluekingProtocol } from './protocol-config';
+export { BluekingProtocol, createBluekingProtocol } from './protocol-config';
 export type { ProtocolOptions } from './protocol-config';

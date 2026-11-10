@@ -8,13 +8,13 @@
  */
 
 import { toValue } from 'vue';
+import type { MaybeRefOrGetter } from 'vue';
 
-import { showToast } from '@blueking/chat-x';
+import { useToast } from '@blueking/chat-x';
 
 import { t } from '../../lang';
 import { toError } from '../../utils';
 
-import type { MaybeRefOrGetter } from 'vue';
 import type { IEventEmitter } from '../../manager/business/types';
 import type { ChatBotEmitFn } from './use-chatbot-init';
 
@@ -49,11 +49,9 @@ export interface UseErrorReporterReturn {
  * 同一个错误可能同时经由业务管理器的失败事件和调用点的 catch 抵达（业务管理器普遍
  * 「emit 后 rethrow」），按 Error 实例去重保证对外只触发一次 `error`。
  */
-export function useErrorReporter(
-  emit: ChatBotEmitFn,
-  options: UseErrorReporterOptions = {},
-): UseErrorReporterReturn {
+export function useErrorReporter(emit: ChatBotEmitFn, options: UseErrorReporterOptions = {}): UseErrorReporterReturn {
   const reportedErrors = new WeakSet<Error>();
+  const showToast = useToast();
 
   const reportError: ReportChatBotError = (error, context) => {
     const normalized = toError(error);
@@ -79,7 +77,7 @@ export function useErrorReporter(
   const managerErrorBridge: IEventEmitter = {
     emit: (event: string, data: unknown) => {
       if (MANAGER_ERROR_EVENTS.has(event)) {
-        reportError((data as { error?: unknown } | undefined)?.error);
+        reportError((data as undefined | { error?: unknown })?.error);
       }
     },
   };

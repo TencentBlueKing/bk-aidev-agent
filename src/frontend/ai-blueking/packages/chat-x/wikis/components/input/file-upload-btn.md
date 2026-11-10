@@ -65,7 +65,7 @@ exportStatus: internal
   ├─ 遍历所选文件：size > 0 且 size < MAX_UPLOAD_FILE_SIZE（20MB）→ 加入 toEmit
   │       size 为 0 或 ≥ 上限 → sizeRejected += 1
   │
-  ├─ sizeRejected > 0 → showToast error（formatUploadNotAddedMessage，说明可能超大或超出个数等）
+  ├─ sizeRejected > 0 → useToast 弹出 error（formatUploadNotAddedMessage，说明可能超大或超出个数等）
   │
   ├─ toEmit.length > 0 → emit('upload', toEmit)
   │

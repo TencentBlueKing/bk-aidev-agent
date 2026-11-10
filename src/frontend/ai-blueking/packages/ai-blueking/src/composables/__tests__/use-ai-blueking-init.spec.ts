@@ -1,19 +1,45 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computed, nextTick, reactive, ref, toValue } from 'vue';
+
+/*
+ * Tencent is pleased to support the open source community by making
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
+ *
+ * Copyright (C) 2021 THL A29 Limited, a Tencent company.  All rights reserved.
+ *
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
+ *
+ * License for 蓝鲸智云PaaS平台 (BlueKing PaaS):
+ *
+ * ---------------------------------------------------
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+ * to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+ * the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+ * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAiBluekingInit } from '../use-ai-blueking-init';
 
-import type { ChatBootstrapOptions } from '../use-chat-bootstrap';
 import type { AIBluekingProps } from '../../types';
+import type { ChatBootstrapOptions } from '../use-chat-bootstrap';
 
 let capturedBootstrapOptions: ChatBootstrapOptions | undefined;
 let capturedOnErrorHandler: ((error: Error) => void) | undefined;
-let capturedOnErrorOptions: { ignoreErrors?: Array<RegExp | string> } | undefined;
-let latestBootstrapReturn: {
+let capturedOnErrorOptions: undefined | { ignoreErrors?: Array<RegExp | string> };
+let latestBootstrapReturn: null | {
   agentInfo: ReturnType<typeof ref<unknown>>;
   error: ReturnType<typeof ref<Error | null>>;
   isReady: ReturnType<typeof ref<boolean>>;
-} | null = null;
+} = null;
 const mockEmitInternal = vi.fn();
 const mockShowToast = vi.fn();
 const mockLoadRecentSession = vi.fn().mockResolvedValue(undefined);
@@ -108,10 +134,7 @@ vi.mock('../use-chat-bootstrap', () => ({
         agent: {},
         message: { list: ref([]) },
         session: {},
-        onError: (
-          handler: (error: Error) => void,
-          options?: { ignoreErrors?: Array<RegExp | string> },
-        ) => {
+        onError: (handler: (error: Error) => void, options?: { ignoreErrors?: Array<RegExp | string> }) => {
           capturedOnErrorHandler = handler;
           capturedOnErrorOptions = options;
         },
@@ -135,14 +158,14 @@ function createDefaultProps(overrides: Partial<AIBluekingProps> = {}): AIBluekin
   }) as AIBluekingProps;
 }
 
-function getSdkErrorCalls() {
-  return mockEmitInternal.mock.calls.filter(call => call[0] === 'sdk-error');
-}
-
 async function flushMicrotasks() {
   await Promise.resolve();
   await nextTick();
   vi.runOnlyPendingTimers();
+}
+
+function getSdkErrorCalls() {
+  return mockEmitInternal.mock.calls.filter(call => call[0] === 'sdk-error');
 }
 
 describe('useAiBluekingInit requestOptions', () => {
@@ -205,6 +228,17 @@ describe('useAiBluekingInit error handling', () => {
       message: 'init failed',
     });
     expect(mockShowToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses injected toast instead of default showToast', async () => {
+    const toast = vi.fn();
+    useAiBluekingInit({ props: createDefaultProps(), emit: vi.fn(), toast });
+
+    latestBootstrapReturn!.error.value = new Error('init failed');
+    await nextTick();
+
+    expect(toast).toHaveBeenCalledWith({ message: 'init failed', theme: 'error' });
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('reports deferred bare HTTP error as init before bootstrap ready', async () => {

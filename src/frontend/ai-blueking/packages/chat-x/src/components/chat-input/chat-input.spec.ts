@@ -47,8 +47,8 @@ async function waitUntilSendEnabled(wrapper: VueWrapper) {
 }
 
 const mockBkMessage = vi.fn();
-vi.mock('../../utils/show-toast', () => ({
-  showToast: (...args: unknown[]) => mockBkMessage(...args),
+vi.mock('bkui-vue', () => ({
+  Message: (...args: unknown[]) => mockBkMessage(...args),
 }));
 
 vi.mock('../../lang/lang', () => ({

@@ -100,8 +100,8 @@
             :share-loading="isShareLoading"
             :shortcuts="props.shortcuts"
             :size="props.size"
-            :timezone="props.timezone"
             :style="{ height: props.hideHeader ? '100%' : 'calc(100% - 48px)' }"
+            :timezone="props.timezone"
             :update-tools="props.updateTools"
             :url="normalizedUrl"
             :use-agent-name="props.useAgentName"
@@ -173,22 +173,20 @@
         @selection-change="handleSelectionChange"
       />
 
-      <!--
-        Toast 挂载点：bkui Message 默认挂 body（z-index ~6000），会被本浮层（10000）挡住。
-        showToast 检测到此 host 后挂入本层叠上下文；host 自身 pointer-events: none，不挡面板点击。
-      -->
+      <!-- bkui Message 挂 body 时层级约 6000，会被本浮层挡住，故挂进浮层内部 -->
       <div
-        :class="TOAST_HOST_CLASS"
+        ref="toastHostRef"
         aria-live="polite"
+        class="ai-blueking-toast-host"
       />
     </div>
   </teleport>
 </template>
 
 <script setup lang="ts">
-  import { computed, useAttrs } from 'vue';
+  import { computed, ref, useAttrs } from 'vue';
 
-  import { AiSelection, TOAST_HOST_CLASS } from '@blueking/chat-x';
+  import { type ShowToastOptions, AiSelection, showToast, useToastContainerProvider } from '@blueking/chat-x';
 
   import AIHeader from './components/ai-header/index.vue';
   import ChatBot from './components/chat-bot.vue';
@@ -199,7 +197,7 @@
     useSessionHandlers,
     useShareHandlers,
   } from './composables';
-  import { AI_BLUEKING_OVERLAY_Z_INDEX, defaultProps } from './config';
+  import { defaultProps } from './config';
   import { DraggableContainer } from './containers';
   import NimbusButton from './views/nimbus.vue';
 
@@ -209,9 +207,6 @@
 
   // 根节点为 teleport，无法自动继承 class 等透传属性，改为手动合并到内层容器
   defineOptions({ inheritAttrs: false });
-
-  /** 供 scoped style `v-bind` 使用；toast 必须高于此层（见 chat-x TOAST_Z_INDEX） */
-  const overlayZIndex = AI_BLUEKING_OVERLAY_Z_INDEX;
 
   const props = withDefaults(defineProps<AIBluekingProps>(), defaultProps);
   /** 主栏下限。resizeProps.mainMin 优先，否则用浮窗 minWidth */
@@ -229,6 +224,12 @@
     message?: (props: ChatMessageSlotProps) => unknown;
     welcome?: (props: { openingRemark?: string; welcomeTitle?: string }) => unknown;
   }>();
+
+  // ==================== 0. Toast 挂载点 ====================
+  // 子组件（ChatBot / AIHeader / chat-x）经 inject 取用；本组件自身的 composable 无法 inject 自己的 provide，显式传入 toast
+  const toastHostRef = ref<HTMLElement>();
+  useToastContainerProvider(toastHostRef);
+  const toast = (options: ShowToastOptions) => showToast(options, toastHostRef.value);
 
   // ==================== 1. 核心初始化 ====================
   const {
@@ -258,6 +259,7 @@
   } = useAiBluekingInit({
     props,
     emit: emit as (event: string, ...args: unknown[]) => void,
+    toast,
   });
 
   /** Header 展示/新建会话用的当前选中模型（与 ChatBot 共享同一管理器） */
@@ -341,6 +343,7 @@
     emit: (event, messages, source) => emit(event, messages, source),
     forwarders,
     reportSdkError,
+    toast,
   });
 
   // ==================== 5. 划词选择 ====================
@@ -388,18 +391,23 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: v-bind(overlayZIndex);
+    z-index: 10000;
     width: 100vw;
     height: 100vh;
     pointer-events: none;
   }
 
-  /* 全视口透明层：Message absolute 相对此定位；自身不拦截点击 */
+  /* 全视口透明层：Message absolute 相对此定位 */
   .ai-blueking-toast-host {
     position: absolute;
     inset: 0;
     overflow: visible;
     pointer-events: none;
+
+    /* 外壳 pointer-events: none 会被继承，Message 需显式恢复才能点击关闭 */
+    :deep(.bk-message) {
+      pointer-events: auto;
+    }
   }
 
   .ai-blueking-panel {

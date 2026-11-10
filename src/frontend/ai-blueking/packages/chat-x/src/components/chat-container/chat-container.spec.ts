@@ -85,6 +85,16 @@ const mockUploadedArtifactsRef = vi.hoisted(() => {
 });
 const mockUseMessageGroup = vi.hoisted(() => vi.fn());
 const mockUseRenderModeProvider = vi.hoisted(() => vi.fn());
+/** 受控的全屏状态，验证全屏时 toast 容器被覆盖为全屏元素 */
+const mockIsFullScreenRef = vi.hoisted(() => {
+  const { shallowRef } = require('vue');
+  return shallowRef(false) as Ref<boolean>;
+});
+/** 记录 ChatContainer 向后代 provide 的 toast 容器，以及上层注入的容器 */
+const mockToastContainer = vi.hoisted(() => ({
+  parent: undefined as HTMLElement | undefined,
+  provided: undefined as (() => HTMLElement | null | undefined) | undefined,
+}));
 
 vi.mock('bkui-vue', () => {
   const Button = defineComponent({
@@ -222,6 +232,17 @@ vi.mock('../../composables/use-common', () => ({
   useCommonTippyInject: () => ({ value: {} }),
   useCommonTippyProvider: vi.fn(),
   useRenderModeProvider: mockUseRenderModeProvider,
+}));
+
+vi.mock('../../composables/use-full-screen', () => ({
+  useFullScreen: () => ({ isFullScreen: mockIsFullScreenRef, enter: vi.fn(), exit: vi.fn() }),
+}));
+
+vi.mock('../../composables/use-toast', () => ({
+  useToastContainerInject: () => mockToastContainer.parent,
+  useToastContainerProvider: (container: () => HTMLElement | null | undefined) => {
+    mockToastContainer.provided = container;
+  },
 }));
 
 // 文件产物面板已是侧栏常驻默认 Tab，会在每个用例中渲染，统一以轻量桩替代
@@ -1388,6 +1409,45 @@ describe('ChatContainer', () => {
       expect(wrapper.find('.screen-wrapper').exists()).toBe(true);
       expect(wrapper.find('.screen-btn').exists()).toBe(true);
       expect(wrapper.find('.mock-full-screen-icon').exists()).toBe(true);
+    });
+  });
+
+  describe('toast 容器', () => {
+    beforeEach(() => {
+      mockIsFullScreenRef.value = false;
+      mockToastContainer.parent = undefined;
+      mockToastContainer.provided = undefined;
+    });
+
+    it('非全屏时向后代透传上层注入的 toast 容器', () => {
+      const host = document.createElement('div');
+      mockToastContainer.parent = host;
+
+      wrapper = mount(ChatContainer, { props: defaultProps });
+
+      expect(mockToastContainer.provided?.()).toBe(host);
+    });
+
+    it('无上层注入且非全屏时不提供容器（回退 body）', () => {
+      wrapper = mount(ChatContainer, { props: defaultProps });
+
+      expect(mockToastContainer.provided?.()).toBeUndefined();
+    });
+
+    it('全屏时覆盖为全屏元素，退出后恢复上层容器', async () => {
+      const host = document.createElement('div');
+      mockToastContainer.parent = host;
+      wrapper = mount(ChatContainer, { props: defaultProps });
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      mockIsFullScreenRef.value = true;
+      await nextTick();
+      expect(mockToastContainer.provided?.()).toBe(wrapper.find('.ai-full-screen-wrapper').element);
+
+      mockIsFullScreenRef.value = false;
+      await nextTick();
+      expect(mockToastContainer.provided?.()).toBe(host);
     });
   });
 

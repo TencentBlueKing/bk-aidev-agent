@@ -547,6 +547,7 @@ ai-chat-container（:data-ai-size="size"）
 - 点击 **全屏** 图标：调用 `useFullScreen(fullScreenRef).enter()`，将 `.ai-full-screen-wrapper` 进入浏览器原生全屏
 - 点击 **退出全屏** 图标：调用 `exit()` 退出；用户按 ESC 退出时 `isFullScreen` 也会自动同步
 - 全屏状态下，侧栏内 `v-overflow-tips` 的 `appendTo` 会指向全屏容器，避免 tooltip 挂载到 `document.body` 后被全屏层遮挡
+- 全屏状态下，toast 容器同样被覆盖为全屏容器，后代经 [`useToast`](/composables/use-toast) 弹出的提示（如「复制成功」）挂进全屏层；退出全屏后恢复为上层 `useToastContainerProvider` 注入的容器，无注入时回到 `document.body`
 
 该能力由内部 `useFullScreen` composable 提供，详见 [useFullScreen](../../composables/use-full-screen.md)。
 
@@ -1396,6 +1397,7 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
+- [useToast](/composables/use-toast) — 统一提示与 toast 挂载容器
 - [useGlobalConfig](/composables/use-global-config) — 注入 `size`、`supportUpload`、`timezone` 与 `menuSources`
 - [useInputMention](/composables/use-input-mention) — 开放「资源插入输入框」能力
 - [主题配置](/theme/theme) — 字号主题 CSS 变量

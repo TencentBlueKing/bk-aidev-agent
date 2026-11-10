@@ -31,14 +31,10 @@
   import { directive as vTippy } from 'vue-tippy';
 
   import { isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../../common';
+  import { useToast } from '../../../composables/use-toast';
   import { FileUploadIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
-  import {
-    formatDefaultUploadAcceptTip,
-    formatUploadNotAddedMessage,
-    isDefaultUploadAccept,
-    showToast,
-  } from '../../../utils';
+  import { formatDefaultUploadAcceptTip, formatUploadNotAddedMessage, isDefaultUploadAccept } from '../../../utils';
 
   import type { AITippyProps } from '../../../types';
 
@@ -59,6 +55,7 @@
   }>();
 
   const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
+  const showToast = useToast();
 
   const maxUploadMb = (MAX_UPLOAD_FILE_SIZE / (1024 * 1024)).toFixed(1);
   // 限制值随常量变化；有 accept 时补上支持格式，默认列表用分类文案

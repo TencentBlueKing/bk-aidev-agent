@@ -23,12 +23,17 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+import {
+  type InjectionKey,
+  type MaybeRefOrGetter,
+  type VNode,
+  hasInjectionContext,
+  inject,
+  provide,
+  toValue,
+} from 'vue';
+
 import { Message } from 'bkui-vue';
-import type { VNode } from 'vue';
-
-import { TOAST_HOST_CLASS, TOAST_MESSAGE_CLASS } from '../common/constants';
-
-export type ShowToastTheme = 'primary' | 'success' | 'warning' | 'error';
 
 export type ShowToastOptions = {
   delay?: number;
@@ -39,33 +44,40 @@ export type ShowToastOptions = {
   theme?: ShowToastTheme;
 };
 
-/**
- * 解析 AIBlueking 浮层内的 toast 挂载点。
- * 存在时 Message 会以 absolute 挂入浮层层叠上下文（z-index 10000），避免默认挂 body（约 6000）被挡住。
- */
-const resolveToastContainer = (): HTMLElement | undefined => {
-  if (typeof document === 'undefined') {
-    return undefined;
-  }
-  const host = document.querySelector(`.${TOAST_HOST_CLASS}`);
-  return host instanceof HTMLElement ? host : undefined;
-};
+export type ShowToastTheme = 'error' | 'primary' | 'success' | 'warning';
 
-const mergeExtCls = (...classNames: Array<string | undefined>): string =>
-  classNames
-    .flatMap(name => (name ? name.split(/\s+/) : []))
-    .filter(Boolean)
-    .join(' ');
+export type ToastContainer = MaybeRefOrGetter<HTMLElement | null | undefined>;
+
+export type ToastFn = (options: ShowToastOptions) => void;
+
+export const TOAST_CONTAINER_TOKEN: InjectionKey<ToastContainer> = Symbol('TOAST_CONTAINER_TOKEN');
 
 /**
- * 统一 toast 入口：优先挂到 AIBlueking 浮层 toast host，否则回退 document.body。
- * 组件内禁止再直接调用 bkui-vue `Message()`。
+ * 弹出 bkui Message。传入 container 时挂到该元素内（Message 改为 absolute 定位），否则挂 document.body。
  */
-export const showToast = (options: ShowToastOptions): void => {
-  const getContainer = resolveToastContainer();
+export const showToast = (options: ShowToastOptions, container?: HTMLElement | null): void => {
   Message({
     ...options,
-    extCls: mergeExtCls(TOAST_MESSAGE_CLASS, options.extCls),
-    ...(getContainer ? { getContainer } : {}),
+    ...(container ? { getContainer: container } : {}),
   });
+};
+
+/**
+ * 由宿主声明 toast 挂载容器，供后代组件的 useToast 使用。
+ * 宿主自身处于高层叠上下文（如 fixed 浮层）时，Message 挂 body 会被挡住，需要挂进宿主内部。
+ */
+export const useToastContainerProvider = (container: ToastContainer): void => {
+  provide(TOAST_CONTAINER_TOKEN, container);
+};
+
+export const useToastContainerInject = (): ToastContainer | undefined => {
+  return hasInjectionContext() ? inject(TOAST_CONTAINER_TOKEN, undefined) : undefined;
+};
+
+/**
+ * 返回绑定了注入容器的 toast 方法；须在 setup 中调用，容器在每次弹出时读取。
+ */
+export const useToast = (): ToastFn => {
+  const container = useToastContainerInject();
+  return options => showToast(options, toValue(container));
 };
