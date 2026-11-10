@@ -14,9 +14,10 @@
         fill: #fff;
       }
     </style>
-    <linearGradient id="_未命名的渐变_2" data-name="未命名的渐变 2" x1="419.82" y1="-2346.98" x2="419.82" y2="-1419.89" gradientTransform="translate(0 -1419.07) scale(1 -1)" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4ac0fb"/>
-      <stop offset="1" stop-color="#4297fb"/>
+    <linearGradient id="_未命名的渐变_2" data-name="未命名的渐变 2" x1="190" y1="130" x2="777.73" y2="752.09" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4abdfb"/>
+      <stop offset="0.514423" stop-color="#425bfb"/>
+      <stop offset="1" stop-color="#4551fb"/>
     </linearGradient>
   </defs>
   <g id="_图层_1-2" data-name="图层 1">
