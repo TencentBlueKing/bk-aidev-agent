@@ -1299,3 +1299,130 @@ class TestFillUserImageUrls:
 
         file_service.get_download_url.assert_called_once()
         assert all("url" not in item for item in payload["content"])
+
+
+# ---------------------------------------------------------------------------
+# clone_volume：Fork 复制会话 PV
+# ---------------------------------------------------------------------------
+
+
+def _copy_ok():
+    return SimpleNamespace(stdout=f"{module._FORK_COPY_DONE_MARKER}\n", stderr="", exit_code=0)
+
+
+class TestCloneVolume:
+    @pytest.fixture
+    def counted(self, mock_client):
+        def _set(count: int):
+            mock_client.list_files.request.return_value = _mock_paas_response({"count": count, "results": []})
+
+        return _set
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_copies_into_new_volume_and_destroys_sandbox(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        backend.exec_command.return_value = _copy_ok()
+
+        assert service.clone_volume("s1") == "vol-new"
+
+        count_params = _query_params(mock_client.list_files.request.call_args.kwargs["params"])
+        assert count_params["page_size"] == "1"
+        assert mock_client.list_files.request.call_args.kwargs["path_params"]["volume_id"] == "vol-abc"
+        create_kwargs = backend.create_sandbox.call_args.kwargs
+        assert create_kwargs["volume_mounts"] == [
+            {"volume_id": "vol-abc", "mount_path": module.FORK_SRC_MOUNT_PATH},
+            {"volume_id": "vol-new", "mount_path": module.FORK_DST_MOUNT_PATH},
+        ]
+        assert create_kwargs["snapshot"] == DEFAULT_UPLOAD_SNAPSHOT
+        backend.exec_command.assert_called_once_with("sbx-fork", ["sh", "-c", module.FORK_COPY_SCRIPT])
+        backend.destroy_sandbox.assert_called_once_with("sbx-fork")
+        mock_client.delete_agent_sandbox_volume.request.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_source_without_volume_skips_copy(self, mock_backend_cls, service, resource_manager, mock_client):
+        resource_manager.retrieve_chat_session.return_value = {"session_property": {}}
+
+        assert service.clone_volume("s1") == ""
+
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+        mock_backend_cls.return_value.create_sandbox.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_empty_volume_skips_copy(self, mock_backend_cls, service, mock_client, counted):
+        counted(0)
+
+        assert service.clone_volume("s1") == ""
+
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+        mock_backend_cls.return_value.create_sandbox.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_too_many_entries_rejected_before_creating_volume(self, mock_backend_cls, service, mock_client, counted):
+        counted(11)
+
+        with pytest.raises(module.SandboxFilesTooManyError):
+            service.clone_volume("s1", max_entries=10)
+
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+        mock_backend_cls.return_value.create_sandbox.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_copy_failure_discards_new_volume(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        # 任一 cp 失败 xargs 返回 123，完成标记不会打印
+        backend.exec_command.return_value = SimpleNamespace(stdout="", stderr="cp: error", exit_code=123)
+
+        with pytest.raises(SandboxFileServerError, match="exit_code=123"):
+            service.clone_volume("s1")
+
+        mock_client.delete_agent_sandbox_volume.request.assert_called_once_with(
+            path_params={"app_code": "test-app", "volume_id": "vol-new"}
+        )
+        backend.destroy_sandbox.assert_called_once_with("sbx-fork")
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_sandbox_quota_maps_to_quota_error(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.side_effect = _mock_http_error(400, "AGENT_SANDBOX_ACTIVE_COUNT_LIMIT_EXCEEDED")
+
+        with pytest.raises(module.SandboxQuotaExceededError):
+            service.clone_volume("s1")
+
+        mock_client.delete_agent_sandbox_volume.request.assert_called_once()
+        backend.destroy_sandbox.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_destroy_failure_does_not_fail_clone(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        backend.exec_command.return_value = _copy_ok()
+        backend.destroy_sandbox.side_effect = RuntimeError("boom")
+
+        assert service.clone_volume("s1") == "vol-new"
+
+    def test_missing_snapshot_raises_before_creating_volume(self, resource_manager, mock_client):
+        mock_client.list_files.request.return_value = _mock_paas_response({"count": 3, "results": []})
+        svc = SandboxPvFileService(resource_manager=resource_manager, executor_info={"app_code": "test-app"})
+
+        with pytest.raises(SandboxFileInvalidArgumentError):
+            svc.clone_volume("s1")
+
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+
+    def test_discard_volume_swallows_delete_failure(self, service, mock_client):
+        mock_client.delete_agent_sandbox_volume.request.side_effect = RuntimeError("500")
+
+        service.discard_volume("vol-new")
+        service.discard_volume("")
+
+        mock_client.delete_agent_sandbox_volume.request.assert_called_once()

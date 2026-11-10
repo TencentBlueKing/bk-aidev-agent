@@ -10,6 +10,7 @@ Service 层职责：
 - 通过 `ResourceManager` 反查 `session_code → volume_id`
 - 通过 `ResourceManager` 构造 PaaS Sandbox Client
 - 6 个业务方法（upload/list/delete/stat/preview/get_download_url）
+- Fork 复制会话 PV（clone_volume / discard_volume）
 - `list_files` 内部分页拉全量 + `time.sleep` 超频保护 + 过滤目录
 - PaaS HTTP 错误 → SDK 侧业务异常映射
 """
@@ -79,6 +80,17 @@ class SandboxFileServerError(SandboxFileError):
     """PaaS / 沙箱服务端错误，或未识别的失败。"""
 
 
+class SandboxQuotaExceededError(SandboxFileServerError):
+    """应用存活沙箱数已达 PaaS 上限，稍后重试。
+
+    继承 SandboxFileServerError：只认基类的调用方映射不变，需要区分的调用方再单独 catch。
+    """
+
+
+class SandboxFilesTooManyError(SandboxFileInvalidRequestError):
+    """会话 PV 条目数超过复制上限。"""
+
+
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -94,6 +106,20 @@ TEMP_UPLOAD_VOLUME_MOUNT_PATH = "/app/.storage/session"
 # 复用期内不再建/销毁，到期由 PaaS 自动回收；临界点若命中已回收 sandbox，由 fallback 重建兜底
 # PaaS sandbox ttl_seconds 上限为 30 分钟（1800s）
 TEMP_UPLOAD_SANDBOX_TTL_SECONDS = 1800
+# Fork 复制会话 PV：临时沙箱同时挂源卷和新卷，8 路并行 cp -a 后销毁
+# 条目数（文件 + 目录）上限：按每个文件约 7 ms 估算约 75 秒，留在 PaaS exec 默认超时（296s）内
+FORK_MAX_ENTRIES = 10000
+FORK_SRC_MOUNT_PATH = "/app/.storage/fork-src"
+FORK_DST_MOUNT_PATH = "/app/.storage/fork-dst"
+FORK_SANDBOX_TTL_SECONDS = 600
+_FORK_COPY_DONE_MARKER = "AIDEV_FORK_COPY_DONE"
+# 先建目录避免并行时抢建父目录；任一 cp 失败 xargs 返回 123，&& 链断开不打印完成标记
+FORK_COPY_SCRIPT = (
+    f'cd "{FORK_SRC_MOUNT_PATH}"'
+    f' && find . -mindepth 1 -type d -print0 | (cd "{FORK_DST_MOUNT_PATH}" && xargs -0 -r mkdir -p)'
+    f' && find . ! -type d -print0 | xargs -0 -r -P 8 -n 64 cp -a --parents -t "{FORK_DST_MOUNT_PATH}"'
+    f" && sync && echo {_FORK_COPY_DONE_MARKER}"
+)
 # 前端 <img> / 视觉模型共用的临时 download_url 有效期
 IMAGE_DOWNLOAD_URL_EXPIRES_IN = 3600
 # 会话 PV 上传限制：平台与 SDK 插件 HTTP 入口共用，只在此维护一份。
@@ -173,6 +199,7 @@ PV_PAAS_ERROR_NOT_FOUND_CODES = frozenset({"AGENT_SANDBOX_FILE_NOT_FOUND", "VOLU
 PV_PAAS_ERROR_NOT_PREVIEWABLE_CODES = frozenset({"AGENT_SANDBOX_FILE_NOT_PREVIEWABLE"})
 PV_PAAS_ERROR_TOO_LARGE_CODES = frozenset({"AGENT_SANDBOX_FILE_TOO_LARGE"})
 PV_PAAS_ERROR_INVALID_ARG_CODES = frozenset({"AGENT_SANDBOX_FILE_OPERATION_FAILED"})
+PV_PAAS_ERROR_QUOTA_CODES = frozenset({"AGENT_SANDBOX_ACTIVE_COUNT_LIMIT_EXCEEDED"})
 # 复用上传沙箱被回收：只认 404 / 容器不存在，不认 FILE_TOO_LARGE 等业务错误
 PV_PAAS_SANDBOX_GONE_CODES = frozenset({"AGENT_SANDBOX_NOT_FOUND", "SANDBOX_NOT_FOUND"})
 
@@ -323,18 +350,14 @@ def _validate_upload_count(files) -> None:
 def _validate_upload_size(name: str, size: int) -> None:
     """单文件大小护栏。read() 前取 UploadedFile.size，read() 后取实际字节数。"""
     if size > MAX_SESSION_UPLOAD_FILE_SIZE:
-        raise SandboxFileInvalidArgumentError(
-            f"文件 {name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节"
-        )
+        raise SandboxFileInvalidArgumentError(f"文件 {name} 超过单文件大小限制 {MAX_SESSION_UPLOAD_FILE_SIZE} 字节")
 
 
 def validate_session_upload_stats(files) -> None:
     """read() 前按数量和 UploadedFile.size 做内存护栏。平台与插件 HTTP 入口共用。"""
     _validate_upload_count(files)
     for upload_file in files:
-        _validate_upload_size(
-            getattr(upload_file, "name", "") or "", getattr(upload_file, "size", 0) or 0
-        )
+        _validate_upload_size(getattr(upload_file, "name", "") or "", getattr(upload_file, "size", 0) or 0)
 
 
 def validate_session_upload_files(files: list[SandboxUploadFile]) -> None:
@@ -592,6 +615,41 @@ class SandboxPvFileService:
         except Exception:  # noqa: BLE001
             logger.warning("清理未关联的 sandbox PV 失败: volume_id=%s", volume_id, exc_info=True)
 
+    def _create_volume(self, client, app_code: str, session_code: str) -> str:
+        """创建一个未关联会话的 PV，返回 volume_id；失败时抛 SandboxFileServerError 或 HTTP 异常。"""
+        volume_name = f"session-pv-{session_code}-{uuid4().hex[:8]}"
+        response = client.create_agent_sandbox_volume.request(
+            json={"name": volume_name},
+            path_params={"app_code": app_code},
+        )
+        if not response.ok:
+            create_payload = {}
+            try:
+                create_payload = response.json()
+            except Exception:  # noqa: BLE001
+                create_payload = {}
+            logger.error(
+                "create_agent_sandbox_volume failed: status=%s payload=%s",
+                getattr(response, "status_code", None),
+                create_payload,
+            )
+            paas_message = ""
+            if isinstance(create_payload, dict):
+                paas_message = str(create_payload.get("message") or create_payload)
+            raise SandboxFileServerError(
+                paas_message or f"创建 sandbox PV 失败: HTTP {getattr(response, 'status_code', '')}"
+            )
+
+        create_payload = response.json()
+        created_volume_id = self._extract_created_volume_id(create_payload)
+        if not created_volume_id:
+            logger.error("create_agent_sandbox_volume response missing uuid: %s", create_payload)
+            paas_message = ""
+            if isinstance(create_payload, dict):
+                paas_message = str(create_payload.get("message") or "")
+            raise SandboxFileServerError(paas_message or "创建 sandbox PV 返回格式异常")
+        return created_volume_id
+
     def ensure_volume(self, session_code: str) -> str:
         """幂等获取会话 PV；不存在时创建并写回会话。"""
         try:
@@ -603,37 +661,7 @@ class SandboxPvFileService:
         app_code = self._executor_info.get("app_code") or ""
         created_volume_id = ""
         try:
-            volume_name = f"session-pv-{session_code}-{uuid4().hex[:8]}"
-            response = client.create_agent_sandbox_volume.request(
-                json={"name": volume_name},
-                path_params={"app_code": app_code},
-            )
-            if not response.ok:
-                create_payload = {}
-                try:
-                    create_payload = response.json()
-                except Exception:  # noqa: BLE001
-                    create_payload = {}
-                logger.error(
-                    "create_agent_sandbox_volume failed: status=%s payload=%s",
-                    getattr(response, "status_code", None),
-                    create_payload,
-                )
-                paas_message = ""
-                if isinstance(create_payload, dict):
-                    paas_message = str(create_payload.get("message") or create_payload)
-                raise SandboxFileServerError(
-                    paas_message or f"创建 sandbox PV 失败: HTTP {getattr(response, 'status_code', '')}"
-                )
-
-            create_payload = response.json()
-            created_volume_id = self._extract_created_volume_id(create_payload)
-            if not created_volume_id:
-                logger.error("create_agent_sandbox_volume response missing uuid: %s", create_payload)
-                paas_message = ""
-                if isinstance(create_payload, dict):
-                    paas_message = str(create_payload.get("message") or "")
-                raise SandboxFileServerError(paas_message or "创建 sandbox PV 返回格式异常")
+            created_volume_id = self._create_volume(client, app_code, session_code)
 
             updated_session = self._rm.update_chat_session_sandbox_pv_id(
                 session_code,
@@ -714,6 +742,7 @@ class SandboxPvFileService:
             message = f"{message}; {extra}"
 
         rules: tuple[tuple[Optional[int], frozenset[str], type[SandboxFileError]], ...] = (
+            (None, PV_PAAS_ERROR_QUOTA_CODES, SandboxQuotaExceededError),
             (404, PV_PAAS_ERROR_NOT_FOUND_CODES, SandboxFileNotFoundError),
             (415, PV_PAAS_ERROR_NOT_PREVIEWABLE_CODES, SandboxFileInvalidRequestError),
             (413, PV_PAAS_ERROR_TOO_LARGE_CODES, SandboxFileInvalidRequestError),
@@ -937,7 +966,13 @@ class SandboxPvFileService:
                     )
                     try:
                         results = self._write_files_to_sandbox(
-                            session_code, sandbox_id, backend, files_dir, absolute_files_dir, files, sandbox_gone=gone_signal
+                            session_code,
+                            sandbox_id,
+                            backend,
+                            files_dir,
+                            absolute_files_dir,
+                            files,
+                            sandbox_gone=gone_signal,
                         )
                     except HTTPResponseError as exc2:
                         self._raise_mapped_paas_error("upload_files", exc2)
@@ -957,9 +992,7 @@ class SandboxPvFileService:
                     sandbox_id,
                 )
                 _invalidate_cached_upload_sandbox(app_code, session_code, volume_id)
-                sandbox_id, sandbox_created_at = self._create_upload_sandbox(
-                    session_code, volume_id, snapshot, backend
-                )
+                sandbox_id, sandbox_created_at = self._create_upload_sandbox(session_code, volume_id, snapshot, backend)
                 results = self._write_files_to_sandbox(
                     session_code, sandbox_id, backend, files_dir, absolute_files_dir, files
                 )
@@ -994,9 +1027,7 @@ class SandboxPvFileService:
             if not path:
                 continue
             try:
-                url_data = self.get_download_url(
-                    session_code, path, expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN
-                )
+                url_data = self.get_download_url(session_code, path, expires_in=IMAGE_DOWNLOAD_URL_EXPIRES_IN)
             except (SandboxFileError, HTTPResponseError, RequestsHTTPError) as exc:
                 # 文件已成功写入 PV，失败的只是「签发展示用临时 URL」；保留 status=success，
                 # 仅记 download_url_error，避免前端把「已落盘但缺 URL」误判为上传失败。
@@ -1096,16 +1127,111 @@ class SandboxPvFileService:
     def preview_file(self, session_code: str, path: str, max_bytes: int = 65536) -> tuple[bytes, bool]:
         """返回文件前 max_bytes 字节纯文本内容，及是否被截断（`X-Truncated` header）。"""
         path = normalize_session_pv_path(path, required=True)
-        resp = self._call_single(
-            "preview_file", session_code, {"path": path, "max_bytes": max_bytes}
-        )
+        resp = self._call_single("preview_file", session_code, {"path": path, "max_bytes": max_bytes})
         truncated = str(resp.headers.get("X-Truncated", "false")).lower() == "true"
         return resp.content, truncated
 
     def get_download_url(self, session_code: str, path: str, expires_in: int = 600) -> dict:
         """签发临时 download_url / preview_url。"""
         path = normalize_session_pv_path(path, required=True)
-        resp = self._call_single(
-            "get_download_url", session_code, {"path": path, "expires_in": expires_in}
-        )
+        resp = self._call_single("get_download_url", session_code, {"path": path, "expires_in": expires_in})
         return resp.json() or {}
+
+    # ------------------------------------------------------------------
+    # Fork：复制会话 PV
+    # ------------------------------------------------------------------
+
+    def _count_volume_entries(self, session_code: str, volume_id: str, client) -> int:
+        """只拉一条递归列表，读 PaaS 返回的总数（文件 + 目录）。"""
+        resp = self._call_single(
+            "list_files",
+            session_code,
+            {"path": "", "is_recursive": True, "page_size": 1, "page": 1},
+            volume_id=volume_id,
+            client=client,
+        )
+        return int((resp.json() or {}).get("count") or 0)
+
+    def clone_volume(self, session_code: str, *, max_entries: int = FORK_MAX_ENTRIES) -> str:
+        """把会话 PV 复制到一个新建、未关联任何会话的 PV，返回新 volume_id。
+
+        - 源会话没有 PV 或 PV 为空：返回空串，不建卷也不起沙箱
+        - 条目数超过 ``max_entries``：抛 ``SandboxFilesTooManyError``
+        - 新卷写到哪个会话由调用方决定；调用方后续步骤失败时用 ``discard_volume`` 清理
+
+        需要 ``executor_info["snapshot"]``（file-kit 镜像，带 GNU find / xargs / cp）。
+        拷贝失败时删掉新卷；临时沙箱无论成败都销毁。
+        """
+        try:
+            source_volume_id = self._get_volume_id(session_code)
+        except SandboxVolumeNotFoundError:
+            return ""
+        client = self._get_client()
+        entries = self._count_volume_entries(session_code, source_volume_id, client)
+        if entries == 0:
+            return ""
+        if entries > max_entries:
+            raise SandboxFilesTooManyError(f"会话文件数 {entries} 超过上限 {max_entries}")
+
+        snapshot = self._resolve_upload_snapshot()
+        app_code = self._executor_info.get("app_code") or ""
+        backend = PaasSandboxBackend(
+            app_code=app_code,
+            bk_username=self._executor_info.get("executor") or "",
+            client=client,
+            snapshot=snapshot,
+            snapshot_entrypoint=[],
+            env_vars={},
+        )
+        new_volume_id = ""
+        sandbox_id = ""
+
+        def _discard_new_volume() -> None:
+            if new_volume_id:
+                self._delete_volume_quietly(client, app_code, new_volume_id)
+
+        try:
+            new_volume_id = self._create_volume(client, app_code, session_code)
+            sandbox_id = backend.create_sandbox(
+                name=f"aidev-fork-{uuid4().hex[:12]}",
+                ttl_seconds=FORK_SANDBOX_TTL_SECONDS,
+                snapshot=snapshot,
+                snapshot_entrypoint=[],
+                volume_mounts=[
+                    {"volume_id": source_volume_id, "mount_path": FORK_SRC_MOUNT_PATH},
+                    {"volume_id": new_volume_id, "mount_path": FORK_DST_MOUNT_PATH},
+                ],
+            )
+            result = backend.exec_command(sandbox_id, ["sh", "-c", FORK_COPY_SCRIPT])
+            if _FORK_COPY_DONE_MARKER not in (result.stdout or ""):
+                raise SandboxFileServerError(
+                    f"复制会话文件失败: exit_code={result.exit_code}, stderr={(result.stderr or '')[:500]}"
+                )
+            logger.info(
+                "[pv_files] clone_volume session=%s entries=%d source=%s target=%s",
+                session_code,
+                entries,
+                source_volume_id,
+                new_volume_id,
+            )
+            return new_volume_id
+        except SandboxFileError:
+            _discard_new_volume()
+            raise
+        except (HTTPResponseError, RequestsHTTPError) as exc:
+            _discard_new_volume()
+            self._raise_mapped_paas_error("clone_volume", exc)
+        except Exception as exc:
+            _discard_new_volume()
+            raise SandboxFileServerError(f"复制会话文件失败: {exc}") from exc
+        finally:
+            if sandbox_id:
+                try:
+                    backend.destroy_sandbox(sandbox_id)
+                except Exception:  # noqa: BLE001 沙箱有 TTL 兜底回收，销毁失败不影响结果
+                    logger.warning("[pv_files] 销毁 fork 临时沙箱失败: sandbox_id=%s", sandbox_id, exc_info=True)
+
+    def discard_volume(self, volume_id: str) -> None:
+        """删除 ``clone_volume`` 建出、但调用方最终没有用上的 PV；失败只记日志。"""
+        if volume_id:
+            self._delete_volume_quietly(self._get_client(), self._executor_info.get("app_code") or "", volume_id)

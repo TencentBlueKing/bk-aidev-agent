@@ -5,6 +5,7 @@ from django.conf import settings
 from rest_framework.decorators import action
 from rest_framework.views import Response
 
+from aidev_bkplugin.constants import SESSION_FORK_CAPABILITY
 from aidev_bkplugin.serializers.agent import AgentInfoSerializer
 from aidev_bkplugin.services.agent_config import AgentConfigFetcher
 from aidev_bkplugin.services.agent_helpers import AgentHelper
@@ -47,6 +48,12 @@ class AgentInfoViewSet(PluginViewSet):
         ]
         agent_info["prompt_setting"] = prompt_setting
         agent_info.pop("otel_info", None)
+        # 前端按能力探测决定是否显示对应入口；旧版 SDK 没有该字段即视为不支持
+        capabilities = agent_info.get("capabilities")
+        capabilities = list(capabilities) if isinstance(capabilities, list) else []
+        if SESSION_FORK_CAPABILITY not in capabilities:
+            capabilities.append(SESSION_FORK_CAPABILITY)
+        agent_info["capabilities"] = capabilities
         return Response(data=agent_info)
 
     @action(detail=False, methods=["GET"], url_path="ping", url_name="ping")
