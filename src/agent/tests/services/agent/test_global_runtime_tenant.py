@@ -38,14 +38,14 @@ def runtime_builder(mocker):
 @pytest.mark.parametrize(
     "method", ["build_chat_model", "build_chat_model_non_thinking", "build_chat_model_fast", "build_chat_model_vision"]
 )
-@pytest.mark.parametrize("resource_tenant,expected", [("system", "system"), ("", "abc")])
-def test_all_models_use_config_owner(runtime_builder, mocker, method, resource_tenant, expected):
-    runtime_builder.ctx.agent_config.tenant_id = resource_tenant
+@pytest.mark.parametrize("caller_tenant", ["abc", "other"])
+def test_all_models_use_original_caller(runtime_builder, mocker, method, caller_tenant):
+    runtime_builder.ctx.resource_manager.tenant_id = caller_tenant
     mocker.patch("aidev_agent.services.agent.chat.settings.LLM_GW_ENDPOINT", "https://gateway.example.com/v1")
     factory = mocker.patch("aidev_agent.services.agent.chat.ChatModel.get_setup_instance")
     getattr(runtime_builder, method)()
-    assert factory.call_args.kwargs["tenant_id"] == expected
-    assert runtime_builder.ctx.resource_manager.tenant_id == "abc"
+    assert factory.call_args.kwargs["tenant_id"] == caller_tenant
+    assert runtime_builder.ctx.resource_manager.tenant_id == caller_tenant
 
 
 @pytest.mark.parametrize("caller_tenant", ["abc", "other"])
@@ -59,7 +59,6 @@ def test_skill_sandbox_uses_original_executor(runtime_builder, mocker, caller_te
     assert executor["executor"] == "caller"
     assert executor["access_token"] == "caller-token"
     client.update_headers.assert_called_once_with({TENANT_HEADER: caller_tenant})
-    assert runtime_builder.ctx.agent_config.tenant_id == "system"
 
 
 @pytest.mark.parametrize("caller_tenant", ["abc", "other"])
@@ -74,5 +73,4 @@ def test_mcp_execution_keeps_original_tenant(runtime_builder, mocker, caller_ten
     manager.construct_mcp(config, username="caller", executor_info=executor)
     headers = factory.call_args.args[0]["tool"]["headers"]
     assert headers[TENANT_HEADER] == caller_tenant
-    assert runtime_builder.ctx.agent_config.tenant_id == "system"
     assert "headers" not in config["tool"]

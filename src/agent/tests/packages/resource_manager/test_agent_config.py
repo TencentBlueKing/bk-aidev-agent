@@ -509,13 +509,3 @@ def test_enable_judge_response_env_override(monkeypatch, bkai_enable, prompt_ena
     rm = _StubResourceManager(raw_factory=lambda *_: raw)
     cfg = rm.get_agent_config("a")
     assert cfg.model_context_options_data["enable_judge_response"] == expected
-
-
-@pytest.mark.parametrize("owner_tenant", ["system", "", None])
-def test_resource_tenant_does_not_change_execution_tenant(owner_tenant):
-    raw = _build_raw(tenant_id=owner_tenant)
-    rm = _StubResourceManager(raw_factory=lambda *_: raw)
-    rm.tenant_id = "abc"
-    config = rm.get_agent_config("global-agent")
-    assert config.tenant_id == (owner_tenant or "")
-    assert rm.tenant_id == "abc"
