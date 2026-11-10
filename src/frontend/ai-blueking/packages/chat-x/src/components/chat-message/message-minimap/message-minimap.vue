@@ -425,6 +425,17 @@
     }
   }
 
+  // 预览气泡按设计稿：圆角 4px、阴影 0 0 10px；
+  // 叠加 ai-chat-box-light 提高优先级，压过公共浅色主题与 tippy light 主题，不依赖样式加载顺序
+  .tippy-box[data-theme~='ai-chat-box-light'][data-theme~='ai-message-minimap'] {
+    border-radius: 4px;
+    box-shadow: 0 0 10px 0 rgb(0 0 0 / 16%);
+
+    > .tippy-content {
+      border-radius: 4px;
+    }
+  }
+
   // 预览箭头按设计稿 6×12（tippy 默认 16×8），露出 5px、与卡片重叠 1px 避免缝隙
   .tippy-box[data-theme~='ai-message-minimap'] > .tippy-arrow {
     width: 12px;
