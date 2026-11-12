@@ -90,6 +90,12 @@ interface AIBluekingProps {
   teleportTo?: string;
   /** 默认宽度 */
   defaultWidth?: number;
+  /**
+   * 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度，默认 400（≥ v3.1.1）。
+   * 侧栏打开后浮窗下限 = minWidth + 当前侧栏宽度。
+   * 同时传了 resizeProps.mainMin 时以 mainMin 为准。
+   */
+  minWidth?: number;
   /** 默认高度 */
   defaultHeight?: number;
   /** 默认左侧位置 */
@@ -147,6 +153,8 @@ interface AIBluekingProps {
     disabled?: boolean;
     initialDivide?: number | string;
     max?: number;
+    /** 主聊天区最小宽度，默认 400（≥ v3.1.1） */
+    mainMin?: number;
     min?: number;
   };
   /** 字号主题档位，透传至 ChatBot → ChatContainer（`small` 默认 12px / `normal` 14px） */
@@ -399,6 +407,8 @@ interface ChatBotProps {
     disabled?: boolean;
     initialDivide?: number | string;
     max?: number;
+    /** 主聊天区最小宽度，默认 400（≥ v3.1.1） */
+    mainMin?: number;
     min?: number;
   };
   /** 字号主题档位，透传至 ChatContainer（`small` 默认 12px / `normal` 14px） */

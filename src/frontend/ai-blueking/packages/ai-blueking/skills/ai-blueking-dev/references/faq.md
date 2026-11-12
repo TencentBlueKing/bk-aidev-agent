@@ -323,8 +323,17 @@ await agent.chat(input, sessionCode, undefined, undefined, property, 'hy3-previe
 |------|------|------|
 | `disabled` | `boolean` | 禁用拖拽调整 |
 | `initialDivide` | `number` | 初始分割位置（px） |
-| `max` | `number` | 最大宽度（px） |
-| `min` | `number` | 最小宽度（px） |
+| `max` | `number` | 最大宽度（px）。实际还会再被「容器宽度 - mainMin」卡住 |
+| `min` | `number` | 侧栏最小宽度（px） |
+| `mainMin` | `number` | 主聊天区最小宽度（≥ 3.1.1，默认 400）。浮窗也可用 `minWidth`，同时传了则以 `mainMin` 为准 |
+
+### Q: 生成过程中复制按钮为什么不可用？
+
+**A**: **3.1.1** 起，`messageToolsStatus=disabled` 只禁用除 `copy` 外的按钮。复制会带上已经输出的内容。不要为了复制去改 `disabled` 语义。
+
+### Q: 浮窗里复制成功提示被挡住？
+
+**A**: **3.1.1** 起 `AIBlueking` 用 chat-x `useToastContainerProvider` 把提示挂进浮层内的 `.ai-blueking-toast-host`。不要再直接 `import { Message } from 'bkui-vue'`。原子组装把 `ChatContainer` 放进高层级浮层时，自己 `useToastContainerProvider(toastHostRef)`。
 
 ### Q: 如何调整对话区域字号？
 

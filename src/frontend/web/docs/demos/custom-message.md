@@ -30,7 +30,7 @@ aside: false
 </ClientOnly>
 
 ::: warning 当前行为
-文档站示例使用已发布的 `3.1.0`。`#message` 插槽会接管**全部**消息（包括用户消息）。作用域是 chat-x 的 `MessageSlotProps`（`message`、`messageTools`、`messageToolsStatus`、`onAction`、`onInputConfirm`、`onShortcutConfirm`、`onInterruptResume`、`tippyOptions`），`ChatBot` / `AIBlueking` 再补一份绑定当前消息的 `renderDefault()`。终态过程折叠时，插槽只收到当前可见的消息。
+文档站示例使用已发布的 `3.1.1`。`#message` 插槽会接管**全部**消息（包括用户消息）。作用域是 chat-x 的 `MessageSlotProps`（`message`、`messageTools`、`messageToolsStatus`、`onAction`、`onInputConfirm`、`onShortcutConfirm`、`onInterruptResume`、`tippyOptions`），`ChatBot` / `AIBlueking` 再补一份绑定当前消息的 `renderDefault()`。终态过程折叠时，插槽只收到当前可见的消息。
 :::
 
 ## 代码块头部按钮

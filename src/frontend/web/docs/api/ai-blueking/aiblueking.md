@@ -75,6 +75,7 @@ function openAI() {
 | --- | --- | --- | --- |
 | `teleportTo` | `string` | `'body'` | 渲染目标（CSS 选择器） |
 | `defaultWidth` | `number` | `400` | 默认宽度（px） |
+| `minWidth` | `number` | `400` | 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度（**≥ v3.1.1**）。侧栏打开后浮窗下限 = `minWidth` + 当前侧栏宽度；同时传了 `resizeProps.mainMin` 时以 `mainMin` 为准 |
 | `defaultHeight` | `number` | — | 默认高度（px） |
 | `defaultLeft` | `number` | — | 默认左偏移（px），不传则自动计算 |
 | `defaultTop` | `number` | `0` | 默认上偏移（px） |
@@ -123,7 +124,7 @@ function openAI() {
 | `beforeNimbusClick` | `() => boolean \| Promise<boolean \| void> \| void` | — | Nimbus 点击前钩子函数，返回 `false` 阻止默认 showPanel 行为 |
 | `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
-| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | ResizeLayout 配置（侧栏拖拽） |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, mainMin?, min? }` | — | ResizeLayout 配置（侧栏拖拽）。`mainMin` 是主聊天区最小宽度（**≥ v3.1.1**，默认取 `minWidth` / 400）；同时传了 `minWidth` 时以 `mainMin` 为准 |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）（**≥ v2.2.3**），透传至 ChatBot → ChatContainer；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 | `enableMessageCollapse` | `boolean` | `true` | 是否启用所有轮次消息的顶层折叠及过程状态栏，透传至内层 `ChatBot`。默认折叠；置 `false` 时完整展示每组消息并隐藏过程状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
@@ -310,6 +311,7 @@ function openAI() {
 | `draggable` | 允许用户拖拽移动面板 |
 | `teleportTo` | 将面板渲染到指定 DOM 节点下 |
 | `defaultWidth` / `defaultHeight` | 面板初始尺寸 |
+| `minWidth` | 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度（≥ v3.1.1，默认 400） |
 | `defaultLeft` / `defaultTop` | 面板初始位置 |
 | `miniPadding` | 面板距离视口边缘的最小距离 |
 | `hideNimbus` | 隐藏悬浮球入口，需通过 `ref.show()` 控制显隐 |

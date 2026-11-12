@@ -354,8 +354,26 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 
 ---
 
+## 生成过程中可以复制消息吗？
+
+自 **v3.1.1** 起可以。工具栏 `disabled`（生成中）只禁用除复制外的按钮；复制会带上已经输出的内容。详见 [UI 定制 · 消息工具栏](/guide/core-features/ui-customization#消息工具栏扩展messagetools--updatetools)。
+
+---
+
+## 打开侧栏后主聊天区被挤没了？
+
+自 **v3.1.1** 起，浮窗会保住主栏最小宽度（默认 400）。可用 `:min-width="480"`，或传 `resizeProps.mainMin`。视口放不下时才允许主栏小于该值。嵌入式 `ChatBot` 没有 `minWidth`，请用 `resizeProps.mainMin`。详见 [主聊天区最小宽度](/guide/integration-modes/aiblueking-floating#主聊天区最小宽度)。
+
+---
+
+## 浮窗里点复制成功，提示看不见？
+
+**v3.1.1** 之前提示挂在 `document.body`，会被浮窗挡住。升级后 `AIBlueking` 已把提示挂进浮层，无需配置。把 `ChatContainer` 放进自建高层级浮层时，需要自行 [注入 toast 容器](/guide/integration-modes/atomic-composition#浮层内的提示)。
+
+---
+
 ## 为什么 executionTabVisible 不生效？
 
 chat-x 3.0.0 起，侧栏不再内建「执行情况」Tab。常驻默认 Tab 是「文件产物」。`executionTabVisible` 还在 `ChatBot` / `AIBlueking` 的类型里，也会被传下去，但 `ChatContainer` 已经不读它，所以 `true` / `false` 都看不到那个 Tab。
 
-文档站的[侧栏示例](/demos/side-render)使用 `3.1.0`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
+文档站的[侧栏示例](/demos/side-render)使用 `3.1.1`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。

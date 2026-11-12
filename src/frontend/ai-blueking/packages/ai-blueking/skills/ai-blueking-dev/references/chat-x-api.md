@@ -2,7 +2,7 @@
 
 > **约定**：以下 API 以仓库内 `packages/chat-x/src` 源码为准；发布包以 `dist` 为准。若二者不一致，以当前分支源码为准。
 >
-> **当前版本**：`@blueking/chat-x` `2.4.0`（含 HITL 中断消息、RenderMode、ModelSelector、字号主题、`#group` 插槽、文件产物预览、`MessageTime` 消息时间、通用文件上传、统一输入菜单 `menuSources` 等能力）。与 `@blueking/ai-blueking` `2.4.0` 配套。
+> **当前版本**：`@blueking/chat-x` `3.1.2-beta.2`（含 HITL、ModelSelector 思考深度、「关闭思考」回显、下拉默认向下、`useToast` 宿主注入、`resizeProps.mainMin` 保住主栏宽度、生成中可复制等）。与 `@blueking/ai-blueking` `3.1.1` 配套。
 
 ## 包入口导出概要
 
@@ -262,7 +262,7 @@ onSendMessage?: (
 | messages | `Message[]` | - | **必填**，原始消息列表 |
 | messageGroups | `MessageGroup[]` | - | **必填**，分组后的列表（通常由 `useMessageGroup` 得到） |
 | messageStatus | `MessageStatus` | - | 流式/停止按钮等 |
-| messageToolsStatus | `MessageToolsStatus` | - | 工具栏 `Disabled` / `Hidden` |
+| messageToolsStatus | `MessageToolsStatus` | - | `disabled` 时除复制外不可点；生成中也可复制已输出内容（≥ 3.1.1） |
 | messageTools | `IToolBtn[]` | - | 自定义 AI 主工具组；按 id 与内置 `CONST_MESSAGE_TOOLS` 合并 |
 | updateTools | `IToolBtn[]` | - | 自定义反馈工具组；按 id 与内置 `CONST_UPDATE_TOOLS` 合并 |
 | userMessageTools | `IToolBtn[]` | - | 自定义用户消息工具组；按 id 与内置 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 edit/delete 等 |
