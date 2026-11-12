@@ -3,6 +3,7 @@ import threading
 import time
 import uuid
 from contextvars import copy_context
+from functools import partial
 from logging import getLogger
 from typing import Any, Callable, Generator
 
@@ -31,6 +32,7 @@ from .constants import (
     TimeoutConfig,
 )
 from .factory import message_handler_factory
+from .producer import ProducerRunner
 
 logger = getLogger(__name__)
 
@@ -145,12 +147,14 @@ class GeneratorStreamingHelper:
         thread_id: str | None = None,
         defer_cleanup_on_complete: bool = False,
         producer_observer: Any = None,
+        producer_runner: ProducerRunner | None = None,
     ) -> None:
         self.message_handler = message_handler if message_handler else message_handler_factory.get()
         self.thread_id = thread_id or uuid.uuid4().hex
         # 后台 drain（无 SSE 下游）场景：读到 EOD 时不立即 mark_completed 清队列，
         # 保留缓存历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
+        self.producer_runner = producer_runner
         self.producer_observer = producer_observer
         self._producer_completion_error: Exception | None = None
         self.run_id: str = ""
@@ -685,20 +689,37 @@ class GeneratorStreamingHelper:
 
             # OTel 的当前 Span 存在 contextvars 中，而新线程不会自动继承它。
             producer_context = copy_context()
-            producer_thread = threading.Thread(
-                target=producer_context.run,
-                args=(self._run_producer,),
-                kwargs={
-                    "generator": generator,
-                    "cancel_event": cancel_event,
-                    "on_complete": on_complete,
-                    "event_handler": event_handler,
-                    "expected_run_id": expected_run_id,
-                    "release_producer": True,
-                },
-                daemon=True,
-            )
-            producer_thread.start()
+            started = threading.Event()
+
+            def produce() -> None:
+                started.set()
+                self._run_producer(
+                    generator=generator,
+                    cancel_event=cancel_event,
+                    on_complete=on_complete,
+                    event_handler=event_handler,
+                    expected_run_id=expected_run_id,
+                    release_producer=True,
+                )
+
+            run = partial(producer_context.run, produce)
+            try:
+                if self.producer_runner is None:
+                    producer_thread = threading.Thread(target=run, daemon=True)
+                    producer_thread.start()
+                else:
+                    producer_thread = self.producer_runner(run)
+                    if producer_thread is None:
+                        if not started.is_set():
+                            raise RuntimeError("producer_runner must execute produce or return a started thread")
+                        if self._producer_completion_error is not None:
+                            raise self._producer_completion_error
+            except Exception:
+                # 启动失败由调用方释放；执行已开始则由 producer 的 finally 释放，
+                # 避免重复释放另一请求随后取得的锁。
+                if not started.is_set():
+                    self.message_handler.release_producer(self.thread_id)
+                raise
             logger.info(f"Started producer for thread_id={self.thread_id}")
             enable_heartbeat_check = True
             return producer_thread, is_resuming, enable_heartbeat_check

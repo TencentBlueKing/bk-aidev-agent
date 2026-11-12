@@ -24,8 +24,12 @@ sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framewor
 
 from aidev_agent.enums import AgentType, ChannelType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError  # noqa: E402
+from aidev_agent.services.messages_handler.producer import run_producer_inline  # noqa: E402
+from aidev_bkplugin import tasks as background_tasks  # noqa: E402
 from aidev_bkplugin.enums import PluginPollTaskState  # noqa: E402
+from aidev_bkplugin.services import agent_bkplugin  # noqa: E402
 from aidev_bkplugin.services.agent_session import SessionManager  # noqa: E402
+from opentelemetry import context  # noqa: E402
 
 
 class _FakeApi:
@@ -128,14 +132,13 @@ class TestBkpluginExecution:
             mock_sm = mock_sm_cls.return_value
             mock_sm.prepare_session_turn.return_value = ("sess-1", "turn-1")
             task = MagicMock()
-            fake_tasks = MagicMock(run_bkplugin_background_agent_task=task)
             agent = build_bkplugin_runner(
                 chat_history=[],
                 execute_kwargs={"session_code": "thread-1"},
                 input_text="hi",
                 username="alice",
             )
-            with patch.dict(sys.modules, {"aidev_bkplugin.tasks": fake_tasks}):
+            with patch("aidev_bkplugin.services.background_dispatch.current_app.signature", return_value=task):
                 storage = agent.dispatch_async()
 
         mock_sm.prepare_session_turn.assert_called_once_with(
@@ -153,13 +156,12 @@ class TestBkpluginExecution:
         from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
 
         task = MagicMock()
-        fake_tasks = MagicMock(run_bkplugin_background_agent_task=task)
         agent = BkpluginChat(
             chat_history=[],
             execute_kwargs={},
             username="alice",
         )
-        with patch.dict(sys.modules, {"aidev_bkplugin.tasks": fake_tasks}):
+        with patch("aidev_bkplugin.services.background_dispatch.current_app.signature", return_value=task):
             storage = agent._enqueue_background(
                 "sess-1",
                 "turn-1",
@@ -173,6 +175,7 @@ class TestBkpluginExecution:
             username="alice",
             agent_type_value=AgentType.CHAT.value,
             chat_context=[{"role": "user", "content": "hi"}],
+            trace_context=ANY,
         )
         assert storage == {
             "session_code": "sess-1",
@@ -343,3 +346,32 @@ class TestBkpluginExecution:
             agent.execute()
 
         manager_factory.assert_not_called()
+
+
+@pytest.mark.parametrize("agent_type", [AgentType.CHAT, AgentType.FLOW])
+def test_worker_injects_inline_producer_and_restores_runner(agent_type, monkeypatch):
+    runner = agent_bkplugin.build_bkplugin_runner(execute_kwargs={}, agent_type=agent_type)
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentInstanceFactory, "build_agent", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "AGUISessionWriter", MagicMock())
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_client", MagicMock())
+    runner.run_worker("session", {"stream": True, "turn_id": "turn"})
+    assert build.call_args.kwargs["producer_runner"] is run_producer_inline
+    assert runner._producer_runner is None
+
+
+def test_background_task_restores_trace_on_build_failure(monkeypatch):
+    before = context.get_current()
+    monkeypatch.setattr(background_tasks, "build_bkplugin_runner", MagicMock(side_effect=RuntimeError("build failed")))
+    with pytest.raises(RuntimeError, match="build failed"):
+        background_tasks.run_bkplugin_background_agent_task.run(
+            "session",
+            {},
+            "user",
+            AgentType.CHAT.value,
+            trace_context={"traceparent": "00-00000000000000000000000000000001-0000000000000002-01"},
+        )
+    assert context.get_current() == before

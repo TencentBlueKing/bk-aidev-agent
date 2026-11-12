@@ -29,6 +29,7 @@ from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
+from aidev_agent.services.messages_handler.producer import ProducerRunner, run_producer_inline
 from aidev_agent.utils.local import request_local
 from django.contrib.auth import get_user_model
 
@@ -36,6 +37,7 @@ from .agent_config import AgentConfigFetcher
 from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
+from .background_dispatch import enqueue_background_agent
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
 
@@ -95,6 +97,7 @@ def build_chat_agent_for_session(
     version: str | None = None,
     turn_id: str = "",
     channel_type: str | None = None,
+    producer_runner: ProducerRunner | None = None,
 ):
     """构建带 AG-UI 回写器的 Chat Agent 实例（供同步执行与 Celery worker 共用）。
 
@@ -120,6 +123,7 @@ def build_chat_agent_for_session(
         username=user,
         version=version,
         channel_type=channel_type or ChannelType.BKPLUGIN.value,
+        producer_runner=producer_runner,
     )
 
 
@@ -149,6 +153,7 @@ class BkpluginAgentRunner(ABC):
         plugin_context: list | None = None,
         parsed_ek: ExecuteKwargs | None = None,
     ):
+        self._producer_runner: ProducerRunner | None = None
         self.execute_kwargs = execute_kwargs
         self.input_text = input_text
         self.username = username
@@ -227,6 +232,8 @@ class BkpluginAgentRunner(ABC):
             execute_payload.get("turn_id") or "",
             threading.current_thread().name,
         )
+        previous_runner = self._producer_runner
+        self._producer_runner = run_producer_inline
         try:
             self.invoke_agent(session_code, execute_payload, chat_context=chat_context or [])
         except RetryableHeartbeatTimeoutError:
@@ -270,6 +277,9 @@ class BkpluginAgentRunner(ABC):
                 turn_id=execute_payload.get("turn_id") or "",
             )
 
+        finally:
+            self._producer_runner = previous_runner
+
     # ----- 子类实现 -----
 
     @abstractmethod
@@ -312,10 +322,8 @@ class BkpluginAgentRunner(ABC):
         chat_context: list[dict] | None = None,
     ) -> dict:
         """投递 Celery 并返回 POLL storage。"""
-        from ..tasks import run_bkplugin_background_agent_task
-
         execute_payload["stream"] = True
-        run_bkplugin_background_agent_task.delay(
+        enqueue_background_agent(
             session_code=session_code,
             execute_payload=execute_payload,
             username=self.username,
@@ -386,6 +394,7 @@ class BkpluginChat(BkpluginAgentRunner):
             version=ek.version,
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
+            producer_runner=self._producer_runner,
         )
         AgentExecutor.run_agent_to_completion(agent, ek, session_code, manager, turn_id=turn_id)
 
@@ -459,6 +468,7 @@ class BkpluginFlow(BkpluginAgentRunner):
             poll_interval=execute_payload.get("poll_interval") or agent_settings.FLOW_AGENT_POLL_INTERVAL,
             poll_timeout=execute_payload.get("poll_timeout") or agent_settings.FLOW_AGENT_POLL_TIMEOUT,
             channel_type=ChannelType.BKPLUGIN.value,
+            producer_runner=self._producer_runner,
         )
         # Flow 始终走 AG-UI 事件流；构造带 stream=True 的 ek 以触发 writer 会话状态收尾
         ek = build_execute_kwargs({**execute_payload, "stream": True}, self.username)

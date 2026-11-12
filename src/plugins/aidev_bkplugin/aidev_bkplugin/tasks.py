@@ -11,6 +11,8 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentType
 from celery import shared_task
 
+from .services.agent_bkplugin import build_bkplugin_runner
+from .services.background_dispatch import attach_trace_context, detach_trace_context
 from .services.metric_runtime import RetryableMetricPushError, get_metric_service
 
 logger = logging.getLogger(__name__)
@@ -71,12 +73,15 @@ def run_bkplugin_background_agent_task(
     username: str | None,
     agent_type_value: str,
     chat_context: list[dict] | None = None,
+    trace_context: dict[str, str] | None = None,
 ) -> None:
-    from .services.agent_bkplugin import build_bkplugin_runner
-
-    runner = build_bkplugin_runner(
-        execute_kwargs=execute_payload,
-        username=username,
-        agent_type=AgentType(agent_type_value),
-    )
-    runner.run_worker(session_code, execute_payload, chat_context=chat_context or [])
+    token = attach_trace_context(trace_context)
+    try:
+        runner = build_bkplugin_runner(
+            execute_kwargs=execute_payload,
+            username=username,
+            agent_type=AgentType(agent_type_value),
+        )
+        runner.run_worker(session_code, execute_payload, chat_context=chat_context or [])
+    finally:
+        detach_trace_context(token)
