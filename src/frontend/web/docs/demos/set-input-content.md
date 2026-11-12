@@ -4,7 +4,7 @@ aside: false
 
 # 写入输入框标签
 
-`setInputContent` 用一份文档整篇替换输入框，不发送、不清掉已有引用。`ChatBot` 和 `AIBlueking` 是同一个方法；浮窗要先 `await show()`，再写入。文档站示例使用已发布的 `3.1.0`。
+`setInputContent` 用一份文档整篇替换输入框，不发送、不清掉已有引用。`ChatBot` 和 `AIBlueking` 是同一个方法；浮窗要先 `await show()`，再写入。文档站示例使用已发布的 `3.1.1`。
 
 字符串是纯文本。带标签时传入 `TagSchema`：二维数组，每一行是文本节点和标签节点。标签在输入框里显示成芯片，悬停展示 `description`。
 
