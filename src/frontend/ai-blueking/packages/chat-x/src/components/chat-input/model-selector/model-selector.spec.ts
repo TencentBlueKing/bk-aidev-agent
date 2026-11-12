@@ -251,11 +251,11 @@ describe('ModelSelector', () => {
       expect(panel().props('reasoningEffort')).toBeNull();
     });
 
-    it('档位为「关闭」或模型不支持思考深度时触发器不回显', async () => {
+    it('档位为「关闭」时触发器回显「关闭思考」，模型不支持思考深度时不回显', async () => {
       wrapper = mount(ModelSelector, {
         props: { models: reasoningModels, modelValue: 'Hy3', reasoningEffort: 'none' },
       });
-      expect(wrapper.find('.ai-model-selector-trigger-effort').exists()).toBe(false);
+      expect(wrapper.find('.ai-model-selector-trigger-effort').text()).toBe('关闭思考');
 
       await wrapper.setProps({ modelValue: 'Plain', reasoningEffort: 'low' });
       expect(wrapper.find('.ai-model-selector-trigger-effort').exists()).toBe(false);

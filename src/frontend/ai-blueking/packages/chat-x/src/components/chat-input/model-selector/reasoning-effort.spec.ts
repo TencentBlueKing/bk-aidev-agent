@@ -80,10 +80,10 @@ describe('reasoning-effort', () => {
     expect(resolveReasoningSuffix(model, 'max')).toBe('');
   });
 
-  it('回显文字使用接口下发的展示名，「关闭」时不回显', () => {
+  it('回显文字使用接口下发的展示名，「关闭」时固定回显「关闭思考」', () => {
     const model = createModel(reasoning);
     expect(resolveReasoningSuffix(model, 'low')).toBe('低');
     expect(resolveReasoningSuffix(model)).toBe('超高');
-    expect(resolveReasoningSuffix(model, 'none')).toBe('');
+    expect(resolveReasoningSuffix(model, 'none')).toBe('关闭思考');
   });
 });
