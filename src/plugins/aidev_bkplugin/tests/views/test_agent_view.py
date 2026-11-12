@@ -55,3 +55,13 @@ def test_agent_info_keeps_role_template_and_variables(mocker):
     assert response.data["prompt_setting"]["content"] == [{"role": "pause", "content": "请问我可以帮你做什么？"}]
     assert "otel_info" not in response.data
     get_info.assert_called_once_with(username="alice", app_code=None)
+
+
+def test_agent_info_declares_session_fork_capability(mocker):
+    agent_info = {"prompt_setting": {"content": []}, "capabilities": ["other"]}
+    mocker.patch.object(agent_mod.AgentConfigFetcher, "get_info", return_value=agent_info)
+    request = SimpleNamespace(query_params={}, user=SimpleNamespace(username="alice"))
+
+    response = agent_mod.AgentInfoViewSet().info(request)
+
+    assert response.data["capabilities"] == ["other", "session_fork"]

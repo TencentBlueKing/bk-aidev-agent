@@ -1299,3 +1299,96 @@ class TestFillUserImageUrls:
 
         file_service.get_download_url.assert_called_once()
         assert all("url" not in item for item in payload["content"])
+
+
+# ---------------------------------------------------------------------------
+# clone_volume：Fork 复制会话 PV
+# ---------------------------------------------------------------------------
+
+
+def _copy_ok():
+    return SimpleNamespace(stdout=f"{module._FORK_COPY_DONE_MARKER}\n", stderr="", exit_code=0)
+
+
+class TestCloneVolume:
+    @pytest.fixture
+    def counted(self, mock_client):
+        def _set(count: int):
+            mock_client.list_files.request.return_value = _mock_paas_response({"count": count, "results": []})
+
+        return _set
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_copies_into_new_volume_and_destroys_sandbox(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        backend.exec_command.return_value = _copy_ok()
+
+        assert service.clone_volume("s1") == "vol-new"
+
+        count_params = _query_params(mock_client.list_files.request.call_args.kwargs["params"])
+        assert count_params["page_size"] == "1"
+        assert mock_client.list_files.request.call_args.kwargs["path_params"]["volume_id"] == "vol-abc"
+        create_kwargs = backend.create_sandbox.call_args.kwargs
+        assert create_kwargs["volume_mounts"] == [
+            {"volume_id": "vol-abc", "mount_path": module.FORK_SRC_MOUNT_PATH},
+            {"volume_id": "vol-new", "mount_path": module.FORK_DST_MOUNT_PATH},
+        ]
+        assert create_kwargs["snapshot"] == DEFAULT_UPLOAD_SNAPSHOT
+        backend.exec_command.assert_called_once_with("sbx-fork", ["bash", "-c", module.FORK_COPY_SCRIPT])
+        script = backend.exec_command.call_args[0][1][2]
+        assert "set -o pipefail" in script
+        assert "tar -C" in script
+        assert str(module.FORK_MAX_BYTES) in script
+        backend.destroy_sandbox.assert_called_once_with("sbx-fork")
+        mock_client.delete_agent_sandbox_volume.request.assert_not_called()
+
+    @pytest.mark.parametrize("source", ["missing", "empty"])
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_skips_copy_when_source_has_nothing(
+        self, mock_backend_cls, service, resource_manager, mock_client, counted, source
+    ):
+        if source == "missing":
+            resource_manager.retrieve_chat_session.return_value = {"session_property": {}}
+        else:
+            counted(0)
+
+        assert service.clone_volume("s1") == ""
+        mock_client.create_agent_sandbox_volume.request.assert_not_called()
+        mock_backend_cls.return_value.create_sandbox.assert_not_called()
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_volume_too_large_destroys_sandbox_then_discards(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        backend.exec_command.return_value = SimpleNamespace(
+            stdout=f"{module._FORK_SRC_BYTES_PREFIX}314572801\n{module._FORK_COPY_TOO_LARGE_MARKER}\n",
+            stderr="",
+            exit_code=2,
+        )
+        order = []
+        backend.destroy_sandbox.side_effect = lambda sid: order.append("destroy")
+        mock_client.delete_agent_sandbox_volume.request.side_effect = (
+            lambda **kwargs: order.append("delete") or _mock_paas_response({})
+        )
+
+        with pytest.raises(module.SandboxFilesTooManyError, match="314572801"):
+            service.clone_volume("s1")
+
+        assert order == ["destroy", "delete"]
+
+    @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
+    def test_destroy_failure_does_not_fail_clone(self, mock_backend_cls, service, mock_client, counted):
+        counted(3)
+        mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
+        backend = mock_backend_cls.return_value
+        backend.create_sandbox.return_value = "sbx-fork"
+        backend.exec_command.return_value = _copy_ok()
+        backend.destroy_sandbox.side_effect = RuntimeError("boom")
+
+        assert service.clone_volume("s1") == "vol-new"
+        mock_client.delete_agent_sandbox_volume.request.assert_not_called()
