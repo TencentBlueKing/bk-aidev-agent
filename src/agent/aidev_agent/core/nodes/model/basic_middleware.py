@@ -384,7 +384,7 @@ class DeepSeekR1VariablesMiddleware:
 
     def __call__(self, ctx: ProcessorContext, next: NextFunction) -> None:
         llm = ctx.llm
-        if llm is None or not self.use_deepseek_r1_models_process:
+        if ctx.metadata.get("_handoff_applied") or llm is None or not self.use_deepseek_r1_models_process:
             next()
             return
         is_r1 = is_deepseek_r1_series_models(llm)

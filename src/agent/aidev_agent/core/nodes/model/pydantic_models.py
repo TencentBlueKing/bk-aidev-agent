@@ -30,6 +30,8 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, model_validator
 
+from aidev_agent.pydantic_models import HandoffSettings
+
 if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
 
@@ -207,6 +209,11 @@ class ModelNodeSettings(BaseModel):
         default=100,
         description="检查 token 溢出时预留的 token 余量",
     )
+
+    # ---------------------------------------------------------------------
+    # Handoff 上下文压缩
+    # ---------------------------------------------------------------------
+    handoff: HandoffSettings = Field(default_factory=HandoffSettings, description="Handoff 上下文压缩配置")
 
     # ---------------------------------------------------------------------
     # Extension points (internal)

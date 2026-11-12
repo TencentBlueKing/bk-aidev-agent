@@ -44,6 +44,7 @@ def test_agent_metrics_only_create_instruments_used_by_the_dashboard():
     AgentMetrics(meter)
 
     assert set(meter.instruments) == {
+        "aidev.context.compression.skipped.count",
         "aidev.agent.active",
         "aidev.agent.phase.active",
         "aidev.agent.phase.duration",
@@ -325,3 +326,12 @@ def test_resilience_metrics_keep_model_names_and_run_ids_out_of_dimensions():
         assert "gen_ai.response.model" not in metric_attributes
         assert "agent.session.session_code" not in metric_attributes
         assert "run_id" not in metric_attributes
+
+def test_context_compression_skipped_counter_records_reason():
+    meter = FakeMeter()
+    recorder = AgentMetrics(meter)
+    recorder.record_context_compression_skipped({"compression.type": "handoff", "reason": "token_count_unavailable"})
+    calls = meter.instruments["aidev.context.compression.skipped.count"].calls
+    assert len(calls) == 1 and calls[0][0] == 1
+    assert calls[0][1]["compression.type"] == "handoff"
+    assert calls[0][1]["reason"] == "token_count_unavailable"
