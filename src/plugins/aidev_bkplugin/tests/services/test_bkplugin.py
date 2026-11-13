@@ -138,7 +138,7 @@ class TestBkpluginExecution:
                 input_text="hi",
                 username="alice",
             )
-            with patch("aidev_bkplugin.services.background_dispatch.current_app.signature", return_value=task):
+            with patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task):
                 storage = agent.dispatch_async()
 
         mock_sm.prepare_session_turn.assert_called_once_with(
@@ -161,7 +161,7 @@ class TestBkpluginExecution:
             execute_kwargs={},
             username="alice",
         )
-        with patch("aidev_bkplugin.services.background_dispatch.current_app.signature", return_value=task):
+        with patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task):
             storage = agent._enqueue_background(
                 "sess-1",
                 "turn-1",
@@ -368,7 +368,7 @@ def test_worker_injects_inline_resources_and_restores_execution(agent_type, monk
 
 def test_background_task_restores_trace_on_build_failure(monkeypatch):
     before = context.get_current()
-    monkeypatch.setattr(background_tasks, "build_bkplugin_runner", MagicMock(side_effect=RuntimeError("build failed")))
+    monkeypatch.setattr(agent_bkplugin, "build_bkplugin_runner", MagicMock(side_effect=RuntimeError("build failed")))
     with pytest.raises(RuntimeError, match="build failed"):
         background_tasks.run_bkplugin_background_agent_task.run(
             "session",

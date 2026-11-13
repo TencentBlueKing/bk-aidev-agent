@@ -32,13 +32,14 @@ from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
 from aidev_agent.utils.local import request_local
+from celery import shared_task
 from django.contrib.auth import get_user_model
 
 from .agent_config import AgentConfigFetcher
 from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
-from .background_dispatch import enqueue_background_agent
+from .background_dispatch import attach_trace_context, capture_trace_context, detach_trace_context
 from .producer_resources import WorkerResourceManager
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
@@ -325,12 +326,13 @@ class BkpluginAgentRunner(ABC):
     ) -> dict:
         """投递 Celery 并返回 POLL storage。"""
         execute_payload["stream"] = True
-        enqueue_background_agent(
+        run_bkplugin_background_agent_task.delay(
             session_code=session_code,
             execute_payload=execute_payload,
             username=self.username,
             agent_type_value=self.agent_type.value,
             chat_context=chat_context or [],
+            trace_context=capture_trace_context(),
         )
         return {
             "session_code": session_code,
@@ -534,6 +536,31 @@ def build_bkplugin_runner(
     if agent_type is AgentType.FLOW:
         return BkpluginFlow(**runner_kwargs)
     return BkpluginChat(chat_history=chat_history or [], **runner_kwargs)
+
+
+@shared_task(
+    name="aidev_bkplugin.run_background_agent",
+    ignore_result=True,
+    queue=agent_settings.BKAI_AGENT_TASK,
+)
+def run_bkplugin_background_agent_task(
+    session_code: str,
+    execute_payload: dict,
+    username: str | None,
+    agent_type_value: str,
+    chat_context: list[dict] | None = None,
+    trace_context: dict[str, str] | None = None,
+) -> None:
+    token = attach_trace_context(trace_context)
+    try:
+        runner = build_bkplugin_runner(
+            execute_kwargs=execute_payload,
+            username=username,
+            agent_type=AgentType(agent_type_value),
+        )
+        runner.run_worker(session_code, execute_payload, chat_context=chat_context or [])
+    finally:
+        detach_trace_context(token)
 
 
 # ---------------------------------------------------------------------------

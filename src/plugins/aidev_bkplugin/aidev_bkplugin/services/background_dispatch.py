@@ -1,9 +1,6 @@
-"""Celery 调度边界：仅传可序列化参数，不依赖任务实现以避免循环导入。"""
+"""Celery 边界的 Trace 上下文捕获与恢复。"""
 
 from typing import Any
-
-from aidev_agent.config import settings as agent_settings
-from celery import current_app
 
 try:
     from opentelemetry import context, propagate
@@ -11,13 +8,11 @@ except ImportError:  # OTel is optional.
     context = propagate = None
 
 
-def enqueue_background_agent(**payload: Any) -> Any:
+def capture_trace_context() -> dict[str, str]:
     carrier: dict[str, str] = {}
     if propagate is not None:
         propagate.inject(carrier)
-    return current_app.signature("aidev_bkplugin.run_background_agent", queue=agent_settings.BKAI_AGENT_TASK).delay(
-        **payload, trace_context=carrier
-    )
+    return carrier
 
 
 def attach_trace_context(carrier: dict[str, str] | None) -> Any:

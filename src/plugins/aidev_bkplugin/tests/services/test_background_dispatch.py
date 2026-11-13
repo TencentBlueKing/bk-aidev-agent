@@ -4,21 +4,22 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from aidev_bkplugin.services import background_dispatch
+from aidev_bkplugin.services import agent_bkplugin, background_dispatch
 from opentelemetry import context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
 
 def test_dispatch_serializes_trace_and_routes_to_worker(monkeypatch):
-    signature = Mock()
-    monkeypatch.setattr(background_dispatch.current_app, "signature", signature)
+    task = Mock()
+    monkeypatch.setattr(agent_bkplugin, "run_bkplugin_background_agent_task", task)
+    runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="user")
     span = NonRecordingSpan(SpanContext(1, 2, False, TraceFlags(1)))
     with trace.use_span(span):
-        background_dispatch.enqueue_background_agent(session_code="session", execute_payload={"stream": True})
-    kwargs = signature.return_value.delay.call_args.kwargs
+        runner._enqueue_background("session", "turn", {"stream": True})
+    kwargs = task.delay.call_args.kwargs
     assert json.loads(json.dumps(kwargs)) == kwargs
     assert kwargs["trace_context"]["traceparent"].endswith("0000000000000002-01")
-    signature.assert_called_once_with("aidev_bkplugin.run_background_agent", queue="bkai_agent_task")
+    task.delay.assert_called_once()
 
 
 @pytest.mark.parametrize("carrier", [{}, {"traceparent": "00-00000000000000000000000000000001-0000000000000002-01"}])
