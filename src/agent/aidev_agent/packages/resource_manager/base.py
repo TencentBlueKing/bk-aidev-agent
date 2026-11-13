@@ -52,6 +52,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from aidev_agent.api.bk_aidev import Client
+    from aidev_agent.services.messages_handler.producer import ProducerRunner
 
 _logger = getLogger(__name__)
 
@@ -168,6 +169,10 @@ class BaseResourceManager(abc.ABC):
         self.username = username
         self.tenant_id = tenant_id or resolve_app_tenant_id()
         self._extra = kwargs
+
+    def get_producer_runner(self) -> ProducerRunner | None:
+        """可选 producer 策略；默认由 SDK 启动后台线程。"""
+        return None
 
     def get_client(self, **kwargs: Any) -> Client:
         """获取已完成认证信息注入的 API Client。子类必须实现。"""

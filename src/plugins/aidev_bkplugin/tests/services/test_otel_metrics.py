@@ -76,8 +76,8 @@ def _import_tasks_with_celery_stub(mocker):
 
     celery.shared_task = shared_task
     mocker.patch.dict(sys.modules, {"celery": celery})
-    sys.modules.pop("aidev_bkplugin.tasks", None)
-    return importlib.import_module("aidev_bkplugin.tasks")
+    sys.modules.pop("aidev_bkplugin.metric_tasks", None)
+    return importlib.import_module("aidev_bkplugin.metric_tasks")
 
 
 def _sample_metrics_data() -> MetricsData:
@@ -584,7 +584,6 @@ def test_celery_task_exports_through_process_local_metric_service(mocker):
     assert tasks.push_bkm_metrics_task.shared_task_options["max_retries"] == 3
     assert tasks.agent_settings.BKAI_AGENT_QUEUE_METRIC == "bkai_agent_metric"
     assert tasks.push_bkm_metrics_task.shared_task_options["queue"] == "bkai_agent_metric"
-    assert tasks.run_bkplugin_background_agent_task.shared_task_options["queue"] == "bkai_agent_task"
 
 
 def test_celery_task_discards_expired_metric_snapshot(mocker, caplog):

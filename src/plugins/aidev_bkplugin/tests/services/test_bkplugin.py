@@ -22,10 +22,21 @@ sys.modules.setdefault("bk_plugin_framework", _bk_plugin_framework)
 sys.modules.setdefault("bk_plugin_framework.kit", _bk_plugin_framework.kit)
 sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framework.kit.decorators)
 
-from aidev_agent.enums import AgentType, ChannelType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
+from aidev_agent.enums import (  # noqa: E402
+    AgentBuildType,
+    AgentType,
+    ChannelType,
+    ChatContentStatus,
+    PromptRole,
+    SessionsStatus,
+)
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError  # noqa: E402
+from aidev_agent.services.messages_handler.producer import run_producer_inline  # noqa: E402
+from aidev_bkplugin import tasks as background_tasks  # noqa: E402
 from aidev_bkplugin.enums import PluginPollTaskState  # noqa: E402
+from aidev_bkplugin.services import agent_bkplugin  # noqa: E402
 from aidev_bkplugin.services.agent_session import SessionManager  # noqa: E402
+from opentelemetry import context  # noqa: E402
 
 
 class _FakeApi:
@@ -128,14 +139,13 @@ class TestBkpluginExecution:
             mock_sm = mock_sm_cls.return_value
             mock_sm.prepare_session_turn.return_value = ("sess-1", "turn-1")
             task = MagicMock()
-            fake_tasks = MagicMock(run_bkplugin_background_agent_task=task)
             agent = build_bkplugin_runner(
                 chat_history=[],
                 execute_kwargs={"session_code": "thread-1"},
                 input_text="hi",
                 username="alice",
             )
-            with patch.dict(sys.modules, {"aidev_bkplugin.tasks": fake_tasks}):
+            with patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task):
                 storage = agent.dispatch_async()
 
         mock_sm.prepare_session_turn.assert_called_once_with(
@@ -153,13 +163,12 @@ class TestBkpluginExecution:
         from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
 
         task = MagicMock()
-        fake_tasks = MagicMock(run_bkplugin_background_agent_task=task)
         agent = BkpluginChat(
             chat_history=[],
             execute_kwargs={},
             username="alice",
         )
-        with patch.dict(sys.modules, {"aidev_bkplugin.tasks": fake_tasks}):
+        with patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task):
             storage = agent._enqueue_background(
                 "sess-1",
                 "turn-1",
@@ -173,6 +182,7 @@ class TestBkpluginExecution:
             username="alice",
             agent_type_value=AgentType.CHAT.value,
             chat_context=[{"role": "user", "content": "hi"}],
+            trace_context=ANY,
         )
         assert storage == {
             "session_code": "sess-1",
@@ -181,9 +191,8 @@ class TestBkpluginExecution:
             "agent_type": AgentType.CHAT.value,
         }
 
-    def test_serial_chat_execute(self):
-        from aidev_bkplugin.services.agent_bkplugin import build_bkplugin_runner
-
+    @pytest.mark.parametrize("resume", [[], [{"interruptId": "interrupt-1", "data": {"answer": "yes"}}]])
+    def test_serial_chat_execute(self, resume):
         with (
             patch("aidev_bkplugin.services.agent_bkplugin.AgentConfigFetcher.get_info") as mock_info,
             patch("aidev_bkplugin.services.agent_bkplugin.SessionManager") as mock_sm_cls,
@@ -194,14 +203,15 @@ class TestBkpluginExecution:
             mock_sm.prepare_session_turn.return_value = ("sess-chat", "turn-chat")
             mock_agent = MagicMock(execute=MagicMock(return_value={"choices": [{"delta": {"content": "ok"}}]}))
             mock_build.return_value = mock_agent
-            agent = build_bkplugin_runner(
+            agent = agent_bkplugin.build_bkplugin_runner(
                 chat_history=[{"role": "user", "content": "prev"}],
-                execute_kwargs={"session_code": "thread-1"},
+                execute_kwargs={"session_code": "thread-1", "resume": resume},
                 input_text="hi",
                 username="alice",
             )
             result = agent.execute()
 
+        assert mock_build.call_args.kwargs["resume"] is bool(resume)
         assert result == "ok"
         assert agent.session_code == "sess-chat"
         assert [x["content"] for x in mock_build.call_args.kwargs["chat_context"]] == ["prev", "hi"]
@@ -343,3 +353,98 @@ class TestBkpluginExecution:
             agent.execute()
 
         manager_factory.assert_not_called()
+
+
+@pytest.mark.parametrize("agent_type", [AgentType.CHAT, AgentType.FLOW])
+def test_worker_injects_inline_resources_and_restores_execution(agent_type, monkeypatch):
+    runner = agent_bkplugin.build_bkplugin_runner(execute_kwargs={}, agent_type=agent_type)
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentInstanceFactory, "build_agent", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "AGUISessionWriter", MagicMock())
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_client", MagicMock())
+    runner.run_worker("session", {"stream": True, "turn_id": "turn"})
+    resource_key = "resource_manager" if agent_type == AgentType.CHAT else "flow_resource_manager"
+    manager = build.call_args.kwargs[resource_key]
+    assert manager.get_producer_runner() is run_producer_inline
+    assert "producer_runner" not in build.call_args.kwargs
+    assert runner._worker_execution is False
+
+
+def test_background_task_restores_trace_on_build_failure(monkeypatch):
+    before = context.get_current()
+    monkeypatch.setattr(agent_bkplugin, "build_bkplugin_runner", MagicMock(side_effect=RuntimeError("build failed")))
+    with pytest.raises(RuntimeError, match="build failed"):
+        background_tasks.run_bkplugin_background_agent_task.run(
+            "session",
+            {},
+            "user",
+            AgentType.CHAT.value,
+            trace_context={"traceparent": "00-00000000000000000000000000000001-0000000000000002-01"},
+        )
+    assert context.get_current() == before
+
+
+def test_background_task_keeps_agent_queue():
+    assert background_tasks.run_bkplugin_background_agent_task.queue == "bkai_agent_task"
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_chat_build_reuses_explicit_resource_manager(monkeypatch, resume):
+    manager = MagicMock()
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin.AgentInstanceFactory, "build_agent", build)
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_client", MagicMock())
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_checkpointer", MagicMock())
+    agent_bkplugin.build_chat_agent_for_session(
+        session_code="session",
+        chat_context=[],
+        username="user",
+        resource_manager=manager,
+        resume=resume,
+    )
+    assert build.call_args.kwargs["build_type"] == (AgentBuildType.SESSION if resume else AgentBuildType.DIRECT)
+    assert build.call_args.kwargs["session_context_data"] == (None if resume else [])
+    assert build.call_args.kwargs["resource_manager"] is manager
+    assert "producer_runner" not in build.call_args.kwargs
+
+
+@pytest.mark.parametrize("resource_class", [agent_bkplugin.AgentResourceManager, agent_bkplugin.PluginResourceManager])
+def test_worker_resources_are_task_local(resource_class):
+    original = resource_class(username="first", tenant_id="tenant-first")
+    first = agent_bkplugin.WorkerResourceManager(original)
+    second = agent_bkplugin.WorkerResourceManager(resource_class(username="second", tenant_id="tenant-second"))
+    assert (first.username, first.tenant_id) == ("first", "tenant-first")
+    assert (second.username, second.tenant_id) == ("second", "tenant-second")
+    assert first.get_producer_runner() is run_producer_inline
+    assert original.get_producer_runner() is None
+    assert first.get_client == original.get_client
+
+
+def test_worker_keeps_custom_default_resources(monkeypatch):
+    custom = MagicMock(spec=agent_bkplugin.ResourceManagerProtocol)
+    monkeypatch.setattr(agent_bkplugin, "resource_manager_factory", lambda: custom)
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    runner = agent_bkplugin.build_bkplugin_runner(execute_kwargs={}, agent_type=AgentType.CHAT)
+    runner.run_worker("session", {"stream": True, "turn_id": "turn"})
+    manager = build.call_args.kwargs["resource_manager"]
+    assert manager.get_client is custom.get_client
+    assert manager.get_producer_runner() is run_producer_inline
+    assert not hasattr(custom, "get_producer_runner")
+
+
+@pytest.mark.parametrize("resume", [[], [{"interruptId": "interrupt-1", "data": {"answer": "yes"}}]])
+def test_worker_chat_selects_resume_history(monkeypatch, resume):
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
+    runner.run_worker("session", {"stream": True, "resume": resume})
+    assert build.call_args.kwargs["resume"] is bool(resume)
+    assert build.call_args.kwargs["resource_manager"].get_producer_runner() is run_producer_inline

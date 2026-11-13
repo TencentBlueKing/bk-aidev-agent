@@ -46,7 +46,7 @@ except ImportError:
     MetricExportSettings = None
 
 try:
-    from aidev_bkplugin.tasks import enqueue_bkm_metrics_task
+    from aidev_bkplugin.metric_tasks import enqueue_bkm_metrics_task
 except ImportError:
     enqueue_bkm_metrics_task = None
 

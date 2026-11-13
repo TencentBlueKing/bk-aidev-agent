@@ -24,18 +24,23 @@ from typing import Any, ClassVar
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentBuildType, AgentType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
 from aidev_agent.utils.local import request_local
+from celery import shared_task
 from django.contrib.auth import get_user_model
 
 from .agent_config import AgentConfigFetcher
 from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
+from .background_dispatch import attach_trace_context, capture_trace_context, detach_trace_context
+from .producer_resources import WorkerResourceManager
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
 
@@ -95,8 +100,12 @@ def build_chat_agent_for_session(
     version: str | None = None,
     turn_id: str = "",
     channel_type: str | None = None,
+    resource_manager: ResourceManagerProtocol | None = None,
+    resume: bool = False,
 ):
     """构建带 AG-UI 回写器的 Chat Agent 实例（供同步执行与 Celery worker 共用）。
+
+    resume 从服务端会话账本恢复 interrupt 元数据；普通请求继续使用调用方上下文。
 
     :param channel_type: 调用渠道类型（如 ``ChannelType.BKPLUGIN.value``），透传到 SDK 的
         ``TokenUsageCallbackHandler`` metadata，便于 token usage 上报落表时区分渠道。
@@ -108,11 +117,12 @@ def build_chat_agent_for_session(
         username=user,
         turn_id=turn_id,
     )
-    resource_manager = AgentResourceManager(username=user) if user else None
+    if resource_manager is None:
+        resource_manager = AgentResourceManager(username=user) if user else None
     return AgentInstanceFactory.build_agent(
-        build_type=AgentBuildType.DIRECT,
+        build_type=AgentBuildType.SESSION if resume else AgentBuildType.DIRECT,
         session_code=session_code,
-        session_context_data=chat_context,
+        session_context_data=None if resume else chat_context,
         agent_cls=common_agent_factory.get(),
         checkpointer=AgentHelper.get_checkpointer(),
         event_handler=event_handler,
@@ -149,6 +159,7 @@ class BkpluginAgentRunner(ABC):
         plugin_context: list | None = None,
         parsed_ek: ExecuteKwargs | None = None,
     ):
+        self._worker_execution = False
         self.execute_kwargs = execute_kwargs
         self.input_text = input_text
         self.username = username
@@ -227,6 +238,8 @@ class BkpluginAgentRunner(ABC):
             execute_payload.get("turn_id") or "",
             threading.current_thread().name,
         )
+        previous_execution = self._worker_execution
+        self._worker_execution = True
         try:
             self.invoke_agent(session_code, execute_payload, chat_context=chat_context or [])
         except RetryableHeartbeatTimeoutError:
@@ -270,6 +283,9 @@ class BkpluginAgentRunner(ABC):
                 turn_id=execute_payload.get("turn_id") or "",
             )
 
+        finally:
+            self._worker_execution = previous_execution
+
     # ----- 子类实现 -----
 
     @abstractmethod
@@ -312,8 +328,6 @@ class BkpluginAgentRunner(ABC):
         chat_context: list[dict] | None = None,
     ) -> dict:
         """投递 Celery 并返回 POLL storage。"""
-        from ..tasks import run_bkplugin_background_agent_task
-
         execute_payload["stream"] = True
         run_bkplugin_background_agent_task.delay(
             session_code=session_code,
@@ -321,6 +335,7 @@ class BkpluginAgentRunner(ABC):
             username=self.username,
             agent_type_value=self.agent_type.value,
             chat_context=chat_context or [],
+            trace_context=capture_trace_context(),
         )
         return {
             "session_code": session_code,
@@ -345,6 +360,7 @@ class BkpluginChat(BkpluginAgentRunner):
             chat_context=self._build_chat_context(),
             username=self.username,
             version=ek.version,
+            resume=bool(ek.resume),
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
         )
@@ -384,8 +400,16 @@ class BkpluginChat(BkpluginAgentRunner):
             chat_context=chat_context or [],
             username=self.username,
             version=ek.version,
+            resume=bool(ek.resume),
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
+            resource_manager=(
+                WorkerResourceManager(
+                    AgentResourceManager(username=self.username) if self.username else resource_manager_factory()
+                )
+                if self._worker_execution
+                else None
+            ),
         )
         AgentExecutor.run_agent_to_completion(agent, ek, session_code, manager, turn_id=turn_id)
 
@@ -453,7 +477,11 @@ class BkpluginFlow(BkpluginAgentRunner):
             session_context_data=[],
             event_handler=handler,
             username=user,
-            flow_resource_manager=PluginResourceManager(username=user),
+            flow_resource_manager=(
+                WorkerResourceManager(PluginResourceManager(username=user))
+                if self._worker_execution
+                else PluginResourceManager(username=user)
+            ),
             task_id=params.get("task_id") or execute_payload.get("task_id"),
             flow_start_params=params,
             poll_interval=execute_payload.get("poll_interval") or agent_settings.FLOW_AGENT_POLL_INTERVAL,
@@ -513,6 +541,31 @@ def build_bkplugin_runner(
     if agent_type is AgentType.FLOW:
         return BkpluginFlow(**runner_kwargs)
     return BkpluginChat(chat_history=chat_history or [], **runner_kwargs)
+
+
+@shared_task(
+    name="aidev_bkplugin.run_background_agent",
+    ignore_result=True,
+    queue=agent_settings.BKAI_AGENT_TASK,
+)
+def run_bkplugin_background_agent_task(
+    session_code: str,
+    execute_payload: dict,
+    username: str | None,
+    agent_type_value: str,
+    chat_context: list[dict] | None = None,
+    trace_context: dict[str, str] | None = None,
+) -> None:
+    token = attach_trace_context(trace_context)
+    try:
+        runner = build_bkplugin_runner(
+            execute_kwargs=execute_payload,
+            username=username,
+            agent_type=AgentType(agent_type_value),
+        )
+        runner.run_worker(session_code, execute_payload, chat_context=chat_context or [])
+    finally:
+        detach_trace_context(token)
 
 
 # ---------------------------------------------------------------------------

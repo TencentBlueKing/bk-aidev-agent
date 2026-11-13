@@ -20,6 +20,7 @@ EXIT_PROBE = dedent("""
     import django
     django.setup()
     from aidev_bkplugin import apps
+    assert "aidev_bkplugin.services.agent_bkplugin" not in sys.modules
     from aidev_bkplugin.services.otel_metrics import BkPluginMetricService
     from aidev_agent.packages.opentelemetry.otel_service import BkAgentOTelService
     from aidev_agent.packages.opentelemetry.utils import ExporterType

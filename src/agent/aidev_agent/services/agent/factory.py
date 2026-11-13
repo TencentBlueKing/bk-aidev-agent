@@ -166,7 +166,8 @@ class AgentInstanceFactory:
         :param version: 主 agent 的配置版本；为 None 时取最新版（与历史行为一致）
         :param reasoning_effort: 本轮主模型思考深度（none/minimal/low/medium/high/xhigh/max）；为 None 时回落
             智能体默认档（仅默认模型），仍为空则不传，上游按模板默认
-        :param extra: 透传到 ``AgentBuildContext.extra``，由各 Agent 类的 ``build`` 自取
+        :param extra: 透传到 ``AgentBuildContext.extra``，由各 Agent 类的 ``build`` 自取。
+            Chat / Flow 的 producer 执行策略由 resource_manager 的可选能力提供，默认使用后台线程。
             （如 FlowAgent 的 ``task_id`` / ``flow_start_params`` / ``poll_interval`` /
             ``poll_timeout`` / ``flow_resource_manager`` 等）
         :return: 构建好的Agent实例

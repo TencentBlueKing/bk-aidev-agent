@@ -144,6 +144,7 @@ class FlowAgentCompletionAgent(BaseModel):
         helper = GeneratorStreamingHelper(
             thread_id=stream_thread_id,
             defer_cleanup_on_complete=background_only,
+            resource_manager=self._get_client(),
         )
         attach_only = getattr(execute_kwargs, "stream_mode", "start") == "attach"
         run_id = None if attach_only else str(uuid.uuid4())
