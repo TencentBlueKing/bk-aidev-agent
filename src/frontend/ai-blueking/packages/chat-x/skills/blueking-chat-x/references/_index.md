@@ -15,7 +15,7 @@
 - **ActivityMessage 活动消息** — 按 activityType 分发 FlowAgent、知识召回、引用文档等活动内容。 → `components/activity-message.md`
 - **AssistantMessage AI 助手消息** — 渲染助手消息主体、工具调用与文件产物，默认插槽可覆盖正文渲染。 → `components/assistant-message.md`
 - **FileArtifactPanel 文件产物预览** — 汇总当前会话全部文件产物，支持搜索、选中与分类型预览，挂载在 ChatContainer 侧栏「文件产物」Tab。 → `components/file-artifact-panel.md`
-- **InfoMessage 信息消息** — 渲染居中的系统信息提示。 → `components/info-message.md`
+- **InfoMessage 信息消息** — 渲染居中的系统信息提示；带 fork_info 时渲染为分支会话的「从其他会话中继续」分隔线。 → `components/info-message.md`
 - **LoadingMessage 加载消息** — 消息列表中的加载占位，默认使用 AiLoading，也支持默认插槽覆盖。 → `components/loading-message.md`
 - **MessageRender 消息渲染器** — 按 message.role 分发到用户、助手、工具、推理、活动、中断等消息组件。 → `components/message-render.md`
 - **ReasoningMessage 推理消息** — 渲染推理过程，覆盖加载、错误与 Markdown 内容展示。 → `components/reasoning-message.md`

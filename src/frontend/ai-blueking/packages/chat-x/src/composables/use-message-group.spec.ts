@@ -226,6 +226,47 @@ describe('useMessageGroup', () => {
       expect(messageGroups.value.length).toBe(1);
       expect(messageGroups.value[0]?.type).toBe(MessageRole.User);
     });
+
+    it('带 fork_info 的 Info 消息应结束上一个助手组并单独成 Info 组', async () => {
+      const forkInfoMessage: Message = {
+        id: '3',
+        messageId: '3',
+        content: '其他会话中继续',
+        role: MessageRole.Info,
+        status: MessageStatus.Complete,
+        property: { fork_info: { source_session_code: 'source', source_content_id: '2' } },
+      };
+      const messages = [createUserMessage('1'), createAssistantMessage('2'), forkInfoMessage, createUserMessage('4')];
+      const { messageGroups } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(messageGroups.value.map(group => group.type)).toEqual([
+        MessageRole.User,
+        MessageRole.Assistant,
+        MessageRole.Info,
+        MessageRole.User,
+        MessageRole.Loading,
+      ]);
+      expect(messageGroups.value[1]?.messages).toEqual([messages[1]]);
+      expect(messageGroups.value[2]?.messages).toEqual([forkInfoMessage]);
+    });
+
+    it('普通 Info 消息仍并入助手组', async () => {
+      const infoMessage: Message = {
+        id: '3',
+        messageId: '3',
+        content: '普通提示',
+        role: MessageRole.Info,
+        status: MessageStatus.Complete,
+      };
+      const messages = [createUserMessage('1'), createAssistantMessage('2'), infoMessage];
+      const { messageGroups } = setupMessageGroup(messages);
+      await nextTick();
+
+      expect(messageGroups.value.length).toBe(2);
+      expect(messageGroups.value[1]?.type).toBe(MessageRole.Assistant);
+      expect(messageGroups.value[1]?.messages.length).toBe(2);
+    });
   });
 
   describe('Tool 消息关联', () => {

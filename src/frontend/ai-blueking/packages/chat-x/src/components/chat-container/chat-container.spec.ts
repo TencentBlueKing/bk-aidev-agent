@@ -530,6 +530,7 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
       selectedUserMessages: Array,
       onAgentAction: Function,
       onAgentFeedback: Function,
+      onForkSourceClick: Function,
       onInterruptResume: Function,
       onUserAction: Function,
       onUserInputConfirm: Function,
@@ -570,6 +571,7 @@ vi.mock('../chat-message/message-container/message-container.vue', () => ({
               onAction: (tool: { id?: string }) => callHandler(props.onUserAction, [tool, message]),
               onInputConfirm: (content: unknown, docSchema: unknown) =>
                 callHandler(props.onUserInputConfirm, [message, content, docSchema]),
+              onForkSourceClick: (forkInfo: unknown) => callHandler(props.onForkSourceClick, [forkInfo, message]),
               onInterruptResume: props.onInterruptResume,
               onShortcutConfirm: (formModel: Record<string, unknown>) =>
                 callHandler(props.onUserShortcutConfirm, [message, formModel]),
@@ -977,6 +979,27 @@ describe('ChatContainer', () => {
 
       await captured.onShortcutConfirm?.(formModel);
       expect(onUserShortcutConfirm).toHaveBeenCalledWith(messages[0], formModel);
+    });
+
+    it('onForkSourceClick 应透传给 MessageContainer，#message 作用域调用时带上当前消息', async () => {
+      const messages = [createUserMessage('1', 'Hello')];
+      const onForkSourceClick = vi.fn();
+      const forkInfo = { source_session_code: 'source', source_content_id: 1 };
+      mockMessageGroupsRef.value = [{ messages, type: MessageRole.User, uid: 'group-user-1' }];
+      let captured: { onForkSourceClick?: (info: typeof forkInfo) => unknown } = {};
+
+      wrapper = mount(ChatContainer, {
+        props: { ...defaultProps, messages, onForkSourceClick },
+        slots: {
+          message: (slotProps: typeof captured) => {
+            captured = slotProps;
+            return h('div', { class: 'custom-message' });
+          },
+        },
+      });
+
+      await captured.onForkSourceClick?.(forkInfo);
+      expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo, messages[0]);
     });
 
     it('codeHeader 插槽应透传到 MessageContainer', () => {

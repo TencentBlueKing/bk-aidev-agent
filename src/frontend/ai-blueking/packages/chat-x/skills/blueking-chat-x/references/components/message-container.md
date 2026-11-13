@@ -125,6 +125,7 @@
 - `renderMode === RenderMode.Test` 时，工具栏会过滤掉「分享」按钮，其余正常
 - `renderMode === RenderMode.Share` 时，`message-group-messages` 自动添加 `message-group-enabled-selection` 类名（与 `enableSelection: true` 一致的多选视觉效果）
 - Loading 消息组的 `type` 是 `MessageRole.Loading`，不显示工具栏和多选 Checkbox
+- 带 `property.fork_info` 的 `info` 消息（分支会话的分叉点提示）与 user 消息一样，先结束当前 assistant 组再**单独成组**（`type: MessageRole.Info`），渲染为「从其他会话中继续」分隔线，位于上一轮回复的工具栏之后；该组不显示工具栏和多选 Checkbox，也不进入 AI 组的复制 / 删除 / 反馈范围。普通 `info` 消息仍并入 assistant 组
 
 ## DOM 定位标识
 
@@ -132,6 +133,7 @@
 
 | 层级     | 选择器                                | 值                                                  |
 | -------- | ------------------------------------- | --------------------------------------------------- |
+| 问答轮次 | `.ai-message-turn`                    | 无属性；每个 user 消息组开启一轮，包住本轮的提问组与回答组（开头没有提问的组也包在一轮内） |
 | 消息组   | `.message-group[data-message-group-id]` | `MessageGroup.uid`（与外层 `id` 同值）              |
 | 单条消息 | `.ai-message-item[data-message-id]`   | `message.id`，缺失时回退 `message.uid`；两者都无则不输出该属性 |
 
@@ -142,9 +144,19 @@ document.querySelector('[data-message-id="123"]');
 document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 ```
 
+> 消息组不再是 `.ai-message-container` 的直接子节点，`.ai-message-container > .message-group` 这类直接子选择器需改为后代选择器。
+
 `.ai-message-item` 是 `MessageContainer` 统一包裹的容器，`#default` 插槽自定义渲染的消息同样被它包裹，因此无论用默认 `MessageRender` 还是自定义渲染，标识都一致存在。
 
 启用顶层折叠时，终态的过程状态栏默认折叠本轮[展示起点](#助手过程状态栏)之前的消息，它们不会进入 DOM，对应的 `[data-message-id]` 暂时不存在；点击状态栏展开后恢复。最后一条 `assistant` 或更早的 `flow_agent` / 第三方审批及后续全部消息始终保留；没有 `assistant` 时全部展示。`enableMessageCollapse` 为 `false` 时所有消息都参与渲染。
+
+## 提问吸附置顶
+
+AI 回复超出一屏时，本轮的用户提问组吸附在消息区顶部（`.message-group.is-sticky`：`position: sticky; top: 0`，白底遮住滚过的内容，层级低于底部的「停止生成 / 返回底部」按钮）。吸附范围以所在的 `.ai-message-turn` 为边界：滚到下一轮时，上一轮提问随内容离开，由下一轮提问接替吸附。
+
+- 分享态（`renderMode === RenderMode.Share`）与多选态（`enableSelection`）不吸附，方便完整浏览和勾选
+- 轮次 wrapper 不设定位，消息组的 `offsetParent` 仍是滚动容器；`locate(uid)` 定位到吸附中的提问组时，改用所在轮次 wrapper 的 `offsetTop`
+- 吸附条为白色背景，宿主背景不是白色时会呈现白色色块
 
 ## 等待响应（Loading 自动注入）
 
@@ -416,7 +428,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 - **覆盖**：`id` 命中内置项时，做字段级浅合并（仅覆盖传入的字段，其余保留），不新增条目
 - **追加**：`id` 为内置列表中不存在的新值时，追加到该组末尾（如自定义「保存」「收藏」按钮）
-- **隐藏**：传入 `{ id: 'xxx', hidden: true }` 可移除对应内置项（如隐藏「分享」）
+- **隐藏**：传入 `{ id: 'xxx', hidden: true }` 可移除对应内置项（如隐藏「分享」；不需要分支会话时传 `{ id: 'fork', hidden: true }`）
 - **自定义图标**：通过 `icon`（组件/VNode）为自定义按钮提供图标，优先级高于内置 `ToolIconsMap`
 - 不传 `messageTools` / `updateTools` 时，各自使用内置默认列表
 
@@ -552,7 +564,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 
 ## 自定义消息渲染
 
-使用默认插槽替换单条消息的渲染，插槽参数包含 `message`、`messageToolsStatus` 和 `onInterruptResume`。终态折叠时只把当前可见消息传给该插槽：
+使用默认插槽替换单条消息的渲染，插槽参数包含 `message`、`messageToolsStatus`、`onInterruptResume` 和 `onForkSourceClick`（已绑定当前消息）等。终态折叠时只把当前可见消息传给该插槽：
 
 ```vue
 <template>
@@ -669,6 +681,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
 | onInterruptResume        | `OnInterruptResume`                                                                          | —       | AG-UI human-in-the-loop 中断响应回调，透传给 `MessageRender` → `InterruptMessageRender`                                                  |
+| onForkSourceClick        | `(forkInfo: MessageForkInfo, message: Message) => void`                                      | —       | 点击分支会话「从其他会话中继续」分隔线的回调，经 `MessageRender` → `InfoMessage` 触发；`message` 为该条分叉点提示消息。业务方据 `forkInfo.source_session_code` 切回来源会话 |
 | renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式，隐藏工具栏与「停止生成」，过程状态栏按终态展示；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为 |
 
 ### v-model
@@ -688,7 +701,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | 方法               | 类型                          | 说明                                                                                                                                 |
 | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | getScrollElement     | `() => HTMLElement \| null`   | 消息列表的滚动容器。`ChatContainer` 把它交给消息定位器，作为可视区判断的 root                                                       |
-| locate               | `(uid: string) => void`       | 在滚动容器的直接子节点里按 `data-message-group-id` 找到目标，只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
+| locate               | `(uid: string) => void`       | 在滚动容器内按 `data-message-group-id` 找到目标（吸附中的提问组取所在轮次 wrapper 的位置），只滚动消息列表（不用 `scrollIntoView`，避免带动 window），并暂停自动贴底。找不到目标时不滚动 |
 | visibleMessageGroups | `MessageGroup[]`              | 当前实际渲染的消息组。分享态已去掉 Loading 组。定位器使用同一规则，不回读这份 expose                               |
 
 ### Slots
@@ -697,7 +710,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | ---------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | answeredQuestion | `{ item, index, status }`                                                                                   | 自定义 UserQuestion 已回答回显，透传给 MessageRender → InterruptMessageRender            |
 | codeHeader       | `{ language: string; token: Token[] }`                                                                      | 代码块头部，透传给默认 MessageRender                                                      |
-| default          | `MessageSlotProps`：`{ message, messageTools, messageToolsStatus, tippyOptions, onAction, onInputConfirm, onShortcutConfirm, onInterruptResume }` | 自定义单条消息渲染；字段与 MessageRender props 对齐，可 `<MessageRender v-bind="slotProps" />`，回调已绑定当前消息。终态折叠时只传入当前可见消息；消息分组外层容器与 `#group` 未覆盖时的过程状态栏、工具栏仍由容器管理 |
+| default          | `MessageSlotProps`：`{ message, messageTools, messageToolsStatus, tippyOptions, onAction, onForkSourceClick, onInputConfirm, onShortcutConfirm, onInterruptResume }` | 自定义单条消息渲染；字段与 MessageRender props 对齐，可 `<MessageRender v-bind="slotProps" />`，回调已绑定当前消息。终态折叠时只传入当前可见消息；消息分组外层容器与 `#group` 未覆盖时的过程状态栏、工具栏仍由容器管理 |
 | group            | `{ group: MessageGroup }`                                                                                   | 自定义单个消息组内容，替换默认 Checkbox、过程状态栏、消息列表与 `MessageTools`；外层组容器仍由组件管理 |
 
 ## 类型定义

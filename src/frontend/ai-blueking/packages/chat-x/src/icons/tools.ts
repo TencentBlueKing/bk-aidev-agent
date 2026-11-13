@@ -78,6 +78,23 @@ export const RebuildIcon = h(
     ]),
   ],
 );
+/** 设计稿 aidev/分支 图标，原稿为 16×16 坐标系 */
+export const ForkIcon = h(
+  'svg',
+  {
+    ...commonSVGProps,
+    class: {
+      [commonSVGProps.class]: true,
+      'ai-fork-icon': true,
+    },
+    viewBox: '0 0 16 16',
+  },
+  [
+    h('path', {
+      d: 'M12.3882 2.78731L6.22537 7.74271H3.66405L3.36088 7.37221L3.02111 7.18696L2.51407 7.13036L2.14294 7.23842L1.82931 7.45455L1.5575 7.88165L1.5 8.38593L1.60454 8.74614L1.74568 8.96226L2.03317 9.21441L2.38862 9.35849L2.64475 9.38937L2.90088 9.35849L3.25633 9.21441L3.45497 9.06003L3.66405 8.77187H6.22537L12.3882 13.2127L11.8916 13.9383L14.5 14L13.4755 11.6381L12.9789 12.3636L7.31785 8.25729L12.9789 3.63636L13.4755 4.36192L14.5 2L11.8916 2.06175L12.3882 2.78731Z',
+    }),
+  ],
+);
 export const ShareIcon = h(
   'svg',
   {
@@ -215,6 +232,7 @@ export const ToolIconsMap = {
   copy: CopyIcon,
   cite: CiteIcon,
   rebuild: RebuildIcon,
+  fork: ForkIcon,
   share: ShareIcon,
   like: LikeIcon,
   unlike: UnLikeIcon,

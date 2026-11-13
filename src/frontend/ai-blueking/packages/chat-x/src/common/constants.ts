@@ -73,6 +73,12 @@ export const CONST_MESSAGE_TOOLS = [
     id: 'rebuild',
     name: t('重新生成'),
   },
+  // 基于本轮回复及之前的上下文新建分支会话，接口调用与会话切换由业务方在 onAgentAction 中处理
+  {
+    description: t('新建分支会话'),
+    id: 'fork',
+    name: t('新建分支会话'),
+  },
   {
     description: t('分享'),
     id: 'share',

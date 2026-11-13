@@ -60,6 +60,8 @@ role=user  role=tool     其他 role
 ⑤ 末尾为 user 消息 → 追加 Loading 消息组（`renderMode` 为 `Share` 时不追加）
 ```
 
+**分支会话分叉点：** 带 `property.fork_info` 的 `info` 消息按 ① 处理——先把累积的 assistant 消息推入 list，再单独成组，组 `type` 为 `MessageRole.Info`。这样「从其他会话中继续」分隔线排在上一轮回复的工具栏之后，也不进入该轮的复制 / 删除 / 反馈范围。普通 `info` 消息仍按 ③ 并入 assistant 组。
+
 注入的占位 Loading 消息使用固定 id：`LOADING_MESSAGE_ID`（`'__loading__'`，定义于 `common/constants`）。`ChatContainer` 据此判断是否在「请求中」阶段，并向 `ChatInput` / `MessageContainer` 下传 `MessageStatus.Fetching`，与流式中的停止、防重复发送行为对齐。
 
 ### Tool 消息处理

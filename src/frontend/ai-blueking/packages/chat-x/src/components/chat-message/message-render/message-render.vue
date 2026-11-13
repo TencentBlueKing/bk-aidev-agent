@@ -16,7 +16,7 @@
   import ToolMessage from '../tool-message/tool-message.vue';
   import UserMessage from '../user-message/user-message.vue';
 
-  import type { Message, MessageStatus } from '../../../ag-ui/types';
+  import type { Message, MessageForkInfo, MessageStatus } from '../../../ag-ui/types';
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { Token } from '../../../markdown-it';
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
@@ -36,6 +36,7 @@
       Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
         message: Partial<Message>;
         messageTools?: IToolBtn[];
+        onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
         onInterruptResume?: OnInterruptResume;
       }
   >();
@@ -72,7 +73,7 @@
             ]),
         });
       case MessageRole.Info:
-        return h(InfoMessage, props.message);
+        return h(InfoMessage, { ...props.message, onForkSourceClick: props.onForkSourceClick });
       case MessageRole.Reasoning:
         return h(ReasoningMessage, props.message);
       case MessageRole.Tool:

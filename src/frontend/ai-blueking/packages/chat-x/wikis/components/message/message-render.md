@@ -172,7 +172,7 @@ MessageRender
 │     ├── 'assistant'  → AssistantMessage（转发 message + default slot）
 │     │                    └── default slot 默认回退到 ContentRender
 │     │
-│     ├── 'info'       → InfoMessage（转发 message）
+│     ├── 'info'       → InfoMessage（转发 message + onForkSourceClick）
 │     ├── 'reasoning'  → ReasoningMessage（转发 message）
 │     ├── 'tool'       → ToolMessage（转发 message）
 │     ├── 'activity'   → ActivityMessage（转发 message + onInterruptResume）
@@ -279,7 +279,7 @@ MessageRender
 
 ### 信息消息（info）
 
-`content` 为字符串或字符串数组，渲染居中虚线分隔条。
+`content` 为字符串或字符串数组，渲染居中虚线分隔条。`property.fork_info` 存在时渲染为分支会话的「从其他会话中继续」分隔线，点击回调 `onForkSourceClick(forkInfo)`（详见 [InfoMessage](/components/message/info-message#分支会话分叉点)）。
 
 <div class="demo">
   <MessageRenderComp :message="infoMsg" />
@@ -407,7 +407,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 
 ## 与 MessageContainer / ChatContainer 配合
 
-自定义 `ChatContainer` 的 `#message` 时，插槽参数只有 `message` / `messageToolsStatus` / `onInterruptResume`。用户消息工具相关回调需由外层自行绑定透传，否则删除/编辑/复制会失效（AI 消息工具栏在 `MessageContainer` 内渲染，不受 `#message` 影响）：
+自定义 `ChatContainer` 的 `#message` 时，插槽参数包含 `message` / `messageToolsStatus` / `onInterruptResume` / `onForkSourceClick` 等。用户消息工具相关回调需由外层自行绑定透传，否则删除/编辑/复制会失效（AI 消息工具栏在 `MessageContainer` 内渲染，不受 `#message` 影响）：
 
 ```vue
 <template>
@@ -418,7 +418,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
     :on-user-action="handleUserAction"
     :common-tippy-options="commonTippyOptions"
   >
-    <template #message="{ message, messageToolsStatus, onInterruptResume }">
+    <template #message="{ message, messageToolsStatus, onInterruptResume, onForkSourceClick }">
       <MessageRender
         :message="message"
         :message-tools-status="messageToolsStatus"
@@ -427,6 +427,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
         :on-shortcut-confirm="formModel => handleUserShortcutConfirm(message, formModel)"
         :tippy-options="commonTippyOptions"
         :on-interrupt-resume="onInterruptResume"
+        :on-fork-source-click="onForkSourceClick"
       >
         <template
           v-if="message.role === 'assistant'"
@@ -459,6 +460,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 | messageTools       | `IToolBtn[]`                                                               | —      | 自定义用户消息工具组；**仅转发给 `UserMessage`**  |
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
 | onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
+| onForkSourceClick  | `(forkInfo: MessageForkInfo) => void`                                      | —      | 分支会话分叉点分隔线点击回调；**仅转发给 `InfoMessage`** |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
 | onInterruptResume  | `(payload: InterruptResume, interrupt?: Interrupt) => Promise<void>`         | —      | 中断 / FlowAgent 节点操作回调；转发给 `InterruptMessageRender` 与 `ActivityMessage`（后者仅 `flow_agent` 子组件消费） |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                    | —      | 用户快捷指令提交回调；**仅转发给 `UserMessage`**  |
@@ -478,7 +480,7 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 | ------------- | ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------- |
 | `user`        | `UserMessage`      | `message` + `onAction` + `onInputConfirm` + `onShortcutConfirm` + `messageTools` + `messageToolsStatus` + `tippyOptions` | 用户发送的消息        |
 | `assistant`   | `AssistantMessage` | `message` + `default slot`                                                                              | AI 助手回复消息       |
-| `info`        | `InfoMessage`      | `message`                                                                                               | 系统信息 / 会话分隔符 |
+| `info`        | `InfoMessage`      | `message` + `onForkSourceClick`                                                                         | 系统信息 / 会话分隔符 / 分支会话分叉点 |
 | `reasoning`   | `ReasoningMessage` | `message`                                                                                               | AI 思考过程（可折叠） |
 | `tool`        | `ToolMessage`      | `message`                                                                                               | 工具调用返回结果      |
 | `activity`    | `ActivityMessage`  | `message` + `onInterruptResume`                                                                         | 知识检索 / 引用文档 / FlowAgent 执行（节点重试 / 跳过） |
