@@ -76,7 +76,6 @@ from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
-from aidev_agent.services.messages_handler.producer import ProducerRunner
 from aidev_agent.services.sandbox_pv_files import (
     SESSION_VOLUME_PATH,
     SandboxFileInvalidArgumentError,
@@ -187,7 +186,6 @@ class ChatCompletionAgent(BaseModel):
     checkpointer: BaseCheckpointSaver | None = None
 
     event_handler: Callable[[BaseEvent], None] | None = None
-    producer_runner: ProducerRunner | None = Field(default=None, exclude=True)
     mcp_fetch_failures: list[dict] = Field(default_factory=list, description="MCP 工具拉取失败记录，用于流式事件")
     resource_manager: Any = Field(
         default=None, exclude=True, description="per-request 资源管理器（含正确 app_code / access_token）"
@@ -301,7 +299,6 @@ class ChatCompletionAgent(BaseModel):
             self.agent_cls = chat.agent_cls
         if ctx.session_code is not None:
             self.thread_id = ctx.session_code
-        self.producer_runner = ctx.extra.get("producer_runner")
         if ctx.event_handler is not None:
             self.event_handler = ctx.event_handler
         return self
@@ -1472,7 +1469,7 @@ class ChatCompletionAgent(BaseModel):
                 thread_id=queue_thread_id or agent_input.thread_id,
                 defer_cleanup_on_complete=background_only,
                 producer_observer=observer,
-                producer_runner=self.producer_runner,
+                resource_manager=self.resource_manager,
             )
             run_id = agent_input.run_id or self.thread_id
             cancel_event = helper.prepare_run(run_id)

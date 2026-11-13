@@ -24,12 +24,13 @@ from typing import Any, ClassVar
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.enums import AgentBuildType, AgentType, ChannelType, PromptRole, SessionsStatus
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
+from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
-from aidev_agent.services.messages_handler.producer import ProducerRunner, run_producer_inline
 from aidev_agent.utils.local import request_local
 from django.contrib.auth import get_user_model
 
@@ -38,6 +39,7 @@ from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .background_dispatch import enqueue_background_agent
+from .producer_resources import WorkerResourceManager
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
 
@@ -97,7 +99,7 @@ def build_chat_agent_for_session(
     version: str | None = None,
     turn_id: str = "",
     channel_type: str | None = None,
-    producer_runner: ProducerRunner | None = None,
+    resource_manager: ResourceManagerProtocol | None = None,
 ):
     """构建带 AG-UI 回写器的 Chat Agent 实例（供同步执行与 Celery worker 共用）。
 
@@ -111,7 +113,8 @@ def build_chat_agent_for_session(
         username=user,
         turn_id=turn_id,
     )
-    resource_manager = AgentResourceManager(username=user) if user else None
+    if resource_manager is None:
+        resource_manager = AgentResourceManager(username=user) if user else None
     return AgentInstanceFactory.build_agent(
         build_type=AgentBuildType.DIRECT,
         session_code=session_code,
@@ -123,7 +126,6 @@ def build_chat_agent_for_session(
         username=user,
         version=version,
         channel_type=channel_type or ChannelType.BKPLUGIN.value,
-        producer_runner=producer_runner,
     )
 
 
@@ -153,7 +155,7 @@ class BkpluginAgentRunner(ABC):
         plugin_context: list | None = None,
         parsed_ek: ExecuteKwargs | None = None,
     ):
-        self._producer_runner: ProducerRunner | None = None
+        self._worker_execution = False
         self.execute_kwargs = execute_kwargs
         self.input_text = input_text
         self.username = username
@@ -232,8 +234,8 @@ class BkpluginAgentRunner(ABC):
             execute_payload.get("turn_id") or "",
             threading.current_thread().name,
         )
-        previous_runner = self._producer_runner
-        self._producer_runner = run_producer_inline
+        previous_execution = self._worker_execution
+        self._worker_execution = True
         try:
             self.invoke_agent(session_code, execute_payload, chat_context=chat_context or [])
         except RetryableHeartbeatTimeoutError:
@@ -278,7 +280,7 @@ class BkpluginAgentRunner(ABC):
             )
 
         finally:
-            self._producer_runner = previous_runner
+            self._worker_execution = previous_execution
 
     # ----- 子类实现 -----
 
@@ -394,7 +396,13 @@ class BkpluginChat(BkpluginAgentRunner):
             version=ek.version,
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
-            producer_runner=self._producer_runner,
+            resource_manager=(
+                WorkerResourceManager(
+                    AgentResourceManager(username=self.username) if self.username else resource_manager_factory()
+                )
+                if self._worker_execution
+                else None
+            ),
         )
         AgentExecutor.run_agent_to_completion(agent, ek, session_code, manager, turn_id=turn_id)
 
@@ -462,13 +470,16 @@ class BkpluginFlow(BkpluginAgentRunner):
             session_context_data=[],
             event_handler=handler,
             username=user,
-            flow_resource_manager=PluginResourceManager(username=user),
+            flow_resource_manager=(
+                WorkerResourceManager(PluginResourceManager(username=user))
+                if self._worker_execution
+                else PluginResourceManager(username=user)
+            ),
             task_id=params.get("task_id") or execute_payload.get("task_id"),
             flow_start_params=params,
             poll_interval=execute_payload.get("poll_interval") or agent_settings.FLOW_AGENT_POLL_INTERVAL,
             poll_timeout=execute_payload.get("poll_timeout") or agent_settings.FLOW_AGENT_POLL_TIMEOUT,
             channel_type=ChannelType.BKPLUGIN.value,
-            producer_runner=self._producer_runner,
         )
         # Flow 始终走 AG-UI 事件流；构造带 stream=True 的 ek 以触发 writer 会话状态收尾
         ek = build_execute_kwargs({**execute_payload, "stream": True}, self.username)

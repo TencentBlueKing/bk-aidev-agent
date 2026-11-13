@@ -32,7 +32,7 @@ from .constants import (
     TimeoutConfig,
 )
 from .factory import message_handler_factory
-from .producer import ProducerRunner
+from .producer import resolve_producer_runner
 
 logger = getLogger(__name__)
 
@@ -147,14 +147,14 @@ class GeneratorStreamingHelper:
         thread_id: str | None = None,
         defer_cleanup_on_complete: bool = False,
         producer_observer: Any = None,
-        producer_runner: ProducerRunner | None = None,
+        resource_manager: object | None = None,
     ) -> None:
         self.message_handler = message_handler if message_handler else message_handler_factory.get()
         self.thread_id = thread_id or uuid.uuid4().hex
         # 后台 drain（无 SSE 下游）场景：读到 EOD 时不立即 mark_completed 清队列，
         # 保留缓存历史供前端在清理窗口内接管续流；清理交由 producer 的延迟清理线程兜底。
         self.defer_cleanup_on_complete = defer_cleanup_on_complete
-        self.producer_runner = producer_runner
+        self._producer_runner = resolve_producer_runner(resource_manager)
         self.producer_observer = producer_observer
         self._producer_completion_error: Exception | None = None
         self.run_id: str = ""
@@ -704,11 +704,11 @@ class GeneratorStreamingHelper:
 
             run = partial(producer_context.run, produce)
             try:
-                if self.producer_runner is None:
+                if self._producer_runner is None:
                     producer_thread = threading.Thread(target=run, daemon=True)
                     producer_thread.start()
                 else:
-                    producer_thread = self.producer_runner(run)
+                    producer_thread = self._producer_runner(run)
                     if producer_thread is None:
                         if not started.is_set():
                             raise RuntimeError("producer_runner must execute produce or return a started thread")

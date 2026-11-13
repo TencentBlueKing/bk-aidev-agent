@@ -349,7 +349,7 @@ class TestBkpluginExecution:
 
 
 @pytest.mark.parametrize("agent_type", [AgentType.CHAT, AgentType.FLOW])
-def test_worker_injects_inline_producer_and_restores_runner(agent_type, monkeypatch):
+def test_worker_injects_inline_resources_and_restores_execution(agent_type, monkeypatch):
     runner = agent_bkplugin.build_bkplugin_runner(execute_kwargs={}, agent_type=agent_type)
     build = MagicMock()
     monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
@@ -359,8 +359,11 @@ def test_worker_injects_inline_producer_and_restores_runner(agent_type, monkeypa
     monkeypatch.setattr(agent_bkplugin, "AGUISessionWriter", MagicMock())
     monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_client", MagicMock())
     runner.run_worker("session", {"stream": True, "turn_id": "turn"})
-    assert build.call_args.kwargs["producer_runner"] is run_producer_inline
-    assert runner._producer_runner is None
+    resource_key = "resource_manager" if agent_type == AgentType.CHAT else "flow_resource_manager"
+    manager = build.call_args.kwargs[resource_key]
+    assert manager.get_producer_runner() is run_producer_inline
+    assert "producer_runner" not in build.call_args.kwargs
+    assert runner._worker_execution is False
 
 
 def test_background_task_restores_trace_on_build_failure(monkeypatch):
@@ -379,3 +382,46 @@ def test_background_task_restores_trace_on_build_failure(monkeypatch):
 
 def test_background_task_keeps_agent_queue():
     assert background_tasks.run_bkplugin_background_agent_task.queue == "bkai_agent_task"
+
+
+def test_chat_build_reuses_explicit_resource_manager(monkeypatch):
+    manager = MagicMock()
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin.AgentInstanceFactory, "build_agent", build)
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_client", MagicMock())
+    monkeypatch.setattr(agent_bkplugin.AgentHelper, "get_checkpointer", MagicMock())
+    agent_bkplugin.build_chat_agent_for_session(
+        session_code="session",
+        chat_context=[],
+        username="user",
+        resource_manager=manager,
+    )
+    assert build.call_args.kwargs["resource_manager"] is manager
+    assert "producer_runner" not in build.call_args.kwargs
+
+
+@pytest.mark.parametrize("resource_class", [agent_bkplugin.AgentResourceManager, agent_bkplugin.PluginResourceManager])
+def test_worker_resources_are_task_local(resource_class):
+    original = resource_class(username="first", tenant_id="tenant-first")
+    first = agent_bkplugin.WorkerResourceManager(original)
+    second = agent_bkplugin.WorkerResourceManager(resource_class(username="second", tenant_id="tenant-second"))
+    assert (first.username, first.tenant_id) == ("first", "tenant-first")
+    assert (second.username, second.tenant_id) == ("second", "tenant-second")
+    assert first.get_producer_runner() is run_producer_inline
+    assert original.get_producer_runner() is None
+    assert first.get_client == original.get_client
+
+
+def test_worker_keeps_custom_default_resources(monkeypatch):
+    custom = MagicMock(spec=agent_bkplugin.ResourceManagerProtocol)
+    monkeypatch.setattr(agent_bkplugin, "resource_manager_factory", lambda: custom)
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    runner = agent_bkplugin.build_bkplugin_runner(execute_kwargs={}, agent_type=AgentType.CHAT)
+    runner.run_worker("session", {"stream": True, "turn_id": "turn"})
+    manager = build.call_args.kwargs["resource_manager"]
+    assert manager.get_client is custom.get_client
+    assert manager.get_producer_runner() is run_producer_inline
+    assert not hasattr(custom, "get_producer_runner")

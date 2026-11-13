@@ -31,7 +31,6 @@ from aidev_agent.enums import AgentType
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol, resource_manager
 from aidev_agent.services.agent.registry import AgentBuildContext, FlowBuildExtras
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, StreamCancelledError
-from aidev_agent.services.messages_handler.producer import ProducerRunner
 from aidev_agent.utils.event import RunId, emit_run_finished_event
 
 logger = getLogger(__name__)
@@ -92,7 +91,6 @@ class FlowAgentCompletionAgent(BaseModel):
     )
 
     event_handler: Callable[[BaseEvent], None] | None = None
-    producer_runner: ProducerRunner | None = Field(default=None, exclude=True)
 
     # 运行时状态：任务是否已启动根据 flow_agent_start 判断
     # 用于取消时决定发 RUN_FINISHED（已启动）还是 RUN_ERROR（未启动）
@@ -131,7 +129,6 @@ class FlowAgentCompletionAgent(BaseModel):
         )
         self.resume_from_node = flow.resume_from_node
         self.username = ctx.username
-        self.producer_runner = ctx.extra.get("producer_runner")
         if ctx.event_handler is not None:
             self.event_handler = ctx.event_handler
         return self
@@ -147,7 +144,7 @@ class FlowAgentCompletionAgent(BaseModel):
         helper = GeneratorStreamingHelper(
             thread_id=stream_thread_id,
             defer_cleanup_on_complete=background_only,
-            producer_runner=self.producer_runner,
+            resource_manager=self._get_client(),
         )
         attach_only = getattr(execute_kwargs, "stream_mode", "start") == "attach"
         run_id = None if attach_only else str(uuid.uuid4())
