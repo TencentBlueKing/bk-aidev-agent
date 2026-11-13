@@ -101,8 +101,11 @@ def build_chat_agent_for_session(
     turn_id: str = "",
     channel_type: str | None = None,
     resource_manager: ResourceManagerProtocol | None = None,
+    resume: bool = False,
 ):
     """构建带 AG-UI 回写器的 Chat Agent 实例（供同步执行与 Celery worker 共用）。
+
+    resume 从服务端会话账本恢复 interrupt 元数据；普通请求继续使用调用方上下文。
 
     :param channel_type: 调用渠道类型（如 ``ChannelType.BKPLUGIN.value``），透传到 SDK 的
         ``TokenUsageCallbackHandler`` metadata，便于 token usage 上报落表时区分渠道。
@@ -117,9 +120,9 @@ def build_chat_agent_for_session(
     if resource_manager is None:
         resource_manager = AgentResourceManager(username=user) if user else None
     return AgentInstanceFactory.build_agent(
-        build_type=AgentBuildType.DIRECT,
+        build_type=AgentBuildType.SESSION if resume else AgentBuildType.DIRECT,
         session_code=session_code,
-        session_context_data=chat_context,
+        session_context_data=None if resume else chat_context,
         agent_cls=common_agent_factory.get(),
         checkpointer=AgentHelper.get_checkpointer(),
         event_handler=event_handler,
@@ -357,6 +360,7 @@ class BkpluginChat(BkpluginAgentRunner):
             chat_context=self._build_chat_context(),
             username=self.username,
             version=ek.version,
+            resume=bool(ek.resume),
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
         )
@@ -396,6 +400,7 @@ class BkpluginChat(BkpluginAgentRunner):
             chat_context=chat_context or [],
             username=self.username,
             version=ek.version,
+            resume=bool(ek.resume),
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
             resource_manager=(

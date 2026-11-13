@@ -22,7 +22,14 @@ sys.modules.setdefault("bk_plugin_framework", _bk_plugin_framework)
 sys.modules.setdefault("bk_plugin_framework.kit", _bk_plugin_framework.kit)
 sys.modules.setdefault("bk_plugin_framework.kit.decorators", _bk_plugin_framework.kit.decorators)
 
-from aidev_agent.enums import AgentType, ChannelType, ChatContentStatus, PromptRole, SessionsStatus  # noqa: E402
+from aidev_agent.enums import (  # noqa: E402
+    AgentBuildType,
+    AgentType,
+    ChannelType,
+    ChatContentStatus,
+    PromptRole,
+    SessionsStatus,
+)
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError  # noqa: E402
 from aidev_agent.services.messages_handler.producer import run_producer_inline  # noqa: E402
 from aidev_bkplugin import tasks as background_tasks  # noqa: E402
@@ -184,9 +191,8 @@ class TestBkpluginExecution:
             "agent_type": AgentType.CHAT.value,
         }
 
-    def test_serial_chat_execute(self):
-        from aidev_bkplugin.services.agent_bkplugin import build_bkplugin_runner
-
+    @pytest.mark.parametrize("resume", [[], [{"interruptId": "interrupt-1", "data": {"answer": "yes"}}]])
+    def test_serial_chat_execute(self, resume):
         with (
             patch("aidev_bkplugin.services.agent_bkplugin.AgentConfigFetcher.get_info") as mock_info,
             patch("aidev_bkplugin.services.agent_bkplugin.SessionManager") as mock_sm_cls,
@@ -197,14 +203,15 @@ class TestBkpluginExecution:
             mock_sm.prepare_session_turn.return_value = ("sess-chat", "turn-chat")
             mock_agent = MagicMock(execute=MagicMock(return_value={"choices": [{"delta": {"content": "ok"}}]}))
             mock_build.return_value = mock_agent
-            agent = build_bkplugin_runner(
+            agent = agent_bkplugin.build_bkplugin_runner(
                 chat_history=[{"role": "user", "content": "prev"}],
-                execute_kwargs={"session_code": "thread-1"},
+                execute_kwargs={"session_code": "thread-1", "resume": resume},
                 input_text="hi",
                 username="alice",
             )
             result = agent.execute()
 
+        assert mock_build.call_args.kwargs["resume"] is bool(resume)
         assert result == "ok"
         assert agent.session_code == "sess-chat"
         assert [x["content"] for x in mock_build.call_args.kwargs["chat_context"]] == ["prev", "hi"]
@@ -384,7 +391,8 @@ def test_background_task_keeps_agent_queue():
     assert background_tasks.run_bkplugin_background_agent_task.queue == "bkai_agent_task"
 
 
-def test_chat_build_reuses_explicit_resource_manager(monkeypatch):
+@pytest.mark.parametrize("resume", [False, True])
+def test_chat_build_reuses_explicit_resource_manager(monkeypatch, resume):
     manager = MagicMock()
     build = MagicMock()
     monkeypatch.setattr(agent_bkplugin.AgentInstanceFactory, "build_agent", build)
@@ -395,7 +403,10 @@ def test_chat_build_reuses_explicit_resource_manager(monkeypatch):
         chat_context=[],
         username="user",
         resource_manager=manager,
+        resume=resume,
     )
+    assert build.call_args.kwargs["build_type"] == (AgentBuildType.SESSION if resume else AgentBuildType.DIRECT)
+    assert build.call_args.kwargs["session_context_data"] == (None if resume else [])
     assert build.call_args.kwargs["resource_manager"] is manager
     assert "producer_runner" not in build.call_args.kwargs
 
@@ -425,3 +436,15 @@ def test_worker_keeps_custom_default_resources(monkeypatch):
     assert manager.get_client is custom.get_client
     assert manager.get_producer_runner() is run_producer_inline
     assert not hasattr(custom, "get_producer_runner")
+
+
+@pytest.mark.parametrize("resume", [[], [{"interruptId": "interrupt-1", "data": {"answer": "yes"}}]])
+def test_worker_chat_selects_resume_history(monkeypatch, resume):
+    build = MagicMock()
+    monkeypatch.setattr(agent_bkplugin, "build_chat_agent_for_session", build)
+    monkeypatch.setattr(agent_bkplugin.AgentExecutor, "run_agent_to_completion", MagicMock())
+    monkeypatch.setattr(agent_bkplugin, "SessionManager", MagicMock())
+    runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
+    runner.run_worker("session", {"stream": True, "resume": resume})
+    assert build.call_args.kwargs["resume"] is bool(resume)
+    assert build.call_args.kwargs["resource_manager"].get_producer_runner() is run_producer_inline
