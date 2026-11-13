@@ -52,6 +52,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 | `copy`         | 复制           |                          |
 | `cite`         | 引用           |                          |
 | `rebuild`      | 重新生成       |                          |
+| `fork`         | 新建分支会话   |                          |
 | `share`        | 分享           |                          |
 | `like`         | 点赞（空心）   | 配合 `activeLike` 使用   |
 | `unlike`       | 不满意（空心） | 配合 `activeUnLike` 使用 |

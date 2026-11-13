@@ -52,6 +52,7 @@ import { CopyIcon, LikeIcon, ToolIconsMap } from '@blueking/chat-x';
 | `CopyIcon`         | `copy`           | `ai-copy-icon`           | 复制             |
 | `CiteIcon`         | `cite`           | `ai-cite-icon`           | 引用             |
 | `RebuildIcon`      | `rebuild`        | `ai-rebuild-icon`        | 重新生成         |
+| `ForkIcon`         | `fork`           | `ai-fork-icon`           | 新建分支会话（分叉形，16×16） |
 | `ShareIcon`        | `share`          | `ai-share-icon`          | 分享             |
 | `LikeIcon`         | `like`           | `ai-like-icon`           | 点赞（默认态）   |
 | `UnLikeIcon`       | `unlike`         | `ai-un-like-icon`        | 不满意（默认态） |
@@ -67,7 +68,7 @@ import { ToolIconsMap, type ToolIcons } from '@blueking/chat-x';
 // 通过 key 动态获取图标
 const icon = ToolIconsMap['copy']; // CopyIcon VNode
 
-// 类型：'copy' | 'cite' | 'rebuild' | 'share' | 'like' | 'unlike' | 'delete' | 'edit' | 'activeLike' | 'activeUnLike'
+// 类型：'copy' | 'cite' | 'rebuild' | 'fork' | 'share' | 'like' | 'unlike' | 'delete' | 'edit' | 'activeLike' | 'activeUnLike'
 type Key = ToolIcons;
 ```
 

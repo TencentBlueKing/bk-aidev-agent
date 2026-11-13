@@ -417,10 +417,22 @@ const interruptMessage: InterruptMessage = {
 
 ### InfoMessage
 
-信息消息：
+信息消息。`property.fork_info` 存在时表示分支会话的分叉点提示，渲染为「从其他会话中继续」分隔线（见 [InfoMessage](/components/message/info-message#分支会话分叉点)）：
 
 ```typescript
-type InfoMessage = BaseMessage<MessageRole.Info, string>;
+interface InfoMessage extends BaseMessage<MessageRole.Info, string> {
+  property?: BaseMessage<MessageRole.Info, string>['property'] & {
+    /** 分支会话的分叉点提示；存在时渲染为「从其他会话中继续」分隔线 */
+    fork_info?: MessageForkInfo;
+  };
+}
+
+/** 分叉点信息，字段与后端 property.fork_info 保持一致 */
+type MessageForkInfo = {
+  last_copied_content_id?: number | string;
+  source_content_id: number | string;
+  source_session_code: string;
+};
 
 // 示例
 const infoMessage: InfoMessage = {
@@ -429,6 +441,18 @@ const infoMessage: InfoMessage = {
   role: MessageRole.Info,
   content: '会话已开始',
   status: MessageStatus.Complete,
+};
+
+// 分支会话的分叉点提示
+const forkInfoMessage: InfoMessage = {
+  id: '2001',
+  messageId: 2001,
+  role: MessageRole.Info,
+  content: '其他会话中继续',
+  status: MessageStatus.Complete,
+  property: {
+    fork_info: { source_session_code: 'a1b2c3d4', source_content_id: 1052, last_copied_content_id: 1053 },
+  },
 };
 ```
 

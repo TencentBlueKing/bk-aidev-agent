@@ -151,6 +151,7 @@
             commonTippyOptions,
             handleAgentAction,
             onAgentFeedback,
+            onForkSourceClick,
             onInterruptResume,
             onUserAction,
             onUserInputConfirm,
@@ -171,6 +172,7 @@
             :messages="messages"
             :on-agent-action="handleAgentAction"
             :on-agent-feedback="onAgentFeedback"
+            :on-fork-source-click="onForkSourceClick"
             :on-interrupt-resume="onInterruptResume"
             :on-user-action="onUserAction"
             :on-user-input-confirm="onUserInputConfirm"
@@ -399,6 +401,7 @@
       messageStatus: MessageContainerProps['messageStatus'];
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
       onAgentFeedback?: MessageContainerProps['onAgentFeedback'];
+      onForkSourceClick?: MessageContainerProps['onForkSourceClick'];
       onInterruptResume?: MessageContainerProps['onInterruptResume'];
       onUserAction?: MessageContainerProps['onUserAction'];
       onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
