@@ -375,3 +375,7 @@ def test_background_task_restores_trace_on_build_failure(monkeypatch):
             trace_context={"traceparent": "00-00000000000000000000000000000001-0000000000000002-01"},
         )
     assert context.get_current() == before
+
+
+def test_background_task_keeps_agent_queue():
+    assert background_tasks.run_bkplugin_background_agent_task.queue == "bkai_agent_task"
