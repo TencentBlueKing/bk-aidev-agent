@@ -42,6 +42,11 @@ INSTALLED_APPS = [
 MIDDLEWARE: list = []
 ROOT_URLCONF = "aidev_bkplugin.urls"
 
+# Blueapps login_exempt 导入时需要站点配置；均为不访问网络的测试占位值。
+RUN_VER = "open"
+BK_LOGIN_URL = "http://login.test"
+BK_LOGIN_INNER_URL = "http://login.test"
+
 # —— 仅测试场景使用的占位项；运行环境中由部署侧 env 注入 ——
 APP_CODE = os.environ.get("APP_CODE", "aidev-test")
 APP_TOKEN = os.environ.get("APP_TOKEN", "test-token")

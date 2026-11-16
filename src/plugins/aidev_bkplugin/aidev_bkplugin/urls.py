@@ -4,6 +4,7 @@ from django.urls import include, re_path
 from rest_framework.routers import DefaultRouter
 
 from .views.agent import AgentAccessViewSet, AgentInfoViewSet
+from .views.answer_stream import answer_stream
 from .views.chat import ChatCompletionViewSet
 from .views.chat_group import ChatGroupViewSet
 from .views.flow_agent import FlowAgentViewSet
@@ -31,5 +32,6 @@ _router.register("llms", LLMViewSet, "llms")
 
 
 urlpatterns = [
+    re_path(r"^answer_stream/(?P<trace_id>[^/]+)/$", answer_stream, name="answer_stream"),
     re_path("", include(_router.urls)),
 ]
