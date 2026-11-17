@@ -181,6 +181,19 @@ describe('InfoMessage', () => {
       expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo);
     });
 
+    it('可点击分叉点应带 is-clickable（hover 文案色由样式控制）', () => {
+      wrapper = mount(InfoMessage, {
+        props: {
+          content: '其他会话中继续',
+          property: { fork_info: forkInfo },
+          onForkSourceClick: vi.fn(),
+        },
+      });
+
+      expect(wrapper.find('.ai-info-message-fork').classes()).toContain('is-clickable');
+      expect(wrapper.find('.ai-info-message-fork-text').exists()).toBe(true);
+    });
+
     it('键盘回车应同样触发 onForkSourceClick', async () => {
       const onForkSourceClick = vi.fn();
       wrapper = mount(InfoMessage, {

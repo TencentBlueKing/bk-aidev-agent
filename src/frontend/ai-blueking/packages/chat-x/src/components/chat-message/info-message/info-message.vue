@@ -70,13 +70,24 @@
     line-height: var(--ai-line-height, 20px);
     color: variables.$color-text-secondary;
 
-    // 左右虚线夹中间文案，整块居中占位，避免 height:0 溢出被遮挡
+    // 左右虚线夹中间文案：自定义虚线（4px 实段 + 4px 空隙）比默认 dashed 更疏
     &::before,
     &::after {
       flex: 1;
+      align-self: center;
       min-width: 16px;
+      height: 1px;
       content: '';
-      border-bottom: 1px dashed variables.$color-border;
+      background-image: linear-gradient(
+        to right,
+        variables.$color-border 0,
+        variables.$color-border 4px,
+        transparent 4px,
+        transparent 8px
+      );
+      background-repeat: repeat-x;
+      background-position: center;
+      background-size: 8px 1px;
     }
 
     &-body {
@@ -112,6 +123,11 @@
 
       &-text {
         color: variables.$color-primary;
+      }
+
+      // hover：文案加深为 #1768ef（与输入区快捷入口等交互蓝一致）
+      &.is-clickable:hover .ai-info-message-fork-text {
+        color: #1768ef;
       }
     }
 

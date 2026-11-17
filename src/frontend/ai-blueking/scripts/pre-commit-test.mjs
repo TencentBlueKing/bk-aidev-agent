@@ -149,9 +149,10 @@ const runTests = testFiles => {
 
   try {
     const relativeTestPaths = testFiles.map(f => f.replace(`${CHAT_X_PATH}/`, '')).join(' ');
+    // 从外层 git root 提交时 process.cwd() 无 package.json，须在 ai-blueking workspace 下跑 pnpm
     execSync(`pnpm --filter @blueking/chat-x exec vitest run ${relativeTestPaths}`, {
       stdio: 'inherit',
-      cwd: process.cwd(),
+      cwd: WORKSPACE_ROOT,
     });
     console.log('\n✅ 所有测试通过！\n');
     return true;
