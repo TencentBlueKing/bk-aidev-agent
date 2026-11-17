@@ -14,7 +14,7 @@
         :id="group.uid"
         :key="groupIndex"
         class="message-group"
-        :class="{ 'is-sticky': isStickyGroup(group) }"
+        :class="{ 'is-sticky': isStickyGroup(group), 'is-stuck': stuckGroupUids.has(group.uid) }"
         :data-message-group-id="group.uid"
         :style="{
           backgroundColor: group.checked ? '#f5f7fa' : undefined,
@@ -140,7 +140,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { type VNode, computed, onMounted, useTemplateRef } from 'vue';
+  import { type VNode, computed, nextTick, onMounted, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
@@ -318,6 +318,43 @@
   const hasSelectionCheckbox = (group: MessageGroup) =>
     props.enableSelection && group.type !== MessageRole.Loading && group.type !== MessageRole.Info;
 
+  /** 正在贴顶吸附的提问组 uid；仅此时给气泡加阴影，正常流式位置不加 */
+  const stuckGroupUids = shallowRef(new Set<string>());
+  let stickyStuckRaf = 0;
+
+  const isSameUidSet = (current: Set<string>, next: Set<string>) =>
+    current.size === next.size && [...next].every(uid => current.has(uid));
+
+  const updateStickyStuck = () => {
+    const container = messageContainerRef.value;
+    if (!container) {
+      if (stuckGroupUids.value.size) stuckGroupUids.value = new Set();
+      return;
+    }
+    const containerTop = container.getBoundingClientRect().top;
+    const next = new Set<string>();
+    for (const element of container.querySelectorAll<HTMLElement>('.message-group.is-sticky')) {
+      const uid = element.dataset.messageGroupId;
+      const turn = element.closest('.ai-message-turn');
+      if (!uid || !(turn instanceof HTMLElement)) continue;
+      const turnTop = turn.getBoundingClientRect().top;
+      const rect = element.getBoundingClientRect();
+      // 轮次顶已滚过容器顶（相对自然位置发生了上移），且提问组仍贴在顶上 → 正在吸附
+      // 避免 scrollTop=0 时首条提问刚好贴顶却被误判为吸附
+      if (turnTop < containerTop - 0.5 && rect.top <= containerTop + 1 && rect.bottom > containerTop + 1) {
+        next.add(uid);
+      }
+    }
+    if (!isSameUidSet(stuckGroupUids.value, next)) {
+      stuckGroupUids.value = next;
+    }
+  };
+
+  const scheduleStickyStuckUpdate = () => {
+    cancelAnimationFrame(stickyStuckRaf);
+    stickyStuckRaf = requestAnimationFrame(updateStickyStuck);
+  };
+
   defineExpose({
     getScrollElement: () => messageContainerRef.value,
     locate: handleMinimapLocate,
@@ -327,9 +364,28 @@
   // 首屏与切换会话时容器都是全新挂载（scrollTop 为 0），先瞬时定位到底部，
   // 再在首帧布局后补一次，避免历史消息渲染过程中出现从顶部滚到底部的动画
   onMounted(() => {
+    const container = messageContainerRef.value;
+    container?.addEventListener('scroll', scheduleStickyStuckUpdate, { passive: true });
     if (!props.messageGroups?.length) return;
     jumpToBottom();
-    requestAnimationFrame(() => jumpToBottom());
+    requestAnimationFrame(() => {
+      jumpToBottom();
+      updateStickyStuck();
+    });
+  });
+
+  watch(
+    [messageTurns, () => props.renderMode, () => props.enableSelection],
+    async () => {
+      await nextTick();
+      updateStickyStuck();
+    },
+    { flush: 'post' },
+  );
+
+  onScopeDispose(() => {
+    cancelAnimationFrame(stickyStuckRaf);
+    messageContainerRef.value?.removeEventListener('scroll', scheduleStickyStuckUpdate);
   });
 
   const { copy } = useClipboard();
@@ -457,6 +513,12 @@
         top: 0;
         z-index: 1;
         background-color: var(--ai-message-sticky-bg, #fff);
+      }
+
+      // 仅真正贴顶吸附时给提问气泡投影（正常流式位置不加）
+      // Drop shadow：X 0 / Y 2 / Blur 6 / Spread 0 / #C6D0E0
+      &.is-sticky.is-stuck .ai-user-message-content {
+        box-shadow: 0 2px 6px 0 #c6d0e0;
       }
 
       &-enabled-selection {
