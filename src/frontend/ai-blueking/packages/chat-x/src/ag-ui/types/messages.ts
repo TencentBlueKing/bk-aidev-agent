@@ -132,10 +132,24 @@ export type HiddenSystemMessage = BaseMessage<MessageRole.HiddenSystem, string>;
 
 export type HiddenUserMessage = BaseMessage<MessageRole.HiddenUser, string>;
 
-export type InfoMessage = BaseMessage<MessageRole.Info, string>;
+export interface InfoMessage extends BaseMessage<MessageRole.Info, string> {
+  property?: BaseMessage<MessageRole.Info, string>['property'] & {
+    /** 分支会话的分叉点提示；存在时渲染为「从其他会话中继续」分隔线 */
+    fork_info?: MessageForkInfo;
+  };
+}
 
 export type LoadingMessage = BaseMessage<MessageRole.Loading, string>;
 export type Message = MessageMap[MessageType];
+/** 分叉点信息，字段与后端 property.fork_info 保持一致 */
+export type MessageForkInfo = {
+  /** 新会话复制到的最后一条消息 ID */
+  last_copied_content_id?: number | string;
+  /** 点击分支时所在的消息 ID */
+  source_content_id: number | string;
+  /** 来源会话编码 */
+  source_session_code: string;
+};
 export type MessageMap = AIBluekingMessageMap & {
   [MessageRole.Activity]: ActivityMessage;
   [MessageRole.Assistant]: AssistantMessage;

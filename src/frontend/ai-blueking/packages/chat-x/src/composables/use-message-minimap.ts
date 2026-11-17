@@ -108,11 +108,13 @@ export const getAnswerText = (messages: Message[] = []): string => {
   return parts.join(' ');
 };
 
-/** 在消息容器的直接子节点中按 uid 找消息组元素 */
+/** 消息容器内所有消息组元素（消息组按问答轮次包在一层 wrapper 里，不一定是直接子节点） */
+const getMessageGroupElements = (container: HTMLElement | null | undefined) =>
+  Array.from(container?.querySelectorAll<HTMLElement>('[data-message-group-id]') ?? []);
+
+/** 在消息容器内按 uid 找消息组元素 */
 export const findMessageGroupElement = (container: HTMLElement | null | undefined, uid: string) =>
-  Array.from(container?.children ?? []).find(
-    (element): element is HTMLElement => element instanceof HTMLElement && element.dataset.messageGroupId === uid,
-  );
+  getMessageGroupElements(container).find(element => element.dataset.messageGroupId === uid);
 
 /**
  * 消息定位器的数据逻辑：配对问答轮次，并以消息容器为 root 计算哪些轮次出现在可视区
@@ -170,8 +172,8 @@ export const useMessageMinimap = (options: {
         { root: container },
       );
       const uids = new Set(list.flatMap(round => [round.userGroup.uid, round.answerGroup?.uid ?? '']));
-      for (const element of Array.from(container.children)) {
-        if (element instanceof HTMLElement && uids.has(element.dataset.messageGroupId ?? '')) {
+      for (const element of getMessageGroupElements(container)) {
+        if (uids.has(element.dataset.messageGroupId ?? '')) {
           observer.observe(element);
         }
       }

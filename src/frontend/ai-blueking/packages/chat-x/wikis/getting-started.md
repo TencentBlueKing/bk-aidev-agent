@@ -407,7 +407,7 @@ import {
   MessageContentType,
 
   // 预置工具按钮
-  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、重新生成、分享
+  CONST_MESSAGE_TOOLS, // AI 消息默认工具：复制、重新生成、新建分支会话、分享
   CONST_USER_MESSAGE_TOOLS, // 用户消息默认工具：复制、编辑、删除
   CONST_UPDATE_TOOLS, // 更新工具：点赞、不满意、删除
 } from '@blueking/chat-x';
