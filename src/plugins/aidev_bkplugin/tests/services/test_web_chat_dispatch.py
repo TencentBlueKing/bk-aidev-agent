@@ -5,20 +5,20 @@ from unittest.mock import Mock
 
 import pytest
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
+from aidev_bkplugin.services.agent_builder import AgentBuilder
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.views import chat
 
 
 @pytest.fixture
-def remote_view(monkeypatch, settings):
-    settings.BKAI_CHAT_CELERY_ENABLED = True
+def remote_view(monkeypatch):
     resources = Mock(app_code="test-app", tenant_id="tenant")
     resources.get_agent_code.return_value = "agent"
     manager = Mock()
     manager.prepare_chat_history.return_value = ("session", "saved-turn")
     monkeypatch.setattr(chat, "SessionManager", Mock(return_value=manager))
     builder = Mock(side_effect=AssertionError("Web must not build an Agent"))
-    monkeypatch.setattr(chat, "AgentBuilder", builder)
+    monkeypatch.setattr(AgentBuilder, "__init__", builder)
     dispatcher = Mock()
     monkeypatch.setattr(chat, "ChatDispatcher", Mock(return_value=dispatcher))
     monkeypatch.setattr(chat.AgentHelper, "get_authorize_prompt", Mock(return_value=None))
@@ -32,7 +32,12 @@ def remote_view(monkeypatch, settings):
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("resume", [False, True])
-def test_create_dispatches_sync_and_resume_without_build(remote_view, monkeypatch, stream, resume):
+@pytest.mark.parametrize("removed_flag", [None, False])
+def test_create_dispatches_sync_and_resume_without_build(
+    remote_view, monkeypatch, settings, stream, resume, removed_flag
+):
+    if removed_flag is not None:
+        settings.BKAI_CHAT_CELERY_ENABLED = removed_flag
     ek = ExecuteKwargs(stream=stream, resume=[{"interruptId": "q", "payload": "answer"}] if resume else None)
     data = dict(
         execute_kwargs=ek,
@@ -103,4 +108,42 @@ def test_attach_does_not_create_session_even_with_persist_input(remote_view, mon
     remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
     remote_view.manager.get_or_create_by_session_code.assert_not_called()
     remote_view.manager.prepare_chat_history.assert_not_called()
+    remote_view.builder.assert_not_called()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_dispatch_failure_never_falls_back_to_web(remote_view, monkeypatch, stream):
+    data = dict(
+        execute_kwargs=ExecuteKwargs(stream=stream),
+        session_code="",
+        thread_id="thread",
+        input="hello",
+        chat_history=[],
+        agent_type="chat",
+    )
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=Mock(validated_data=data)))
+    remote_view.dispatcher.execute.side_effect = RuntimeError("broker unavailable")
+    with pytest.raises(Exception, match="broker unavailable"):
+        remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
+    remote_view.dispatcher.execute.assert_called_once()
+    remote_view.builder.assert_not_called()
+    remote_view.view.streaming_response.assert_not_called()
+
+
+def test_flow_uses_existing_entry_without_chat_dispatch(remote_view, monkeypatch):
+    data = dict(
+        execute_kwargs=ExecuteKwargs(stream=True),
+        session_code="session",
+        thread_id="",
+        input="hello",
+        chat_history=[],
+        agent_type="flow",
+    )
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=Mock(validated_data=data)))
+    remote_view.view._save_user_input = Mock(return_value="turn")
+    remote_view.view._handle_flow_agent = Mock(return_value="flow-response")
+    response = remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
+    assert response == "flow-response"
+    remote_view.view._handle_flow_agent.assert_called_once()
+    remote_view.dispatcher.execute.assert_not_called()
     remote_view.builder.assert_not_called()

@@ -22,18 +22,18 @@ agent = AgentInstanceFactory.build_agent(
 
 ## 普通 Chat 转入 Celery
 
-BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLED` 默认值为 `1`，普通 HTTP Chat 在视图入口通过 `ChatDispatcher` 投递 Celery。Web 完成鉴权、参数校验及会话准备，不构建 Agent。显式传入的历史先写入会话；worker 从 SESSION 读取完整历史并构建一次 Agent，保留命令切换和 resume 语义，不再读完历史后用消息快照覆盖。
+BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。普通 HTTP Chat 固定在视图入口通过 `ChatDispatcher` 投递 Celery。Web 完成鉴权、参数校验及会话准备，不构建 Agent。显式传入的历史先写入会话；worker 从 SESSION 读取完整历史并构建一次 Agent，保留命令切换和 resume 语义，不再读完历史后用消息快照覆盖。
 
 流式调用链为 `Chat API → ChatDispatcher → bkai_agent_task → worker 构建 Agent → ProducerOnlyRunner`。同一次 HTTP 请求返回 `text/event-stream`，先发送 SSE 注释以刷新响应头，再等待 worker 启动回执并转发共享事件；不返回任务 ID 要求客户端轮询。启动失败或等待超时输出 SSE 错误与结束事件。同步请求等待 worker 结果，继续返回原 JSON 响应。
 
-attach 要求已有 `session_code` 和 `stream=True`，先通过用户态会话查询校验访问权限，再接入已有事件流，不投递、不构建 Agent、不保存输入或创建新 turn。worker 的流式 producer 不注册消费者；同步 resume 使用 inline producer 并在 worker 内聚合事件。`get_producer_runner()` 只负责 worker 内 producer 的执行策略；移除 SDK 的 `RemoteProducerRunner`、Web 的 `CeleryChatRunner` 及 AgentBuilder 的远端注入开关。关闭 Celery 时，原 HTTP 本地执行路径保留；直接使用 SDK/AgentBuilder 的代码保持本地策略，原插件异步入口保持自己的 Celery 调度。
+attach 要求已有 `session_code` 和 `stream=True`，先通过用户态会话查询校验访问权限，再接入已有事件流，不投递、不构建 Agent、不保存输入或创建新 turn。worker 的流式 producer 不注册消费者；同步 resume 使用 inline producer 并在 worker 内聚合事件。`get_producer_runner()` 只负责 worker 内 producer 的执行策略；移除 SDK 的 `RemoteProducerRunner`、Web 的 `CeleryChatRunner` 及 AgentBuilder 的远端注入开关。HTTP Chat 不提供本地备用执行路径；直接使用 SDK/AgentBuilder 的代码保持本地策略，原插件异步入口保持自己的 Celery 调度。
 
 启用前：
 
 1. Web 和 worker 更新到同一版本。本轮任务协议从 v1 改为 v2；升级前暂停入口并排空旧任务，避免新旧消息混用。本功能不新增调度表或数据库迁移。
 2. 配置共享 Redis 或其他支持回放的跨进程消息后端；InMemory 会明确拒绝远端调度。Web 和 worker 必须共享消息后端、broker 和应用配置，并继续使用原有会话及 checkpoint 存储。
 3. worker 消费 `bkai_agent_task` 队列，并加载 `aidev_bkplugin.tasks`。实际并发由 worker pool 和 `--concurrency` 决定；runner 不额外扩张任务并发。
-4. `BKAI_CHAT_CELERY_ENABLED` 默认开启，部署前须准备好上述依赖。需要回退本地执行时，在 Web 和 worker 设置 `BKAI_CHAT_CELERY_ENABLED=0`，并先排空已提交任务。旧变量 `BKAPP_CHAT_CELERY_ENABLED` 不再读取。远端投递仅在 HTTP Chat 视图入口发生，worker 构建不再需要关闭调度的开关。
+4. 普通 HTTP Chat 必须具备 worker、broker 和共享消息后端；调度失败返回错误，不自动改为本地执行。旧 Chat Celery 开关已移除，回退通过部署版本完成。
 
 模板通过 `bin/start_celery.sh` 启动 worker，`BKAI_CELERY_CONCURRENCY` 控制线程并发，未设置或为空时默认 `16`。一个 worker 的三个队列共享这 16 个执行槽位，副本数仍为 1；已有应用需同步启动脚本及 `app_desc.yml`，仅升级插件包不会修改已有启动命令。
 

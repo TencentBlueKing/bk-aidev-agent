@@ -12,14 +12,11 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
-from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
 
 from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
-from aidev_bkplugin.services.agent_builder import AgentBuilder
-from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.chat_tracing import chat_request_span
@@ -77,7 +74,6 @@ class ChatCompletionViewSet(PluginViewSet):
             session_temporary = data.get("session_temporary")
             # 获取输入
             _input = data["input"]
-            chat_history_raw = data["chat_history"]
             agent_type = data["agent_type"]
             thread_id = data["thread_id"]
             # persist_input: 当为 True 且 session_code 为空时，自动创建 session
@@ -121,94 +117,7 @@ class ChatCompletionViewSet(PluginViewSet):
                     resource_manager=rm,
                 )
 
-            if getattr(settings, "BKAI_CHAT_CELERY_ENABLED", True):
-                return self._dispatch_chat(data, username, rm, session_code, turn_id)
-
-            if thread_id:
-                # chat_history 已经过 serializer 校验，元素必含 role/content
-                chat_history = [ChatPrompt(role=each["role"], content=each["content"]) for each in chat_history_raw]
-                if _input:
-                    chat_history.append(ChatPrompt(role="user", content=_input))
-                if not chat_history:
-                    raise ClientBlueException(message="input or chat_history is required when using thread_id")
-                return self._handle_thread_id_mode_with_chat_history(
-                    thread_id=thread_id,
-                    chat_history=chat_history,
-                    username=username,
-                    execute_kwargs=execute_kwargs,
-                    turn_id=turn_id,
-                    channel_type=self.channel_type,
-                    resource_manager=rm,
-                    model=data.get("model", ""),
-                    reasoning_effort=data.get("reasoning_effort"),
-                )
-
-            # 走到这里 thread_id 必为空（上面已 return）；由 serializer 中的 uuid 兜底规则可推出
-            # session_code 必为真。保留显式校验仅作为不变式被破坏时的防御性兜底。
-            if not session_code:
-                raise ClientBlueException(message="session_code or thread_id is required")
-            # ask_user_question interrupt resume 三态处理的 DB 写入已下沉到 agent 侧
-            # ChatCompletionAgent.execute()（提交 1），入口层只产出 turn_id 并透传 _input。
-            # 1. resume + input → 用户跳过提问（agent 侧补 tool + cancel interrupt，清空 resume）
-            # 2. resume + 无 input → 用户答了题（agent 侧 UPDATE interrupt 为 resolved）
-            # 3. 无 resume → 普通新对话（agent 侧补 user 记录）
-            turn_id = self._resolve_chat_turn_id(session_code, username, _input, rm, turn_id)
-            if hasattr(execute_kwargs, "turn_id"):
-                execute_kwargs.turn_id = turn_id
-            execute_kwargs.input = _input
-            # 模型热更新持久化：model 非空时写回 session.resources.model，使 get session 反映当前模型
-            # 写回失败不阻塞 chat 主流程（平台 5xx/网络抖动时仅记录日志）
-            model = data.get("model", "")
-            if model:
-                try:
-                    self.client.api.update_chat_session(
-                        path_params={"session_code": session_code},
-                        json={"model": model},
-                        headers={"X-BKAIDEV-USER": username},
-                    )
-                except Exception:
-                    logger.exception(
-                        "[chat_completion] 写回 session.resources.model 失败: session_code=%s, model=%s",
-                        session_code,
-                        model,
-                    )
-
-            agent_instance = AgentBuilder(
-                username=request.user.username,
-                turn_id=turn_id,
-                resource_manager=rm,
-                agent_code=agent_code,
-                model=model,
-                reasoning_effort=data.get("reasoning_effort"),
-            ).by_session_code(
-                session_code,
-                version=execute_kwargs.version,
-                channel_type=self.channel_type,
-            )
-            if not _input and not agent_instance.chat_history:
-                raise ClientBlueException(message="The chat history cannot be empty. Please provide 'input' parameter.")
-            # 执行 agent
-            if execute_kwargs.stream:
-                manager = SessionManager(username=username, resource_manager=rm, agent_code=agent_code)
-                stream_out = AgentExecutor(manager).execute_with_save(
-                    agent_instance,
-                    execute_kwargs,
-                    session_code,
-                    turn_id=turn_id,
-                )
-                handler = getattr(agent_instance, "event_handler", None)
-                if handler and hasattr(handler, "set_streaming_started"):
-                    handler.set_streaming_started()
-                return self.streaming_response(stream_out, session_code=session_code)
-            else:
-                manager = SessionManager(username=username, resource_manager=rm, agent_code=agent_code)
-                result = AgentExecutor(manager).execute_with_save(
-                    agent_instance,
-                    execute_kwargs,
-                    session_code,
-                    turn_id=turn_id,
-                )
-                return Response(result)
+            return self._dispatch_chat(data, username, rm, session_code, turn_id)
         except Exception as err:
             logger.exception(f"ChatCompletionViewSet create error: {err}")
             message = getattr(err, "message", str(err))
@@ -284,64 +193,6 @@ class ChatCompletionViewSet(PluginViewSet):
         if execute_kwargs.stream:
             return self.streaming_response(output, session_code=session_code)
         return Response(output)
-
-    def _handle_thread_id_mode_with_chat_history(
-        self,
-        thread_id: str,
-        chat_history: list[ChatPrompt],
-        username: str,
-        execute_kwargs: ExecuteKwargs,
-        turn_id: str,
-        channel_type: str,
-        resource_manager: ResourceManagerProtocol,
-        model: str = "",
-        reasoning_effort: str | None = None,
-    ):
-        """
-        通过 thread_id 自动管理会话，使用 chat_history 初始化，自动保存到 session
-        """
-        agent_code = resource_manager.get_agent_code()
-        builder = AgentBuilder(
-            username=username,
-            turn_id=turn_id,
-            resource_manager=resource_manager,
-            agent_code=agent_code,
-            model=model,
-            reasoning_effort=reasoning_effort,
-        )
-        agent_instance, session_code = builder.by_thread_id_with_chat_history(
-            thread_id=thread_id,
-            chat_history=chat_history,
-            version=execute_kwargs.version,
-            channel_type=channel_type,
-        )
-        # 模型热更新持久化：model 非空时写回 session.resources.model（写回失败不阻塞主流程）
-        if model:
-            try:
-                self.client.api.update_chat_session(
-                    path_params={"session_code": session_code},
-                    json={"model": model},
-                    headers={"X-BKAIDEV-USER": username},
-                )
-            except Exception:
-                logger.exception(
-                    "[chat_completion] 写回 session.resources.model 失败: session_code=%s, model=%s",
-                    session_code,
-                    model,
-                )
-        turn_id = builder.turn_id or turn_id
-        execute_kwargs.session_code = session_code
-        if hasattr(execute_kwargs, "turn_id"):
-            execute_kwargs.turn_id = turn_id
-        result = AgentExecutor(builder.session_manager).execute_with_save(
-            agent_instance,
-            execute_kwargs,
-            session_code,
-            turn_id=turn_id,
-        )
-        if execute_kwargs.stream:
-            return self.streaming_response(result, session_code=session_code)
-        return Response(result)
 
     def _save_user_input(
         self,
