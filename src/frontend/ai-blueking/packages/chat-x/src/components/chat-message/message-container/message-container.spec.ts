@@ -472,6 +472,31 @@ describe('MessageContainer', () => {
       slotProps?.onForkSourceClick?.(forkInfo);
       expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo, infoMessage);
     });
+
+    it('未传入回调或处于分享态时不向消息透传 onForkSourceClick', async () => {
+      let slotProps: { onForkSourceClick?: (info: typeof forkInfo) => void } | undefined;
+      const captureInfoSlot = (props: { message: Message; onForkSourceClick?: (info: typeof forkInfo) => void }) => {
+        if (props.message.role === MessageRole.Info) {
+          slotProps = props;
+        }
+        return h('div');
+      };
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: [infoMessage], messageGroups: buildForkGroups() },
+        slots: { default: captureInfoSlot },
+      });
+      await nextTick();
+      expect(slotProps?.onForkSourceClick).toBeUndefined();
+
+      slotProps = undefined;
+      await wrapper.setProps({
+        onForkSourceClick: vi.fn(),
+        renderMode: RenderMode.Share,
+      });
+      await nextTick();
+      expect(slotProps?.onForkSourceClick).toBeUndefined();
+    });
   });
 
   describe('消息定位', () => {

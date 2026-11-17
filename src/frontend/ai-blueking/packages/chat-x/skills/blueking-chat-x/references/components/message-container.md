@@ -152,11 +152,11 @@ document.querySelectorAll('[data-message-group-id="xxx"] [data-message-id]');
 
 ## 提问吸附置顶
 
-AI 回复超出一屏时，本轮的用户提问组吸附在消息区顶部（`.message-group.is-sticky`：`position: sticky; top: 0`，白底遮住滚过的内容，层级低于底部的「停止生成 / 返回底部」按钮）。吸附范围以所在的 `.ai-message-turn` 为边界：滚到下一轮时，上一轮提问随内容离开，由下一轮提问接替吸附。
+AI 回复超出一屏时，本轮的用户提问组吸附在消息区顶部（`.message-group.is-sticky`：`position: sticky; top: 0`，背景 `var(--ai-message-sticky-bg, #fff)` 遮住滚过的内容，层级低于底部的「停止生成 / 返回底部」按钮）。吸附范围以所在的 `.ai-message-turn` 为边界：滚到下一轮时，上一轮提问随内容离开，由下一轮提问接替吸附。
 
 - 分享态（`renderMode === RenderMode.Share`）与多选态（`enableSelection`）不吸附，方便完整浏览和勾选
 - 轮次 wrapper 不设定位，消息组的 `offsetParent` 仍是滚动容器；`locate(uid)` 定位到吸附中的提问组时，改用所在轮次 wrapper 的 `offsetTop`
-- 吸附条为白色背景，宿主背景不是白色时会呈现白色色块
+- 吸附背景默认白色。宿主消息区不是白色时，在容器上覆盖 `--ai-message-sticky-bg`
 
 ## 等待响应（Loading 自动注入）
 
@@ -681,7 +681,7 @@ AI 回复状态为 `error` 时，消息以错误样式展示。助手组过程�
 | onUserInputConfirm       | `(message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —       | 用户编辑消息确认回调                                                                                                                     |
 | onUserShortcutConfirm    | `(message: Message, formModel: Record<string, unknown>) => Promise<void>`                    | —       | 用户快捷指令表单提交回调                                                                                                                 |
 | onInterruptResume        | `OnInterruptResume`                                                                          | —       | AG-UI human-in-the-loop 中断响应回调，透传给 `MessageRender` → `InterruptMessageRender`                                                  |
-| onForkSourceClick        | `(forkInfo: MessageForkInfo, message: Message) => void`                                      | —       | 点击分支会话「从其他会话中继续」分隔线的回调，经 `MessageRender` → `InfoMessage` 触发；`message` 为该条分叉点提示消息。业务方据 `forkInfo.source_session_code` 切回来源会话 |
+| onForkSourceClick        | `(forkInfo: MessageForkInfo, message: Message) => void`                                      | —       | 点击分支会话「从其他会话中继续」分隔线的回调，经 `MessageRender` → `InfoMessage` 触发；`message` 为该条分叉点提示消息。业务方据 `forkInfo.source_session_code` 切回来源会话。分享态不向消息透传，未传入时分隔线不可点击 |
 | renderMode               | `RenderMode`                                                                                 | —       | 渲染模式。`Share` 模式下启用多选样式，隐藏工具栏与「停止生成」，过程状态栏按终态展示；`Test` 模式下过滤掉「分享」按钮；不传或 `Chat` 为默认行为 |
 
 ### v-model
