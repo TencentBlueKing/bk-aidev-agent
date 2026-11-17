@@ -2,22 +2,7 @@
 
 from django.db import models
 
-__all__ = ["Checkpoint", "Write", "EventSubscription", "EventDelivery", "ChatExecution"]
-
-
-class ChatExecution(models.Model):
-    """One fenced execution slot per tenant/application/session."""
-
-    scope = models.CharField(max_length=64, unique=True)
-    task_id = models.CharField(max_length=32)
-    request_key = models.CharField(max_length=64)
-    status = models.CharField(max_length=16, default="queued")
-    run_id = models.CharField(max_length=255, default="")
-    result = models.JSONField(null=True)
-    error = models.CharField(max_length=128, default="")
-    cancelled = models.BooleanField(default=False)
-    expires_at = models.DateTimeField()
-    updated_at = models.DateTimeField(auto_now=True)
+__all__ = ["Checkpoint", "Write", "EventSubscription", "EventDelivery"]
 
 
 class Checkpoint(models.Model):
