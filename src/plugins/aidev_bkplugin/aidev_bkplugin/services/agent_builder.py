@@ -173,25 +173,9 @@ class AgentBuilder:
         version: str | None = None,
         channel_type: str | None = None,
     ) -> tuple[ChatCompletionAgent, str]:
-        session_code = self.session_manager.get_or_create_by_thread_id(
-            thread_id,
-            channel_type=channel_type or ChannelType.POPUP.value,
+        session_code, self.turn_id = self.session_manager.prepare_chat_history(
+            thread_id, chat_history, turn_id=self.turn_id, channel_type=channel_type or ChannelType.POPUP.value
         )
-        if chat_history and chat_history[-1].role == PromptRole.USER.value:
-            # 最后一条 user 视为本轮新输入；历史消息不带 turn_id
-            self.session_manager.save_chat_history(session_code, chat_history[:-1])
-            last = chat_history[-1]
-            saved = self.session_manager.save_content(
-                session_code=session_code,
-                role=last.role,
-                content=last.content,
-                turn_id=self.turn_id,
-            )
-            self.turn_id = (
-                (saved.get("property") or {}).get("turn_id") if isinstance(saved, dict) else ""
-            ) or self.turn_id
-        else:
-            self.session_manager.save_chat_history(session_code, chat_history)
         try:
             agent = self._build_session_agent_for_thread(
                 session_code,

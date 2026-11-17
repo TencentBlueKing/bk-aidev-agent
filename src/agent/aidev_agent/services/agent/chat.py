@@ -1469,6 +1469,7 @@ class ChatCompletionAgent(BaseModel):
                 thread_id=queue_thread_id or agent_input.thread_id,
                 defer_cleanup_on_complete=background_only,
                 producer_observer=observer,
+                resource_manager=self.resource_manager,
             )
             run_id = agent_input.run_id or self.thread_id
             cancel_event = helper.prepare_run(run_id)

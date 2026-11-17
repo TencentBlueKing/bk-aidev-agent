@@ -270,6 +270,29 @@ class SessionManager:
             headers=self._user_headers(),
         )
 
+    def prepare_chat_history(
+        self, thread_id: str, chat_history: list[ChatPrompt], *, turn_id: str = "", channel_type: str = "popup"
+    ) -> tuple[str, str]:
+        """Persist supplied history once before local execution or Celery dispatch."""
+        session_code = self.get_or_create_by_thread_id(
+            thread_id,
+            channel_type=channel_type or ChannelType.POPUP.value,
+        )
+        if chat_history and chat_history[-1].role == PromptRole.USER.value:
+            # 最后一条 user 视为本轮新输入；历史消息不带 turn_id
+            self.save_chat_history(session_code, chat_history[:-1])
+            last = chat_history[-1]
+            saved = self.save_content(
+                session_code=session_code,
+                role=last.role,
+                content=last.content,
+                turn_id=turn_id,
+            )
+            turn_id = ((saved.get("property") or {}).get("turn_id") if isinstance(saved, dict) else "") or turn_id
+        else:
+            self.save_chat_history(session_code, chat_history)
+        return session_code, turn_id
+
     def save_chat_history(self, session_code: str, chat_history: Iterable[ChatPrompt] | None) -> None:
         """按顺序持久化 ``chat_history``；部分失败时记录错误但不中断循环。"""
         errors: list[tuple[int, str]] = []
