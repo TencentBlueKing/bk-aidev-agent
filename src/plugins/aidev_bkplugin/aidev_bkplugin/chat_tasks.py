@@ -7,7 +7,8 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs, KnowledgeSettings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.factory import message_handler_factory
-from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
+from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
+from aidev_agent.services.resume_events import uses_resume_event_stream
 from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections
@@ -18,9 +19,9 @@ from aidev_bkplugin.services.background_dispatch import attach_trace_context, de
 from aidev_bkplugin.services.producer_dispatch import (
     CHAT_TASK_NAME,
     ChatExecutionSpec,
-    DispatchResourceManager,
     send_chat_reply,
 )
+from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
@@ -35,7 +36,6 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
     token = None
     execution_spec = None
     handler = message_handler_factory.get()
-    sync_lock = False
     try:
         execution_spec = ChatExecutionSpec.model_validate(spec)
         if execution_spec.protocol_version != 1:
@@ -49,10 +49,6 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
         if handler.check_cancel_signal(execution_spec.session_code, run_id=task_id):
             handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
             raise RuntimeError("Chat execution cancelled")
-        if not execution_spec.execute_kwargs.get("stream", False):
-            sync_lock = handler.acquire_producer(execution_spec.session_code)
-            if not sync_lock:
-                raise RuntimeError("A Chat producer is already active")
         token = attach_trace_context(execution_spec.trace_context)
         result = execute_chat_producer(execution_spec, task_id, expires_at)
         if not execution_spec.execute_kwargs.get("stream", False):
@@ -62,8 +58,6 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
             send_chat_reply(execution_spec, task_id, kind="error", error=type(exc).__name__)
         raise
     finally:
-        if sync_lock:
-            handler.release_producer(execution_spec.session_code)
         detach_trace_context(token)
         close_old_connections()
 
@@ -85,16 +79,31 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
     agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
     agent.chat_history = [ChatPrompt.model_validate(prompt) for prompt in spec.chat_history]
     agent.knowledge_query_options = KnowledgeSettings.model_validate(spec.knowledge_query_options)
-    runner = ProducerOnlyRunner(partial(mark_chat_started, spec, task_id, expires_at))
-    agent.resource_manager = DispatchResourceManager(agent.resource_manager, runner)
     execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
+    # Only an HTTP stream has a separate Web consumer. Synchronous resume
+    # consumes its internal AG-UI stream here to aggregate the response.
+    runner = (
+        ProducerOnlyRunner(partial(mark_chat_started, spec, task_id, expires_at))
+        if execute_kwargs.stream
+        else run_producer_inline
+    )
+    agent.resource_manager = ProducerResourceManager(agent.resource_manager, runner)
     execute_kwargs.background_only = True
     executor = AgentExecutor(builder.session_manager)
     if time.time() >= expires_at:
         raise TimeoutError("Chat queue wait expired")
-    output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
     if not execute_kwargs.stream:
-        return output
+        # The internal stream owns its lock; only plain invoke needs one here.
+        if uses_resume_event_stream(agent.resource_manager, execute_kwargs):
+            return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
+        handler = message_handler_factory.get()
+        if not handler.acquire_producer(spec.session_code):
+            raise RuntimeError("A Chat producer is already active")
+        try:
+            return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
+        finally:
+            handler.release_producer(spec.session_code)
+    output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
     if execute_kwargs.legacy_streaming:
         helper = GeneratorStreamingHelper(thread_id=spec.session_code, resource_manager=agent.resource_manager)
         output = helper.stream(output, expected_run_id=task_id)

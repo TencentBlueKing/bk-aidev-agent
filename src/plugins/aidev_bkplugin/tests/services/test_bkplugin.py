@@ -414,8 +414,8 @@ def test_chat_build_reuses_explicit_resource_manager(monkeypatch, resume):
 @pytest.mark.parametrize("resource_class", [agent_bkplugin.AgentResourceManager, agent_bkplugin.PluginResourceManager])
 def test_worker_resources_are_task_local(resource_class):
     original = resource_class(username="first", tenant_id="tenant-first")
-    first = agent_bkplugin.WorkerResourceManager(original)
-    second = agent_bkplugin.WorkerResourceManager(resource_class(username="second", tenant_id="tenant-second"))
+    first = agent_bkplugin.ProducerResourceManager(original)
+    second = agent_bkplugin.ProducerResourceManager(resource_class(username="second", tenant_id="tenant-second"))
     assert (first.username, first.tenant_id) == ("first", "tenant-first")
     assert (second.username, second.tenant_id) == ("second", "tenant-second")
     assert first.get_producer_runner() is run_producer_inline

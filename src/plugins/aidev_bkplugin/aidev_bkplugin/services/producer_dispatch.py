@@ -66,11 +66,16 @@ class CeleryChatRunner(RemoteProducerRunner):
         spec.knowledge_query_options = agent.knowledge_query_options.model_dump(mode="json")
         spec.trace_context = capture_trace_context()
         if execute_kwargs.stream_mode == "attach":
-            return self._consume_existing(spec.session_code, handler)
+            return self._consume(spec, handler)
         task_id = self._submit(spec)
         if execute_kwargs.stream:
-            return self._consume(task_id, spec, handler)
-        return self._wait_reply(task_id, spec, handler, ready=False)["result"]
+            return self._consume(spec, handler, task_id)
+        return self._wait_reply(
+            spec.reply_channel(task_id),
+            handler,
+            expected_kind="result",
+            timeout=getattr(settings, "BKAI_CHAT_WAIT_TIMEOUT", 1800),
+        )["result"]
 
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
@@ -89,12 +94,7 @@ class CeleryChatRunner(RemoteProducerRunner):
         return task_id
 
     @staticmethod
-    def _wait_reply(task_id: str, spec: ChatExecutionSpec, handler, *, ready: bool) -> dict:
-        timeout = (
-            getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-            if ready
-            else getattr(settings, "BKAI_CHAT_WAIT_TIMEOUT", 1800)
-        )
+    def _wait_reply(channel: str, handler, *, expected_kind: str, timeout: float) -> dict:
         deadline = time.monotonic() + timeout
         offset = 0
         while True:
@@ -102,42 +102,30 @@ class CeleryChatRunner(RemoteProducerRunner):
             if remaining <= 0:
                 raise TimeoutError("Chat worker wait timed out")
             try:
-                replies, offset = handler.get_messages_since(
-                    spec.reply_channel(task_id), offset, timeout=min(1, remaining)
-                )
+                replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
                 continue
             for reply in replies:
+                if reply["kind"] not in ("error", expected_kind):
+                    continue
+                handler.mark_completed(channel)
                 if reply["kind"] == "error":
-                    handler.mark_completed(spec.reply_channel(task_id))
                     raise RuntimeError(reply["error"])
-                if reply["kind"] == ("started" if ready else "result"):
-                    handler.mark_completed(spec.reply_channel(task_id))
-                    return reply
+                return reply
 
-    def _consume(self, task_id: str, spec: ChatExecutionSpec, handler):
-        reply = self._wait_reply(task_id, spec, handler, ready=True)
+    def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
+        timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
+        run_id = None
+        if task_id:
+            reply = self._wait_reply(spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout)
+            run_id = reply["run_id"] or None
+        else:
+            deadline = time.monotonic() + timeout
+            while not handler.has_active_producer(spec.session_code) and not handler.has_pending_messages(
+                spec.session_code
+            ):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Chat stream did not become available")
+                time.sleep(0.1)
         helper = GeneratorStreamingHelper(handler, thread_id=spec.session_code, defer_cleanup_on_complete=True)
-        yield from helper.stream(iter(()), expected_run_id=reply["run_id"] or None, attach_only=True)
-
-    @staticmethod
-    def _consume_existing(session_code: str, handler):
-        deadline = time.monotonic() + getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-        while not handler.has_active_producer(session_code) and not handler.has_pending_messages(session_code):
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Chat stream did not become available")
-            time.sleep(0.1)
-        helper = GeneratorStreamingHelper(handler, thread_id=session_code, defer_cleanup_on_complete=True)
-        yield from helper.stream(iter(()), attach_only=True)
-
-
-class DispatchResourceManager:
-    def __init__(self, resources, runner):
-        self._resources = resources
-        self._runner = runner
-
-    def get_producer_runner(self):
-        return self._runner
-
-    def __getattr__(self, name):
-        return getattr(self._resources, name)
+        yield from helper.stream(iter(()), expected_run_id=run_id, attach_only=True)

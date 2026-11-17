@@ -24,7 +24,8 @@ from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .event_resource_manager import with_database_events
 from .llm import LLMService
-from .producer_dispatch import CeleryChatRunner, ChatExecutionSpec, DispatchResourceManager
+from .producer_dispatch import CeleryChatRunner, ChatExecutionSpec
+from .producer_resources import ProducerResourceManager
 
 logger = getLogger(__name__)
 
@@ -249,7 +250,7 @@ class AgentBuilder:
                 version=version,
                 channel_type=channel_type,
             )
-            execution_resource_manager = DispatchResourceManager(execution_resource_manager, CeleryChatRunner(spec))
+            execution_resource_manager = ProducerResourceManager(execution_resource_manager, CeleryChatRunner(spec))
         event_handler = AGUISessionWriter(
             session_code=session_code,
             client=AgentHelper.get_client(resource_manager=execution_resource_manager),

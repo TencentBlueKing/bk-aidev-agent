@@ -24,7 +24,9 @@ agent = AgentInstanceFactory.build_agent(
 
 BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。开启 `BKAPP_CHAT_CELERY_ENABLED=1` 后，`AgentBuilder` 注入的 `get_producer_runner()` 返回 `CeleryChatRunner`。普通 Chat 在 SDK 执行入口委托 runner，模型执行、resume 和回复持久化交给 worker；Web 保留鉴权、会话准备和共享事件流消费。插件原有后台入口继续沿用下文的 worker inline 策略。
 
-调用链为 `Chat.execute → CeleryChatRunner → bkai_agent_task → run_chat_producer → ProducerOnlyRunner`。同步请求等待任务结果；流式请求在 producer 就绪后立即消费共享消息，不等 worker 完成。worker 不注册消费者，不与 Web 抢事件。attach 只接管已有任务，不再投递。
+流式调用链为 `Chat.execute → CeleryChatRunner → bkai_agent_task → run_chat_producer → ProducerOnlyRunner`。Web 在 producer 就绪后立即消费共享消息，不等 worker 完成；流式 worker 不注册消费者，不与 Web 抢事件。attach 只接管已有任务，不再投递。
+
+上述 `ProducerOnlyRunner` 仅用于 Web 流式请求。同步请求使用 inline 策略；启用事件发布的同步 resume 在 worker 内消费 AG-UI 事件并聚合答案，内部流独占 producer 锁，任务入口不重复加锁。普通同步 invoke 没有内部流，由 worker 执行层获取和释放生产锁。接入侧统一使用 `ProducerResourceManager` 包装器选择策略，原资源管理器继续提供认证与资源访问。
 
 启用前：
 

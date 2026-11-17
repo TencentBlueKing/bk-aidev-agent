@@ -40,7 +40,7 @@ from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .background_dispatch import attach_trace_context, capture_trace_context, detach_trace_context
-from .producer_resources import WorkerResourceManager
+from .producer_resources import ProducerResourceManager
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
 
@@ -404,7 +404,7 @@ class BkpluginChat(BkpluginAgentRunner):
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
             resource_manager=(
-                WorkerResourceManager(
+                ProducerResourceManager(
                     AgentResourceManager(username=self.username) if self.username else resource_manager_factory()
                 )
                 if self._worker_execution
@@ -478,7 +478,7 @@ class BkpluginFlow(BkpluginAgentRunner):
             event_handler=handler,
             username=user,
             flow_resource_manager=(
-                WorkerResourceManager(PluginResourceManager(username=user))
+                ProducerResourceManager(PluginResourceManager(username=user))
                 if self._worker_execution
                 else PluginResourceManager(username=user)
             ),

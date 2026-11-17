@@ -6,14 +6,15 @@ from aidev_agent.packages.resource_manager.registry import ResourceManagerProtoc
 from aidev_agent.services.messages_handler.producer import ProducerRunner, run_producer_inline
 
 
-class WorkerResourceManager:
+class ProducerResourceManager:
     """只覆盖 producer 策略，认证、client 缓存和资源方法仍由原实现提供。"""
 
-    def __init__(self, resources: ResourceManagerProtocol):
+    def __init__(self, resources: ResourceManagerProtocol, runner: ProducerRunner = run_producer_inline):
         self._resources = resources
+        self._runner = runner
 
     def get_producer_runner(self) -> ProducerRunner:
-        return run_producer_inline
+        return self._runner
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._resources, name)

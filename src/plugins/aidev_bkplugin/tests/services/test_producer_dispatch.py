@@ -33,6 +33,17 @@ def handler(monkeypatch):
     return backend
 
 
+@pytest.fixture
+def worker_executor(monkeypatch, settings):
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    builder = Mock()
+    builder.by_session_code.return_value.resource_manager.event_publishing_enabled.return_value = False
+    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    executor = Mock()
+    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentExecutor", Mock(return_value=executor))
+    return executor
+
+
 def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
     sender = Mock()
     monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
@@ -78,10 +89,9 @@ def test_queued_stop_uses_existing_signal(spec, handler, monkeypatch):
 
 
 @pytest.mark.parametrize("error", [None, ValueError("private upstream detail")])
-def test_sync_uses_producer_lock_and_reply_backend(spec, handler, monkeypatch, error):
+def test_sync_uses_producer_lock_and_reply_backend(spec, handler, worker_executor, error):
     spec.execute_kwargs = {"stream": False}
-    execute = Mock(return_value={"answer": "done"}, side_effect=error)
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.execute_chat_producer", execute)
+    worker_executor.execute_with_save = Mock(return_value={"answer": "done"}, side_effect=error)
     if error:
         with pytest.raises(ValueError):
             run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
@@ -96,14 +106,12 @@ def test_sync_uses_producer_lock_and_reply_backend(spec, handler, monkeypatch, e
     handler.mark_completed.assert_not_called()
 
 
-def test_sync_lock_conflict_does_not_execute_or_release_other_owner(spec, handler, monkeypatch):
+def test_sync_lock_conflict_does_not_execute_or_release_other_owner(spec, handler, worker_executor):
     spec.execute_kwargs = {"stream": False}
     handler.acquire_producer.return_value = False
-    execute = Mock()
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.execute_chat_producer", execute)
     with pytest.raises(RuntimeError, match="already active"):
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
-    execute.assert_not_called()
+    worker_executor.execute_with_save.assert_not_called()
     handler.release_producer.assert_not_called()
 
 
@@ -120,20 +128,24 @@ def test_started_after_expiry_does_not_publish_ready(spec, handler):
 
 def test_wait_ignores_poll_timeout_and_returns_result(spec, handler):
     handler.get_messages_since.side_effect = [TimeoutError(), ([{"kind": "result", "result": "done"}], 1)]
-    assert CeleryChatRunner._wait_reply("task-id", spec, handler, ready=False)["result"] == "done"
+    assert (
+        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="result", timeout=30)[
+            "result"
+        ]
+        == "done"
+    )
     handler.mark_completed.assert_called_once_with(spec.reply_channel("task-id"))
 
 
 def test_worker_error_during_startup_reaches_web(spec, handler):
     handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
     with pytest.raises(RuntimeError, match="ValueError"):
-        CeleryChatRunner._wait_reply("task-id", spec, handler, ready=True)
+        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=30)
 
 
-def test_wait_has_bounded_timeout(spec, handler, settings):
-    settings.BKAI_CHAT_QUEUE_TIMEOUT = 0
+def test_wait_has_bounded_timeout(spec, handler):
     with pytest.raises(TimeoutError):
-        CeleryChatRunner._wait_reply("task-id", spec, handler, ready=True)
+        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=0)
     handler.get_messages_since.assert_not_called()
 
 
@@ -141,7 +153,7 @@ def test_attach_never_submits(spec, handler, monkeypatch):
     sender = Mock()
     monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
     consume = Mock(return_value=iter(["replay"]))
-    monkeypatch.setattr(CeleryChatRunner, "_consume_existing", consume)
+    monkeypatch.setattr(CeleryChatRunner, "_consume", consume)
     agent = Mock(chat_history=[])
     agent.knowledge_query_options.model_dump.return_value = {}
     result = CeleryChatRunner(spec).execute_chat(agent, ExecuteKwargs(stream=True, stream_mode="attach"))
@@ -154,7 +166,7 @@ def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatc
     helper = Mock()
     helper.stream.return_value = iter(["live-event"])
     monkeypatch.setattr(producer_dispatch, "GeneratorStreamingHelper", Mock(return_value=helper))
-    assert list(CeleryChatRunner(spec)._consume("task-id", spec, handler)) == ["live-event"]
+    assert list(CeleryChatRunner(spec)._consume(spec, handler, "task-id")) == ["live-event"]
     assert helper.stream.call_args.kwargs == {"expected_run_id": "worker-run", "attach_only": True}
 
 
@@ -165,7 +177,7 @@ def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkey
     for _ in range(2):
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
     assert execute.call_count == 2
-    assert handler.acquire_producer.call_count == handler.release_producer.call_count == 2
+    handler.acquire_producer.assert_not_called()
 
 
 def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, settings):
