@@ -11,6 +11,15 @@ content 列表在构造 API 请求时沿用原来的文字提取：图文混合�
 旧平台缺少该字段时保持关闭。自定义装配配置的调用方，应在确认目标平台已支持多模态后显式设置该字段。
 该标记只控制 SDK 请求编码，不加入知识查询 API 的请求字段，不增加探测请求或失败重试。
 
+## 文档地图
+
+- [docs/README_FRAMEWORK.md](docs/README_FRAMEWORK.md) —— SDK 框架说明
+- [docs/craw-adapter.md](docs/craw-adapter.md) —— Craw 适配层（OpenClaw / Hermes 等 CLI 内核接入：Proxy + 周期读写）
+- [docs/craw-isolation-publish.md](docs/craw-isolation-publish.md) —— craw 隔离运行时的模板生成与发布约定
+- [docs/sdk_context_compression.md](docs/sdk_context_compression.md) —— 上下文压缩
+- [docs/release.md](docs/release.md) —— 发布说明 ｜ [CHANGELOG.md](CHANGELOG.md) —— 变更记录
+- [AGENTS.md](AGENTS.md) —— AI 协作入口（命令 / 约定）
+
 ## 开发指南
 
 ### 初始化

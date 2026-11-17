@@ -1,0 +1,31 @@
+# CHANGELOG
+
+## 2026-08-31 · OpenClaw WS 工具事件与 MCP 会话清理
+
+- **变更**：把已在 PaaS Demo 验证的 OpenClaw WebSocket `tool-events` 传输收敛到 `packages/craw`；`BKAI_OPENCLAW_TRANSPORT=ws` 时输出 `TOOL_CALL_START / ARGS / END / RESULT`，HTTP 保留为纯文本回退。MCP egress 增加 DELETE 转发，支持 streamable HTTP 会话关闭；模型 QPM 429 返回明确限流提示。
+- **依赖**：新增 `websocket-client`。
+- **验证**：`tests/packages/craw/` 106 passed，包含 WS 工具事件闭合、transport 回退、DELETE 用户身份注入和限流错误脱敏。
+
+## 2026-08-25 · craw MCP 用户 token 出口
+
+- **变更**：聊天入口用登录态换用户 `access_token`；对话期间租约占用本机 `mcp_egress` 共享槽，注入 `X-Bkapi-Authorization`。盘上零真 token。隔离应用设 `BKAI_BKAPI_USE_USER_TOKEN=0`，用户 token 不进 bkapi client。
+- **验证**：`tests/packages/craw/` 102 passed（含租约注入、无租约 401、TTL、routes 落盘）。
+
+## 2026-08-21 · CrawSyncer 多产物 commit 事务化 + 共用插件模板
+
+- **变更**：`CrawSyncer` 提交阶段在第二次及后续 rename 失败时，从 backup 完整回滚全部正式文件，不再出现「新 SOUL + 旧 agent-config」。staging 文件名带周期 uuid；同一 craw home 提交持排它锁。普通智能体与协作智能体共用 `template/builtin/`；Craw 的 Docker 内核只作为部署外壳维护。凭据与环境域名不进模板。
+- **验证**：`tests/packages/craw/` 91 → 93（含第二次 commit 失败回滚、重叠周期串行化）。
+
+## 2026-07-14 · CrawSyncer 扩展全配置同步
+
+- **变更**：`CrawSyncer` 从「只写 `SOUL.md`」泛化为「同步一组配置产物」——新增 `artifacts_provider()` 回调（`{相对路径: 内容}`，逐产物写入 + 读回校验）；新增 `agent_config_to_artifacts(config)` 把平台 `AgentConfig` 渲染成 `SOUL.md`（Prompt）+ `agent-config.json`（聚合 MCP / Skills / tools）。`soul_provider` 与 `soul_written_bytes` / `soul_verified` 保留为向后兼容别名。
+- **范围**：同步 Prompt / MCP / Skills 三类（平台 `AgentConfig` 不含内核运行期 Memory）；内核侧消费产物（`agent apply`）为部署侧机制，不在本层。
+- **验证**：单测 `tests/packages/craw/` 29 → 36 例；colima sim 跨容器实跑（agent 写全配置产物到共享卷 → openclaw 侧 `SOUL.md` + `agent-config.json` 落盘、读回一致）。
+
+## 2026-07-14 · Craw 适配层（packages/craw）
+
+- **背景**：AIDEV 插件对接 CLI 形态内核（OpenClaw / Hermes）此前散落在业务插件的 extend 层，各写一套转发与 registry 覆盖。
+- **变更**：新增 `aidev_agent/packages/craw/`——统一后端抽象（`OpenClawBackend` / `HermesBackend`）+ `CrawCompletionAgent`（CHAT 转发、SSE→AG-UI）+ `CrawSyncer`（周期 read/write）+ `enable_chat_takeover()`（`BKAI_CRAW_BACKEND` env 门控，未设零影响）；用户身份经 `X-Bkai-Access-Token` 透传（对齐 bkai-cli 池模式契约），日志只落 identity 哈希。`httpx` 转为显式依赖。
+- **验证**：单测 `tests/packages/craw/` 29 例（`make test path=tests/packages/craw`）；colima 双容器端到端三变体各两轮 ALL PASS——openclaw 直连（`run.sh`）、hermes gateway api_server（`run-hermes.sh`）、业务插件集成（`run-plugin.sh`，整链 `/chat_completion/` 非流式 + AG-UI 流式；插件侧配套一个 extend 层薄壳触发 `enable_chat_takeover()`）。
+- **隔离验证**（`run-isolation.sh`，真实网关环境）：REAL/FAKE 双用户 token 三层闭环——判定面（MCP 网关 initialize 建连即校验，REAL 通过 / FAKE 400）、隔离链（bkai-cli 池模式：identityId 分流独立内核、mcp-probe accessible/rejected、用户 token 不落盘仅 egress 内存注入）、对话行为面（同题问两身份：REAL 列出可用 MCP 工具并实调成功，FAKE 如实报无可用 MCP；与 egress 传输层流水吻合）。SDK `CrawIdentity.identity_id` 与池路由 identityId 同 sha256[:16] 契约实测一致。
+- **注**：文档见 [docs/craw-adapter.md](docs/craw-adapter.md)。
