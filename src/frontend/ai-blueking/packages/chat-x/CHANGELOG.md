@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-11-13 12:10:00
+
+AI 消息工具栏新增「新建分支会话」。分支会话在分叉点展示可点击的「从其他会话中继续」。回复超过一屏时，本轮用户提问在所在轮次内吸附置顶。创建分支、替换消息列表和切换会话由接入方在回调里完成。
+
+### Added
+
+- `CONST_MESSAGE_TOOLS` 在「重新生成」和「分享」之间新增 `{ id: 'fork', name: '新建分支会话', description: '新建分支会话' }`，图标为导出的 `ForkIcon`（`ToolIconsMap.fork`，类名 `ai-fork-icon`，16×16）。悬停助手组时与复制、重新生成一起出现。点击走已有 `onAgentAction(tool, messages)`：`tool.id === 'fork'`，第二个参数是**当前助手组**的消息（含该组内的 reasoning、tool 等），用来确定分叉点。`Test` 模式仍保留该项（此模式只去掉 `share`）。分享态不渲染整条工具栏。不需要时在 `messageTools` 传入 `{ id: 'fork', hidden: true }`。
+- 分叉点是一条 `role: 'info'` 且 `property.fork_info` 有值的消息。导出类型 `MessageForkInfo`，字段与后端 `property.fork_info` 一致：
+  - `source_session_code: string`：来源会话编码，切回时使用
+  - `source_content_id: number | string`：点击「新建分支会话」时所在消息的 ID
+  - `last_copied_content_id?: number | string`：新会话复制到的最后一条消息 ID
+- 存在 `fork_info` 时，`InfoMessage` 忽略 `content`，渲染为「`ForkIcon` + 文案『从其他会话中继续』」。根节点追加 `is-fork`，可点击节点为 `role="button"`，支持点击和回车。文案走内置文案：`新建分支会话` / `New branch chat`，`从其他会话中继续` / `Continued from another chat`。
+- `ChatContainer`、`MessageContainer` 新增 `onForkSourceClick(forkInfo, message)`。`message` 是这条分叉点 info 消息。接入方用 `forkInfo.source_session_code` 切回来源会话；来源会话已删除时进入哪条会话，由接入方决定。
+- `ChatContainer` 的 `#default` 作用域带上同一个 `onForkSourceClick`。替换默认消息区时，把它传给自己的 `MessageContainer`。
+- `#message`、`MessageRender`、`InfoMessage` 上的 `onForkSourceClick(forkInfo)` 只接收 `forkInfo`，当前消息已由容器绑定。自定义 `#message` 时把插槽参数传给 `MessageRender`（`<MessageRender v-bind="slotProps" />`），分隔线才会触发外层回调。`#group` 替换整组默认内容时，该组的内置工具栏（含 fork）需自行渲染。
+- `useMessageGroup` 对带 `fork_info` 的 info 先结束当前助手组，再单独成组，组 `type` 为 `MessageRole.Info`。分隔线排在上一轮回复的工具栏之后，不进入该轮的复制、删除、反馈，也不显示过程状态栏和多选框。不带 `fork_info` 的 info 仍并入当前助手组。
+
+消息与回调：
+
+```ts
+import {
+  type IToolBtn,
+  type InfoMessage,
+  type Message,
+  type MessageForkInfo,
+  MessageRole,
+  MessageStatus,
+} from '@blueking/chat-x';
+
+const forkPoint: InfoMessage = {
+  id: 'fork-1',
+  messageId: 'fork-1',
+  role: MessageRole.Info,
+  content: '',
+  status: MessageStatus.Complete,
+  property: {
+    fork_info: {
+      source_session_code: 'session-source',
+      source_content_id: 'assistant-2',
+      last_copied_content_id: 'assistant-2',
+    },
+  },
+};
+
+const handleAgentAction = async (tool: IToolBtn, groupMessages: Message[]) => {
+  if (tool.id !== 'fork') return;
+  const anchor = groupMessages.at(-1);
+  // 以 anchor 为分叉点创建分支；成功后把当前 messages 换成新会话：
+  // 复制到本轮为止的历史 + forkPoint，fork_info.source_session_code 写来源会话
+};
+
+const handleForkSourceClick = (forkInfo: MessageForkInfo, message: Message) => {
+  // message 是这条分叉点 info
+  // 按 forkInfo.source_session_code 切回来源会话；来源不存在时进入新会话
+};
+```
+
+```vue
+<ChatContainer
+  :messages="messages"
+  :on-agent-action="handleAgentAction"
+  :on-fork-source-click="handleForkSourceClick"
+/>
+```
+
+### Changed
+
+- 聊天态下，用户提问组在所在问答轮次内吸附置顶。组节点追加 `is-sticky`（`position: sticky; top: 0; z-index: 1`，白底盖住正在滚过的回复）。轮次容器是 `.ai-message-turn`：每个用户消息组开启新一轮，其后的助手回复和分叉点 info 留在这一轮；滚到下一轮提问时，上一轮提问随该轮离开。无新增开关。分享态（`RenderMode.Share`）和多选态（`enableSelection`）不吸附。底部「停止生成 / 返回底部」保持 `z-index: 10`，位于吸附提问之上。
+- 消息定位器改为在滚动容器内用 `[data-message-group-id]` 查找。消息组包在轮次容器里时仍能定位。目标组带 `is-sticky` 时，滚动位置取所在轮次容器的 `offsetTop`，吸附过程中提问自身的 `offsetTop` 会变。
+
 ## 2026-11-10 12:40:00
 
 模型选择器下拉改为默认向下展开。

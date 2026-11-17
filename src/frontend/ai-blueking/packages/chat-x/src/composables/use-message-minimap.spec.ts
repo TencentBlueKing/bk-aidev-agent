@@ -228,12 +228,22 @@ describe('use-message-minimap', () => {
   });
 
   describe('findMessageGroupElement', () => {
-    it('应按 uid 在容器直接子节点中查找消息组', () => {
+    it('应按 uid 在容器子节点中查找消息组', () => {
       const groups = createRoundGroups(1);
       const container = createContainer(groups);
       expect(findMessageGroupElement(container, 'answer-0')).toBe(container.children[1]);
       expect(findMessageGroupElement(container, 'missing')).toBeUndefined();
       expect(findMessageGroupElement(null, 'answer-0')).toBeUndefined();
+    });
+
+    it('消息组包在问答轮次 wrapper 内时也应能找到', () => {
+      const container = document.createElement('div');
+      const turn = document.createElement('div');
+      const element = document.createElement('div');
+      element.dataset.messageGroupId = 'answer-0';
+      turn.appendChild(element);
+      container.appendChild(turn);
+      expect(findMessageGroupElement(container, 'answer-0')).toBe(element);
     });
   });
 

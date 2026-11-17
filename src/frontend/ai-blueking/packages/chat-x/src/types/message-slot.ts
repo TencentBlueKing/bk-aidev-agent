@@ -24,7 +24,7 @@
  * IN THE SOFTWARE.
  */
 
-import type { Message, UserMessage } from '../ag-ui/types';
+import type { Message, MessageForkInfo, UserMessage } from '../ag-ui/types';
 import type { OnInterruptResume } from '../ag-ui/types/interrupt';
 import type { TagSchema } from './input';
 import type { AITippyProps, IToolBtn, MessageToolsStatus } from './tool';
@@ -43,6 +43,8 @@ export interface MessageSlotProps {
     content?: UserMessage['content'],
     docSchema?: TagSchema,
   ) => Promise<string[] | void>;
+  /** 点击分支会话的「从其他会话中继续」分隔线 */
+  onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
   onInputConfirm?: (content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
   onInterruptResume?: OnInterruptResume;
   onShortcutConfirm?: (formModel: Record<string, unknown>) => Promise<void>;

@@ -39,6 +39,7 @@ import { t } from '../lang/lang';
 import { generateUUID, getMessageArtifacts } from '../utils';
 
 import type { InterruptMessage, UserQuestionInterrupt } from '../ag-ui/types/interrupt';
+import type { InfoMessage } from '../ag-ui/types/messages';
 import type { SessionArtifact } from './use-artifact-preview';
 
 export type MessageGroup = {
@@ -104,7 +105,9 @@ export const useMessageGroup = (options: {
       if (!message?.uid) {
         message.uid = generateUUID();
       }
-      if (message.role === MessageRole.User) {
+      // 分支会话的分叉点提示单独成组：排在上一轮回复的工具栏之后，也不并入该轮的复制 / 删除 / 反馈范围
+      const isForkInfo = message.role === MessageRole.Info && !!(message as InfoMessage).property?.fork_info;
+      if (message.role === MessageRole.User || isForkInfo) {
         if (assistantMessages.length > 0) {
           list.push({
             messages: assistantMessages,
@@ -118,7 +121,7 @@ export const useMessageGroup = (options: {
         }
         list.push({
           messages: [message],
-          type: MessageRole.User,
+          type: isForkInfo ? MessageRole.Info : MessageRole.User,
           isHover: false,
           checked: false,
           uid: generateUUID(),

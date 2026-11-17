@@ -3,105 +3,113 @@
     ref="messageContainerRef"
     class="ai-message-container"
   >
+    <!-- 按问答轮次包一层：用户提问吸附置顶以所在轮次为边界，滚到下一轮时随内容离开 -->
     <div
-      v-for="(group, groupIndex) in visibleMessageGroups"
-      :id="group.uid"
-      :key="groupIndex"
-      class="message-group"
-      :data-message-group-id="group.uid"
-      :style="{
-        backgroundColor: group.checked ? '#f5f7fa' : 'transparent',
-      }"
-      @mouseenter="handleMouseEnter(group)"
-      @mouseleave="e => handleMouseLeave(group, e)"
+      v-for="(turn, turnIndex) in messageTurns"
+      :key="turnIndex"
+      class="ai-message-turn"
     >
-      <slot
-        name="group"
-        v-bind="{ group }"
+      <div
+        v-for="{ group, groupIndex } in turn"
+        :id="group.uid"
+        :key="groupIndex"
+        class="message-group"
+        :class="{ 'is-sticky': isStickyGroup(group) }"
+        :data-message-group-id="group.uid"
+        :style="{
+          backgroundColor: group.checked ? '#f5f7fa' : undefined,
+        }"
+        @mouseenter="handleMouseEnter(group)"
+        @mouseleave="e => handleMouseLeave(group, e)"
       >
-        <Checkbox
-          v-if="enableSelection && group.type !== MessageRole.Loading"
-          class="message-group-checkbox"
-          :class="{ 'is-user-group': group.type === MessageRole.User }"
-          :model-value="group.checked"
-          @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
-        />
-        <div
-          class="message-group-messages"
-          :class="{
-            'message-group-enabled-selection':
-              renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
-          }"
-          :style="{
-            width: enableSelection && group.type !== MessageRole.Loading ? 'calc(100% - 16px)' : '100%',
-          }"
+        <slot
+          name="group"
+          v-bind="{ group }"
         >
-          <MessageProcessList
-            :enable-message-collapse="enableMessageCollapse"
-            :enabled="shouldShowMessageProcess(group)"
-            :generating="isGenerating && groupIndex === visibleMessageGroups.length - 1"
-            :messages="group.messages"
-            :request-created-at="resolveRequestCreatedAt(groupIndex)"
+          <Checkbox
+            v-if="hasSelectionCheckbox(group)"
+            class="message-group-checkbox"
+            :class="{ 'is-user-group': group.type === MessageRole.User }"
+            :model-value="group.checked"
+            @update:model-value="(checked: boolean) => handleCheckboxChange(group, checked)"
+          />
+          <div
+            class="message-group-messages"
+            :class="{
+              'message-group-enabled-selection':
+                renderMode === RenderMode.Share || (enableSelection && group.type !== MessageRole.Loading),
+            }"
+            :style="{
+              width: hasSelectionCheckbox(group) ? 'calc(100% - 16px)' : '100%',
+            }"
           >
-            <template #message="{ message }">
-              <div
-                class="ai-message-item"
-                :data-message-id="resolveMessageDomId(message)"
-              >
-                <slot
-                  name="default"
-                  v-bind="resolveMessageSlotProps(message)"
+            <MessageProcessList
+              :enable-message-collapse="enableMessageCollapse"
+              :enabled="shouldShowMessageProcess(group)"
+              :generating="isGenerating && groupIndex === visibleMessageGroups.length - 1"
+              :messages="group.messages"
+              :request-created-at="resolveRequestCreatedAt(groupIndex)"
+            >
+              <template #message="{ message }">
+                <div
+                  class="ai-message-item"
+                  :data-message-id="resolveMessageDomId(message)"
                 >
-                  <MessageRender v-bind="resolveMessageSlotProps(message)">
-                    <template
-                      v-if="$slots.answeredQuestion"
-                      #answeredQuestion="slotProps"
-                    >
-                      <slot
-                        name="answeredQuestion"
-                        v-bind="slotProps"
-                      />
-                    </template>
-                    <template
-                      v-if="$slots.codeHeader"
-                      #codeHeader="slotProps"
-                    >
-                      <slot
-                        name="codeHeader"
-                        v-bind="slotProps"
-                      />
-                    </template>
-                  </MessageRender>
-                </slot>
-              </div>
-            </template>
-          </MessageProcessList>
-          <MessageTools
-            v-if="
-              renderMode !== RenderMode.Share &&
-              !(enableSelection && group.type !== MessageRole.Loading) &&
-              !group.pause &&
-              group.type === MessageRole.Assistant &&
-              messageToolsStatus !== MessageToolsStatus.Hidden
-            "
-            :message-tools="messageTools"
-            :message-tools-status="messageToolsStatus"
-            :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
-            :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
-            :tippy-options="props.messageToolsTippyOptions"
-            :update-tools="updateTools"
-            @feedback="
-              (tool: IToolBtn, reasonList: string[], otherReason: string) =>
-                props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
-            "
-          >
-            <!-- 设计稿：AI 消息的时间在工具图标右侧 -->
-            <template #append>
-              <MessageTime :created-at="resolveGroupCreatedAt(group.messages)" />
-            </template>
-          </MessageTools>
-        </div>
-      </slot>
+                  <slot
+                    name="default"
+                    v-bind="resolveMessageSlotProps(message)"
+                  >
+                    <MessageRender v-bind="resolveMessageSlotProps(message)">
+                      <template
+                        v-if="$slots.answeredQuestion"
+                        #answeredQuestion="slotProps"
+                      >
+                        <slot
+                          name="answeredQuestion"
+                          v-bind="slotProps"
+                        />
+                      </template>
+                      <template
+                        v-if="$slots.codeHeader"
+                        #codeHeader="slotProps"
+                      >
+                        <slot
+                          name="codeHeader"
+                          v-bind="slotProps"
+                        />
+                      </template>
+                    </MessageRender>
+                  </slot>
+                </div>
+              </template>
+            </MessageProcessList>
+            <MessageTools
+              v-if="
+                renderMode !== RenderMode.Share &&
+                !(enableSelection && group.type !== MessageRole.Loading) &&
+                !group.pause &&
+                group.type === MessageRole.Assistant &&
+                messageToolsStatus !== MessageToolsStatus.Hidden
+              "
+              :message-tools="messageTools"
+              :message-tools-status="messageToolsStatus"
+              :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
+              :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
+              :tippy-options="props.messageToolsTippyOptions"
+              :update-tools="updateTools"
+              @feedback="
+                (tool: IToolBtn, reasonList: string[], otherReason: string) =>
+                  props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
+              "
+            >
+              <!-- 设计稿：AI 消息的时间在工具图标右侧 -->
+              <template #append>
+                <MessageTime :created-at="resolveGroupCreatedAt(group.messages)" />
+              </template>
+            </MessageTools>
+          </div>
+        </slot>
+      </div>
     </div>
     <div
       ref="messageContainerBottomRef"
@@ -136,7 +144,13 @@
 
   import { Checkbox } from 'bkui-vue';
 
-  import { type Message, type UserMessage, MessageRole, MessageStatus } from '../../../ag-ui/types';
+  import {
+    type Message,
+    type MessageForkInfo,
+    type UserMessage,
+    MessageRole,
+    MessageStatus,
+  } from '../../../ag-ui/types';
   import { CONST_MESSAGE_TOOLS, CONST_UPDATE_TOOLS, RenderMode } from '../../../common';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { findMessageGroupElement } from '../../../composables/use-message-minimap';
@@ -174,6 +188,8 @@
     messageToolsTippyOptions?: MessageToolsProps['tippyOptions'];
     onAgentAction?: AgentActionCallback;
     onAgentFeedback?: AgentFeedbackCallback;
+    // 点击分支会话的「从其他会话中继续」分隔线，业务方据 forkInfo 切回来源会话
+    onForkSourceClick?: (forkInfo: MessageForkInfo, message: Message) => void;
     onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
@@ -276,10 +292,31 @@
     const target = findMessageGroupElement(container, uid);
     if (!container || !target) return;
     autoScrollEnabled.value = false;
-    container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+    // 吸附中的提问组 offsetTop 会随吸附位置变化，改用所在轮次 wrapper（提问组总在轮次首位）
+    const anchor = target.classList.contains('is-sticky') ? (target.parentElement ?? target) : target;
+    container.scrollTo({ top: anchor.offsetTop, behavior: 'smooth' });
   };
 
   const visibleMessageGroups = computed(() => getVisibleMessageGroups(props.messageGroups, props.renderMode));
+
+  /** 按问答轮次切分：每个用户消息组开启新一轮，保留全局下标供生成态 / 请求时间等按序号判断 */
+  const messageTurns = computed(() =>
+    visibleMessageGroups.value.reduce<{ group: MessageGroup; groupIndex: number }[][]>((turns, group, groupIndex) => {
+      if (group.type === MessageRole.User || turns.length === 0) {
+        turns.push([]);
+      }
+      turns[turns.length - 1].push({ group, groupIndex });
+      return turns;
+    }, []),
+  );
+
+  /** 分享态与多选态需要完整浏览和勾选，不吸附 */
+  const isStickyGroup = (group: MessageGroup) =>
+    group.type === MessageRole.User && props.renderMode !== RenderMode.Share && !props.enableSelection;
+
+  /** 分叉点分隔线只是提示，不参与勾选 */
+  const hasSelectionCheckbox = (group: MessageGroup) =>
+    props.enableSelection && group.type !== MessageRole.Loading && group.type !== MessageRole.Info;
 
   defineExpose({
     getScrollElement: () => messageContainerRef.value,
@@ -377,6 +414,7 @@
     messageTools: props.userMessageTools,
     messageToolsStatus: props.messageToolsStatus,
     onAction: (tool: IToolBtn) => handleUserAction(tool, message),
+    onForkSourceClick: (forkInfo: MessageForkInfo) => props.onForkSourceClick?.(forkInfo, message),
     onInputConfirm: (content: UserMessage['content'], docSchema: TagSchema) =>
       handleUserInputConfirm(message, content, docSchema),
     onInterruptResume: props.onInterruptResume,
@@ -407,6 +445,15 @@
       gap: 8px;
       width: 100%;
       padding: 8px 0;
+
+      // 设计稿标注「对应消息之内吸附置顶」：回复超屏时提问停在可视区顶部，边界为所在轮次 wrapper；
+      // 白底遮住滚过的回复内容，层级低于底部的停止生成 / 返回底部按钮
+      &.is-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background-color: #fff;
+      }
 
       &-enabled-selection {
         .ai-user-message-tools {
