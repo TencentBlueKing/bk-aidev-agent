@@ -8,8 +8,14 @@ from unittest.mock import Mock
 import pytest
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
+from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
-from aidev_agent.services.messages_handler.producer import resolve_producer_runner, run_producer_inline
+from aidev_agent.services.messages_handler.producer import (
+    ProducerOnlyRunner,
+    RemoteProducerRunner,
+    resolve_producer_runner,
+    run_producer_inline,
+)
 from typing_extensions import get_protocol_members
 
 
@@ -23,6 +29,36 @@ class LegacyResources:
 
     def get_client(self):
         return "existing-client"
+
+
+def test_remote_dispatch_precedes_session_side_effects():
+    class RemoteRunner(RemoteProducerRunner):
+        def execute_chat(self, agent, execute_kwargs):
+            return "remote-output"
+
+    runner = RemoteRunner()
+    resources = SimpleNamespace(get_producer_runner=lambda: runner)
+    agent = SimpleNamespace(resource_manager=resources, migration_v1=Mock())
+    assert ChatCompletionAgent.execute(agent, SimpleNamespace()) == "remote-output"
+    agent.migration_v1.assert_not_called()
+
+
+def test_producer_only_worker_never_claims_consumer(helper, monkeypatch):
+    started = Mock()
+    helper._producer_runner = ProducerOnlyRunner(started)
+    acquire_consumer = Mock(side_effect=AssertionError("worker must not consume"))
+    monkeypatch.setattr(helper.message_handler, "acquire_consumer", acquire_consumer)
+    assert list(helper.stream(iter(["chunk"]), expected_run_id="run-one")) == []
+    started.assert_called_once_with(helper.thread_id, "run-one")
+    acquire_consumer.assert_not_called()
+    assert not helper.message_handler.has_active_producer(helper.thread_id)
+
+
+def test_producer_only_start_failure_releases_lock(helper):
+    helper._producer_runner = ProducerOnlyRunner(Mock(side_effect=RuntimeError("state unavailable")))
+    with pytest.raises(RuntimeError, match="state unavailable"):
+        list(helper.stream(iter(["chunk"])))
+    assert not helper.message_handler.has_active_producer(helper.thread_id)
 
 
 @pytest.fixture

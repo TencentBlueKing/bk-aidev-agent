@@ -76,6 +76,7 @@ from aidev_agent.services.common_agent import CommonAgentProtocol, CommonQAAgent
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
+from aidev_agent.services.messages_handler.producer import RemoteProducerRunner, resolve_producer_runner
 from aidev_agent.services.sandbox_pv_files import (
     SESSION_VOLUME_PATH,
     SandboxFileInvalidArgumentError,
@@ -526,6 +527,9 @@ class ChatCompletionAgent(BaseModel):
             self._persist_session_caller_context(execute_kwargs, session_code)
 
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
+        producer_runner = resolve_producer_runner(self.resource_manager)
+        if isinstance(producer_runner, RemoteProducerRunner):
+            return producer_runner.execute_chat(self, execute_kwargs)
         self.migration_v1()
         # D-13：resume dict→list 归一化前移到 execute() 最前（消除 R1/R2 双重兼容逻辑）
         if isinstance(execute_kwargs.resume, dict):

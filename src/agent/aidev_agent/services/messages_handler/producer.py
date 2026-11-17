@@ -1,11 +1,33 @@
-"""进程内 producer 执行策略；跨进程调度应先重建 Agent 再注入策略。"""
+"""可选 producer 策略：本地执行，或在 Chat 副作用发生前委托远端执行。"""
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from threading import Thread
+from typing import Any
 
 from typing_extensions import Protocol, runtime_checkable
 
-ProducerRunner = Callable[[Callable[[], None]], Thread | None]
+
+class RemoteProducerRunner(ABC):
+    """Delegate before Chat execution mutates session history or checkpoint state."""
+
+    @abstractmethod
+    def execute_chat(self, agent: Any, execute_kwargs: Any) -> Any:
+        raise NotImplementedError
+
+
+@dataclass
+class ProducerOnlyRunner:
+    """Run production in a worker without registering a competing consumer."""
+
+    on_started: Callable[[str, str], None]
+
+    def __call__(self, produce: Callable[[], None]) -> None:
+        produce()
+
+
+ProducerRunner = Callable[[Callable[[], None]], Thread | None] | RemoteProducerRunner
 
 
 def run_producer_inline(produce: Callable[[], None]) -> None:
@@ -18,7 +40,7 @@ class ProducerExecutionResources(Protocol):
     """Resource Manager 的可选能力；不扩展原资源协议的必需方法集合。"""
 
     def get_producer_runner(self) -> ProducerRunner | None:
-        """返回进程内执行策略；None 保留默认线程行为。"""
+        """返回执行策略；None 保留默认线程行为，RemoteProducerRunner 仅用于 Chat。"""
         ...
 
 

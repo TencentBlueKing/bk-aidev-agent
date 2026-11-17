@@ -24,6 +24,7 @@ from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .event_resource_manager import with_database_events
 from .llm import LLMService
+from .producer_dispatch import CeleryChatRunner, ChatExecutionSpec, DispatchResourceManager
 
 logger = getLogger(__name__)
 
@@ -112,6 +113,7 @@ class AgentBuilder:
         temperature: float | None = None,
         retry_strategy: str | None = None,
         reasoning_effort: str | None = None,
+        remote_execution: bool | None = None,
     ):
         self.username = username
         self.resource_manager = resource_manager
@@ -126,6 +128,7 @@ class AgentBuilder:
         self.temperature = temperature
         self.retry_strategy = retry_strategy
         self.reasoning_effort = reasoning_effort
+        self.remote_execution = remote_execution
 
     def by_session_code(
         self,
@@ -225,6 +228,28 @@ class AgentBuilder:
             # 注入的 rm 保留用户态认证，仅补上 model 覆盖能力
             self.resource_manager.model = self.model
         execution_resource_manager = with_database_events(self.resource_manager, self.agent_code)
+        remote_execution = self.remote_execution
+        if remote_execution is None:
+            remote_execution = getattr(settings, "BKAI_CHAT_CELERY_ENABLED", False) is True
+        if remote_execution:
+            if self.resource_manager is None:
+                self.resource_manager = LLMOverrideResourceManager(username=self.username, model=self.model)
+                execution_resource_manager = with_database_events(self.resource_manager, self.agent_code)
+            spec = ChatExecutionSpec(
+                app_code=self.resource_manager.app_code,
+                tenant_id=self.resource_manager.tenant_id,
+                username=self.username,
+                agent_code=self.agent_code,
+                session_code=session_code,
+                turn_id=self.turn_id,
+                model=self.model,
+                temperature=self.temperature,
+                retry_strategy=self.retry_strategy,
+                reasoning_effort=self.reasoning_effort,
+                version=version,
+                channel_type=channel_type,
+            )
+            execution_resource_manager = DispatchResourceManager(execution_resource_manager, CeleryChatRunner(spec))
         event_handler = AGUISessionWriter(
             session_code=session_code,
             client=AgentHelper.get_client(resource_manager=execution_resource_manager),

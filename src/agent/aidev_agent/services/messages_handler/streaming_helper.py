@@ -32,7 +32,7 @@ from .constants import (
     TimeoutConfig,
 )
 from .factory import message_handler_factory
-from .producer import resolve_producer_runner
+from .producer import ProducerOnlyRunner, resolve_producer_runner
 
 logger = getLogger(__name__)
 
@@ -708,6 +708,8 @@ class GeneratorStreamingHelper:
                     producer_thread = threading.Thread(target=run, daemon=True)
                     producer_thread.start()
                 else:
+                    if isinstance(self._producer_runner, ProducerOnlyRunner):
+                        self._producer_runner.on_started(self.thread_id, expected_run_id or "")
                     producer_thread = self._producer_runner(run)
                     if producer_thread is None:
                         if not started.is_set():
@@ -1118,6 +1120,19 @@ class GeneratorStreamingHelper:
         completion_callback = _on_complete_once if on_complete is not None else None
 
         try:
+            if isinstance(self._producer_runner, ProducerOnlyRunner):
+                _, resuming, _ = self._start_or_resume_stream(
+                    generator=generator,
+                    cancel_event=cancel_event,
+                    has_pending=False,
+                    on_complete=completion_callback,
+                    event_handler=event_handler,
+                    expected_run_id=expected_run_id,
+                    attach_only=attach_only,
+                )
+                if resuming:
+                    raise RuntimeError("Worker could not acquire the producer lock")
+                return
             consumer_id = self.message_handler.acquire_consumer(self.thread_id)
             should_consume_stopped, has_pending = self._resolve_stopped_or_pending_state()
             if should_consume_stopped:

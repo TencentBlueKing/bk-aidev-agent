@@ -22,6 +22,7 @@ from aidev_agent.services.messages_handler.constants import TimeoutConfig
 from aidev_agent.utils.tracing import get_current_trace_id
 from django.conf import settings
 
+from .producer_dispatch import cancel_chat_execution
 from ..constants import AGUI_PROTOCOL_VERSION
 from ..enums import PluginPollTaskState
 
@@ -201,6 +202,13 @@ class SessionManager:
                 json=platform_payload,
                 headers=self._user_headers(),
             )
+            if getattr(settings, "BKAI_CHAT_CELERY_ENABLED", False) is True:
+                cancel_chat_execution(
+                    self.resource_manager.app_code,
+                    self.resource_manager.tenant_id,
+                    session_code,
+                    run_id=run_id,
+                )
         finally:
             _cancel_local_stream_and_wait(message_handler, session_code, run_id)
         return result.get("data") or {}
