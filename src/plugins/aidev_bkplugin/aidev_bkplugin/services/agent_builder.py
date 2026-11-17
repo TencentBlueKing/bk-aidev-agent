@@ -231,7 +231,7 @@ class AgentBuilder:
         execution_resource_manager = with_database_events(self.resource_manager, self.agent_code)
         remote_execution = self.remote_execution
         if remote_execution is None:
-            remote_execution = getattr(settings, "BKAI_CHAT_CELERY_ENABLED", True) is True
+            remote_execution = getattr(settings, "BKAI_CHAT_CELERY_ENABLED", False) is True
         if remote_execution:
             if self.resource_manager is None:
                 self.resource_manager = LLMOverrideResourceManager(username=self.username, model=self.model)
