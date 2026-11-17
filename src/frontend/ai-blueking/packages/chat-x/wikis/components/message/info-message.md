@@ -5,7 +5,7 @@ kind: component
 domain: message
 description: 渲染居中的系统信息提示；带 fork_info 时渲染为分支会话的「从其他会话中继续」分隔线。
 aiSummary: >
-  渲染居中的系统信息提示；property.fork_info 存在时渲染为可点击的「从其他会话中继续」分隔线，点击回调 onForkSourceClick(forkInfo)。
+  渲染居中的系统信息提示；property.fork_info 存在时渲染为「从其他会话中继续」分隔线。传入 onForkSourceClick 时可点击，未传入或分享态不透传时只展示、不可点。
   源码位置：src/components/chat-message/info-message/info-message.vue。
 relatedComponents:
   - slug: message-render
@@ -127,7 +127,7 @@ exportStatus: internal
 
 ## 分支会话分叉点
 
-分支会话（由 AI 消息工具栏的「新建分支会话」创建）里，后端会写入一条 `role: 'info'` 且带 `property.fork_info` 的提示消息。识别到 `fork_info` 时，组件不再显示后端 `content`，改为渲染「分支图标 + 蓝色文案『从其他会话中继续』」的可点击分隔线（根节点追加 `is-fork`）。点击或回车时调用 `onForkSourceClick(forkInfo)`，由业务方据 `source_session_code` 切回来源会话。
+分支会话（由 AI 消息工具栏的「新建分支会话」创建）里，后端会写入一条 `role: 'info'` 且带 `property.fork_info` 的提示消息。识别到 `fork_info` 时，组件不再显示后端 `content`，改为渲染「分支图标 + 蓝色文案『从其他会话中继续』」分隔线（根节点追加 `is-fork`）。传入 `onForkSourceClick` 时，分隔线为 `role="button"`，点击或回车调用 `onForkSourceClick(forkInfo)`，由业务方据 `source_session_code` 切回来源会话。未传入回调时只展示分隔线，没有按钮语义和手型光标。`MessageContainer` 在分享态（`renderMode === RenderMode.Share`）不向消息透传该回调。
 
 ```vue
 <template>
@@ -220,7 +220,7 @@ exportStatus: internal
 | status    | `MessageStatus`      | 消息状态（接收但不使用，组件无状态相关渲染逻辑）                   |
 | role      | `MessageRole.Info`   | 消息角色，固定为 `'info'`                                          |
 | property  | `{ fork_info?: MessageForkInfo; ... }` | 消息属性。存在 `fork_info` 时渲染为「从其他会话中继续」分隔线，不再显示 `content` |
-| onForkSourceClick | `(forkInfo: MessageForkInfo) => void` | 点击 / 回车分叉点分隔线时调用，参数为 `property.fork_info` |
+| onForkSourceClick | `(forkInfo: MessageForkInfo) => void` | 传入时，点击 / 回车分叉点分隔线调用，参数为 `property.fork_info`。未传入时分隔线不可点击 |
 
 > **说明**：`content` 的 TypeScript 类型定义为 `string`（与 `BaseMessage` 泛型一致），但组件模板内部通过 `Array.isArray(content) ? content : [content]` 实际兼容字符串数组。
 
