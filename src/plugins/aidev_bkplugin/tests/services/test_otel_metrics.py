@@ -76,8 +76,8 @@ def _import_tasks_with_celery_stub(mocker):
 
     celery.shared_task = shared_task
     mocker.patch.dict(sys.modules, {"celery": celery})
-    sys.modules.pop("aidev_bkplugin.metric_tasks", None)
-    return importlib.import_module("aidev_bkplugin.metric_tasks")
+    sys.modules.pop("aidev_bkplugin.services.telemetry", None)
+    return importlib.import_module("aidev_bkplugin.services.telemetry")
 
 
 def _sample_metrics_data() -> MetricsData:

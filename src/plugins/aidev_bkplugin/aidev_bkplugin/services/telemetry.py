@@ -10,7 +10,7 @@ from typing import Any
 from aidev_agent.config import settings as agent_settings
 from celery import shared_task
 
-from .services.metric_runtime import RetryableMetricPushError, get_metric_service
+from .metric_runtime import RetryableMetricPushError, get_metric_service
 
 logger = logging.getLogger(__name__)
 
