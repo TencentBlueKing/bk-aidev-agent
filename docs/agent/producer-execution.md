@@ -24,7 +24,7 @@ agent = AgentInstanceFactory.build_agent(
 
 BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。普通 HTTP Chat 固定在视图入口通过 `ChatDispatcher` 投递 Celery。Web 完成鉴权、参数校验及会话准备，不构建 Agent。显式传入的历史先写入会话；worker 从 SESSION 读取完整历史并构建一次 Agent，保留命令切换和 resume 语义，不再读完历史后用消息快照覆盖。
 
-流式调用链为 `Chat API → ChatDispatcher → bkai_agent_task → worker 构建 Agent → ProducerOnlyRunner`。同一次 HTTP 请求返回 `text/event-stream`，先发送 SSE 注释以刷新响应头，再等待 worker 启动回执并转发共享事件；不返回任务 ID 要求客户端轮询。启动失败或等待超时输出 SSE 错误与结束事件。同步请求等待 worker 结果，继续返回原 JSON 响应。
+流式调用链为 `Chat API → ChatDispatcher → bkai_agent_task → worker 构建 Agent → ProducerOnlyRunner`。同一次 HTTP 请求返回 `text/event-stream`，先发送 RAW heartbeat（message 为 `waiting for worker`）以刷新响应头，再等待 worker 启动回执并转发共享事件；不返回任务 ID 要求客户端轮询。启动失败或等待超时输出 SSE 错误与结束事件。同步请求等待 worker 结果，继续返回原 JSON 响应。
 
 attach 要求已有 `session_code` 和 `stream=True`，先通过用户态会话查询校验访问权限，再接入已有事件流，不投递、不构建 Agent、不保存输入或创建新 turn。worker 的流式 producer 不注册消费者；同步 resume 使用 inline producer 并在 worker 内聚合事件。`get_producer_runner()` 只负责 worker 内 producer 的执行策略；移除 SDK 的 `RemoteProducerRunner`、Web 的 `CeleryChatRunner` 及 AgentBuilder 的远端注入开关。HTTP Chat 不提供本地备用执行路径；直接使用 SDK/AgentBuilder 的代码保持本地策略，原插件异步入口保持自己的 Celery 调度。
 

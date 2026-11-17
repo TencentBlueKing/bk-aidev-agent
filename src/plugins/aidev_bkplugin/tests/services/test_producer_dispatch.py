@@ -164,7 +164,9 @@ def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatc
     helper = Mock()
     helper.stream.return_value = iter(["live-event"])
     monkeypatch.setattr(producer_dispatch, "GeneratorStreamingHelper", Mock(return_value=helper))
-    assert list(ChatDispatcher(spec)._consume(spec, handler, "task-id")) == [": waiting for worker\n\n", "live-event"]
+    chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
+    assert json.loads(chunks[0][6:])["event"] == {"type": "heartbeat", "message": "waiting for worker"}
+    assert chunks[1:] == ["live-event"]
     assert helper.stream.call_args.kwargs == {"expected_run_id": "worker-run", "attach_only": True}
 
 
@@ -201,7 +203,9 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
 
 def test_sse_headers_can_flush_before_worker_receipt(spec, handler):
     stream = ChatDispatcher(spec)._consume(spec, handler, "task-id")
-    assert next(stream).startswith(":")
+    chunk = next(stream)
+    assert chunk.startswith("data: ") and chunk.endswith("\n\n")
+    assert json.loads(chunk[6:]) == {"type": "RAW", "event": {"type": "heartbeat", "message": "waiting for worker"}}
     handler.get_messages_since.assert_not_called()
     stream.close()
 
@@ -210,7 +214,7 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
     events = [json.loads(chunk[6:]) for chunk in chunks if chunk.startswith("data: ")]
-    assert events[0]["type"] == "RUN_ERROR"
+    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[-1]["type"] == "RUN_FINISHED"
 
 

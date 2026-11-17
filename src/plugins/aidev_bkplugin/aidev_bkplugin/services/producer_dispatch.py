@@ -5,6 +5,8 @@ import json
 import time
 import uuid
 
+from ag_ui.core import EventType, RawEvent
+from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
@@ -112,7 +114,9 @@ class ChatDispatcher:
 
     def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
         # Flush the HTTP SSE response before waiting for worker startup.
-        yield ": waiting for worker\n\n"
+        yield EventEncoder().encode(
+            RawEvent(type=EventType.RAW, event={"type": "heartbeat", "message": "waiting for worker"})
+        )
         timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
         run_id = None
         helper = GeneratorStreamingHelper(handler, thread_id=spec.session_code, defer_cleanup_on_complete=True)
