@@ -2,8 +2,10 @@
 
 import time
 from functools import partial
+from logging import getLogger
 
 from aidev_agent.config import settings as agent_settings
+from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.factory import message_handler_factory
@@ -22,6 +24,8 @@ from aidev_bkplugin.services.producer_dispatch import (
     send_chat_reply,
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
+
+logger = getLogger(__name__)
 
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
@@ -75,7 +79,20 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
         retry_strategy=spec.retry_strategy,
         reasoning_effort=spec.reasoning_effort,
     )
-    agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
+    try:
+        agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
+    except Exception:
+        # Serialize failure finalization with producers so another active run is not overwritten.
+        try:
+            handler = message_handler_factory.get()
+            if handler.acquire_producer(spec.session_code):
+                try:
+                    builder.session_manager.update_session_status(spec.session_code, SessionsStatus.FAILED.value)
+                finally:
+                    handler.release_producer(spec.session_code)
+        except Exception:
+            logger.exception("Failed to finalize session after Agent build failure")
+        raise
     execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
     if not execute_kwargs.input and not agent.chat_history:
         raise ValueError("The chat history cannot be empty. Please provide input.")

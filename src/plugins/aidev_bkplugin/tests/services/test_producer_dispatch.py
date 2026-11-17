@@ -3,6 +3,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
+from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
 from aidev_bkplugin.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
@@ -227,3 +228,32 @@ def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, 
     builder.by_session_code.assert_called_once()
     assert agent.chat_history is history
     assert executor.execute_with_save.call_args.args[0] is agent
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("lock_available,write_fails", [(True, False), (True, True), (False, False)])
+def test_build_failure_finalizes_session_without_overwriting_active_run(
+    spec, handler, monkeypatch, settings, stream, lock_available, write_fails
+):
+    spec.execute_kwargs = {"stream": stream}
+    builder = Mock()
+    failure = ValueError("build failed")
+    builder.by_session_code.side_effect = failure
+    if write_fails:
+        builder.session_manager.update_session_status.side_effect = RuntimeError("status unavailable")
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    handler.acquire_producer.return_value = lock_available
+    with pytest.raises(ValueError) as caught:
+        run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
+    assert caught.value is failure
+    handler.acquire_producer.assert_called_once_with(spec.session_code)
+    if lock_available:
+        builder.session_manager.update_session_status.assert_called_once_with(
+            spec.session_code, SessionsStatus.FAILED.value
+        )
+        handler.release_producer.assert_called_once_with(spec.session_code)
+    else:
+        builder.session_manager.update_session_status.assert_not_called()
+        handler.release_producer.assert_not_called()
+    handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
