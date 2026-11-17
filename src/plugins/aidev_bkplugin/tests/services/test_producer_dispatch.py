@@ -6,8 +6,8 @@ import pytest
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
-from aidev_bkplugin.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
 from aidev_bkplugin.services import producer_dispatch
+from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
 
 
@@ -30,8 +30,8 @@ def handler(monkeypatch):
     backend.check_cancel_signal.return_value = False
     backend.acquire_producer.return_value = True
     monkeypatch.setattr(producer_dispatch.message_handler_factory, "get", Mock(return_value=backend))
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.close_old_connections", Mock())
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.agent_settings.APP_CODE", "test-app")
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.close_old_connections", Mock())
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.agent_settings.APP_CODE", "test-app")
     return backend
 
 
@@ -40,9 +40,9 @@ def worker_executor(monkeypatch, settings):
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
     builder = Mock()
     builder.by_session_code.return_value.resource_manager.event_publishing_enabled.return_value = False
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", Mock(return_value=builder))
     executor = Mock()
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentExecutor", Mock(return_value=executor))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentExecutor", Mock(return_value=executor))
     return executor
 
 
@@ -72,7 +72,7 @@ def test_reply_channel_isolated_by_tenant_and_task(spec):
 
 def test_expired_task_never_executes(spec, handler, monkeypatch):
     execute = Mock()
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.execute_chat_producer", execute)
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.execute_chat_producer", execute)
     with pytest.raises(TimeoutError):
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() - 1)
     execute.assert_not_called()
@@ -82,7 +82,7 @@ def test_expired_task_never_executes(spec, handler, monkeypatch):
 def test_queued_stop_uses_existing_signal(spec, handler, monkeypatch):
     handler.check_cancel_signal.return_value = True
     execute = Mock()
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.execute_chat_producer", execute)
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.execute_chat_producer", execute)
     with pytest.raises(RuntimeError, match="cancelled"):
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
     execute.assert_not_called()
@@ -171,7 +171,7 @@ def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatc
 def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkeypatch):
     spec.execute_kwargs = {"stream": False}
     execute = Mock(return_value="done")
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.execute_chat_producer", execute)
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.execute_chat_producer", execute)
     for _ in range(2):
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)
     assert execute.call_count == 2
@@ -185,8 +185,8 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
     builder_cls = Mock(return_value=builder)
     executor = Mock()
     executor.execute_with_save.return_value = iter(())
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", builder_cls)
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentExecutor", Mock(return_value=executor))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", builder_cls)
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentExecutor", Mock(return_value=executor))
     spec.model = "selected-model"
     spec.version = "v1"
     spec.temperature = 0.2
@@ -220,10 +220,10 @@ def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, 
     agent = Mock(chat_history=history)
     builder = Mock()
     builder.by_session_code.return_value = agent
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", Mock(return_value=builder))
     executor = Mock()
     executor.execute_with_save.return_value = iter(())
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentExecutor", Mock(return_value=executor))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentExecutor", Mock(return_value=executor))
     execute_chat_producer(spec, "task-id", time.time() + 30)
     builder.by_session_code.assert_called_once()
     assert agent.chat_history is history
@@ -242,7 +242,7 @@ def test_build_failure_finalizes_session_without_overwriting_active_run(
     if write_fails:
         builder.session_manager.update_session_status.side_effect = RuntimeError("status unavailable")
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
-    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", Mock(return_value=builder))
     handler.acquire_producer.return_value = lock_available
     with pytest.raises(ValueError) as caught:
         run_chat_producer("task-id", spec.model_dump(mode="json"), time.time() + 30)

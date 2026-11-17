@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
-from aidev_bkplugin import chat_tasks
+from aidev_bkplugin.services import chat_tasks
 from aidev_bkplugin.services.producer_dispatch import ChatExecutionSpec
 
 
