@@ -16,7 +16,6 @@ from aidev_agent.enums import ChatContentStatus, PromptRole, StreamEventType
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
-from aidev_agent.services.messages_handler.producer import RemoteProducerRunner, resolve_producer_runner
 from aidev_agent.services.resume_events import uses_resume_event_stream
 
 # OpenTelemetry 是可选 extras（pip install aidev-bkplugin[opentelemetry]）。
@@ -66,8 +65,6 @@ class AgentExecutor:
         *,
         turn_id: str = "",
     ):
-        if isinstance(resolve_producer_runner(agent_instance.resource_manager), RemoteProducerRunner):
-            return agent_instance.execute(execute_kwargs)
         if execute_kwargs.stream:
             generator = agent_instance.execute(execute_kwargs)
             event_handler = getattr(agent_instance, "event_handler", None)

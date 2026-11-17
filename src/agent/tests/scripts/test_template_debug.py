@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def load_template_debug_module():
@@ -32,8 +36,18 @@ def test_template_debug_targets_builtin_project():
     )
 
 
-def test_template_celery_worker_listens_to_plugin_agent_and_metric_queues():
+@pytest.mark.parametrize("concurrency, expected", [(None, "16"), ("8", "8")])
+def test_template_celery_worker_listens_to_plugin_agent_and_metric_queues(tmp_path, concurrency, expected):
     repo_root = Path(__file__).resolve().parents[4]
-    app_desc = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}" / "app_desc.yml"
-
-    assert "-Q plugin_schedule,bkai_agent_task,bkai_agent_metric" in app_desc.read_text(encoding="utf-8")
+    project = repo_root / "template" / "builtin" / "{{cookiecutter.project_name}}"
+    assert "procCommand: /bin/bash bin/start_celery.sh" in (project / "app_desc.yml").read_text()
+    celery = tmp_path / "celery"
+    celery.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\n')
+    celery.chmod(0o755)
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}")
+    env.pop("BKAI_CELERY_CONCURRENCY", None)
+    if concurrency is not None:
+        env["BKAI_CELERY_CONCURRENCY"] = concurrency
+    args = subprocess.check_output(["bash", str(project / "bin/start_celery.sh")], env=env, text=True).splitlines()
+    assert args[args.index("-Q") + 1] == "plugin_schedule,bkai_agent_task,bkai_agent_metric"
+    assert args[args.index("-c") + 1] == expected

@@ -22,18 +22,18 @@ agent = AgentInstanceFactory.build_agent(
 
 ## 普通 Chat 转入 Celery
 
-BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLED` 默认值为 `1`，普通 Chat 默认由 `AgentBuilder` 注入 `CeleryChatRunner`。Chat 在 SDK 执行入口委托 runner，模型执行、resume 和回复持久化交给 worker；Web 保留鉴权、会话准备和共享事件流消费。插件原有后台入口继续沿用下文的 worker inline 策略。
+BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLED` 默认值为 `1`，普通 HTTP Chat 在视图入口通过 `ChatDispatcher` 投递 Celery。Web 完成鉴权、参数校验及会话准备，不构建 Agent。显式传入的历史先写入会话；worker 从 SESSION 读取完整历史并构建一次 Agent，保留命令切换和 resume 语义，不再读完历史后用消息快照覆盖。
 
-流式调用链为 `Chat.execute → CeleryChatRunner → bkai_agent_task → run_chat_producer → ProducerOnlyRunner`。Web 在 producer 就绪后立即消费共享消息，不等 worker 完成；流式 worker 不注册消费者，不与 Web 抢事件。attach 只接管已有任务，不再投递。
+流式调用链为 `Chat API → ChatDispatcher → bkai_agent_task → worker 构建 Agent → ProducerOnlyRunner`。同一次 HTTP 请求返回 `text/event-stream`，先发送 SSE 注释以刷新响应头，再等待 worker 启动回执并转发共享事件；不返回任务 ID 要求客户端轮询。启动失败或等待超时输出 SSE 错误与结束事件。同步请求等待 worker 结果，继续返回原 JSON 响应。
 
-上述 `ProducerOnlyRunner` 仅用于 Web 流式请求。同步请求使用 inline 策略；启用事件发布的同步 resume 在 worker 内消费 AG-UI 事件并聚合答案，内部流独占 producer 锁，任务入口不重复加锁。普通同步 invoke 没有内部流，由 worker 执行层获取和释放生产锁。接入侧统一使用 `ProducerResourceManager` 包装器选择策略，原资源管理器继续提供认证与资源访问。
+attach 要求已有 `session_code` 和 `stream=True`，先通过用户态会话查询校验访问权限，再接入已有事件流，不投递、不构建 Agent、不保存输入或创建新 turn。worker 的流式 producer 不注册消费者；同步 resume 使用 inline producer 并在 worker 内聚合事件。`get_producer_runner()` 只负责 worker 内 producer 的执行策略；移除 SDK 的 `RemoteProducerRunner`、Web 的 `CeleryChatRunner` 及 AgentBuilder 的远端注入开关。关闭 Celery 时，原 HTTP 本地执行路径保留；直接使用 SDK/AgentBuilder 的代码保持本地策略，原插件异步入口保持自己的 Celery 调度。
 
 启用前：
 
-1. Web 和 worker 更新到同一版本。本功能不新增调度表或数据库迁移。
+1. Web 和 worker 更新到同一版本。本轮任务协议从 v1 改为 v2；升级前暂停入口并排空旧任务，避免新旧消息混用。本功能不新增调度表或数据库迁移。
 2. 配置共享 Redis 或其他支持回放的跨进程消息后端；InMemory 会明确拒绝远端调度。Web 和 worker 必须共享消息后端、broker 和应用配置，并继续使用原有会话及 checkpoint 存储。
 3. worker 消费 `bkai_agent_task` 队列，并加载 `aidev_bkplugin.tasks`。实际并发由 worker pool 和 `--concurrency` 决定；runner 不额外扩张任务并发。
-4. `BKAI_CHAT_CELERY_ENABLED` 默认开启，部署前须准备好上述依赖。需要回退本地执行时，在 Web 和 worker 设置 `BKAI_CHAT_CELERY_ENABLED=0`，并先排空已提交任务。旧变量 `BKAPP_CHAT_CELERY_ENABLED` 不再读取。worker 重建 Agent 时显式关闭再次投递。
+4. `BKAI_CHAT_CELERY_ENABLED` 默认开启，部署前须准备好上述依赖。需要回退本地执行时，在 Web 和 worker 设置 `BKAI_CHAT_CELERY_ENABLED=0`，并先排空已提交任务。旧变量 `BKAPP_CHAT_CELERY_ENABLED` 不再读取。远端投递仅在 HTTP Chat 视图入口发生，worker 构建不再需要关闭调度的开关。
 
 模板通过 `bin/start_celery.sh` 启动 worker，`BKAI_CELERY_CONCURRENCY` 控制线程并发，未设置或为空时默认 `16`。一个 worker 的三个队列共享这 16 个执行槽位，副本数仍为 1；已有应用需同步启动脚本及 `app_desc.yml`，仅升级插件包不会修改已有启动命令。
 
@@ -43,7 +43,7 @@ BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLE
 
 停止请求继续使用现有取消信号。worker 领取时检查会话级 stop；流式 producer 启动时会在清理队列前保留本轮取消意图，运行期间仍按实际 `run_id` 检查。排队停止沿用信号的有效期，不提供超出原信号生命周期的持久化撤销；排队过久应由任务有效期兜底。取消同步模型执行仍受原同步执行路径的能力限制。
 
-任务协议仅传 JSON 执行参数、身份、历史快照和 Trace carrier，不传 Agent、闭包或认证凭据。worker 默认使用 `LLMOverrideResourceManager`，按用户名及租户从本地配置恢复认证。使用自定义资源管理器的应用须在 Django settings 配置 `BKAI_CHAT_RESOURCE_MANAGER_FACTORY` 为可调用工厂，接收 `username`、`model`、`tenant_id`，在 worker 内构建原资源实现。工厂由受信任的应用配置决定，不能来自请求 JSON。
+任务协议 v2 仅传 JSON 执行参数、会话标识、身份及 Trace carrier，不传完整历史或知识配置快照，不传 Agent、闭包或认证凭据。worker 默认使用 `LLMOverrideResourceManager`，按用户名及租户从本地配置恢复认证。使用自定义资源管理器的应用须在 Django settings 配置 `BKAI_CHAT_RESOURCE_MANAGER_FACTORY` 为可调用工厂，接收 `username`、`model`、`tenant_id`，在 worker 内构建原资源实现。工厂由受信任的应用配置决定，不能来自请求 JSON。
 
 生产锁保证不会同时生产，不保证任务完成后的重复投递不再次执行；沿用现有语义，不承诺 exactly-once 或持久化请求幂等。worker 异常退出后使用原消息后端的锁释放/过期与流心跳机制，不再遗留 building/running 数据库记录。Web 等待超时不代表运行中的任务已终止。
 

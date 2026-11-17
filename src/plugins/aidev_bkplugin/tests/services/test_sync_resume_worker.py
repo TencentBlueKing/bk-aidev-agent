@@ -45,7 +45,7 @@ def test_sync_resume_returns_answer_with_one_producer_lock(monkeypatch, settings
     monkeypatch.setattr(chat_tasks, "send_chat_reply", replies)
     resources = SimpleNamespace(event_publishing_enabled=lambda: True)
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock(return_value=resources)
-    agent = SimpleNamespace(resource_manager=resources, model_name="test-model", event_handler=None)
+    agent = SimpleNamespace(resource_manager=resources, model_name="test-model", event_handler=None, chat_history=[{}])
 
     def produce():
         producer_threads.append(threading.get_ident())

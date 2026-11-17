@@ -4,7 +4,7 @@ import time
 from functools import partial
 
 from aidev_agent.config import settings as agent_settings
-from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs, KnowledgeSettings
+from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
@@ -38,7 +38,7 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
     handler = message_handler_factory.get()
     try:
         execution_spec = ChatExecutionSpec.model_validate(spec)
-        if execution_spec.protocol_version != 1:
+        if execution_spec.protocol_version != 2:
             raise ValueError("Invalid Chat execution protocol")
         if execution_spec.app_code != agent_settings.APP_CODE:
             raise ValueError("Chat execution belongs to another application")
@@ -74,12 +74,11 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
         temperature=spec.temperature,
         retry_strategy=spec.retry_strategy,
         reasoning_effort=spec.reasoning_effort,
-        remote_execution=False,
     )
     agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
-    agent.chat_history = [ChatPrompt.model_validate(prompt) for prompt in spec.chat_history]
-    agent.knowledge_query_options = KnowledgeSettings.model_validate(spec.knowledge_query_options)
     execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
+    if not execute_kwargs.input and not agent.chat_history:
+        raise ValueError("The chat history cannot be empty. Please provide input.")
     # Only an HTTP stream has a separate Web consumer. Synchronous resume
     # consumes its internal AG-UI stream here to aggregate the response.
     runner = (
@@ -103,6 +102,9 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
             return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
         finally:
             handler.release_producer(spec.session_code)
+    event_handler = getattr(agent, "event_handler", None)
+    if event_handler and hasattr(event_handler, "set_streaming_started"):
+        event_handler.set_streaming_started()
     output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
     if execute_kwargs.legacy_streaming:
         helper = GeneratorStreamingHelper(thread_id=spec.session_code, resource_manager=agent.resource_manager)

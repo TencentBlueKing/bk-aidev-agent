@@ -1,3 +1,4 @@
+import json
 import time
 from unittest.mock import Mock
 
@@ -6,7 +7,7 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
 from aidev_bkplugin.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
 from aidev_bkplugin.services import producer_dispatch
-from aidev_bkplugin.services.producer_dispatch import CeleryChatRunner, ChatExecutionSpec
+from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
 
 
 @pytest.fixture
@@ -47,7 +48,7 @@ def worker_executor(monkeypatch, settings):
 def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
     sender = Mock()
     monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
-    task_id = CeleryChatRunner(spec)._submit(spec)
+    task_id = ChatDispatcher(spec)._submit(spec)
     payload = sender.call_args.kwargs
     assert payload["queue"] == "bkai_agent_task"
     assert payload["task_id"] == task_id
@@ -60,7 +61,7 @@ def test_publish_failure_reaches_web(spec, monkeypatch):
         producer_dispatch.current_app, "send_task", Mock(side_effect=RuntimeError("broker unavailable"))
     )
     with pytest.raises(RuntimeError, match="broker unavailable"):
-        CeleryChatRunner(spec)._submit(spec)
+        ChatDispatcher(spec)._submit(spec)
 
 
 def test_reply_channel_isolated_by_tenant_and_task(spec):
@@ -129,9 +130,7 @@ def test_started_after_expiry_does_not_publish_ready(spec, handler):
 def test_wait_ignores_poll_timeout_and_returns_result(spec, handler):
     handler.get_messages_since.side_effect = [TimeoutError(), ([{"kind": "result", "result": "done"}], 1)]
     assert (
-        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="result", timeout=30)[
-            "result"
-        ]
+        ChatDispatcher._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="result", timeout=30)["result"]
         == "done"
     )
     handler.mark_completed.assert_called_once_with(spec.reply_channel("task-id"))
@@ -140,12 +139,12 @@ def test_wait_ignores_poll_timeout_and_returns_result(spec, handler):
 def test_worker_error_during_startup_reaches_web(spec, handler):
     handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
     with pytest.raises(RuntimeError, match="ValueError"):
-        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=30)
+        ChatDispatcher._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=30)
 
 
 def test_wait_has_bounded_timeout(spec, handler):
     with pytest.raises(TimeoutError):
-        CeleryChatRunner._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=0)
+        ChatDispatcher._wait_reply(spec.reply_channel("task-id"), handler, expected_kind="started", timeout=0)
     handler.get_messages_since.assert_not_called()
 
 
@@ -153,10 +152,8 @@ def test_attach_never_submits(spec, handler, monkeypatch):
     sender = Mock()
     monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
     consume = Mock(return_value=iter(["replay"]))
-    monkeypatch.setattr(CeleryChatRunner, "_consume", consume)
-    agent = Mock(chat_history=[])
-    agent.knowledge_query_options.model_dump.return_value = {}
-    result = CeleryChatRunner(spec).execute_chat(agent, ExecuteKwargs(stream=True, stream_mode="attach"))
+    monkeypatch.setattr(ChatDispatcher, "_consume", consume)
+    result = ChatDispatcher(spec).execute(ExecuteKwargs(stream=True, stream_mode="attach"))
     assert list(result) == ["replay"]
     sender.assert_not_called()
 
@@ -166,7 +163,7 @@ def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatc
     helper = Mock()
     helper.stream.return_value = iter(["live-event"])
     monkeypatch.setattr(producer_dispatch, "GeneratorStreamingHelper", Mock(return_value=helper))
-    assert list(CeleryChatRunner(spec)._consume(spec, handler, "task-id")) == ["live-event"]
+    assert list(ChatDispatcher(spec)._consume(spec, handler, "task-id")) == [": waiting for worker\n\n", "live-event"]
     assert helper.stream.call_args.kwargs == {"expected_run_id": "worker-run", "attach_only": True}
 
 
@@ -194,9 +191,39 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
     spec.temperature = 0.2
     execute_chat_producer(spec, "task-id", time.time() + 30)
     factory.assert_called_once_with(username="alice", model="selected-model", tenant_id="test-tenant")
-    assert builder_cls.call_args.kwargs["remote_execution"] is False
     assert builder_cls.call_args.kwargs["temperature"] == 0.2
     builder.by_session_code.assert_called_once_with("test-session", version="v1", channel_type=None)
     agent = builder.by_session_code.return_value
     assert isinstance(agent.resource_manager.get_producer_runner(), ProducerOnlyRunner)
     assert executor.execute_with_save.call_args.args[1].background_only is True
+
+
+def test_sse_headers_can_flush_before_worker_receipt(spec, handler):
+    stream = ChatDispatcher(spec)._consume(spec, handler, "task-id")
+    assert next(stream).startswith(":")
+    handler.get_messages_since.assert_not_called()
+    stream.close()
+
+
+def test_startup_failure_is_encoded_as_sse(spec, handler):
+    handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
+    chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
+    events = [json.loads(chunk[6:]) for chunk in chunks if chunk.startswith("data: ")]
+    assert events[0]["type"] == "RUN_ERROR"
+    assert events[-1]["type"] == "RUN_FINISHED"
+
+
+def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, settings):
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    history = [{"role": "assistant", "content": "persisted interrupt"}]
+    agent = Mock(chat_history=history)
+    builder = Mock()
+    builder.by_session_code.return_value = agent
+    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    executor = Mock()
+    executor.execute_with_save.return_value = iter(())
+    monkeypatch.setattr("aidev_bkplugin.chat_tasks.AgentExecutor", Mock(return_value=executor))
+    execute_chat_producer(spec, "task-id", time.time() + 30)
+    builder.by_session_code.assert_called_once()
+    assert agent.chat_history is history
+    assert executor.execute_with_save.call_args.args[0] is agent

@@ -1,20 +1,10 @@
-"""可选 producer 策略：本地执行，或在 Chat 副作用发生前委托远端执行。"""
+"""可选 producer 策略：默认线程或当前 worker 内执行。"""
 
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Thread
-from typing import Any
 
 from typing_extensions import Protocol, runtime_checkable
-
-
-class RemoteProducerRunner(ABC):
-    """Delegate before Chat execution mutates session history or checkpoint state."""
-
-    @abstractmethod
-    def execute_chat(self, agent: Any, execute_kwargs: Any) -> Any:
-        raise NotImplementedError
 
 
 @dataclass
@@ -27,7 +17,7 @@ class ProducerOnlyRunner:
         produce()
 
 
-ProducerRunner = Callable[[Callable[[], None]], Thread | None] | RemoteProducerRunner
+ProducerRunner = Callable[[Callable[[], None]], Thread | None]
 
 
 def run_producer_inline(produce: Callable[[], None]) -> None:
@@ -40,7 +30,7 @@ class ProducerExecutionResources(Protocol):
     """Resource Manager 的可选能力；不扩展原资源协议的必需方法集合。"""
 
     def get_producer_runner(self) -> ProducerRunner | None:
-        """返回执行策略；None 保留默认线程行为，RemoteProducerRunner 仅用于 Chat。"""
+        """返回执行策略；None 保留默认线程行为。"""
         ...
 
 

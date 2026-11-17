@@ -8,11 +8,9 @@ from unittest.mock import Mock
 import pytest
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import ResourceManagerProtocol
-from aidev_agent.services.agent.chat import ChatCompletionAgent
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.producer import (
     ProducerOnlyRunner,
-    RemoteProducerRunner,
     resolve_producer_runner,
     run_producer_inline,
 )
@@ -29,18 +27,6 @@ class LegacyResources:
 
     def get_client(self):
         return "existing-client"
-
-
-def test_remote_dispatch_precedes_session_side_effects():
-    class RemoteRunner(RemoteProducerRunner):
-        def execute_chat(self, agent, execute_kwargs):
-            return "remote-output"
-
-    runner = RemoteRunner()
-    resources = SimpleNamespace(get_producer_runner=lambda: runner)
-    agent = SimpleNamespace(resource_manager=resources, migration_v1=Mock())
-    assert ChatCompletionAgent.execute(agent, SimpleNamespace()) == "remote-output"
-    agent.migration_v1.assert_not_called()
 
 
 def test_producer_only_worker_never_claims_consumer(helper, monkeypatch):

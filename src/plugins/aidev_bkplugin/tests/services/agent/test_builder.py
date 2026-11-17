@@ -59,7 +59,7 @@ def test_by_thread_id_with_chat_history_persists_then_builds():
         SimpleNamespace(role="user", content="new question"),
     ]
     sm = MagicMock(name="session_manager")
-    sm.get_or_create_by_thread_id.return_value = "session-xyz"
+    sm.prepare_chat_history.return_value = ("session-xyz", "turn-1")
 
     build_p, factory_p, client_p, checkpointer_p = _patch_factories()
     with build_p as mock_build, factory_p as mock_factory, client_p, checkpointer_p:
@@ -74,14 +74,7 @@ def test_by_thread_id_with_chat_history_persists_then_builds():
 
     assert session_code == "session-xyz"
     assert agent_instance is mock_build.return_value
-    sm.get_or_create_by_thread_id.assert_called_once_with("t-1", channel_type="rtx")
-    sm.save_chat_history.assert_called_once_with("session-xyz", history[:-1])
-    sm.save_content.assert_called_once_with(
-        session_code="session-xyz",
-        role="user",
-        content="new question",
-        turn_id="turn-1",
-    )
+    sm.prepare_chat_history.assert_called_once_with("t-1", history, turn_id="turn-1", channel_type="rtx")
 
 
 def test_by_thread_id_skips_save_when_save_content_false():
