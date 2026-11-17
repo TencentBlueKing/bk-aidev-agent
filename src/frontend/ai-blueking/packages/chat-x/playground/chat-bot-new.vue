@@ -13,9 +13,29 @@
     >
       <CollapsedAsideIcon />
     </ToolBtn>
+    <!-- 本地会话表：模拟业务方切换来源会话、分支会话和组件全集 -->
+    <div class="session-switcher">
+      <button
+        v-for="session in sessions"
+        :key="session.code"
+        :class="{ 'is-active': session.code === currentSessionCode }"
+        type="button"
+        @click="switchSession(session.code)"
+      >
+        {{ session.name }}
+      </button>
+      <button
+        :disabled="!sourceSessionExists"
+        type="button"
+        @click="deleteSourceSession"
+      >
+        删除来源会话
+      </button>
+    </div>
   </div>
   <div class="chat-bot-new">
     <ChatContainer
+      :key="currentSessionCode"
       v-model:aside-collapsed="asideCollapsed"
       v-model:cite="cite"
       v-model:reasoning-effort="reasoningEffort"
@@ -32,6 +52,7 @@
       :on-agent-action="handleAgentAction"
       :on-artifact-click="mockArtifactClick"
       :on-custom-tab-change="handleCustomTabChange"
+      :on-fork-source-click="handleForkSourceClick"
       :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
@@ -171,14 +192,16 @@
 </template>
 
 <script setup lang="ts">
-  import { ref as deepRef, onMounted, shallowRef } from 'vue';
+  import { computed, ref as deepRef, onMounted, shallowRef } from 'vue';
 
   // import { Select } from 'bkui-vue';
   import {
     type ActivityMessage,
     type AssistantMessage,
     type IModelOption,
+    type InfoMessage,
     type Message,
+    type MessageForkInfo,
     type OnInterruptResume,
     type ReasoningEffort,
     type ToolMessage,
@@ -237,16 +260,187 @@
     // 接入方在这里调会话更新接口写入 reasoning_effort
     console.log('reasoning effort change:', model.llm_name, effort);
   };
-  // Info 分隔提示 + ToolCall 各状态 + flow_agent + 助手过程状态栏（已完成 / 生成中 / 失败）
-  const messages = deepRef<Message[]>([
-    ...MOCK_INFO_MESSAGES,
-    ...MOCK_TOOLCALL_STATUS_MESSAGES,
-    ...(MOCK_MESSAGES as Message[]),
-    ...MOCK_FLOW_AGENT_MESSAGES,
-    ...MOCK_FLOW_AGENT_TERMINATED_MESSAGES,
-    ...MOCK_MESSAGE_PROCESS_MESSAGES,
-    // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
+  // 本地会话表，模拟业务方的会话列表。默认打开来源会话，方便直接点「新建分支会话」和看提问吸附
+  const SOURCE_SESSION_CODE = 'session-source';
+  const GALLERY_SESSION_CODE = 'session-gallery';
+
+  type PlaygroundSession = {
+    code: string;
+    messages: Message[];
+    name: string;
+  };
+
+  const createUserMessage = (id: string, content: string): UserMessage => ({
+    id,
+    messageId: id,
+    role: MessageRole.User,
+    content,
+    status: MessageStatus.Complete,
+  });
+
+  const createAssistantMessage = (id: string, content: string): AssistantMessage => ({
+    id,
+    messageId: id,
+    role: MessageRole.Assistant,
+    content,
+    status: MessageStatus.Complete,
+  });
+
+  const cloneMessages = (list: Message[]) => JSON.parse(JSON.stringify(list)) as Message[];
+
+  /** 分叉点提示。组件认 property.fork_info，不展示 content */
+  const createForkMessage = (
+    sourceSessionCode: string,
+    sourceContentId: number | string,
+    lastCopiedContentId: number | string,
+  ): InfoMessage => {
+    const id = `fork_${Date.now()}`;
+    return {
+      id,
+      messageId: id,
+      role: MessageRole.Info,
+      content: '从其他会话中继续',
+      status: MessageStatus.Complete,
+      property: {
+        fork_info: {
+          source_session_code: sourceSessionCode,
+          source_content_id: sourceContentId,
+          last_copied_content_id: lastCopiedContentId,
+        },
+      },
+    };
+  };
+
+  // 第二轮回复故意超长，打开来源会话滚到底部后，本轮提问应吸在列表顶部
+  const stickyReply = [
+    '下面这段故意写得很长，用来看回复超过一屏时，本轮提问吸附在列表顶部。',
+    ...Array.from({ length: 16 }, (_, index) =>
+      [
+        `### ${index + 1}. 吸附说明`,
+        '提问停在当前这一轮的可视区顶部，白底盖住正在滚过的回复。滚到下一轮时，上一轮提问会跟着离开。',
+        '点本条回复工具栏的「新建分支会话」，新会话只保留到这一轮为止，并在末尾放上「从其他会话中继续」。',
+      ].join('\n\n'),
+    ),
+  ].join('\n\n');
+
+  const sourceMessages: Message[] = [
+    createUserMessage('source-user-1', '分支会话是怎么工作的？'),
+    createAssistantMessage(
+      'source-assistant-1',
+      '点这条回复工具栏里的「新建分支会话」，会按本轮及之前的上下文分出一条新会话，并在分叉点放上「从其他会话中继续」。',
+    ),
+    createUserMessage('source-user-2', '把后面的说明写长一些，我要看提问吸顶。'),
+    createAssistantMessage('source-assistant-2', stickyReply),
+  ];
+
+  const sessions = deepRef<PlaygroundSession[]>([
+    { code: SOURCE_SESSION_CODE, name: '来源会话', messages: sourceMessages },
+    {
+      code: 'session-branch-preset',
+      name: '预置分支',
+      messages: [
+        ...cloneMessages(sourceMessages),
+        {
+          id: 'preset-fork',
+          messageId: 'preset-fork',
+          role: MessageRole.Info,
+          content: '从其他会话中继续',
+          status: MessageStatus.Complete,
+          property: {
+            fork_info: {
+              source_session_code: SOURCE_SESSION_CODE,
+              source_content_id: 'source-assistant-2',
+              last_copied_content_id: 'source-assistant-2',
+            },
+          },
+        },
+        createUserMessage('branch-user-1', '这条只存在于分支会话。'),
+        createAssistantMessage(
+          'branch-assistant-1',
+          '来源会话里没有这轮。点上面的「从其他会话中继续」可以切回去；来源被删掉时会进入新会话。',
+        ),
+      ],
+    },
+    {
+      code: GALLERY_SESSION_CODE,
+      name: '组件全集',
+      // Info 分隔提示 + ToolCall 各状态 + flow_agent + 助手过程状态栏（已完成 / 生成中 / 失败）
+      messages: [
+        ...MOCK_INFO_MESSAGES,
+        ...MOCK_TOOLCALL_STATUS_MESSAGES,
+        ...(MOCK_MESSAGES as Message[]),
+        ...MOCK_FLOW_AGENT_MESSAGES,
+        ...MOCK_FLOW_AGENT_TERMINATED_MESSAGES,
+        ...MOCK_MESSAGE_PROCESS_MESSAGES,
+        // ...MOCK_USER_QUESTION_PENDING_MESSAGES,
+      ],
+    },
   ]);
+
+  const currentSessionCode = shallowRef(SOURCE_SESSION_CODE);
+  const currentSession = computed(() => sessions.value.find(session => session.code === currentSessionCode.value));
+  const messages = computed(() => currentSession.value?.messages ?? []);
+  const sourceSessionExists = computed(() => sessions.value.some(session => session.code === SOURCE_SESSION_CODE));
+
+  const switchSession = (code: string) => {
+    if (!sessions.value.some(session => session.code === code)) return;
+    currentSessionCode.value = code;
+  };
+
+  /** 来源会话已删除时的兜底：进入一条空的新会话 */
+  const enterNewSession = () => {
+    const serial = sessions.value.filter(session => session.code.startsWith('session-new-')).length + 1;
+    const code = `session-new-${Date.now()}`;
+    sessions.value.push({
+      code,
+      name: serial === 1 ? '新会话' : `新会话 ${serial}`,
+      messages: [],
+    });
+    currentSessionCode.value = code;
+  };
+
+  const deleteSourceSession = () => {
+    const index = sessions.value.findIndex(session => session.code === SOURCE_SESSION_CODE);
+    if (index < 0) return;
+    sessions.value.splice(index, 1);
+    if (currentSessionCode.value === SOURCE_SESSION_CODE) {
+      enterNewSession();
+    }
+  };
+
+  /**
+   * 按本轮回复及之前的上下文新建分支。
+   * onAgentAction 拿到的是当前助手组的消息，在扁平列表里截到该组末尾。
+   */
+  const forkSession = (groupMessages: Message[]) => {
+    const list = messages.value;
+    const anchorId = groupMessages.at(-1)?.id;
+    const endIndex =
+      anchorId == null
+        ? list.length - 1
+        : list.reduce((found, item, index) => (item.id === anchorId ? index : found), -1);
+    const copied = cloneMessages(endIndex >= 0 ? list.slice(0, endIndex + 1) : [...list]);
+    const last = copied.at(-1);
+    if (!last) return;
+    const code = `session-fork-${Date.now()}`;
+    const branchCount = sessions.value.filter(session => session.code.startsWith('session-fork-')).length + 1;
+    sessions.value.push({
+      code,
+      name: `分支 ${branchCount}`,
+      messages: [...copied, createForkMessage(currentSessionCode.value, anchorId ?? last.id, last.id)],
+    });
+    currentSessionCode.value = code;
+  };
+
+  const handleForkSourceClick = (forkInfo: MessageForkInfo) => {
+    console.log('fork source click:', forkInfo);
+    const source = sessions.value.find(session => session.code === forkInfo.source_session_code);
+    if (source) {
+      switchSession(source.code);
+      return;
+    }
+    enterNewSession();
+  };
 
   const handleInterruptResume: OnInterruptResume = (payload, interrupt) => {
     // 取消审批与流程节点重试 / 跳过复用同一回调，业务侧按 payload.operation 分流处理
@@ -939,8 +1133,12 @@
     { id: 'collect', name: '收藏', description: '收藏到我的空间', icon: EditIcon },
   ];
 
-  const handleAgentAction = async (tool: IToolBtn) => {
-    console.log('agent action:', tool);
+  const handleAgentAction = async (tool: IToolBtn, groupMessages: Message[] = []) => {
+    console.log('agent action:', tool, groupMessages);
+    if (tool.id === 'fork') {
+      forkSession(groupMessages);
+      return;
+    }
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (tool.id === 'save') {
       console.log('保存该回答');
@@ -1057,15 +1255,48 @@
 
   const handleDeleteMessage = () => {
     console.log('delete message');
-    messages.value = [];
+    currentSession.value?.messages.splice(0, currentSession.value.messages.length);
   };
 </script>
 
 <style lang="scss">
   .button-container {
-    position: fixed;
-    top: 10px;
-    left: 10px;
+    position: absolute;
+    top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    width: 1200px;
+    margin: 8px 0;
+  }
+
+  .session-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+
+    button {
+      padding: 4px 10px;
+      font-size: 12px;
+      line-height: 20px;
+      color: #63656e;
+      cursor: pointer;
+      background: #fff;
+      border: 1px solid #dcdee5;
+      border-radius: 4px;
+
+      &.is-active {
+        color: #fff;
+        background: #3a84ff;
+        border-color: #3a84ff;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+    }
   }
 
   .chat-bot-new {
@@ -1073,7 +1304,7 @@
     width: 1200px;
 
     // min-width: 400px;
-    height: 90vh;
+    height: calc(90vh - 48px);
     background: #fff;
     border-radius: 2px;
     box-shadow: 0 2px 12px 0 #0003;

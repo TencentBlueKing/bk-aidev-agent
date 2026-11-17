@@ -225,6 +225,8 @@ const SELECTION_Z_INDEX = 10003;
 const CONST_MESSAGE_TOOLS: IToolBtn[] = [
   { id: 'copy', name: '复制', description: '复制' },
   { id: 'rebuild', name: '重新生成', description: '重新生成将清空下文内容' },
+  // 基于本轮回复及之前的上下文新建分支会话；接口调用与会话切换由业务方在 onAgentAction 中处理
+  { id: 'fork', name: '新建分支会话', description: '新建分支会话' },
   { id: 'share', name: '分享', description: '分享' },
 ];
 ```

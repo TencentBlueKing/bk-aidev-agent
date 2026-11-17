@@ -362,6 +362,118 @@ describe('MessageContainer', () => {
     });
   });
 
+  describe('问答轮次与提问吸附', () => {
+    const roundMessages: Message[] = [
+      createUserMessage('1', 'Q1', 1),
+      createAssistantMessage('2', 'A1', 2),
+      createUserMessage('3', 'Q2', 3),
+      createAssistantMessage('4', 'A2', 4),
+    ];
+
+    it('每个用户提问应开启一个轮次 wrapper，回答组归入同一轮', async () => {
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      const turns = wrapper.findAll('.ai-message-turn');
+      expect(turns.length).toBe(2);
+      expect(turns[0].findAll('.message-group').map(group => group.attributes('data-message-group-id'))).toEqual([
+        'group-1',
+        'group-2',
+      ]);
+      expect(turns[1].findAll('.message-group').map(group => group.attributes('data-message-group-id'))).toEqual([
+        'group-3',
+        'group-4',
+      ]);
+    });
+
+    it('聊天态下用户提问组应吸附，回答组不吸附', async () => {
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      expect(wrapper.find('[data-message-group-id="group-1"]').classes()).toContain('is-sticky');
+      expect(wrapper.find('[data-message-group-id="group-2"]').classes()).not.toContain('is-sticky');
+    });
+
+    it('多选态与分享态下用户提问组不吸附', async () => {
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: roundMessages,
+          messageGroups: buildGroups(roundMessages),
+          enableSelection: true,
+        },
+      });
+      await nextTick();
+      expect(wrapper.find('[data-message-group-id="group-1"]').classes()).not.toContain('is-sticky');
+
+      await wrapper.setProps({ enableSelection: false, renderMode: RenderMode.Share });
+      expect(wrapper.find('[data-message-group-id="group-1"]').classes()).not.toContain('is-sticky');
+    });
+
+    it('没有前置提问的消息组也应包在轮次 wrapper 中', async () => {
+      const messages = [createAssistantMessage('1', 'Hi there!')];
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+      await nextTick();
+
+      expect(wrapper.findAll('.ai-message-turn').length).toBe(1);
+      expect(wrapper.find('.ai-message-turn .message-group').exists()).toBe(true);
+    });
+  });
+
+  describe('分叉点分隔线', () => {
+    const forkInfo = { source_session_code: 'source', source_content_id: 2, last_copied_content_id: 2 };
+    const infoMessage = {
+      id: '5',
+      messageId: 5,
+      content: '其他会话中继续',
+      role: MessageRole.Info,
+      status: MessageStatus.Complete,
+      property: { fork_info: forkInfo },
+    } as unknown as Message;
+    const buildForkGroups = (): MessageGroup[] => [
+      ...buildGroups([createUserMessage('1', 'Q1', 1), createAssistantMessage('2', 'A1', 2)]),
+      { uid: 'group-info', messages: [infoMessage], type: MessageRole.Info, isHover: false, checked: false },
+    ];
+
+    it('Info 消息组不显示消息工具与多选框', async () => {
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: [infoMessage], messageGroups: buildForkGroups(), enableSelection: true },
+      });
+      await nextTick();
+
+      const infoGroup = wrapper.find('[data-message-group-id="group-info"]');
+      expect(infoGroup.find('.mock-checkbox').exists()).toBe(false);
+      expect(infoGroup.find('.mock-message-tools').exists()).toBe(false);
+      expect(infoGroup.find('.message-group-messages').attributes('style')).toContain('width: 100%');
+    });
+
+    it('默认插槽的 onForkSourceClick 应带上当前消息回调 onForkSourceClick', async () => {
+      const onForkSourceClick = vi.fn();
+      let slotProps: { onForkSourceClick?: (info: typeof forkInfo) => void } | undefined;
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: [infoMessage], messageGroups: buildForkGroups(), onForkSourceClick },
+        slots: {
+          default: (props: { message: Message; onForkSourceClick?: (info: typeof forkInfo) => void }) => {
+            if (props.message.role === MessageRole.Info) {
+              slotProps = props;
+            }
+            return h('div');
+          },
+        },
+      });
+      await nextTick();
+
+      slotProps?.onForkSourceClick?.(forkInfo);
+      expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo, infoMessage);
+    });
+  });
+
   describe('消息定位', () => {
     const roundMessages: Message[] = [
       createUserMessage('1', 'Q1', 1),
@@ -395,13 +507,33 @@ describe('MessageContainer', () => {
       const scrollTo = vi.fn();
       container.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
       const target = wrapper.find('[data-message-group-id="group-3"]').element as HTMLElement;
-      Object.defineProperty(target, 'offsetTop', { configurable: true, value: 120 });
+      // 提问组吸附时自身 offsetTop 不可靠，应取所在轮次 wrapper 的位置
+      Object.defineProperty(target, 'offsetTop', { configurable: true, value: 999 });
+      Object.defineProperty(target.parentElement as HTMLElement, 'offsetTop', { configurable: true, value: 120 });
 
       locate(wrapper, 'group-3');
       await nextTick();
 
       expect(scrollTo).toHaveBeenCalledWith({ top: 120, behavior: 'smooth' });
       expect(autoScrollEnabled.value).toBe(false);
+    });
+
+    it('定位非吸附的消息组时使用消息组自身位置', async () => {
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages: roundMessages, messageGroups: buildGroups(roundMessages) },
+      });
+      await nextTick();
+
+      const container = wrapper.find('.ai-message-container').element as HTMLElement;
+      const scrollTo = vi.fn();
+      container.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+      const target = wrapper.find('[data-message-group-id="group-4"]').element as HTMLElement;
+      Object.defineProperty(target, 'offsetTop', { configurable: true, value: 260 });
+
+      locate(wrapper, 'group-4');
+      await nextTick();
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 260, behavior: 'smooth' });
     });
 
     it('找不到对应消息组时不滚动', async () => {
@@ -1335,9 +1467,9 @@ describe('MessageContainer', () => {
 
       await nextTick();
 
-      // 初始状态背景透明
+      // 初始状态不设置内联背景（默认透明，且不覆盖吸附提问组的白底）
       const messageGroup = wrapper.find('.message-group');
-      expect(messageGroup.attributes('style')).toContain('transparent');
+      expect(messageGroup.attributes('style') ?? '').not.toContain('background');
 
       // 选中后背景色改变
       const checkboxInput = wrapper.find('.mock-checkbox input[type="checkbox"]');
@@ -1730,7 +1862,8 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(2);
+      // 内置 copy / rebuild / fork，过滤掉 share
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
     });
 
     it('renderMode 为 Chat 时 MessageTools 应包含全部工具按钮', async () => {
@@ -1744,7 +1877,7 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
     });
 
     it('不传 renderMode 时 MessageTools 应包含全部工具按钮', async () => {
@@ -1758,7 +1891,7 @@ describe('MessageContainer', () => {
 
       const messageTools = wrapper.find('.mock-message-tools');
       expect(messageTools.exists()).toBe(true);
-      expect(Number(messageTools.attributes('data-tools-count'))).toBe(3);
+      expect(Number(messageTools.attributes('data-tools-count'))).toBe(4);
     });
   });
 
@@ -1782,7 +1915,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'share', 'save']);
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'fork', 'share', 'save']);
     });
 
     it('传入 messageTools 中的同 id 应字段级覆盖内置项且不新增', async () => {
@@ -1790,7 +1923,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'share']);
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'fork', 'share']);
       expect(tools.find(tool => tool.id === 'copy')?.description).toBe('复制全文');
     });
 
@@ -1799,7 +1932,7 @@ describe('MessageContainer', () => {
       await nextTick();
 
       const tools = readTools(wrapper, 'data-tools-json');
-      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild']);
+      expect(tools.map(tool => tool.id)).toEqual(['copy', 'rebuild', 'fork']);
     });
 
     it('不传 updateTools 时应使用内置反馈工具（like/unlike/delete）', async () => {

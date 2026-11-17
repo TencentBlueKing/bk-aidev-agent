@@ -153,6 +153,51 @@ describe('InfoMessage', () => {
     });
   });
 
+  describe('分叉点分隔线测试', () => {
+    const forkInfo = { source_session_code: 'a1b2c3d4', source_content_id: 1052, last_copied_content_id: 1053 };
+
+    it('存在 fork_info 时应渲染图标与「从其他会话中继续」文案，不渲染后端 content', () => {
+      wrapper = mount(InfoMessage, {
+        props: { content: '其他会话中继续', property: { fork_info: forkInfo } },
+      });
+
+      expect(wrapper.find('.ai-info-message').classes()).toContain('is-fork');
+      expect(wrapper.find('.ai-info-message-fork-icon').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message-fork-text').text()).toBe('从其他会话中继续');
+      expect(wrapper.find('.ai-info-message-content').exists()).toBe(false);
+    });
+
+    it('点击分隔线应以 fork_info 调用 onForkSourceClick', async () => {
+      const onForkSourceClick = vi.fn();
+      wrapper = mount(InfoMessage, {
+        props: { content: '其他会话中继续', property: { fork_info: forkInfo }, onForkSourceClick },
+      });
+
+      await wrapper.find('.ai-info-message-fork').trigger('click');
+      expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo);
+    });
+
+    it('键盘回车应同样触发 onForkSourceClick', async () => {
+      const onForkSourceClick = vi.fn();
+      wrapper = mount(InfoMessage, {
+        props: { content: '其他会话中继续', property: { fork_info: forkInfo }, onForkSourceClick },
+      });
+
+      await wrapper.find('.ai-info-message-fork').trigger('keydown', { key: 'Enter' });
+      expect(onForkSourceClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('没有 fork_info 时保持普通提示渲染', () => {
+      wrapper = mount(InfoMessage, {
+        props: { content: '普通提示', property: {} },
+      });
+
+      expect(wrapper.find('.ai-info-message').classes()).not.toContain('is-fork');
+      expect(wrapper.find('.ai-info-message-fork').exists()).toBe(false);
+      expect(wrapper.find('.ai-info-message-content').text()).toBe('普通提示');
+    });
+  });
+
   describe('样式测试', () => {
     it('应该具有正确的类名结构', () => {
       wrapper = mount(InfoMessage, {
