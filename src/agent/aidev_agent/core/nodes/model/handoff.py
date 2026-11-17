@@ -507,7 +507,7 @@ class HandoffCompressionMiddleware(BaseCompressionMiddleware):
         *,
         token_limit: Optional[int] = None,
         token_margin: int = 100,
-        timeout: float = 60,
+        timeout: float = 300,
         tools: Sequence[BaseTool] = (),
     ) -> None:
         super().__init__(token_limit=token_limit, token_margin=token_margin)
