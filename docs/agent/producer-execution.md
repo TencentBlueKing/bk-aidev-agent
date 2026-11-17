@@ -22,7 +22,7 @@ agent = AgentInstanceFactory.build_agent(
 
 ## 普通 Chat 转入 Celery
 
-BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLED` 默认值为 `0`，显式设为 `1` 后，普通 Chat 由 `AgentBuilder` 注入 `CeleryChatRunner`。Chat 在 SDK 执行入口委托 runner，模型执行、resume 和回复持久化交给 worker；Web 保留鉴权、会话准备和共享事件流消费。插件原有后台入口继续沿用下文的 worker inline 策略。
+BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLED` 默认值为 `1`，普通 Chat 默认由 `AgentBuilder` 注入 `CeleryChatRunner`。Chat 在 SDK 执行入口委托 runner，模型执行、resume 和回复持久化交给 worker；Web 保留鉴权、会话准备和共享事件流消费。插件原有后台入口继续沿用下文的 worker inline 策略。
 
 流式调用链为 `Chat.execute → CeleryChatRunner → bkai_agent_task → run_chat_producer → ProducerOnlyRunner`。Web 在 producer 就绪后立即消费共享消息，不等 worker 完成；流式 worker 不注册消费者，不与 Web 抢事件。attach 只接管已有任务，不再投递。
 
@@ -33,7 +33,7 @@ BK Plugin 指本仓库的 `aidev_bkplugin` Python 包。`BKAI_CHAT_CELERY_ENABLE
 1. Web 和 worker 更新到同一版本。本功能不新增调度表或数据库迁移。
 2. 配置共享 Redis 或其他支持回放的跨进程消息后端；InMemory 会明确拒绝远端调度。Web 和 worker 必须共享消息后端、broker 和应用配置，并继续使用原有会话及 checkpoint 存储。
 3. worker 消费 `bkai_agent_task` 队列，并加载 `aidev_bkplugin.tasks`。实际并发由 worker pool 和 `--concurrency` 决定；runner 不额外扩张任务并发。
-4. `BKAI_CHAT_CELERY_ENABLED` 默认关闭，普通 Chat 保持本地执行。准备好上述依赖后，在 Web 和 worker 设置 `BKAI_CHAT_CELERY_ENABLED=1` 开启；设为 `0` 回退前先排空已提交任务。旧变量 `BKAPP_CHAT_CELERY_ENABLED` 不再读取。worker 重建 Agent 时显式关闭再次投递。
+4. `BKAI_CHAT_CELERY_ENABLED` 默认开启，部署前须准备好上述依赖。需要回退本地执行时，在 Web 和 worker 设置 `BKAI_CHAT_CELERY_ENABLED=0`，并先排空已提交任务。旧变量 `BKAPP_CHAT_CELERY_ENABLED` 不再读取。worker 重建 Agent 时显式关闭再次投递。
 
 模板通过 `bin/start_celery.sh` 启动 worker，`BKAI_CELERY_CONCURRENCY` 控制线程并发，未设置或为空时默认 `16`。一个 worker 的三个队列共享这 16 个执行槽位，副本数仍为 1；已有应用需同步启动脚本及 `app_desc.yml`，仅升级插件包不会修改已有启动命令。
 
