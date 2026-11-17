@@ -30,6 +30,7 @@ import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ModelSelectorPanel from './model-selector-panel.vue';
+import ModelSelectorTrigger from './model-selector-trigger.vue';
 import ModelSelector from './model-selector.vue';
 
 import type { IModelOption } from './types';
@@ -377,6 +378,30 @@ describe('ModelSelector', () => {
       });
 
       expect(wrapper.find('.ai-model-selector-trigger.is-disabled').exists()).toBe(true);
+    });
+  });
+
+  describe('触发器箭头方向', () => {
+    it('默认不应带 is-expanded（箭头朝下由样式控制）', () => {
+      wrapper = mount(ModelSelectorTrigger, {
+        props: {
+          model: mockModels[0],
+        },
+      });
+
+      expect(wrapper.find('.ai-model-selector-trigger').classes()).not.toContain('is-expanded');
+      expect(wrapper.find('.ai-model-selector-trigger-arrow').exists()).toBe(true);
+    });
+
+    it('expanded 为 true 时应带 is-expanded（箭头朝上由样式控制）', () => {
+      wrapper = mount(ModelSelectorTrigger, {
+        props: {
+          model: mockModels[0],
+          expanded: true,
+        },
+      });
+
+      expect(wrapper.find('.ai-model-selector-trigger').classes()).toContain('is-expanded');
     });
   });
 });

@@ -396,6 +396,8 @@ describe('MessageContainer', () => {
 
       expect(wrapper.find('[data-message-group-id="group-1"]').classes()).toContain('is-sticky');
       expect(wrapper.find('[data-message-group-id="group-2"]').classes()).not.toContain('is-sticky');
+      // 未贴顶时不应出现吸附阴影态
+      expect(wrapper.find('[data-message-group-id="group-1"]').classes()).not.toContain('is-stuck');
     });
 
     it('多选态与分享态下用户提问组不吸附', async () => {

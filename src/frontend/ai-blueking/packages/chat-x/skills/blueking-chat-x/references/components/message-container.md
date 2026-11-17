@@ -157,6 +157,7 @@ AI 回复超出一屏时，本轮的用户提问组吸附在消息区顶部（`.
 - 分享态（`renderMode === RenderMode.Share`）与多选态（`enableSelection`）不吸附，方便完整浏览和勾选
 - 轮次 wrapper 不设定位，消息组的 `offsetParent` 仍是滚动容器；`locate(uid)` 定位到吸附中的提问组时，改用所在轮次 wrapper 的 `offsetTop`
 - 吸附背景默认白色。宿主消息区不是白色时，在容器上覆盖 `--ai-message-sticky-bg`
+- 提问气泡投影仅在真正贴顶时出现：滚动判定贴顶后加 `.is-stuck`，样式为 `.is-sticky.is-stuck .ai-user-message-content { box-shadow: 0 2px 6px 0 #c6d0e0 }`；正常流式位置与整组吸附条都不加投影
 
 ## 等待响应（Loading 自动注入）
 

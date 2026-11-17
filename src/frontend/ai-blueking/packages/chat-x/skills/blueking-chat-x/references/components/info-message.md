@@ -22,7 +22,7 @@
 
 ## 视觉原理
 
-根节点 `.ai-info-message` 为横向 flex：两侧通过 `::before` / `::after` 拉伸出虚线（主题边框色），中间 `.ai-info-message-body` 承载文案（主题次要文案色）。整块正常占位，避免旧实现 `height: 0` 导致内容被裁切遮挡：
+根节点 `.ai-info-message` 为横向 flex：两侧通过 `::before` / `::after` 拉伸出虚线（主题边框色，`linear-gradient` 自定义为 4px 实段 + 4px 空隙，比浏览器默认 `dashed` 更疏），中间 `.ai-info-message-body` 承载文案（主题次要文案色）。整块正常占位，避免旧实现 `height: 0` 导致内容被裁切遮挡：
 
 ```
 ─────── 以下是新的对话 ───────
@@ -88,7 +88,7 @@
 
 ## 分支会话分叉点
 
-分支会话（由 AI 消息工具栏的「新建分支会话」创建）里，后端会写入一条 `role: 'info'` 且带 `property.fork_info` 的提示消息。识别到 `fork_info` 时，组件不再显示后端 `content`，改为渲染「分支图标 + 蓝色文案『从其他会话中继续』」分隔线（根节点追加 `is-fork`）。传入 `onForkSourceClick` 时，分隔线为 `role="button"`，点击或回车调用 `onForkSourceClick(forkInfo)`，由业务方据 `source_session_code` 切回来源会话。未传入回调时只展示分隔线，没有按钮语义和手型光标。`MessageContainer` 在分享态（`renderMode === RenderMode.Share`）不向消息透传该回调。
+分支会话（由 AI 消息工具栏的「新建分支会话」创建）里，后端会写入一条 `role: 'info'` 且带 `property.fork_info` 的提示消息。识别到 `fork_info` 时，组件不再显示后端 `content`，改为渲染「分支图标 + 蓝色文案『从其他会话中继续』」分隔线（根节点追加 `is-fork`）。文案默认色 `$color-primary`（`#3a84ff`），hover 加深为 `#1768ef`。传入 `onForkSourceClick` 时，分隔线为 `role="button"`，点击或回车调用 `onForkSourceClick(forkInfo)`，由业务方据 `source_session_code` 切回来源会话。未传入回调时只展示分隔线，没有按钮语义和手型光标。`MessageContainer` 在分享态（`renderMode === RenderMode.Share`）不向消息透传该回调。
 
 ```vue
 <template>
