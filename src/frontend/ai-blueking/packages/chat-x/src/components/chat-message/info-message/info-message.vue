@@ -10,8 +10,9 @@
     >
       <div
         class="ai-info-message-fork"
-        role="button"
-        tabindex="0"
+        :class="{ 'is-clickable': forkClickable }"
+        :role="forkClickable ? 'button' : undefined"
+        :tabindex="forkClickable ? 0 : undefined"
         @click="handleForkClick"
         @keydown.enter="handleForkClick"
       >
@@ -51,9 +52,10 @@
   >();
 
   const forkInfo = computed(() => props.property?.fork_info);
+  const forkClickable = computed(() => !!forkInfo.value && !!props.onForkSourceClick);
 
   const handleForkClick = () => {
-    if (!forkInfo.value) return;
+    if (!forkClickable.value || !forkInfo.value) return;
     props.onForkSourceClick?.(forkInfo.value);
   };
 </script>
@@ -97,7 +99,10 @@
       display: flex;
       gap: 4px;
       align-items: center;
-      cursor: pointer;
+
+      &.is-clickable {
+        cursor: pointer;
+      }
 
       &-icon {
         flex-shrink: 0;

@@ -414,7 +414,11 @@
     messageTools: props.userMessageTools,
     messageToolsStatus: props.messageToolsStatus,
     onAction: (tool: IToolBtn) => handleUserAction(tool, message),
-    onForkSourceClick: (forkInfo: MessageForkInfo) => props.onForkSourceClick?.(forkInfo, message),
+    // 分享态是只读浏览；未接入回调时分隔线也不应呈现为可点击
+    onForkSourceClick:
+      props.renderMode === RenderMode.Share || !props.onForkSourceClick
+        ? undefined
+        : (forkInfo: MessageForkInfo) => props.onForkSourceClick?.(forkInfo, message),
     onInputConfirm: (content: UserMessage['content'], docSchema: TagSchema) =>
       handleUserInputConfirm(message, content, docSchema),
     onInterruptResume: props.onInterruptResume,
@@ -447,12 +451,12 @@
       padding: 8px 0;
 
       // 设计稿标注「对应消息之内吸附置顶」：回复超屏时提问停在可视区顶部，边界为所在轮次 wrapper；
-      // 白底遮住滚过的回复内容，层级低于底部的停止生成 / 返回底部按钮
+      // 底色遮住滚过的回复内容，层级低于底部的停止生成 / 返回底部按钮
       &.is-sticky {
         position: sticky;
         top: 0;
         z-index: 1;
-        background-color: #fff;
+        background-color: var(--ai-message-sticky-bg, #fff);
       }
 
       &-enabled-selection {

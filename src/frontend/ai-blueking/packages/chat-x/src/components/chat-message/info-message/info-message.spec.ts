@@ -165,6 +165,8 @@ describe('InfoMessage', () => {
       expect(wrapper.find('.ai-info-message-fork-icon').exists()).toBe(true);
       expect(wrapper.find('.ai-info-message-fork-text').text()).toBe('从其他会话中继续');
       expect(wrapper.find('.ai-info-message-content').exists()).toBe(false);
+      expect(wrapper.find('.ai-info-message-fork').attributes('role')).toBeUndefined();
+      expect(wrapper.find('.ai-info-message-fork').classes()).not.toContain('is-clickable');
     });
 
     it('点击分隔线应以 fork_info 调用 onForkSourceClick', async () => {
@@ -173,6 +175,8 @@ describe('InfoMessage', () => {
         props: { content: '其他会话中继续', property: { fork_info: forkInfo }, onForkSourceClick },
       });
 
+      expect(wrapper.find('.ai-info-message-fork').attributes('role')).toBe('button');
+      expect(wrapper.find('.ai-info-message-fork').classes()).toContain('is-clickable');
       await wrapper.find('.ai-info-message-fork').trigger('click');
       expect(onForkSourceClick).toHaveBeenCalledWith(forkInfo);
     });
