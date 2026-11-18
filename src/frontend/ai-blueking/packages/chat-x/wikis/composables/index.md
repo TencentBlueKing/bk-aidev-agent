@@ -9,6 +9,8 @@
 | 函数名                       | 说明                                                                                                                              | 文档                              |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `useClipboard`               | 复制文本到剪贴板；内置 Clipboard API → `execCommand` 两级降级，自动弹出成功/失败提示                                              | [查看](./use-clipboard.md)        |
+| `useToastContainerProvider`  | 宿主声明 toast 挂载容器；处于高层级浮层内时用它避免提示被挡住                                                                     | [查看](./use-toast.md)            |
+| `useToast` / `showToast`     | 统一提示出口；`useToast` 绑定注入的容器，`showToast` 为显式传容器的纯函数                                                         | [查看](./use-toast.md)            |
 | `useContainerScrollProvider` | 消息容器滚动控制 Provider；基于 IntersectionObserver + wheel 事件管理 `isScrollBottom`、`scrollBottomHeight`、`autoScrollEnabled` | [查看](./use-container-scroll.md) |
 | `useContainerScrollConsumer` | 获取父级 Provider 共享的滚动控制；在后代组件中调用 `toScrollBottom`                                                               | [查看](./use-container-scroll.md) |
 | `useAnimationText`           | 流式文本动画；将文本拆分为块并逐块渐显，适用于 AI 打字机效果                                                                      | [查看](./use-animation-text.md)   |

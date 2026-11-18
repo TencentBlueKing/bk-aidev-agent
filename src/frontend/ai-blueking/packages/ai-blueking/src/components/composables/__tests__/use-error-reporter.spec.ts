@@ -1,15 +1,44 @@
+/*
+ * Tencent is pleased to support the open source community by making
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) available.
+ *
+ * Copyright (C) 2021 THL A29 Limited, a Tencent company.  All rights reserved.
+ *
+ * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
+ *
+ * License for 蓝鲸智云PaaS平台 (BlueKing PaaS):
+ *
+ * ---------------------------------------------------
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+ * to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+ * the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ * THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+ * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockEmit } from '../../../__tests__/helpers';
 import { useErrorReporter } from '../use-error-reporter';
 
-const { mockMessage } = vi.hoisted(() => ({
-  mockMessage: vi.fn(),
+const { mockShowToast } = vi.hoisted(() => ({
+  mockShowToast: vi.fn(),
 }));
 
-vi.mock('bkui-vue', () => ({
-  Message: mockMessage,
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    useToast: () => mockShowToast,
+  };
+});
 
 vi.mock('../../../lang', () => ({
   t: (key: string) => key,
@@ -18,7 +47,7 @@ vi.mock('../../../lang', () => ({
 describe('useErrorReporter', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockMessage.mockClear();
+    mockShowToast.mockClear();
   });
 
   describe('reportError 归一化', () => {
@@ -91,7 +120,7 @@ describe('useErrorReporter', () => {
 
       reportError(new Error('Bad Request'));
 
-      expect(mockMessage).toHaveBeenCalledWith({
+      expect(mockShowToast).toHaveBeenCalledWith({
         message: 'Bad Request',
         theme: 'error',
       });
@@ -103,7 +132,7 @@ describe('useErrorReporter', () => {
 
       reportError(new Error(''));
 
-      expect(mockMessage).toHaveBeenCalledWith({
+      expect(mockShowToast).toHaveBeenCalledWith({
         message: '请求失败',
         theme: 'error',
       });
@@ -116,7 +145,7 @@ describe('useErrorReporter', () => {
       reportError(new Error('Bad Request'));
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(mockMessage).not.toHaveBeenCalled();
+      expect(mockShowToast).not.toHaveBeenCalled();
     });
 
     it('should toast only once for the same Error instance', () => {
@@ -127,7 +156,7 @@ describe('useErrorReporter', () => {
       reportError(error, 'first');
       reportError(error, 'second');
 
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
 
     it('should follow getter errorToast value', () => {
@@ -136,11 +165,11 @@ describe('useErrorReporter', () => {
       const { reportError } = useErrorReporter(emit, { errorToast: () => enabled });
 
       reportError(new Error('first'));
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
 
       enabled = false;
       reportError(new Error('second'));
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -176,7 +205,7 @@ describe('useErrorReporter', () => {
       reportError(error, 'Failed to stop generation');
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(mockMessage).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -85,6 +85,16 @@ const mockUploadedArtifactsRef = vi.hoisted(() => {
 });
 const mockUseMessageGroup = vi.hoisted(() => vi.fn());
 const mockUseRenderModeProvider = vi.hoisted(() => vi.fn());
+/** 受控的全屏状态，验证全屏时 toast 容器被覆盖为全屏元素 */
+const mockIsFullScreenRef = vi.hoisted(() => {
+  const { shallowRef } = require('vue');
+  return shallowRef(false) as Ref<boolean>;
+});
+/** 记录 ChatContainer 向后代 provide 的 toast 容器，以及上层注入的容器 */
+const mockToastContainer = vi.hoisted(() => ({
+  parent: undefined as HTMLElement | undefined,
+  provided: undefined as (() => HTMLElement | null | undefined) | undefined,
+}));
 
 vi.mock('bkui-vue', () => {
   const Button = defineComponent({
@@ -222,6 +232,17 @@ vi.mock('../../composables/use-common', () => ({
   useCommonTippyInject: () => ({ value: {} }),
   useCommonTippyProvider: vi.fn(),
   useRenderModeProvider: mockUseRenderModeProvider,
+}));
+
+vi.mock('../../composables/use-full-screen', () => ({
+  useFullScreen: () => ({ isFullScreen: mockIsFullScreenRef, enter: vi.fn(), exit: vi.fn() }),
+}));
+
+vi.mock('../../composables/use-toast', () => ({
+  useToastContainerInject: () => mockToastContainer.parent,
+  useToastContainerProvider: (container: () => HTMLElement | null | undefined) => {
+    mockToastContainer.provided = container;
+  },
 }));
 
 // 文件产物面板已是侧栏常驻默认 Tab，会在每个用例中渲染，统一以轻量桩替代
@@ -1391,6 +1412,45 @@ describe('ChatContainer', () => {
     });
   });
 
+  describe('toast 容器', () => {
+    beforeEach(() => {
+      mockIsFullScreenRef.value = false;
+      mockToastContainer.parent = undefined;
+      mockToastContainer.provided = undefined;
+    });
+
+    it('非全屏时向后代透传上层注入的 toast 容器', () => {
+      const host = document.createElement('div');
+      mockToastContainer.parent = host;
+
+      wrapper = mount(ChatContainer, { props: defaultProps });
+
+      expect(mockToastContainer.provided?.()).toBe(host);
+    });
+
+    it('无上层注入且非全屏时不提供容器（回退 body）', () => {
+      wrapper = mount(ChatContainer, { props: defaultProps });
+
+      expect(mockToastContainer.provided?.()).toBeUndefined();
+    });
+
+    it('全屏时覆盖为全屏元素，退出后恢复上层容器', async () => {
+      const host = document.createElement('div');
+      mockToastContainer.parent = host;
+      wrapper = mount(ChatContainer, { props: defaultProps });
+      getChatContainerExposed(wrapper).addCustomTab({ label: '自定义 Tab', name: 'custom-tab' });
+      await nextTick();
+
+      mockIsFullScreenRef.value = true;
+      await nextTick();
+      expect(mockToastContainer.provided?.()).toBe(wrapper.find('.ai-full-screen-wrapper').element);
+
+      mockIsFullScreenRef.value = false;
+      await nextTick();
+      expect(mockToastContainer.provided?.()).toBe(host);
+    });
+  });
+
   describe('Expose 测试', () => {
     it('应该暴露 selectedTab、addCustomTab、removeCustomTab、selectCustomTab', () => {
       wrapper = mount(ChatContainer, {
@@ -1546,6 +1606,52 @@ describe('ChatContainer', () => {
       const resize = wrapper.findComponent({ name: 'ResizeLayout' });
       expect(resize.props('placement')).toBe('right');
       expect(resize.props('min')).toBe(200);
+    });
+
+    it('容器宽度已知时，侧栏 max 会给主聊天区留出 mainMin', async () => {
+      type ResizeCallback = (entries: Array<{ contentRect: { width: number } }>) => void;
+      const callbacksByTarget = new Map<Element, ResizeCallback>();
+      const OriginalResizeObserver = globalThis.ResizeObserver;
+      class ResizeObserverStub {
+        constructor(private readonly callback: ResizeCallback) {}
+        observe(target: Element) {
+          callbacksByTarget.set(target, this.callback);
+        }
+        disconnect() {}
+      }
+      vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+
+      try {
+        wrapper = mount(ChatContainer, {
+          props: {
+            ...defaultProps,
+            resizeProps: { mainMin: 400, max: 1000, min: 300 },
+          },
+        });
+        await nextTick();
+        callbacksByTarget.get(wrapper.element)?.([{ contentRect: { width: 900 } }]);
+        await nextTick();
+
+        expect(wrapper.findComponent({ name: 'ResizeLayout' }).props('max')).toBe(500);
+        expect(wrapper.findComponent({ name: 'ResizeLayout' }).props('mainMin')).toBeUndefined();
+      } finally {
+        vi.stubGlobal('ResizeObserver', OriginalResizeObserver);
+      }
+    });
+
+    it('拖拽侧栏时 collapseChange 携带当前宽度', async () => {
+      wrapper = mount(ChatContainer, {
+        props: {
+          ...defaultProps,
+          asideCollapsed: false,
+        },
+      });
+      await nextTick();
+
+      wrapper.findComponent({ name: 'ResizeLayout' }).vm.$emit('resizing', 640);
+
+      const events = wrapper.emitted('collapseChange') ?? [];
+      expect(events.at(-1)).toEqual([false, 640]);
     });
 
     it('resizeProps.initialDivide 支持百分比字符串', () => {

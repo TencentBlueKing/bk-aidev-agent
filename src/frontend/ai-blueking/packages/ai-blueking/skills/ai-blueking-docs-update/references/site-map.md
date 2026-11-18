@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 | --- | --- |
 | `changelog.md` | 版本更新记录，新版本插在文首 |
-| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）；`enableMessageCollapse` 关闭消息折叠与过程状态栏；`executionTabVisible` 在 chat-x 3.0.0 起无效 |
+| `faq.md` | 常见问题，适合短问答与链到指南；含嵌入式 ChatBot 无侧栏开关 / `placement` 已移除；消息时间 `timezone`（≥ v2.2.3）；`enableChatSession` / `enablePopup` 与 info 联动（≥ v2.2.4）；`enableMessageCollapse` 关闭消息折叠与过程状态栏；`executionTabVisible` 在 chat-x 3.0.0 起无效；生成中可复制 / 主栏最小宽度 / 浮层 toast（≥ v3.1.1） |
 
 ## 指南 `/guide/`
 
@@ -22,26 +22,26 @@
 
 | 链接 | 文件 |
 | --- | --- |
-| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3）；`enablePopup` / `enableChatSession` 与 info 联动（≥ v2.2.4） |
+| `/guide/integration-modes/aiblueking-floating` | `aiblueking-floating.md`；浮窗侧栏固定右侧、`showAsideToggle`、两阶段扩宽、收起移回展开前位置（≥ v2.2.3）；`enablePopup` / `enableChatSession` 与 info 联动（≥ v2.2.4）；`minWidth` / 浮层 toast（≥ v3.1.1） |
 | `/guide/integration-modes/chatbot-embedded` | `chatbot-embedded.md` | 嵌入式 ChatBot；**业务 Header**（会话名 + `v-model:asideCollapsed`，侧栏固定右侧） |
-| `/guide/integration-modes/atomic-composition` | `atomic-composition.md` |
+| `/guide/integration-modes/atomic-composition` | `atomic-composition.md`；`useToastContainerProvider` 浮层 toast（≥ v3.1.1） |
 | `/guide/integration-modes/standalone-bundle` | `standalone-bundle.md` | 非 Vue 宿主、`/standalone`（≥ v2.1.4-beta.8） |
 
 ### 功能说明（core-features）
 
 | 链接 | 文件 | 典型更新场景 |
 | --- | --- | --- |
-| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、思考已停止、无正文时补「用户已取消」）；消息折叠 `enableMessageCollapse`（默认折叠 + 过程状态栏，可关闭）；删除整轮；消息时间展示（≥ v2.2.3）；文件上传（附件按钮常驻、单文件 &lt; 20MB、`delete-file`、上限 9、`pv_files`）；`stream_mode` 续流 |
+| `/guide/core-features/chat-interaction` | `chat-interaction.md` | 消息流、Markdown、停止生成（点击立即封口、思考已停止、无正文时补「用户已取消」）；消息折叠 `enableMessageCollapse`（默认折叠 + 过程状态栏，可关闭）；删除整轮；消息时间展示（≥ v2.2.3）；文件上传（附件按钮常驻、单文件 &lt; 20MB、`delete-file`、上限 9、`pv_files`）；`stream_mode` 续流；消息定位器（≥ v3.1.0） |
 | `/guide/core-features/markdown-inline-style` | `markdown-inline-style.md` | 蓝鲸行内富文本 `::bk::`、LLM 提示词 |
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill·MCP·工具、`@` 资源；统一 `menuSources` 与 `property.docSchema`（≥ v2.4.0） |
 | `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
-| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；思考深度 `property.reasoning` / `effectiveReasoningEffort` / 每轮 `reasoning_effort`；上传入口常驻，不跟 `support_vision`；`description` hover 气泡（3.1.0-beta.1） |
+| `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；思考深度 `property.reasoning` / `effectiveReasoningEffort` / 每轮 `reasoning_effort`；档位 `none` 回显「关闭思考」（≥ v3.1.1）；下拉默认 `bottom-end`（≥ v3.1.1）；上传入口常驻，不跟 `support_vision`；`description` hover 气泡 |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
-| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；chat-x 3.0.0 起内建「执行情况」Tab 已下线，`executionTabVisible` 不再生效；常驻默认 Tab 为「文件产物」（`loadOnSelect: false` 不走业务渲染器）；侧栏固定右侧 + 嵌入模式须业务 Header。示例页按 3.1.0-beta.6，用 `enableMessageCollapse` |
-| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`（≥ v2.2.4）、`messageTools`/`updateTools`；动态 placeholder（≥ v2.2.4）；`size` / `timezone`（≥ v2.2.3） |
+| `/guide/core-features/side-render-customization` | `side-render-customization.md` | 侧栏 Tab `getSideRenderComponent` 等（≥ v2.1.4-beta.7）；chat-x 3.0.0 起内建「执行情况」Tab 已下线，`executionTabVisible` 不再生效；常驻默认 Tab 为「文件产物」（`loadOnSelect: false` 不走业务渲染器）；侧栏固定右侧 + 嵌入模式须业务 Header。示例页按 3.1.1 |
+| `/guide/core-features/ui-customization` | `ui-customization.md` | 主题、布局；`#welcome` 插槽、`#headerLeft` / `#headerActions`（≥ v2.2.4）、`messageTools`/`updateTools`（生成中可复制 ≥ v3.1.1）；动态 placeholder（≥ v2.2.4）；`size` / `timezone`（≥ v2.2.3）；`minWidth`（≥ v3.1.1） |
 | `/guide/core-features/skill-guide` | `skill-guide.md` | AIDev Skill 市场指引 |
 
 ### 高级用法
@@ -76,7 +76,13 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 
 消息折叠 `enableMessageCollapse` 落点：指南 `chat-interaction.md`「消息折叠」、`chatbot-embedded.md` Props；FAQ「如何关闭消息折叠和过程状态栏」；API `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`，以及 `api/chat-x/components.md` `MessageContainer`。默认 `true`，与 chat-x 一致。
 
-模型选择相关落点（≥ v2.2.2）：指南 `model-selection.md`；API 同步 `aiblueking` / `chatbot` / `managers`（含 `ModelSelectionManager`） / `types`、`chat-helper/sdk`、`chat-x/components`；FAQ「如何关闭或自定义模型选择」。
+模型选择相关落点（≥ v2.2.2）：指南 `model-selection.md`；API 同步 `aiblueking` / `chatbot` / `managers`（含 `ModelSelectionManager`） / `types`、`chat-helper/sdk`、`chat-x/components`；FAQ「如何关闭或自定义模型选择」。思考档位 `none` 回显「关闭思考」、下拉默认 `bottom-end`（≥ v3.1.1）写在 `model-selection.md`。
+
+`minWidth` / `resizeProps.mainMin`（≥ v3.1.1）：指南 `aiblueking-floating.md`「主聊天区最小宽度」、`ui-customization.md` 布局表、`chatbot-embedded.md` Props；FAQ「打开侧栏后主聊天区被挤没了」；API `aiblueking.md` / `chatbot.md` / `types.md`、`chat-x/components.md` `ChatContainer`。
+
+浮层 toast（≥ v3.1.1）：指南 `aiblueking-floating.md`、`atomic-composition.md`「浮层内的提示」；FAQ「浮窗里点复制成功，提示看不见」；chat-x `useToastContainerProvider`。`AIBlueking` 已内置，原子组装自建高层级浮层时才需注入。
+
+生成中可复制（≥ v3.1.1）：指南 `ui-customization.md` 消息工具栏、`atomic-composition.md` 工具栏回调；FAQ「生成过程中可以复制消息吗」；API `chat-x/components.md` `messageToolsStatus`、`chat-x/types.md` `MessageToolsStatus`。
 
 `stream_mode`（`start` / `attach`）落点：指南 `chat-interaction.md`「刷新 / 切会话续流」、`session-management.md` 切换会话；API `api/chat-helper/sdk.md` `#stream-mode`、`api/chat-helper/types.md` `StreamMode`。ChatBot / AIBlueking 无新 Props。
 
@@ -107,9 +113,9 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 
 目录中已无 planned 条目；新增示例页时先在 `demos-catalog.ts` 登记。
 
-**当前仍成立的限制（文档用 `::: warning 当前行为` 标注，修复后删除）**：`updatePosition` / `updateSize` / `updatePositionAndSize` 不带动面板；`show(…, { isTemporary })` 不生效；`requestOptions.context` 只解析值形态；`@sdk-error` 的 `code` 恒为 -1（HTTP 状态在 `data.response.status`）；RUN_ERROR 不经过 `@sdk-error`；`updateSessionName` 不触发 `@rename`。已发布 `3.1.0-beta.6` 的 `#message` 作用域仍不含用户消息工具回调。
+**当前仍成立的限制（文档用 `::: warning 当前行为` 标注，修复后删除）**：`updatePosition` / `updateSize` / `updatePositionAndSize` 不带动面板；`show(…, { isTemporary })` 不生效；`requestOptions.context` 只解析值形态；`@sdk-error` 的 `code` 恒为 -1（HTTP 状态在 `data.response.status`）；RUN_ERROR 不经过 `@sdk-error`；`updateSessionName` 不触发 `@rename`。
 
-`#message` 作用域已在组件源码补齐 `MessageSlotProps`（含用户消息工具回调）以及 ChatBot / AIBlueking 的 `renderDefault`。主站演示跑的是 npm 已发布版本，**等包含该修复的 @blueking/ai-blueking / chat-x 发版并升级 `web/package.json` 后**，再把下列 warning 改成新作用域（含 `renderDefault()` 示例）并删掉：`docs/demos/custom-message.md`、`docs/guide/core-features/custom-message-rendering.md`，以及 `docs/api/ai-blueking/chatbot.md`、`docs/api/ai-blueking/aiblueking.md` 里的 message 插槽表。
+`#message` 作用域已在 **v3.1.0** 起补齐 `MessageSlotProps`（含用户消息工具回调）以及 ChatBot / AIBlueking 的 `renderDefault`。主站演示依赖见 `web/package.json`。
 
 | 路径 | 职责 |
 | --- | --- |
@@ -126,7 +132,7 @@ Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization
 - `themeConfig.sidebar["/guide/"]` 等 — 侧栏（**新指南页必改**）
 - 顶栏版本下拉读 `changelog.md` 首条 `## vX.Y.Z`（`utils/resolve-changelog-version.js`）
 
-演示依赖：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 对齐已发布的 `3.1.0-beta.6`（含 `setInputContent`）。
+演示依赖：`src/frontend/web/package.json` 中 `@blueking/ai-blueking` / `chat-x` / `chat-helper` 对齐已发布的 `3.1.1` / `3.1.2-beta.2` / `3.1.0`。
 
 ## 源码对照（写文档前建议阅读）
 

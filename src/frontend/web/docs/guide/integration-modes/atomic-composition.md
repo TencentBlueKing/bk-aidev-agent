@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
 
 ## 工具栏二次开发：MessageContainer 回调 ↔ HTTP ↔ chat-helper {#工具栏回调}
 
-`MessageContainer` 通过 **props 回调**处理「复制 / 引用 / 重新生成 / 删除 / 分享 / 点赞点踩」；**不要**再使用已废弃的 `@cite` 等事件。
+`MessageContainer` 通过 **props 回调**处理「复制 / 引用 / 重新生成 / 删除 / 分享 / 点赞点踩」；**不要**再使用已废弃的 `@cite` 等事件。`copy` 由容器内部处理：自 **v3.1.1** 起，生成中工具栏 `disabled` 时复制仍可用，可复制已经输出的内容。
 
 | 工具 `tool.id` | 回调 | 推荐实现（可与内置 ChatBot 行为对齐） | 后端接口（路径以网关为准） |
 | -------------- | ---- | -------------------------------------- | -------------------------- |
@@ -144,6 +144,31 @@ SSE 每行 `data: <json>\n\n`，`type` 为字符串（如 `TEXT_MESSAGE_CHUNK`�
 
 生产环境实现 SSE 时，请注意**逐块写出**与**背压**（连接中断、慢客户端），避免一次性缓冲整段再推送导致首字延迟过大。
 
+## 浮层内的提示 {#浮层内的提示}
+
+bkui `Message` 默认挂 `document.body`，层级从约 6000 起算。如果把 `ChatContainer` 放进更高层级的 fixed 浮层（例如 `z-index: 10000`），复制成功、附件校验等提示会被挡住。
+
+自 **v3.1.1** 起，chat-x 不再为 AIBlueking 浮层写死挂载点。宿主通过 `useToastContainerProvider` 声明容器，后代的 `useToast()` 会把提示挂进去。`AIBlueking` 已经内置；独立使用 `ChatContainer` 且没有 Provider 时，提示仍挂 `document.body`。
+
+```vue
+<template>
+  <div class="my-overlay">
+    <ChatContainer ... />
+    <div ref="toastHostRef" class="my-toast-host" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import { useToastContainerProvider } from '@blueking/chat-x';
+
+const toastHostRef = ref<HTMLElement>();
+useToastContainerProvider(toastHostRef);
+</script>
+```
+
+容器需要铺满浮层（`position: absolute; inset: 0; pointer-events: none`），并给 `.bk-message` 恢复 `pointer-events: auto`，才能点关闭。宿主组件自己的 setup 里 inject 不到自己 provide 的值；若宿主也要弹提示，调用 `showToast(options, toastHostRef.value)`。`ChatContainer` 进入浏览器全屏时会把容器覆盖为全屏元素。
+
 ## 与旧文档的常见差异
 
 | 误区                                      | 说明                                                        |
@@ -158,4 +183,5 @@ SSE 每行 `data: <json>\n\n`，`type` 为字符串（如 `TEXT_MESSAGE_CHUNK`�
 - [架构概览](/guide/architecture) — chat-x / chat-helper / ai-blueking 边界
 - [自定义请求](/guide/advanced-usage/custom-requests) — `requestData`、拦截器
 - [聊天交互](/guide/core-features/chat-interaction) — `AGUIProtocol`、AG-UI 事件类型、流式响应
+- [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating#主聊天区最小宽度) — 浮窗主栏最小宽度与内置 toast 挂载
 - [chat-helper SDK API](/api/chat-helper/sdk) — [`useChatHelper`](/api/chat-helper/sdk)、`EventType` 等完整接口

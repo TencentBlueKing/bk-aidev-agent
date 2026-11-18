@@ -13,6 +13,7 @@ from aidev_agent.packages.opentelemetry.context_obs import (
     measure_context,
     observe_assembly,
     observe_compression_call,
+    record_compression_skipped,
 )
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
@@ -373,3 +374,24 @@ class TestContextObservationRefactor:
         assert raised.value is error
         assert len(exporter.get_finished_spans()) == 1
         assert not handler.spans
+
+def test_compression_skipped_records_low_cardinality_metric():
+    recorder = Mock()
+    with patch("aidev_agent.packages.opentelemetry.context_obs.get_enabled_agent_metrics", return_value=recorder):
+        record_compression_skipped(compression_type="handoff", reason="token_count_unavailable")
+    recorder.record_context_compression_skipped.assert_called_once_with(
+        {"compression.type": "handoff", "reason": "token_count_unavailable"}
+    )
+
+
+@pytest.mark.parametrize("getter", [None, Mock(return_value=None), Mock(side_effect=RuntimeError("unavailable"))])
+def test_compression_skipped_observation_is_fail_open(getter):
+    with patch("aidev_agent.packages.opentelemetry.context_obs.get_enabled_agent_metrics", getter):
+        record_compression_skipped(compression_type="handoff", reason="token_count_unavailable")
+
+
+def test_compression_skipped_metric_backend_error_is_fail_open():
+    recorder = Mock()
+    recorder.record_context_compression_skipped.side_effect = RuntimeError("backend error")
+    with patch("aidev_agent.packages.opentelemetry.context_obs.get_enabled_agent_metrics", return_value=recorder):
+        record_compression_skipped(compression_type="handoff", reason="token_count_unavailable")

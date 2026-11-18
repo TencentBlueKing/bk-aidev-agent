@@ -547,6 +547,7 @@ ai-chat-container（:data-ai-size="size"）
 - 点击 **全屏** 图标：调用 `useFullScreen(fullScreenRef).enter()`，将 `.ai-full-screen-wrapper` 进入浏览器原生全屏
 - 点击 **退出全屏** 图标：调用 `exit()` 退出；用户按 ESC 退出时 `isFullScreen` 也会自动同步
 - 全屏状态下，侧栏内 `v-overflow-tips` 的 `appendTo` 会指向全屏容器，避免 tooltip 挂载到 `document.body` 后被全屏层遮挡
+- 全屏状态下，toast 容器同样被覆盖为全屏容器，后代经 [`useToast`](/composables/use-toast) 弹出的提示（如「复制成功」）挂进全屏层；退出全屏后恢复为上层 `useToastContainerProvider` 注入的容器，无注入时回到 `document.body`
 
 该能力由内部 `useFullScreen` composable 提供，详见 [useFullScreen](../../composables/use-full-screen.md)。
 
@@ -1231,7 +1232,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | getSideTabRenderComponent | `(h, tab, { removeCustomTab }) => VNode \| undefined`                                    | —         | 自定义侧栏 Tab 标签渲染；未返回时使用默认图标 + 文案 + 关闭按钮                                                                      |
 | models                    | `IModelOption[]`                                                                         | —         | 可选模型列表（继承自 ChatInput）；传入后在发送按钮左侧展示 ModelSelector                                                             |
 | openingRemark             | `string`                                                                                 | —         | 开场白，无消息时显示，支持 Markdown                                                                                                  |
-| resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; min?: number }`    | —         | 透传给内部 `ResizeLayout`；与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right`，不可覆盖。**数字型** `initialDivide` 还会作为内部侧栏宽度初值（驱动 `--resize-main-width`，并在展开时作为 `collapseChange` 的 `width`）；百分比等字符串则回退为 `400` |
+| resizeProps               | `{ disabled?: boolean; initialDivide?: number \| string; max?: number; mainMin?: number; min?: number }` | —         | `min` / `max` / `initialDivide` / `disabled` 透传给内部 `ResizeLayout`，并与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right`，不可覆盖。`mainMin` 是主聊天区最小宽度，默认 `400`，不会传给 `ResizeLayout`。容器宽度已知时，侧栏 `max` 再被收成不超过「容器宽度 − mainMin」（且不小于侧栏 `min`）。**数字型** `initialDivide` 还会作为内部侧栏宽度初值（驱动 `--resize-main-width`，并在展开时作为 `collapseChange` 的 `width`）；百分比等字符串则回退为 `400` |
 | size                      | `'normal' \| 'small'`                                                                    | `'small'` | 字号主题：`small` 12px / `normal` 14px；根节点设置 `data-ai-size` 并注入 `useGlobalConfig`                                           |
 | timezone                  | `string`                                                                                 | —         | 消息时间展示所用的 IANA 时区名（如 `Asia/Shanghai`）；经 `useGlobalConfig` 注入，未配置时按浏览器时区展示，详见 [MessageTime](/components/feedback/message-time) |
 | welcomeTitle              | `string`                                                                                 | —         | 欢迎页标题；未传时默认展示「你好，我是小鲸」                                                                                         |
@@ -1260,7 +1261,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | shortcutClose  | —                                      | 关闭快捷指令表单                     |
 | shortcutSubmit | `(formModel: Record<string, unknown>)` | 提交快捷指令表单                     |
 | confirmShare   | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选，携带选中的消息与触发按钮对象（`source`，用于区分 share/save 等场景） |
-| collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开状态变化（含宽度，便于外层容器扩宽） |
+| collapseChange | `(isCollapse: boolean, width: number)` | 侧边栏折叠/展开，以及拖拽分隔条时抛出。`width` 为当前侧栏宽度，便于外层容器按真实宽度抬高下限 |
 | update:asideCollapsed | `(collapsed: boolean)`          | 折叠态变更请求（`v-model:asideCollapsed`）；受控时是否真的展开取决于外部是否更新该值 |
 | selectShortcut | `(shortcut: Shortcut)`                 | 选择快捷指令（继承自 ChatInput）     |
 | deleteShortcut | —                                      | 删除已选快捷指令（继承自 ChatInput） |
@@ -1396,6 +1397,7 @@ interface Shortcut {
 - [SelectionFooter](/components/input/selection-footer) — 多选操作栏
 - [ToolBtn](/components/feedback/tool-btn) — 侧栏全屏按钮
 - [useFullScreen](/composables/use-full-screen) — 侧栏全屏控制
+- [useToast](/composables/use-toast) — 统一提示与 toast 挂载容器
 - [useGlobalConfig](/composables/use-global-config) — 注入 `size`、`supportUpload`、`timezone` 与 `menuSources`
 - [useInputMention](/composables/use-input-mention) — 开放「资源插入输入框」能力
 - [主题配置](/theme/theme) — 字号主题 CSS 变量

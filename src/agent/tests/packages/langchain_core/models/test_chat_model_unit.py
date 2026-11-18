@@ -297,3 +297,12 @@ class TestCreateChatResultResponseTypes:
         assert "reasoning_content" in message_result.additional_kwargs
         assert "functions.read_file" in message_result.additional_kwargs["reasoning_content"]
         assert "functions.write_file" in message_result.additional_kwargs["reasoning_content"]
+
+
+def test_remote_token_count_keeps_non_ascii_unescaped(chat_model, monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    captured = []
+    monkeypatch.setattr(type(chat_model), "get_num_tokens", lambda self, text: captured.append(text) or 1)
+    chat_model.get_num_tokens_from_messages([HumanMessage(content="你好")])
+    assert "你好" in captured[0] and "\\u" not in captured[0]

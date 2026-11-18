@@ -173,6 +173,10 @@ export default createVue2Wrapper(AIBlueking, {
       type: Number,
       default: 400,
     },
+    minWidth: {
+      type: Number,
+      default: 400,
+    },
     defaultHeight: {
       type: Number,
       default: undefined,

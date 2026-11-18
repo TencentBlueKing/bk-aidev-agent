@@ -62,6 +62,23 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 
 展开右侧侧栏时，浮窗会先腾出右侧空间再扩宽面板（两阶段动画），避免侧栏把聊天区挤出视口。若展开时因右侧空间不足挪过窗，收起会先缩宽，再移回挪窗前的位置（贴右边时回到贴右边）。右侧空间充足时只扩宽/缩宽、不移动。展开后若用户手动拖动或缩放浮窗，收起只缩宽、不再自动挪窗。
 
+自 **v3.1.1** 起，复制成功、附件校验失败等提示挂在浮窗内部的 toast 容器上，不会被面板的 `z-index: 10000` 挡住。`AIBlueking` 已内置，无需配置。把 `ChatContainer` 放进自建高层级浮层时，见 [原子组件组装 · 浮层内的提示](/guide/integration-modes/atomic-composition#浮层内的提示)。
+
+### 主聊天区最小宽度 {#主聊天区最小宽度}
+
+自 **v3.1.1** 起，打开侧栏时会保住主聊天区的最小宽度，避免整窗被拉到只剩侧栏。
+
+- `minWidth`（默认 `400`）：主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度
+- 侧栏打开后，浮窗下限 = `minWidth` + 当前侧栏宽度
+- 同时传了 `resizeProps.mainMin` 时，分隔条与主栏下限以 `mainMin` 为准
+- 视口或 `maxWidth` 放不下「主栏下限 + 侧栏」时，停在上限，不再把下限抬到比窗口还大
+
+```vue
+<AIBlueking url="/api/" :min-width="480" />
+```
+
+嵌入式 `ChatBot` 没有 `minWidth`，请传 `resizeProps.mainMin`（默认 400）。
+
 ### AIHeader 会话管理头部
 
 面板顶部的 Header 区域包含：
@@ -94,6 +111,7 @@ Nimbus 是页面右下角的浮球入口，点击后展开对话面板。可通�
 | `teleportTo` | `string` | `'body'` | 面板挂载的目标 DOM 节点选择器 |
 | `defaultHeight` | `number` | `600` | 面板默认高度（px） |
 | `defaultWidth` | `number` | `400` | 面板默认宽度（px） |
+| `minWidth` | `number` | `400` | 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度（**≥ v3.1.1**）。侧栏打开后浮窗下限 = `minWidth` + 当前侧栏宽度 |
 | `defaultLeft` | `number` | — | 面板默认左偏移（px），不传则自动计算 |
 | `defaultTop` | `number` | — | 面板默认上偏移（px），不传则自动计算 |
 | `miniPadding` | `number` | `10` | 面板最小化时距离屏幕边缘的间距（px） |

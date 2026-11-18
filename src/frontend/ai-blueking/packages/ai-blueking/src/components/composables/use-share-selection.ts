@@ -9,7 +9,7 @@
 
 import type { Ref } from 'vue';
 
-import { Message as BkMessage } from 'bkui-vue';
+import { useToast } from '@blueking/chat-x';
 
 import { ShareBusinessManager } from '../../manager/business/share-business-manager';
 import { copyToClipboard } from '../../utils';
@@ -40,6 +40,7 @@ export const isBuiltinShareSource = (source?: IToolBtn): boolean => !source || s
  */
 export function useShareSelection(params: UseShareSelectionParams): UseShareSelectionReturn {
   const { emit, chatHelper, isStandaloneMode } = params;
+  const showToast = useToast();
 
   const doShareMessages = async (messagesToShare: Message[]) => {
     if (!chatHelper.value || messagesToShare.length === 0) return;
@@ -48,10 +49,10 @@ export function useShareSelection(params: UseShareSelectionParams): UseShareSele
       const shareManager = new ShareBusinessManager(chatHelper.value.message, chatHelper.value.session);
       const result = await shareManager.shareMessages(messagesToShare as unknown as IMessage[]);
       await copyToClipboard(result.shareUrl);
-      BkMessage({ message: '分享链接已复制到剪贴板', theme: 'success' });
+      showToast({ message: '分享链接已复制到剪贴板', theme: 'success' });
     } catch (error) {
       console.error('[ChatBot] Failed to share messages:', error);
-      BkMessage({ message: '分享失败，请重试', theme: 'error' });
+      showToast({ message: '分享失败，请重试', theme: 'error' });
     }
   };
 

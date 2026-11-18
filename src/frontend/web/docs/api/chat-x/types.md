@@ -33,7 +33,7 @@ enum MessageStatus {
 
 ```typescript
 enum MessageToolsStatus {
-  /** 禁用工具栏 */
+  /** 禁用：除复制（copy）外的按钮显示但不可点击；生成中也可复制已输出内容（≥ v3.1.1） */
   Disabled = 'disabled',
 }
 ```

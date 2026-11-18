@@ -11,6 +11,7 @@ import tempfile
 SECRET_KEY = "aidev-bkplugin-test-secret"
 DEBUG = False
 USE_TZ = True
+# 单元测试默认不依赖 broker；未配置开关的远程默认路径由独立 worker E2E 验证。
 
 DATABASES = {
     "default": {

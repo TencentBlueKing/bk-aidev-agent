@@ -53,6 +53,7 @@ export class ComponentManager {
     abortSidePanelSequence?: () => void;
     collapseSidePanel?: (hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
     expandForSidePanel?: (extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
+    setSidePanelWidth?: (width: number) => void;
     isCompressed?: { value: boolean };
     isSidePanelExpanded?: Ref<boolean>;
     positionAndSize?: { value: PositionAndSize };
@@ -103,6 +104,7 @@ export class ComponentManager {
       toggleCompression: this.toggleCompression.bind(this),
       expandForSidePanel: this.expandForSidePanel.bind(this),
       collapseSidePanel: this.collapseSidePanel.bind(this),
+      setSidePanelWidth: this.setSidePanelWidth.bind(this),
       abortSidePanelSequence: this.abortSidePanelSequence.bind(this),
       positionAndSize: computed(() => this.containerRef?.positionAndSize?.value ?? this._positionAndSize.value),
       isCompressed: computed(() => this._isCompressed.value),
@@ -271,6 +273,13 @@ export class ComponentManager {
     }
     hooks?.onBeforeSizeChange?.();
     return Promise.resolve();
+  }
+
+  /**
+   * 侧栏宽度变化后抬高或降低浮窗下限，保证主聊天区不被挤没。
+   */
+  setSidePanelWidth(width: number): void {
+    this.containerRef?.setSidePanelWidth?.(width);
   }
 
   /**
@@ -493,6 +502,7 @@ export class ComponentManager {
       abortSidePanelSequence?: () => void;
       collapseSidePanel?: (hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
       expandForSidePanel?: (extraWidth: number, hooks?: { onBeforeSizeChange?: () => void }) => Promise<void>;
+      setSidePanelWidth?: (width: number) => void;
       isCompressed?: { value: boolean };
       isSidePanelExpanded?: Ref<boolean>;
       positionAndSize?: { value: PositionAndSize };

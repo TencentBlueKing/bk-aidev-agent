@@ -37,6 +37,7 @@ from .basic_middleware import (
     SpecialVariablesPostMiddleware,
 )
 from .context_assembly import ContextAssembly
+from .handoff import HandoffCompressionMiddleware, HandoffToolsMiddleware
 from .model_chain import _build_model_chain
 from .prompt_middleware import (
     BeijingTimeMiddleware,
@@ -73,14 +74,29 @@ class ModelState(TypedDict, total=False):
 
     Attributes:
         messages: 消息列表，使用 add_messages 注解确保消息正确合并
+        handoff: Handoff 压缩状态（摘要、偏移、压缩轮次），随 checkpoint 持久化
     """
 
     messages: Required[Annotated[list[AnyMessage], add_messages]]
+    handoff: Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
 # build_model_node
 # ---------------------------------------------------------------------------
+
+
+def _build_node_result(ctx: ProcessorContext) -> Dict[str, Any]:
+    """构造模型节点返回值。
+
+    Handoff 中间件对 state 的修改只能通过节点返回值提交进 checkpoint，
+    因此仅在中间件写入 ``_handoff_state_update`` 时附带 handoff 键。
+    """
+    result: Dict[str, Any] = {"messages": [*ctx.metadata.get("_handoff_messages", []), ctx.response]}
+    handoff_update = ctx.metadata.get("_handoff_state_update")
+    if handoff_update is not None:
+        result["handoff"] = handoff_update
+    return result
 
 
 def build_model_node(
@@ -157,50 +173,63 @@ def build_model_node(
     # 提示词装配侧注入净化：扫描知识库内容与 role_prompts，命中注入即阻断
     if node_options.enable_prompt_injection_guard:
         context_assembly.add_middleware("variable", ContentGuardMiddleware())
-    # 知识库的压缩器
-    context_assembly.add_middleware(
-        "variable",
-        KnowledgeCompressionMiddleware(
-            knowledge_compressor_func=KnowledgeCompressor(non_thinking_llm),
-            token_limit=node_options.token_limit,
-            token_margin=node_options.token_margin,
-        ),
-    )
-    # 基于字符长度阈值的工具输出压缩
-    tool_output_compressor = ToolOutputCompressor(
-        non_thinking_llm, compressor_type=node_options.tool_output_compressor_type
-    )
-    # 基于 Token 超限的工具输出压缩
-    context_assembly.add_middleware(
-        "variable",
-        ToolOutputLengthCompressionMiddleware(
-            tool_output_compress_thrd=node_options.tool_output_compress_thrd,
-            tool_output_compressor_func=tool_output_compressor,
-        ),
-    )
-    # 工具压缩后重新渲染agent_scratchpad
-    context_assembly.add_middleware(
-        "variable",
-        ToolOutputTokenCompressionMiddleware(
-            tool_output_compressor_func=tool_output_compressor,
-            token_limit=node_options.token_limit,
-            token_margin=node_options.token_margin,
-        ),
-    )
-    context_assembly.add_middleware(
-        "variable",
-        SpecialVariablesPostMiddleware(use_structured_response=use_structured_response),
-    )
+    if node_options.handoff.enabled:
+        context_assembly.add_middleware(
+            "variable",
+            HandoffCompressionMiddleware(
+                node_options.handoff,
+                token_limit=node_options.token_limit,
+                token_margin=node_options.token_margin,
+                tools=tools,
+            ),
+        )
+        # Handoff 生效前隐藏历史检索工具
+        context_assembly.add_middleware("tool", HandoffToolsMiddleware())
+    else:
+        # 知识库的压缩器
+        context_assembly.add_middleware(
+            "variable",
+            KnowledgeCompressionMiddleware(
+                knowledge_compressor_func=KnowledgeCompressor(non_thinking_llm),
+                token_limit=node_options.token_limit,
+                token_margin=node_options.token_margin,
+            ),
+        )
+        # 基于字符长度阈值的工具输出压缩
+        tool_output_compressor = ToolOutputCompressor(
+            non_thinking_llm, compressor_type=node_options.tool_output_compressor_type
+        )
+        # 基于 Token 超限的工具输出压缩
+        context_assembly.add_middleware(
+            "variable",
+            ToolOutputLengthCompressionMiddleware(
+                tool_output_compress_thrd=node_options.tool_output_compress_thrd,
+                tool_output_compressor_func=tool_output_compressor,
+            ),
+        )
+        # 工具压缩后重新渲染agent_scratchpad
+        context_assembly.add_middleware(
+            "variable",
+            ToolOutputTokenCompressionMiddleware(
+                tool_output_compressor_func=tool_output_compressor,
+                token_limit=node_options.token_limit,
+                token_margin=node_options.token_margin,
+            ),
+        )
+        context_assembly.add_middleware(
+            "variable",
+            SpecialVariablesPostMiddleware(use_structured_response=use_structured_response),
+        )
+        context_assembly.add_middleware(
+            "variable",
+            ChatHistoryCompressionMiddleware(
+                token_limit=node_options.token_limit,
+                token_margin=node_options.token_margin,
+            ),
+        )
     context_assembly.add_middleware(
         "variable",
         DeepSeekR1VariablesMiddleware(use_deepseek_r1_models_process=node_options.use_deepseek_r1_models_process),
-    )
-    context_assembly.add_middleware(
-        "variable",
-        ChatHistoryCompressionMiddleware(
-            token_limit=node_options.token_limit,
-            token_margin=node_options.token_margin,
-        ),
     )
     for m in getattr(node_options, "extra_tool_middlewares", []) or []:
         context_assembly.add_middleware("tool", m)
@@ -240,7 +269,7 @@ def build_model_node(
         # 断言链运行时必填字段（中间件路径不校验）
         assert ctx.config is not None and ctx.state is not None
         final_ctx = model_chain.invoke(ctx)
-        return {"messages": [final_ctx.response]}
+        return _build_node_result(final_ctx)
 
     async def amodel_node(
         state: ModelState,
@@ -263,6 +292,6 @@ def build_model_node(
         # 断言链运行时必填字段（中间件路径不校验）
         assert ctx.config is not None and ctx.state is not None
         final_ctx = await model_chain.ainvoke(ctx)
-        return {"messages": [final_ctx.response]}
+        return _build_node_result(final_ctx)
 
     return RunnableCallable(model_node, amodel_node, trace=True)

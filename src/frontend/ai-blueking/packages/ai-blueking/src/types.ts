@@ -220,6 +220,20 @@ export interface AIBluekingExpose {
 }
 
 /**
+ * 侧栏 ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）
+ */
+export interface AsideResizeProps {
+  disabled?: boolean;
+  initialDivide?: number | string;
+  /** 侧栏最大宽度 */
+  max?: number;
+  /** 主聊天区最小宽度，默认 400 */
+  mainMin?: number;
+  /** 侧栏最小宽度 */
+  min?: number;
+}
+
+/**
  * AIBlueking 组件 Props 类型定义
  */
 export interface AIBluekingProps {
@@ -241,6 +255,12 @@ export interface AIBluekingProps {
   // 容器配置
   /** 默认宽度 */
   defaultWidth?: number;
+  /**
+   * 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度，默认 400。
+   * 侧栏打开后浮窗下限 = minWidth + 当前侧栏宽度。
+   * 同时传了 resizeProps.mainMin 时，以 mainMin 为准。
+   */
+  minWidth?: number;
   /** 是否禁用输入 */
   disabledInput?: boolean;
   /** 是否可拖拽 */
@@ -359,12 +379,7 @@ export interface AIBluekingProps {
   /** 快捷操作过滤函数 */
   shortcutFilter?: (shortcut: IShortcut, selectedText: string) => boolean;
   /** ResizeLayout 配置（执行情况 / 文件产物侧面板拖拽）；ChatBot 默认 initialDivide 560px，可覆盖 */
-  resizeProps?: {
-    disabled?: boolean;
-    initialDivide?: number | string;
-    max?: number;
-    min?: number;
-  };
+  resizeProps?: AsideResizeProps;
 
   /**
    * 字号主题档位，透传至 ChatBot → ChatContainer

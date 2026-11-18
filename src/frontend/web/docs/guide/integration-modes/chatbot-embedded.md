@@ -128,6 +128,7 @@ export default {
 | `extCls` | `string` | — | 自定义外层 CSS 类名 |
 | `requestOptions` | `RequestOptions` | — | 请求配置，支持自定义 headers、超时等。`headers` 推荐写成函数（如 `() => ({ Authorization: 'Bearer ' + getToken() })`），每次请求取最新 token |
 | `asideCollapsed` | `boolean` | 内部默认折叠 | 侧栏折叠态。传入后严格受控，须配合 `v-model:asideCollapsed`。侧栏固定从右侧展开，**已移除 `placement`** |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, mainMin?, min? }` | — | 侧栏拖拽。`mainMin` 是主聊天区最小宽度（**≥ v3.1.1**，默认 400） |
 | `timezone` | `string` | — | 消息时间展示所用的 IANA 时区名（**≥ v2.2.3**，如 `Asia/Shanghai`）；未配置时按浏览器时区。详见 [消息时间展示](/guide/core-features/chat-interaction#消息时间展示) |
 | `enableMessageCollapse` | `boolean` | `true` | 是否折叠每轮过程消息并展示过程状态栏。置 `false` 时完整展示并隐藏状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
 

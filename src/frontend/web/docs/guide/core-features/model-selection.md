@@ -88,6 +88,12 @@ chat-x 只负责滑块交互。小鲸在 `ChatBot` 里把它接到 `ModelSelecti
 
 档位取值是 `none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`。展示名和说明用接口下发的 `value`、`desc`，不要在前端写死文案。
 
+触发器和当前模型选项的名称后会回显档位文案（如「Hy3 hunyuan 中」）。自 **v3.1.1** 起，档位为 `none` 时固定显示「关闭思考」（英文 Thinking Off），不使用接口下发的展示名（接口通常是「关闭」，直接拼在模型名后语义不清）。模型不支持思考深度时不回显。
+
+## 下拉方向 {#下拉方向}
+
+自 **v3.1.1** 起，模型选择器下拉默认在触发器下方展开（`bottom-end`，右边缘对齐）。下方空间不足时自动翻转到上方。接入方通过 `tippyOptions.placement`（经 `ChatContainer` 时为 `commonTippyOptions.placement`）指定的方向仍优先生效。描述卡片的定位不受此默认值影响。
+
 ## 模型描述 {#模型描述}
 
 列表项的 `description` 去掉首尾空白后仍有内容时，鼠标停在该选项上约 300ms，用气泡展示这段纯文本。有描述时不再用浏览器原生 `title`（名称上的 `title` 也会去掉）。没有描述、或只有空白时，名称仍用原生 `title` 提示全名。
@@ -180,4 +186,4 @@ await agent.chat(userInput, sessionCode, undefined, undefined, property, 'hy3-pr
 - [初始化生命周期](/guide/internals/chat-bootstrap) — bootstrap 并行拉取模型列表
 - [ChatBusinessManager](/api/ai-blueking/managers#chatbusinessmanager) / [ModelSelectionManager](/api/ai-blueking/managers#modelselectionmanager)
 - [Agent 模块](/api/chat-helper/sdk#agent-模块)
-- [更新日志](/changelog) — v3.1.0 思考深度与模型描述卡片
+- [更新日志](/changelog) — v3.1.1 关闭思考回显、下拉默认向下展开；v3.1.0 思考深度与模型描述卡片

@@ -66,6 +66,10 @@ from aidev_agent.core.tools.a2a_tools import AgentBackendResolver, get_agent_too
 from aidev_agent.core.tools.a2a_tools import BkAiBackend as BkAiA2ABackend
 from aidev_agent.core.tools.a2a_tools import LocalBackend as LocalA2ABackend
 from aidev_agent.core.tools.ask_user_question import ask_user_question as _ask_user_question_tool
+from aidev_agent.core.tools.handoff_history import (
+    make_handoff_read_history_tool,
+    make_handoff_search_history_tool,
+)
 from aidev_agent.core.tools.knowledge import make_knowledge_retrieval_tool
 from aidev_agent.core.tools.memory import PersonalMemoryRuntime
 from aidev_agent.core.tools.read_image import make_read_image_tool
@@ -141,6 +145,8 @@ class DefaultState(TypedDict):
     knowledge_qa_content: list
     with_qa_response: list
     runtime_paas_sbx_pv: Annotated[list[dict], add_pv_info]
+    # Handoff 压缩状态（摘要、覆盖偏移、压缩轮次），随 checkpoint 持久化
+    handoff: dict
     personal_memory: dict
 
 
@@ -878,6 +884,8 @@ class ReActAgentBuilder:
                 node_options_kwargs["tool_output_compress_thrd"] = model_context_options.tool_output_compress_thrd
             if model_context_options.enable_judge_response is not None:
                 node_options_kwargs["enable_judge_response"] = model_context_options.enable_judge_response
+            # Handoff 压缩配置透传
+            node_options_kwargs["handoff"] = model_context_options.handoff
 
         # 从 knowledge_query_options 提取参数
         knowledge_query_options = self._knowledge_query_options
@@ -993,6 +1001,9 @@ class ReActAgentBuilder:
             if knowledge_tool:
                 builtin_tools.append(knowledge_tool)
                 logger.info("[ReActAgentBuilder] Agentic RAG 模式已启用，知识检索工具已添加到工具列表")
+
+        if self._model_context_options is not None and self._model_context_options.handoff.enabled:
+            builtin_tools.extend([make_handoff_search_history_tool(), make_handoff_read_history_tool()])
 
         if self._personal_memory is not None:
             builtin_tools.extend(self._personal_memory.make_tools())

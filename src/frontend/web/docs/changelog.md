@@ -1,5 +1,37 @@
 # 更新日志
 
+## v3.1.1
+
+v3.1.1 配套 `@blueking/chat-x` `3.1.2-beta.2`、`@blueking/chat-helper` `3.1.0`。文档站交互示例使用已发布的 `3.1.1`。
+
+### 优化
+
+- **思考档位「关闭」回显「关闭思考」**（≥ v3.1.1）：触发器和当前模型选项在档位为 `none` 时固定显示「关闭思考」（英文 Thinking Off），不再直接拼接口展示名「关闭」；其余档位仍用接口下发的 `value`。模型不支持思考深度时不回显。详见 [模型选择 · 思考深度](/guide/core-features/model-selection#思考深度)
+- **侧栏打开时保住主聊天区最小宽度**（≥ v3.1.1）：`ChatContainer` 的 `resizeProps.mainMin` 默认 400。浮窗另有 `minWidth`（默认 400）：侧栏打开后浮窗下限 = `minWidth` + 当前侧栏宽度；同时传了 `mainMin` 时以 `mainMin` 为准。视口放不下时才允许主栏小于该值。详见 [AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating#主聊天区最小宽度)
+- **浮层内提示不再被挡住**（≥ v3.1.1）：`AIBlueking` 在浮窗内提供 toast 挂载点，复制成功、附件校验等提示挂进浮层。chat-x 通过 `useToastContainerProvider` 接收容器，不再感知 AIBlueking 浮层。原子组装若把对话放进更高层级的浮层，需要自行注入。详见 [原子组件组装 · 浮层内的提示](/guide/integration-modes/atomic-composition#浮层内的提示)
+
+### 变更
+
+- **模型选择器下拉默认向下展开**：默认 `placement` 由 `top-end` 改为 `bottom-end`，下方空间不足时自动翻转到上方。接入方通过 `tippyOptions.placement`（经 `ChatContainer` 时为 `commonTippyOptions.placement`）指定的方向仍优先生效。详见 [模型选择 · 下拉方向](/guide/core-features/model-selection#下拉方向)
+
+### 修复
+
+- 内容生成中消息工具栏的复制按钮保持可用，可复制已输出内容；其余按钮在 `disabled` 态仍不可点。详见 [UI 定制 · 消息工具栏](/guide/core-features/ui-customization#消息工具栏扩展messagetools--updatetools)
+- 消息定位器预览气泡圆角与阴影对齐设计稿
+
+### 文档
+
+- 更新 [模型选择](/guide/core-features/model-selection)、[UI 定制](/guide/core-features/ui-customization)、[AIBlueking 浮窗模式](/guide/integration-modes/aiblueking-floating)、[原子组件组装](/guide/integration-modes/atomic-composition)
+- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)、[FAQ](/faq)
+
+### 升级建议
+
+- 若以前依赖模型选择器默认向上展开、又没有传 `placement`，升级后会先向下开；需要固定方向时传入 `tippyOptions.placement`
+- 浮窗展开侧栏后主栏被挤窄：调 `minWidth` 或 `resizeProps.mainMin`
+- 自建高层级浮层时，用 `useToastContainerProvider` 把提示挂进自己的层叠上下文；`AIBlueking` / 嵌入式 `ChatBot` 无需改动
+
+---
+
 ## v3.1.0
 
 v3.1.0 正式版整合 3.1.0-beta.1 至 beta.10 的功能与修复。配套 `@blueking/chat-x` `3.1.0`、`@blueking/chat-helper` `3.1.0`。文档站交互示例使用已发布的 `3.1.0`。

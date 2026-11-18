@@ -44,6 +44,11 @@ except ImportError:  # OpenTelemetry 是可选 SDK extra。
     SpanKind = None
     BkAidevAgentCallbackHandler = None
 
+try:
+    from .metrics import get_enabled_agent_metrics
+except ImportError:  # OpenTelemetry 是可选 SDK extra。
+    get_enabled_agent_metrics = None
+
 logger = logging.getLogger(__name__)
 
 ASSEMBLY_SPAN_NAME = "context.assembly"
@@ -271,6 +276,16 @@ def _resolve_handler(ctx: Any) -> Optional[BkAidevAgentCallbackHandler]:
     return None
 
 
+def record_compression_skipped(*, compression_type: str, reason: str) -> None:
+    """记录压缩跳过次数；依赖缺失、未启用或上报异常均不影响业务。"""
+    try:
+        recorder = get_enabled_agent_metrics() if get_enabled_agent_metrics is not None else None
+        if recorder is not None:
+            recorder.record_context_compression_skipped({"compression.type": compression_type, "reason": reason})
+    except Exception:  # noqa: BLE001
+        logger.warning("压缩跳过指标上报失败，埋点降级", exc_info=True)
+
+
 def resolve_model_name(llm: Any) -> Optional[str]:
     """取模型名用于 ``gen_ai.request.model``，取不到返回 None（属性缺省）。"""
     for source in (llm, getattr(llm, "runnable", None)):
@@ -308,6 +323,10 @@ class AssemblyObservation:
     def record_chars(self, chars: Optional[ContextChars]) -> None:
         if chars is not None:
             self.chars = chars
+
+    def set_error(self, error_type: str) -> None:
+        """记录压缩未正常完成的 error.type（低基数原因码）；span 的 ERROR 状态由异常穿过 span 时设置。"""
+        self.error_type = error_type
 
     def build_attributes(self) -> Dict[str, Any]:
         attrs: Dict[str, Any] = {}
@@ -398,16 +417,24 @@ def observe_assembly(
 # ============================================================================
 @dataclass
 class CompressionCall:
-    """单次压缩 LLM 调用的观测句柄。"""
+    """单次压缩的观测句柄。
+
+    input_chars 为 None 时不写入；set_result 记录压缩是否生效及前后 token。
+    """
 
     module: str
     model: Optional[str] = None
-    input_chars: int = 0
+    input_chars: Optional[int] = None
     output_chars: Optional[int] = field(default=None, init=False)
     usage: Optional[Dict[str, int]] = field(default=None, init=False)
+    applied: Optional[bool] = field(default=None, init=False)
+    before_tokens: Optional[int] = field(default=None, init=False)
+    after_tokens: Optional[int] = field(default=None, init=False)
+    error_type: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        self.input_chars = max(0, int(self.input_chars or 0))
+        if self.input_chars is not None:
+            self.input_chars = max(0, int(self.input_chars))
 
     def set_output(self, chars: int, response: Any = None) -> None:
         """记录压缩产出字符数；有模型响应时可一并带上 usage。"""
@@ -417,11 +444,20 @@ class CompressionCall:
             self.output_chars = None
         self.usage = _observe(_response_usage, response)
 
+    def set_result(self, *, applied: bool, before_tokens: Optional[int], after_tokens: Optional[int]) -> None:
+        """记录压缩是否生效，以及压缩前后的上下文 token。"""
+        self.applied = applied
+        self.before_tokens = before_tokens
+        self.after_tokens = after_tokens
+
+    def set_error(self, error_type: str) -> None:
+        """记录压缩未正常完成的 error.type（低基数原因码）；span 的 ERROR 状态由异常穿过 span 时设置。"""
+        self.error_type = error_type
+
     def build_attributes(self) -> Dict[str, Any]:
-        attrs: Dict[str, Any] = {
-            "context.compression.module": self.module,
-            "context.compression.input_chars": self.input_chars,
-        }
+        attrs: Dict[str, Any] = {"context.compression.module": self.module}
+        if self.input_chars is not None:
+            attrs["context.compression.input_chars"] = self.input_chars
         if self.model:
             attrs["gen_ai.request.model"] = self.model
         if self.output_chars is not None:
@@ -429,6 +465,14 @@ class CompressionCall:
         if self.usage:
             for key, value in self.usage.items():
                 attrs[f"gen_ai.usage.{key}"] = value
+        if self.applied is not None:
+            attrs["context.compression.applied"] = self.applied
+        if self.before_tokens is not None:
+            attrs["context.compression.before_tokens"] = self.before_tokens
+        if self.after_tokens is not None:
+            attrs["context.compression.after_tokens"] = self.after_tokens
+        if self.error_type is not None:
+            attrs["error.type"] = self.error_type
         return attrs
 
 
@@ -437,7 +481,7 @@ def observe_compression_call(
     *,
     module: str,
     model: Optional[str] = None,
-    input_chars: int = 0,
+    input_chars: Optional[int] = None,
 ) -> Iterator[CompressionCall]:
     """每次调用复用 custom span，默认以当前 OTel context 为父。"""
     call = CompressionCall(module=module, model=model, input_chars=input_chars)

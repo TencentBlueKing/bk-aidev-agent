@@ -418,13 +418,13 @@ describe('ModelSelectorPanel 思考深度', () => {
     expect(effortTextOf(2).exists()).toBe(false);
   });
 
-  it('档位为「关闭」时模型名后不回显', () => {
+  it('档位为「关闭」时模型名后回显「关闭思考」', () => {
     wrapper = mount(ModelSelectorPanel, {
       attachTo: document.body,
       props: { models: [reasoningOnly], reasoningEffort: 'none', selectedName: 'Hy3' },
     });
 
-    expect(effortTextOf(0).exists()).toBe(false);
+    expect(effortTextOf(0).text()).toBe('关闭思考');
   });
 
   it('卡片内调档时应抛出 reasoningEffortChange（携带卡片对应的模型）', async () => {

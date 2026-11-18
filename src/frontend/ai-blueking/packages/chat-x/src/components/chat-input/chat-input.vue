@@ -132,8 +132,6 @@
 <script setup lang="ts">
   import { computed, ref as deepRef, reactive, shallowRef, useTemplateRef, watchPostEffect } from 'vue';
 
-  import { Message } from 'bkui-vue';
-
   import {
     type Interrupt,
     type InterruptResume,
@@ -142,6 +140,7 @@
     MessageStatus,
   } from '../../ag-ui/types';
   import { CHAT_Z_INDEX, DEFAULT_UPLOAD_ACCEPT, isEn, MAX_UPLOAD_FILE_SIZE, MAX_UPLOAD_FILES } from '../../common';
+  import { useToast } from '../../composables/use-toast';
   import { type KeyboardPayload } from '../../edix';
   import { CloseIcon } from '../../icons';
   import { t } from '../../lang/lang';
@@ -183,6 +182,7 @@
   const aiSlashInputRef = useTemplateRef<InstanceType<typeof AiSlashInput>>('aiSlashInputRef');
   const filesRef = useTemplateRef<HTMLDivElement>('filesRef');
   const fileInputRef = useTemplateRef<HTMLInputElement>('fileInputRef');
+  const showToast = useToast();
   const citeModel = defineModel<string>('cite', {
     required: false,
     default: '',
@@ -537,13 +537,13 @@
       acceptedItems.push(fileItem);
     }
     if (typeRejectedCount > 0) {
-      Message({
+      showToast({
         message: t('有 {count} 个文件因格式不支持未添加').replace('{count}', String(typeRejectedCount)),
         theme: 'error',
       });
     }
     if (rejectedCount > 0) {
-      Message({
+      showToast({
         message: formatUploadNotAddedMessage(rejectedCount, maxUploadMb, isEn),
         theme: 'error',
       });

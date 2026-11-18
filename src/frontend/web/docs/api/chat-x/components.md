@@ -93,7 +93,7 @@
 | --- | --- | --- | --- |
 | `messages` | `Message[]` | `[]` | 消息列表 |
 | `messageStatus` | `MessageStatus` | - | 当前消息状态 |
-| `messageToolsStatus` | `MessageToolsStatus` | - | 消息工具栏状态 |
+| `messageToolsStatus` | `MessageToolsStatus` | - | 消息工具栏状态。为 `disabled` 时除复制（`copy`）外的按钮不可点；自 **v3.1.1** 起生成中也可复制已输出内容 |
 | `enableSelection` | `boolean` | `false` | 是否启用多选模式 |
 | `enableMessageCollapse` | `boolean` | `true` | 是否启用消息组顶层折叠及过程状态栏。`ChatContainer` 同样透传此 prop。置 `false` 时展示全部消息并隐藏状态栏和耗时；工具栏及消息内部折叠不变。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
 | `onAgentAction` | `(tool, message) => void` | - | Agent 消息工具栏点击回调 |
@@ -153,7 +153,7 @@
 | --- | --- | --- | --- |
 | `enableMessageCollapse` | `boolean` | `true` | 是否启用消息组顶层折叠及过程状态栏。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
 | `enableMessageMinimap` | `boolean` | `true` | 是否在主栏左侧挂[消息定位器](/guide/core-features/chat-interaction#消息定位器)。提问超过 4 条且使用默认消息列表时展示；替换 `#default` 后不出现 |
-| `resizeProps` | `{ disabled?, initialDivide?, max?, min? }` | — | 透传给内部 `ResizeLayout`，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right` |
+| `resizeProps` | `{ disabled?, initialDivide?, max?, mainMin?, min? }` | — | `min` / `max` / `initialDivide` / `disabled` 透传给内部 `ResizeLayout`，与默认 `collapsible: false`、`immediate: true`、`min: 400` 合并；`placement` 固定为 `right`。`mainMin` 是主聊天区最小宽度（**≥ v3.1.1**，默认 400），不会传给 `ResizeLayout`；容器宽度已知时，侧栏 `max` 再被收成不超过「容器宽度 − mainMin」（且不小于侧栏 `min`） |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题 |
 | `timezone` | `string` | — | 消息时间所用的 IANA 时区名 |
 
@@ -267,7 +267,7 @@
 
 模型下拉选择器，支持搜索与能力标签。通常由 `ChatInput` / `ChatContainer` 在传入 `models` 后自动渲染于发送按钮左侧；也可独立使用。
 
-`description` 去空白后非空时，选项悬停约 300ms 展示纯文本气泡，不再使用原生 `title`。气泡只复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。模型 `property.reasoning.supported_efforts` 非空时，hover 卡片里可调思考深度。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)、[思考深度](/guide/core-features/model-selection#思考深度)。
+`description` 去空白后非空时，选项悬停约 300ms 展示纯文本气泡，不再使用原生 `title`。气泡只复用 `tippyOptions` 的 `appendTo`、`placement`、`zIndex`。模型 `property.reasoning.supported_efforts` 非空时，hover 卡片里可调思考深度。触发器和当前选项在档位为 `none` 时回显「关闭思考」。自 **v3.1.1** 起下拉默认 `bottom-end`，下方空间不足时翻转到上方。详见 [模型选择 · 模型描述](/guide/core-features/model-selection#模型描述)、[思考深度](/guide/core-features/model-selection#思考深度)、[下拉方向](/guide/core-features/model-selection#下拉方向)。
 
 ### Props
 
@@ -277,7 +277,7 @@
 | `disabled` | `boolean` | `false` | 是否禁用 |
 | `placeholder` | `string` | `'选择模型'` | 无选中时的占位文案 |
 | `searchPlaceholder` | `string` | `'搜索模型关键字'` | 搜索框占位文案 |
-| `tippyOptions` | `Partial<TippyOptions>` | — | 下拉 Tippy 配置。描述气泡只复用其中的 `appendTo`、`placement`、`zIndex` |
+| `tippyOptions` | `Partial<TippyOptions>` | — | 下拉 Tippy 配置。`placement` 可覆盖下拉默认的 `bottom-end`（**≥ v3.1.1**）。描述气泡只复用其中的 `appendTo`、`placement`、`zIndex` |
 
 ### v-model
 

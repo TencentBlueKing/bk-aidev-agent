@@ -6,6 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 from aidev_agent.core.ag_ui.types import AgentInput
+from aidev_agent.services import resume_events
+from aidev_agent.services.agent import chat
 from aidev_agent.services.agent.chat import ChatCompletionAgent
 
 pytest.importorskip("opentelemetry.trace")
@@ -29,8 +31,6 @@ def _span(identity, sampled=True):
 class TestResumeTraceContext:
     @pytest.fixture
     def case(self, monkeypatch):
-        from aidev_agent.services.agent import chat
-
         helper = Mock()
         helper.stream.side_effect = lambda *a, **kw: iter(())
         factory = Mock(return_value=helper)
@@ -107,8 +107,6 @@ class TestResumeTraceContext:
 
     @pytest.mark.parametrize("otel_available", [False, True])
     def test_missing_entry_context_does_not_adopt_consumer_context(self, case, monkeypatch, otel_available):
-        from aidev_agent.services import resume_events
-
         if not otel_available:
             monkeypatch.setattr(resume_events, "TraceContextTextMapPropagator", None)
         with trace.use_span(trace.INVALID_SPAN):

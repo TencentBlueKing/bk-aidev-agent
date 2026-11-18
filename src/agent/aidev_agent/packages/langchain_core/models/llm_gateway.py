@@ -336,7 +336,8 @@ class ChatModel(RawChatOpenAI, ApiGwMixin):
         if not self.remote_tokenizer:
             return super().get_num_tokens_from_messages(messages)
         messages_dict = [_convert_message_to_dict(m) for m in messages]
-        return self.get_num_tokens(json.dumps(messages_dict))
+        # ensure_ascii=False：否则中文等非 ASCII 字符被转义为 \uXXXX，token 数被放大数倍
+        return self.get_num_tokens(json.dumps(messages_dict, ensure_ascii=False))
 
     def _get_request_payload(self, *args, **kwargs) -> dict:
         payload = super()._get_request_payload(*args, **kwargs)

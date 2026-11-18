@@ -112,6 +112,11 @@ class AgentMetrics:
         self.agent_duration = meter.create_histogram(
             "gen_ai.invoke_agent.duration", unit="s", description="Agent invocation duration"
         )
+        self.context_compression_skipped = meter.create_counter(
+            "aidev.context.compression.skipped.count",
+            unit="{attempt}",
+            description="Context compression attempts skipped because the token budget cannot be checked",
+        )
         self.agent_started = meter.create_counter(
             "gen_ai.invoke_agent.started", unit="{call}", description="Agent invocations started"
         )
@@ -276,6 +281,10 @@ class AgentMetrics:
 
     def record_first_llm_chunk(self, duration: float, attributes: dict[str, str]) -> None:
         self.llm_time_to_first_chunk.record(duration, attributes)
+
+    @dont_throw
+    def record_context_compression_skipped(self, attributes: dict[str, str]) -> None:
+        self.context_compression_skipped.add(1, {**_metric_identity, **attributes})
 
     def record_llm_rate_limit(self, attributes: dict[str, str]) -> None:
         self.llm_rate_limit_count.add(1, attributes)

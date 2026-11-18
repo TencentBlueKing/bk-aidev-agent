@@ -32,7 +32,6 @@ vi.mock('bkui-vue', () => ({
   Input: defineComponent({ name: 'BkInput', template: '<input />' }),
   Loading: defineComponent({ name: 'Loading', template: '<span />' }),
   bkTooltips: {},
-  Message: vi.fn(),
 }));
 
 vi.mock('vue-tippy', () => ({
@@ -62,6 +61,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
   return {
     ...actual,
     RenderMode: { Chat: 'chat', Share: 'share', Test: 'test' },
+    useToast: () => vi.fn(),
     CollapsedAsideIcon: defineComponent({
       name: 'CollapsedAsideIcon',
       setup() {

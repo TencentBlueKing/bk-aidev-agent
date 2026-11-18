@@ -136,7 +136,7 @@
     asideCollapsed: undefined,
   });
 
-  /** 侧栏默认固定宽度（像素），由外层容器 expandForSidePanel 扩宽以保持主聊天区宽度不变 */
+  /** 侧栏默认宽度 560px；min 是侧栏下限。主栏下限由 ChatContainer 的 mainMin（默认 400）和浮窗 minWidth 共同保住 */
   const DEFAULT_RESIZE_PROPS = {
     initialDivide: 560 as number | string,
     min: 400,

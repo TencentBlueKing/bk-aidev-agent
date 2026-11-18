@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="containerRef"
     class="ai-chat-container"
     :data-ai-size="size"
     :style="{
@@ -301,6 +302,7 @@
     nextTick,
     onUnmounted,
     shallowRef,
+    toValue,
     useTemplateRef,
     watch,
     withDirectives,
@@ -317,6 +319,7 @@
   import { useFullScreen } from '../../composables/use-full-screen';
   import { type AiSizeMode, useGlobalConfig } from '../../composables/use-global-config';
   import { useInputMentionProvider } from '../../composables/use-input-mention';
+  import { useToastContainerInject, useToastContainerProvider } from '../../composables/use-toast';
   import { OverflowTips as vOverflowTips } from '../../directives';
   import { FullScreenIcon, UnFullScreenIcon } from '../../icons';
   import { CloseIcon, NodeTabIcon } from '../../icons';
@@ -338,6 +341,7 @@
   import MessageMinimap from '../chat-message/message-minimap/message-minimap.vue';
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
+  import { type ChatContainerResizeProps, useAsideResizeProps } from './use-aside-resize-props';
 
   import type { OnArtifactClick } from '../../ag-ui/types/file';
   import type {
@@ -376,12 +380,7 @@
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCustomTabChange?: (tab: CustomTab<CustomBkFlowTabData>) => Promise<any>;
     openingRemark?: string;
-    resizeProps?: {
-      disabled?: boolean;
-      initialDivide?: number | string;
-      max?: number;
-      min?: number;
-    };
+    resizeProps?: ChatContainerResizeProps;
     /** 字号主题档位：small(默认 12px) / normal(14px) */
     size?: AiSizeMode;
     /** 消息时间展示所用的 IANA 时区名（如 Asia/Shanghai）；未配置时按浏览器时区展示 */
@@ -437,14 +436,8 @@
 
   useRenderModeProvider({ renderMode });
 
-  const resizeProps = computed(() => ({
-    collapsible: false,
-    immediate: true,
-    min: 400,
-    ...props.resizeProps,
-    // 侧栏固定从右侧展开，不再支持左侧
-    placement: 'right' as const,
-  }));
+  const containerRef = useTemplateRef<HTMLElement>('containerRef');
+  const resizeProps = useAsideResizeProps(containerRef, () => props.resizeProps);
 
   const sideRenderComponent = computed(() => {
     const tab = selectedTab.value;
@@ -542,6 +535,12 @@
     return { ...props.commonTippyOptions };
   });
   useCommonTippyProvider({ tippyOptions: commonTippyOptions });
+
+  // 浏览器全屏只渲染全屏元素子树，toast 同样需要挂进全屏容器才能看到
+  const parentToastContainer = useToastContainerInject();
+  useToastContainerProvider(() =>
+    isFullScreen.value && fullScreenRef.value ? fullScreenRef.value : toValue(parentToastContainer),
+  );
 
   /**
    * 「文件产物」Tab 元信息：侧栏常驻默认 Tab，order 最小排在最前、不可关闭，
@@ -819,6 +818,7 @@
     isResizing.value = true;
     resizeAsideWidth.value = w;
     lastExpandedAsideWidth.value = w;
+    emits('collapseChange', isCollapse.value, w);
   };
   const handleAfterResize = () => {
     isResizing.value = false;

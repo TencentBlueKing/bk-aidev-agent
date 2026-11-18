@@ -24,6 +24,8 @@
  * IN THE SOFTWARE.
  */
 
+import { t } from '../../../lang/lang';
+
 import type { IModelOption, IReasoningEffortOption, ReasoningEffort } from './types';
 
 /** 模型支持的思考深度档位（按接口返回顺序）；不支持时为空数组 */
@@ -45,8 +47,14 @@ export const resolveReasoningEffort = (
   );
 };
 
-/** 模型名后回显的档位文字；不支持思考深度或档位为「关闭」（none）时不回显 */
+/**
+ * 模型名后回显的档位文字：不支持思考深度时不回显；
+ * 档位为「关闭」（none）时固定回显「关闭思考」（接口展示名只有「关闭」，直接拼在模型名后语义不清），其余用接口下发的展示名。
+ */
 export const resolveReasoningSuffix = (model?: IModelOption, effort?: null | ReasoningEffort): string => {
   const option = resolveReasoningEffort(model, effort);
-  return option && option.key !== 'none' ? option.value : '';
+  if (!option) {
+    return '';
+  }
+  return option.key === 'none' ? t('关闭思考') : option.value;
 };

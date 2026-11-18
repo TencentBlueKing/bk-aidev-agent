@@ -186,9 +186,11 @@ interface ResizeProps {
   disabled?: boolean;
   /** 初始分割位置（px） */
   initialDivide?: number;
-  /** 最大宽度（px） */
+  /** 侧栏最大宽度（px）。实际还会再被「容器宽度 - mainMin」卡住 */
   max?: number;
-  /** 最小宽度（px） */
+  /** 主聊天区最小宽度（px），默认 400。侧栏拖拽不会把主栏挤到这个值以下 */
+  mainMin?: number;
+  /** 侧栏最小宽度（px） */
   min?: number;
 }
 ```
@@ -324,6 +326,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | defaultMinimize | `boolean` | `false` | 是否默认最小化 |
 | miniPadding | `number` | `0` | 最小化时的内边距 |
 | defaultWidth | `number` | `400` | 默认宽度 |
+| minWidth | `number` | `400` | 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度。侧栏打开后浮窗下限 = `minWidth` + 当前侧栏宽度。同时传了 `resizeProps.mainMin` 时以 `mainMin` 为准 |
 | defaultHeight | `number` | - | 默认高度 |
 | defaultLeft | `number` | - | 默认左侧位置 |
 | defaultTop | `number` | `0` | 默认顶部位置 |

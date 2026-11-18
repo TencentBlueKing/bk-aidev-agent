@@ -67,6 +67,7 @@ export type {
   AIBluekingEmits,
   AIBluekingExpose,
   AIBluekingProps,
+  AsideResizeProps,
   DropdownMenuConfig,
   GetSideRenderComponent,
   GetSideTabRenderComponent,

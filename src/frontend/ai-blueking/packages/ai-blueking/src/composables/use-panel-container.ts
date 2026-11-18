@@ -102,8 +102,13 @@ export function usePanelContainer(params: UsePanelContainerParams) {
   };
 
   // ==================== 执行面板联动 ====================
-  const handleExecutionPanelChange = (_isCollapse: boolean, resizeAsideWidth?: number) => {
-    extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth ?? extraWidth);
+  /** 收起时 ChatContainer 抛出的宽度为 0，不能覆盖记住的侧栏宽度 */
+  const handleExecutionPanelChange = (isCollapse: boolean, resizeAsideWidth?: number) => {
+    if (typeof resizeAsideWidth !== 'number' || resizeAsideWidth <= 0) return;
+    extraWidth = Math.max(SIDE_PANEL_EXTRA_WIDTH, resizeAsideWidth);
+    if (!isCollapse) {
+      componentManager.setSidePanelWidth(resizeAsideWidth);
+    }
   };
 
   const expandAside = async () => {

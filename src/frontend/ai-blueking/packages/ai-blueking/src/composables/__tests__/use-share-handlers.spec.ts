@@ -5,9 +5,13 @@ import { useShareHandlers } from '../use-share-handlers';
 
 import type { ReportSdkErrorOptions } from '../../types';
 
-vi.mock('bkui-vue', () => ({
-  Message: vi.fn(),
-}));
+vi.mock('@blueking/chat-x', async importOriginal => {
+  const actual = await importOriginal<typeof import('@blueking/chat-x')>();
+  return {
+    ...actual,
+    showToast: vi.fn(),
+  };
+});
 
 vi.mock('../../utils', async importOriginal => {
   const actual = await importOriginal<typeof import('../../utils')>();

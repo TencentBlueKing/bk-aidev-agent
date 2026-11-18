@@ -83,6 +83,7 @@ AI 小鲸使用 CSS 变量进行主题定制，您可以通过覆盖这些变量
 | `defaultHeight` | `number` | 初始高度（像素） |
 | `defaultLeft` | `number` | 初始左侧位置（像素） |
 | `defaultTop` | `number` | 初始顶部位置（像素） |
+| `minWidth` | `number` | 主聊天区最小宽度，也是浮窗收起侧栏时的最小宽度，默认 `400`（**≥ v3.1.1**）。详见 [主聊天区最小宽度](/guide/integration-modes/aiblueking-floating#主聊天区最小宽度) |
 | `draggable` | `boolean` | 是否可拖拽，默认 `true` |
 | `maxWidth` | `number \| string` | 最大宽度 |
 
@@ -177,6 +178,8 @@ aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
 在内置工具基础上增量定制 AI 消息工具栏，合并规则与 chat-x 一致：同 `id` 覆盖、新 `id` 追加、`{ id, hidden: true }` 隐藏。
 
 当 `agent/info` 返回 `agent_type: 'claw'` 时，ChatBot 会自动隐藏用户消息的编辑/删除，以及 AI 消息的重新生成与删除（copy / cite / share / like / unlike 仍可用），无需额外 prop。
+
+自 **v3.1.1** 起，工具栏处于 `disabled`（内容生成中）时，**复制（`copy`）仍可用**，可复制已经输出的内容；其余按钮显示但不可点，tooltip 与反馈弹窗也不打开。
 
 ```vue
 <template>

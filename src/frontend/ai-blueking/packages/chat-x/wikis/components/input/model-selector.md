@@ -153,7 +153,7 @@ ModelSelector（Tippy 容器，theme: ai-model-selector）
 
 ## 思考深度
 
-模型的 `property.reasoning` 带 `supported_efforts` 时，hover 描述卡片底部会出现「思考深度」分段滑块，档位顺序即数组顺序，可点击或拖动切换（滑块聚焦后也支持 ← / → / Home / End）。按下、以及拖动跨过新档位时会立刻选中该档，与点击相同，松手不再重复触发。悬停或拖动经过某一档时，在该档交界上方显示档位名称；用 ← / → / Home / End 调档时，气泡跟随滑块。选中的档位通过 `v-model:reasoning-effort` 双向绑定，值为档位 `key`；未绑定或为空时按模型的 `default_effort` 展示。触发器和当前模型选项的名称后会显示档位文案（如「Hy3 hunyuan 中」），档位为 `none` 时不显示。
+模型的 `property.reasoning` 带 `supported_efforts` 时，hover 描述卡片底部会出现「思考深度」分段滑块，档位顺序即数组顺序，可点击或拖动切换（滑块聚焦后也支持 ← / → / Home / End）。按下、以及拖动跨过新档位时会立刻选中该档，与点击相同，松手不再重复触发。悬停或拖动经过某一档时，在该档交界上方显示档位名称；用 ← / → / Home / End 调档时，气泡跟随滑块。选中的档位通过 `v-model:reasoning-effort` 双向绑定，值为档位 `key`；未绑定或为空时按模型的 `default_effort` 展示。触发器和当前模型选项的名称后会显示档位文案（如「Hy3 hunyuan 中」），档位为 `none` 时固定显示「关闭思考」（英文环境为「Thinking Off」），不使用接口下发的展示名；模型不支持思考深度时不显示。
 
 组件只负责展示和交互，不发请求。接入方在 `reasoningEffortChange` 里把档位写入会话（如 `reasoning_effort`）。拖动会按经过的档位连续触发，写入会话前建议自行防抖。切换模型时组件会把 `reasoningEffort` 清空，界面回到新模型的默认档位，接入方可按需再写回会话中的实际值。
 

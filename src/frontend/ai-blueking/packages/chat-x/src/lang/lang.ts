@@ -156,6 +156,7 @@ export const lang = {
   选择模型: 'Select model',
   搜索模型关键字: 'Search models',
   思考深度: 'Reasoning effort',
+  关闭思考: 'Thinking Off',
   '请求中...': 'Requesting...',
   取消满意: 'Cancel satisfied',
   取消不满意: 'Cancel dissatisfied',
