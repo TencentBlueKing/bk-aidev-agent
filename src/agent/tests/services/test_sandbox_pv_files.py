@@ -6,10 +6,13 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from urllib.parse import parse_qsl
 
 import pytest
+from bkapi_client_core.exceptions import HTTPResponseError
+from requests import HTTPError as RequestsHTTPError
+
 from aidev_agent.services import sandbox_pv_files as module
 from aidev_agent.services.sandbox_pv_files import (
     MAX_SESSION_UPLOAD_FILE_SIZE,
@@ -30,8 +33,6 @@ from aidev_agent.services.sandbox_pv_files import (
     validate_session_upload_files,
     validate_session_upload_stats,
 )
-from bkapi_client_core.exceptions import HTTPResponseError
-from requests import HTTPError as RequestsHTTPError
 
 # ---------------------------------------------------------------------------
 # 工具函数 & fixture
@@ -1307,7 +1308,9 @@ class TestFillUserImageUrls:
 
 
 def _copy_ok():
-    return SimpleNamespace(stdout=f"{module._FORK_COPY_DONE_MARKER}\n", stderr="", exit_code=0)
+    return SimpleNamespace(
+        stdout=f"{module._FORK_SRC_BYTES_PREFIX}3\n{module._FORK_COPY_DONE_MARKER}\n", stderr="", exit_code=0
+    )
 
 
 class TestCloneVolume:
@@ -1323,7 +1326,7 @@ class TestCloneVolume:
         counted(3)
         mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
         backend = mock_backend_cls.return_value
-        backend.create_sandbox.return_value = "sbx-fork"
+        backend.create_sandbox.side_effect = ["sbx-check", "sbx-fork"]
         backend.exec_command.return_value = _copy_ok()
 
         assert service.clone_volume("s1") == "vol-new"
@@ -1331,18 +1334,21 @@ class TestCloneVolume:
         count_params = _query_params(mock_client.list_files.request.call_args.kwargs["params"])
         assert count_params["page_size"] == "1"
         assert mock_client.list_files.request.call_args.kwargs["path_params"]["volume_id"] == "vol-abc"
+        assert backend.create_sandbox.call_args_list[0].kwargs["volume_mounts"] == [
+            {"volume_id": "vol-abc", "mount_path": module.FORK_SRC_MOUNT_PATH}
+        ]
         create_kwargs = backend.create_sandbox.call_args.kwargs
         assert create_kwargs["volume_mounts"] == [
             {"volume_id": "vol-abc", "mount_path": module.FORK_SRC_MOUNT_PATH},
             {"volume_id": "vol-new", "mount_path": module.FORK_DST_MOUNT_PATH},
         ]
         assert create_kwargs["snapshot"] == DEFAULT_UPLOAD_SNAPSHOT
-        backend.exec_command.assert_called_once_with("sbx-fork", ["bash", "-c", module.FORK_COPY_SCRIPT])
+        assert backend.exec_command.call_args.args == ("sbx-fork", ["bash", "-c", module.FORK_COPY_SCRIPT])
         script = backend.exec_command.call_args[0][1][2]
         assert "set -o pipefail" in script
         assert "tar -C" in script
         assert str(module.FORK_MAX_BYTES) in script
-        backend.destroy_sandbox.assert_called_once_with("sbx-fork")
+        assert backend.destroy_sandbox.call_args_list == [call("sbx-check"), call("sbx-fork")]
         mock_client.delete_agent_sandbox_volume.request.assert_not_called()
 
     @pytest.mark.parametrize("source", ["missing", "empty"])
@@ -1359,34 +1365,37 @@ class TestCloneVolume:
         mock_client.create_agent_sandbox_volume.request.assert_not_called()
         mock_backend_cls.return_value.create_sandbox.assert_not_called()
 
+    @pytest.mark.parametrize("during_copy", [False, True])
     @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
-    def test_volume_too_large_destroys_sandbox_then_discards(self, mock_backend_cls, service, mock_client, counted):
+    def test_too_large_preflight_or_growth_rolls_back(
+        self, mock_backend_cls, service, mock_client, counted, during_copy
+    ):
         counted(3)
         mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
         backend = mock_backend_cls.return_value
-        backend.create_sandbox.return_value = "sbx-fork"
-        backend.exec_command.return_value = SimpleNamespace(
-            stdout=f"{module._FORK_SRC_BYTES_PREFIX}314572801\n{module._FORK_COPY_TOO_LARGE_MARKER}\n",
-            stderr="",
+        backend.create_sandbox.side_effect = ["sbx-check", "sbx-fork"]
+        too_large = SimpleNamespace(
+            stdout="",
+            stderr=f"{module._FORK_SRC_BYTES_PREFIX}314572801\n{module._FORK_COPY_TOO_LARGE_MARKER}\n",
             exit_code=2,
         )
+        backend.exec_command.side_effect = [_copy_ok(), too_large] if during_copy else [too_large]
         order = []
-        backend.destroy_sandbox.side_effect = lambda sid: order.append("destroy")
-        mock_client.delete_agent_sandbox_volume.request.side_effect = (
-            lambda **kwargs: order.append("delete") or _mock_paas_response({})
+        backend.destroy_sandbox.side_effect = lambda sid: order.append(sid)
+        mock_client.delete_agent_sandbox_volume.request.side_effect = lambda **kwargs: (
+            order.append("delete") or _mock_paas_response({})
         )
-
-        with pytest.raises(module.SandboxFilesTooManyError, match="314572801"):
+        with pytest.raises(module.SandboxFilesTooManyError, match="300 MiB"):
             service.clone_volume("s1")
-
-        assert order == ["destroy", "delete"]
+        assert mock_client.create_agent_sandbox_volume.request.call_count == int(during_copy)
+        assert order == (["sbx-check", "sbx-fork", "delete"] if during_copy else ["sbx-check"])
 
     @patch("aidev_agent.services.sandbox_pv_files.PaasSandboxBackend")
     def test_destroy_failure_does_not_fail_clone(self, mock_backend_cls, service, mock_client, counted):
         counted(3)
         mock_client.create_agent_sandbox_volume.request.return_value = _mock_paas_response({"uuid": "vol-new"})
         backend = mock_backend_cls.return_value
-        backend.create_sandbox.return_value = "sbx-fork"
+        backend.create_sandbox.side_effect = ["sbx-check", "sbx-fork"]
         backend.exec_command.return_value = _copy_ok()
         backend.destroy_sandbox.side_effect = RuntimeError("boom")
 

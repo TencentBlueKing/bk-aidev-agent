@@ -20,10 +20,11 @@ from __future__ import annotations
 import logging
 import posixpath
 import re
+import shlex
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import NotRequired, Optional, TypedDict
 from urllib.parse import quote, urlencode
 from uuid import uuid4
@@ -106,8 +107,7 @@ TEMP_UPLOAD_VOLUME_MOUNT_PATH = "/app/.storage/session"
 # 复用期内不再建/销毁，到期由 PaaS 自动回收；临界点若命中已回收 sandbox，由 fallback 重建兜底
 # PaaS sandbox ttl_seconds 上限为 30 分钟（1800s）
 TEMP_UPLOAD_SANDBOX_TTL_SECONDS = 1800
-# Fork 复制会话 PV：临时沙箱同时挂源卷和新卷，tar 管道拷贝后销毁
-# 只限制源卷占用（du -sb），不限制文件个数；300 MiB 留在 PaaS exec 默认超时（296s）内
+# Fork 上限单位为 MiB；不随 coreutils 对目录 apparent-size 的版本差异变化。
 FORK_MAX_BYTES = 300 * 1024 * 1024
 FORK_SRC_MOUNT_PATH = "/app/.storage/fork-src"
 FORK_DST_MOUNT_PATH = "/app/.storage/fork-dst"
@@ -115,21 +115,34 @@ FORK_SANDBOX_TTL_SECONDS = 600
 _FORK_COPY_DONE_MARKER = "AIDEV_FORK_COPY_DONE"
 _FORK_COPY_TOO_LARGE_MARKER = "AIDEV_FORK_COPY_TOO_LARGE"
 _FORK_SRC_BYTES_PREFIX = "AIDEV_FORK_SRC_BYTES="
+_FORK_HELPER = Path(__file__).with_name("sandbox_pv_fork.py").read_text(encoding="utf-8")
+
+
+def _fork_helper_command(mode: str, max_bytes: int) -> str:
+    return f"python3 -c {shlex.quote(_FORK_HELPER)} {mode} {int(max_bytes)} {shlex.quote(FORK_SRC_MOUNT_PATH)}"
+
+
+def _fork_size_script(max_bytes: int = FORK_MAX_BYTES) -> str:
+    """仅扫描源卷，超限在申请目标卷前拒绝。"""
+    return _fork_helper_command("size", max_bytes)
 
 
 def _fork_copy_script(max_bytes: int = FORK_MAX_BYTES) -> str:
-    """用 du 检查源卷占用，再用 tar 管道复制；开启 pipefail，任一端失败都不打印完成标记。"""
+    """复制前复核 + 流式 tar 预算 + 复制后复核；任一步失败都不发布完成标记。"""
+    check = _fork_size_script(max_bytes)
     return (
         "set -o pipefail\n"
-        f'size=$(du -sb "{FORK_SRC_MOUNT_PATH}" | awk \'{{print $1}}\')\n'
-        f'echo "{_FORK_SRC_BYTES_PREFIX}${{size}}"\n'
-        f'if [ -z "$size" ] || [ "$size" -gt {int(max_bytes)} ]; then\n'
-        f"  echo {_FORK_COPY_TOO_LARGE_MARKER}\n"
-        "  exit 2\n"
+        f"{check} || exit $?\n"
+        f'if tar -C "{FORK_SRC_MOUNT_PATH}" --numeric-owner -cf - . '
+        f"| {_fork_helper_command('copy', max_bytes)} "
+        f'| tar -C "{FORK_DST_MOUNT_PATH}" --numeric-owner -xpof - ; then\n'
+        f"  {check} && echo {_FORK_COPY_DONE_MARKER}\n"
+        "else\n"
+        "  status=$?\n"
+        # tar 检测到读取中变化时也复核大小，将超限映射为明确的业务错误。
+        f"  {check}\n"
+        "  exit $status\n"
         "fi\n"
-        f'tar -C "{FORK_SRC_MOUNT_PATH}" --numeric-owner -cf - . '
-        f'| tar -C "{FORK_DST_MOUNT_PATH}" --numeric-owner -xpof - '
-        f"&& sync && echo {_FORK_COPY_DONE_MARKER}\n"
     )
 
 
@@ -1175,14 +1188,57 @@ class SandboxPvFileService:
                     return int(raw)
         return None
 
+    @classmethod
+    def _check_fork_result(cls, result, max_bytes: int, *, copied: bool = False) -> None:
+        output = f"{result.stdout or ''}\n{result.stderr or ''}"
+        if _FORK_COPY_TOO_LARGE_MARKER in output.splitlines():
+            src_bytes = cls._parse_fork_src_bytes(output)
+            size_desc = f"至少 {src_bytes} 字节" if src_bytes is not None else "未知"
+            raise SandboxFilesTooManyError(
+                f"会话文件总大小 {size_desc}，超过上限 {max_bytes} 字节（{max_bytes / 1024 / 1024:g} MiB）"
+            )
+        src_bytes = cls._parse_fork_src_bytes(output)
+        if (
+            result.exit_code != 0
+            or src_bytes is None
+            or (copied and _FORK_COPY_DONE_MARKER not in (result.stdout or "").splitlines())
+        ):
+            raise SandboxFileServerError(
+                f"复制会话文件失败: exit_code={result.exit_code}, stderr={(result.stderr or '')[:500]}"
+            )
+
+    @staticmethod
+    def _destroy_fork_sandbox(backend, sandbox_id: str) -> None:
+        if sandbox_id:
+            try:
+                backend.destroy_sandbox(sandbox_id)
+            except Exception:  # noqa: BLE001 TTL 兜底；不得覆盖原始复制错误
+                logger.warning("[pv_files] 销毁 fork 临时沙箱失败: sandbox_id=%s", sandbox_id, exc_info=True)
+
+    def _preflight_fork(self, backend, source_volume_id: str, snapshot: str, max_bytes: int) -> None:
+        # 只挂源卷做只读扫描；尚未申请目标 Fork PV，也没有写任何目标会话。
+        sandbox_id = ""
+        try:
+            sandbox_id = backend.create_sandbox(
+                name=f"aidev-fork-check-{uuid4().hex[:12]}",
+                ttl_seconds=FORK_SANDBOX_TTL_SECONDS,
+                snapshot=snapshot,
+                snapshot_entrypoint=[],
+                volume_mounts=[{"volume_id": source_volume_id, "mount_path": FORK_SRC_MOUNT_PATH}],
+            )
+            result = backend.exec_command(sandbox_id, ["bash", "-c", _fork_size_script(max_bytes)])
+            self._check_fork_result(result, max_bytes)
+        finally:
+            self._destroy_fork_sandbox(backend, sandbox_id)
+
     def clone_volume(self, session_code: str, *, max_bytes: int = FORK_MAX_BYTES) -> str:
         """把会话 PV 复制到一个新建、未关联任何会话的 PV，返回新 volume_id。
 
         - 源会话没有 PV 或 PV 为空：返回空串，不建卷也不起沙箱
-        - 源卷占用超过 ``max_bytes``：抛 ``SandboxFilesTooManyError``
+        - 源文件逻辑大小超过 ``max_bytes``：申请目标卷前抛 ``SandboxFilesTooManyError``
         - 新卷写到哪个会话由调用方决定；调用方后续步骤失败时用 ``discard_volume`` 清理
 
-        需要 ``executor_info["snapshot"]``（file-kit 镜像，带 GNU tar / du / bash）。
+        需要 ``executor_info["snapshot"]``（file-kit 镜像，带 GNU tar / Python 3 / bash）。
         拷贝失败或超量时先销毁临时沙箱，再删掉新卷；成功时也销毁沙箱。
         """
         try:
@@ -1213,6 +1269,7 @@ class SandboxPvFileService:
                 self._delete_volume_quietly(client, app_code, new_volume_id)
 
         try:
+            self._preflight_fork(backend, source_volume_id, snapshot, max_bytes)
             new_volume_id = self._create_volume(client, app_code, session_code)
             sandbox_id = backend.create_sandbox(
                 name=f"aidev-fork-{uuid4().hex[:12]}",
@@ -1228,13 +1285,7 @@ class SandboxPvFileService:
             result = backend.exec_command(sandbox_id, ["bash", "-c", script])
             stdout = result.stdout or ""
             src_bytes = self._parse_fork_src_bytes(stdout)
-            if _FORK_COPY_TOO_LARGE_MARKER in stdout:
-                size_desc = f"{src_bytes} 字节" if src_bytes is not None else "未知"
-                raise SandboxFilesTooManyError(f"会话文件总大小 {size_desc} 超过上限 {max_bytes} 字节")
-            if _FORK_COPY_DONE_MARKER not in stdout:
-                raise SandboxFileServerError(
-                    f"复制会话文件失败: exit_code={result.exit_code}, stderr={(result.stderr or '')[:500]}"
-                )
+            self._check_fork_result(result, max_bytes, copied=True)
             logger.info(
                 "[pv_files] clone_volume session=%s entries=%d bytes=%s source=%s target=%s",
                 session_code,
@@ -1253,11 +1304,7 @@ class SandboxPvFileService:
             raise SandboxFileServerError(f"复制会话文件失败: {exc}") from exc
         finally:
             # 先卸挂载再删卷，避免 PaaS 因卷仍被沙箱占用而删失败
-            if sandbox_id:
-                try:
-                    backend.destroy_sandbox(sandbox_id)
-                except Exception:  # noqa: BLE001 沙箱有 TTL 兜底回收，销毁失败不影响结果
-                    logger.warning("[pv_files] 销毁 fork 临时沙箱失败: sandbox_id=%s", sandbox_id, exc_info=True)
+            self._destroy_fork_sandbox(backend, sandbox_id)
             if not succeeded:
                 _discard_new_volume()
 
