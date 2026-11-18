@@ -4,7 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidev_bkplugin.constants import AUTHORIZE_PAGE_QUERY
+from aidev_bkplugin.constants import AUTHORIZATION_CHECK_ENV, AUTHORIZE_PAGE_QUERY
 
 # 必须在模块级拿到真实模块对象并用 patch.object：tests/views 下的用例会用假模块永久替换
 # sys.modules["aidev_bkplugin.services.agent_helpers"]，按字符串路径 patch 会落到假模块上。
@@ -38,3 +38,28 @@ def test_get_authorize_prompt(bkoauth_installed, access_token, saas_url, markdow
         assert expected in prompt
     else:
         assert prompt == ""
+
+
+@pytest.mark.parametrize(
+    "env_value, expected",
+    [(None, "请先到"), ("", "请先到"), ("  ", "请先到"), ("true", ""), ("1", ""), ("false", "")],
+)
+def test_get_authorize_prompt_env_switch(monkeypatch, env_value, expected):
+    """默认校验；配置 BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED 为任意非空值即关闭，与取值无关。"""
+    if env_value is None:
+        monkeypatch.delenv(AUTHORIZATION_CHECK_ENV, raising=False)
+    else:
+        monkeypatch.setenv(AUTHORIZATION_CHECK_ENV, env_value)
+    rm = MagicMock()
+    rm.resolve_access_token.return_value = ""
+    with (
+        patch.object(agent_helpers, "bkoauth", MagicMock()),
+        patch.object(agent_helpers.AgentConfigFetcher, "get_info", return_value={"saas_url": PING_URL}),
+    ):
+        prompt = agent_helpers.AgentHelper.get_authorize_prompt(rm, "alice")
+
+    if expected:
+        assert expected in prompt
+    else:
+        assert prompt == ""
+        rm.resolve_access_token.assert_not_called()

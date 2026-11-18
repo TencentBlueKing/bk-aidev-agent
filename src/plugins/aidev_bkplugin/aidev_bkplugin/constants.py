@@ -6,6 +6,10 @@ AGUI_PROTOCOL_VERSION = "v2"
 # 用户授权页参数，拼在智能体访问地址后；页面需请求插件 ping 接口写入 bkoauth access_token
 AUTHORIZE_PAGE_QUERY = "?authorization=success"
 
+# 对话入口授权校验开关：默认校验；变量名虽带 ENABLED，但只要配置了非空值就关闭校验
+# （与取值无关，``=false`` 同样关闭）。直接读环境变量，避免依赖尚未发布的 aidev_agent 配置项。
+AUTHORIZATION_CHECK_ENV = "BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED"
+
 # 会话列表默认分页参数
 DEFAULT_SESSION_PAGE = 1
 DEFAULT_SESSION_PAGE_SIZE = 20
