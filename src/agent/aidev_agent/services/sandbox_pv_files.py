@@ -1181,12 +1181,13 @@ class SandboxPvFileService:
 
     @staticmethod
     def _parse_fork_src_bytes(stdout: str) -> int | None:
+        sizes = []
         for line in (stdout or "").splitlines():
             if line.startswith(_FORK_SRC_BYTES_PREFIX):
                 raw = line.split("=", 1)[1].strip()
                 if raw.isdigit():
-                    return int(raw)
-        return None
+                    sizes.append(int(raw))
+        return max(sizes, default=None)
 
     @classmethod
     def _check_fork_result(cls, result, max_bytes: int, *, copied: bool = False) -> None:

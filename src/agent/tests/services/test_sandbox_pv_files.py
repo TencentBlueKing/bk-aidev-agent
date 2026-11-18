@@ -1375,7 +1375,7 @@ class TestCloneVolume:
         backend = mock_backend_cls.return_value
         backend.create_sandbox.side_effect = ["sbx-check", "sbx-fork"]
         too_large = SimpleNamespace(
-            stdout="",
+            stdout=f"{module._FORK_SRC_BYTES_PREFIX}128\n",
             stderr=f"{module._FORK_SRC_BYTES_PREFIX}314572801\n{module._FORK_COPY_TOO_LARGE_MARKER}\n",
             exit_code=2,
         )
@@ -1385,7 +1385,7 @@ class TestCloneVolume:
         mock_client.delete_agent_sandbox_volume.request.side_effect = lambda **kwargs: (
             order.append("delete") or _mock_paas_response({})
         )
-        with pytest.raises(module.SandboxFilesTooManyError, match="300 MiB"):
+        with pytest.raises(module.SandboxFilesTooManyError, match=r"314572801.*300 MiB"):
             service.clone_volume("s1")
         assert mock_client.create_agent_sandbox_volume.request.call_count == int(during_copy)
         assert order == (["sbx-check", "sbx-fork", "delete"] if during_copy else ["sbx-check"])
