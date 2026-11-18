@@ -6,19 +6,28 @@ bkoauth `access_token`；没有则返回授权提示，引导用户到授权页�
 
 ## 默认行为
 
-默认开启校验，存量环境升级后行为不变，无需补任何配置。
+默认开启校验。未设置环境变量 `BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED` 或值为空时都校验，
+存量环境升级后行为不变，无需补任何配置。
 
 ## 关闭校验
 
-配置环境变量 `BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED`（任意非空值）即关闭校验：
+在对应模块的环境变量里把 `BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED` 配成 `false`：
 
 ```bash
-export BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED=1
+export BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED=false
 ```
 
-注意变量名历史沿用，**语义是“配置了就关闭”**，与取值无关：`=false`、`=0` 同样会关闭。
-要恢复校验，需要删除该变量，而不是改成 `false`。Web 与企微入口共用同一个开关，
-应在两个进程里保持一致。
+取值规则（不分大小写，忽略首尾空格）：
+
+| 取值 | 行为 |
+|---|---|
+| 未设置 / 空值 | 校验 |
+| `true` / `1` / `yes` / `on` | 校验 |
+| `false` / `0` / `no` / `off` | **关闭校验** |
+| 其它无法识别的值（如拼写错误的 `flase`） | 校验 |
+
+无法识别的值按校验处理，避免写错取值时授权拦截被意外关闭。恢复校验可以删除该变量，
+或改成 `true`。Web 与企微入口共用同一个开关，如果两者是不同进程或模块，需要在两边都配。
 
 ## 影响范围
 

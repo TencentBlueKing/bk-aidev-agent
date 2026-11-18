@@ -42,10 +42,25 @@ def test_get_authorize_prompt(bkoauth_installed, access_token, saas_url, markdow
 
 @pytest.mark.parametrize(
     "env_value, expected",
-    [(None, "请先到"), ("", "请先到"), ("  ", "请先到"), ("true", ""), ("1", ""), ("false", "")],
+    [
+        # 默认校验：未设置 / 空值 / 显式开启 / 无法识别的取值都校验
+        (None, "请先到"),
+        ("", "请先到"),
+        ("  ", "请先到"),
+        ("true", "请先到"),
+        ("1", "请先到"),
+        ("flase", "请先到"),
+        # 仅显式配成假值（不分大小写、忽略首尾空格）才关闭
+        ("false", ""),
+        ("False", ""),
+        (" FALSE ", ""),
+        ("0", ""),
+        ("no", ""),
+        ("off", ""),
+    ],
 )
 def test_get_authorize_prompt_env_switch(monkeypatch, env_value, expected):
-    """默认校验；配置 BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED 为任意非空值即关闭，与取值无关。"""
+    """默认校验；BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED 仅在显式配成 false 等假值时关闭。"""
     if env_value is None:
         monkeypatch.delenv(AUTHORIZATION_CHECK_ENV, raising=False)
     else:

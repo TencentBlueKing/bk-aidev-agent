@@ -18,7 +18,7 @@ from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.packages.resource_manager.registry import resource_manager as resource_manager_factory
 from django.conf import settings
 
-from aidev_bkplugin.constants import AUTHORIZATION_CHECK_ENV, AUTHORIZE_PAGE_QUERY
+from aidev_bkplugin.constants import AUTHORIZATION_CHECK_ENV, AUTHORIZATION_CHECK_OFF_VALUES, AUTHORIZE_PAGE_QUERY
 from aidev_bkplugin.models import Checkpoint, Write
 from aidev_bkplugin.packages.checkpoint import BKDjangoSaver
 
@@ -83,11 +83,12 @@ class AgentHelper:
     ) -> str:
         """对话入口授权校验：用户无可用 bkoauth access_token 时返回授权提示，已授权返回空串。
 
-        未安装 bkoauth 的环境不拦截；配置了环境变量 ``BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED``
-        （任意非空值）时关闭校验，Web 与企微入口共用该开关。``markdown`` 为 True 时授权页渲染为
-        Markdown 超链接，仅用于支持 Markdown 的渠道（如企微）；Web 错误消息按纯文本展示，保持裸 URL。
+        未安装 bkoauth 的环境不拦截。环境变量 ``BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED`` 默认校验，
+        仅显式配成 ``false`` / ``0`` / ``no`` / ``off``（不分大小写）时关闭，Web 与企微入口共用该开关。
+        ``markdown`` 为 True 时授权页渲染为 Markdown 超链接，仅用于支持 Markdown 的渠道（如企微）；
+        Web 错误消息按纯文本展示，保持裸 URL。
         """
-        if os.getenv(AUTHORIZATION_CHECK_ENV, "").strip():
+        if os.getenv(AUTHORIZATION_CHECK_ENV, "").strip().lower() in AUTHORIZATION_CHECK_OFF_VALUES:
             return ""
         if bkoauth is None or resource_manager.resolve_access_token(username):
             return ""
