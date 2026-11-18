@@ -98,6 +98,19 @@ class ChatSessionViewSet(PluginViewSet):
         result = self.client.api.rename_chat_session(path_params={"session_code": pk})
         return Response(data=result["data"])
 
+    @action(["POST"], url_path="fork", detail=True)
+    def fork(self, request, pk, **kwargs):
+        """分支会话：消息与文件复制都在平台完成，这里只转发。
+
+        复制会话 PV 要用用户票据换智能体 token，与分享接口一样透传 ``AIDEV-TICKET``。
+        """
+        result = self.client.api.fork_chat_session(
+            path_params={"session_code": pk},
+            json={"content_id": request.data.get("content_id")},
+            headers=_share_identity_headers(request),
+        )
+        return Response(data=result["data"])
+
     @action(["GET"], url_path="is_resume", detail=True)
     def is_resume(self, request, pk, **kwargs):
         logger.info(f"[is_resume][agent] 收到轮询请求, pk={pk}, kwargs={kwargs}, request_path={request.path}")
@@ -254,9 +267,7 @@ class ChatSessionViewSet(PluginViewSet):
     def delete_pv_file(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=True)
         try:
-            self._make_pv_file_service(request).delete_file(
-                session_code=pk, path=request.query_params.get("path")
-            )
+            self._make_pv_file_service(request).delete_file(session_code=pk, path=request.query_params.get("path"))
         # 幂等只覆盖「文件不存在」；会话根本没有 PV 是真错误，不能当删除成功返回 200
         except SandboxVolumeNotFoundError as exc:
             self._raise_pv_exc(exc)
@@ -270,9 +281,7 @@ class ChatSessionViewSet(PluginViewSet):
     def pv_files_stat(self, request, pk, **kwargs):
         self._check_session_owner(request, pk, require_access=False)
         try:
-            data = self._make_pv_file_service(request).stat_file(
-                session_code=pk, path=request.query_params.get("path")
-            )
+            data = self._make_pv_file_service(request).stat_file(session_code=pk, path=request.query_params.get("path"))
         except SandboxFileError as exc:
             self._raise_pv_exc(exc)
         return Response(data=data)

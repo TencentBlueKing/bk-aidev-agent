@@ -381,3 +381,24 @@ def test_stop_omits_producer_state_when_detection_fails(monkeypatch):
         json={"session_code": "session-stop"},
         headers={"X-BKAIDEV-USER": "alice"},
     )
+
+
+def test_fork_forwards_content_id_and_user_ticket(settings):
+    settings.BKAUTH_BACKEND_TYPE = "bk_ticket"
+    api = MagicMock()
+    api.fork_chat_session.return_value = {"data": {"session_code": "s2", "session_name": "排查(1)"}}
+    request = SimpleNamespace(
+        user=SimpleNamespace(username="alice"),
+        COOKIES={"bk_ticket": "t"},
+        META={},
+        data={"content_id": 1052, "session_code": "ignored"},
+    )
+
+    response = _view(session_mod.ChatSessionViewSet, api).fork(request, pk="s1")
+
+    api.fork_chat_session.assert_called_once_with(
+        path_params={"session_code": "s1"},
+        json={"content_id": 1052},
+        headers={"X-BKAIDEV-USER": "alice", "AIDEV-TICKET": "t"},
+    )
+    assert response.data == {"session_code": "s2", "session_name": "排查(1)"}

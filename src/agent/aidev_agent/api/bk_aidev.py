@@ -117,6 +117,13 @@ class OpenApiGroup(OperationGroup):
         path="/openapi/aidev/resource/v1/chat/session/{session_code}/ai_rename/",
     )
 
+    fork_chat_session = bind_property(
+        Operation,
+        name="fork_chat_session",
+        method="POST",
+        path="/openapi/aidev/resource/v1/chat/session/{session_code}/fork/",
+    )
+
     is_resume_session = bind_property(
         Operation,
         name="is_resume_session",
