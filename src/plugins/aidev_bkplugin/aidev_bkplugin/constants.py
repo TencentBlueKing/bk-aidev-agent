@@ -6,6 +6,12 @@ AGUI_PROTOCOL_VERSION = "v2"
 # 用户授权页参数，拼在智能体访问地址后；页面需请求插件 ping 接口写入 bkoauth access_token
 AUTHORIZE_PAGE_QUERY = "?authorization=success"
 
+# 对话入口授权校验开关：默认校验（未设置 / 空值都校验），仅显式配成下列“假值”之一才关闭。
+# 无法识别的取值按校验处理，避免写错值导致授权拦截被意外关闭。
+# 直接读环境变量，避免依赖尚未发布的 aidev_agent 配置项。
+AUTHORIZATION_CHECK_ENV = "BKAI_AGENT_AUTHORIZATION_CHECK_ENABLED"
+AUTHORIZATION_CHECK_OFF_VALUES = frozenset({"false", "0", "no", "off"})
+
 # agent/info 返回的能力标识：前端据此判断是否显示分支会话（Fork）按钮
 SESSION_FORK_CAPABILITY = "session_fork"
 
