@@ -95,6 +95,7 @@ from aidev_agent.utils.migrations import (
     migration_model_context_options_from_agent_options_v1,
     normalize_doc_schema_payload,
 )
+from aidev_agent.utils.tracing import recording_span
 
 try:
     from aidev_agent.packages.opentelemetry.resilience import record_operation_timeout
@@ -489,41 +490,44 @@ class ChatCompletionAgent(BaseModel):
         data = prop.get("caller_context") or {}
         return data if isinstance(data, dict) else {}
 
-    def _restore_session_caller_context(self, execute_kwargs: ExecuteKwargs, session_code: str) -> None:
+    def _load_session_caller_context(self, session_code: str) -> dict[str, Any] | None:
+        """读取会话已存的 ``caller_context``；读取失败返回 None，调用方跳过回填与写回。"""
         retrieve = getattr(self.resource_manager, "retrieve_chat_session", None)
         if not callable(retrieve):
-            return
+            return {}
         try:
-            execute_kwargs.apply_caller_context(
-                self._caller_context_from_session(retrieve(session_code)),
-                overwrite=bool(execute_kwargs.resume),
-            )
+            return self._caller_context_from_session(retrieve(session_code))
         except Exception:
-            logger.warning("restore session caller_context failed: session_code=%s", session_code, exc_info=True)
+            logger.warning("load session caller_context failed: session_code=%s", session_code, exc_info=True)
+            return None
 
-    def _persist_session_caller_context(self, execute_kwargs: ExecuteKwargs, session_code: str) -> None:
+    def _persist_session_caller_context(
+        self, execute_kwargs: ExecuteKwargs, session_code: str, stored: dict[str, Any]
+    ) -> None:
         update = getattr(self.resource_manager, "update_chat_session_caller_context", None)
         current = execute_kwargs.to_caller_context()
         if not current or not callable(update):
             return
-        retrieve = getattr(self.resource_manager, "retrieve_chat_session", None)
+        merged = {**current, **stored}
+        if merged == stored:
+            return
         try:
-            stored = self._caller_context_from_session(retrieve(session_code) if callable(retrieve) else {})
-            merged = {**current, **stored}
-            if merged == stored:
-                return
             update(session_code, merged)
         except Exception:
             logger.warning("persist session caller_context failed: session_code=%s", session_code, exc_info=True)
 
     def _sync_session_caller_context(self, execute_kwargs: ExecuteKwargs) -> None:
-        """resume 读回 ``caller_context``，非 resume 把当次调用方字段写回会话（已有键不覆盖）。"""
+        """resume 读回 ``caller_context``，非 resume 把当次调用方字段写回会话（已有键不覆盖）。
+
+        回填与写回共用同一次会话读取；读取失败时两者都跳过，只补齐当前用户默认值。
+        """
         session_code = self._session_code_for_caller_context(execute_kwargs)
-        if session_code:
-            self._restore_session_caller_context(execute_kwargs, session_code)
-        execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
-        if session_code:
-            self._persist_session_caller_context(execute_kwargs, session_code)
+        with recording_span("agent.chat.caller_context.sync", attributes={"agent.session.code": session_code}):
+            stored = self._load_session_caller_context(session_code) if session_code else None
+            execute_kwargs.apply_caller_context(stored, overwrite=bool(execute_kwargs.resume))
+            execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
+            if stored is not None:
+                self._persist_session_caller_context(execute_kwargs, session_code, stored)
 
     def execute(self, execute_kwargs: ExecuteKwargs) -> Generator[str, None, None] | str:
         self.migration_v1()
@@ -1626,8 +1630,8 @@ class ChatCompletionAgent(BaseModel):
         if self.knowledges:
             self.knowledge_query_options.knowledge_items = self.knowledges
         logger.info(f"callbacks: {self.callbacks}")
-        return self.agent_cls.get_agent_executor(
-            personal_memory_runtime=automatic_personal_memory(
+        with recording_span("agent.chat.personal_memory.prepare", attributes={"agent.session.code": self.thread_id}):
+            personal_memory_runtime = automatic_personal_memory(
                 self.resource_manager,
                 (self.executor_info or {}).get("executor") or "",
                 self.thread_id,
@@ -1635,28 +1639,31 @@ class ChatCompletionAgent(BaseModel):
                 messages,
                 agent_code=self.memory_agent_code or (self.agent_info or {}).get("agent_code", ""),
                 memory_settings=(self.agent_info or {}).get("memory_settings"),
-            ),
-            llm=self.chat_model,
-            non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
-            fast_llm=self.chat_model_fast,
-            vision_llm=self.chat_model_vision,
-            extra_tools=self.tools,
-            chat_history=messages[:-1],
-            tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
-            support_vision=self.support_vision,
-            file_store=self.file_store,
-            callbacks=self.callbacks,
-            knowledge_query_options=self.knowledge_query_options,
-            model_context_options=self.model_context_options,
-            skills=self.skills,
-            subagent_specs=self.subagent_specs,
-            executor_info=self.executor_info,
-            execute_kwargs=execute_kwargs,
-            checkpointer=self.checkpointer,
-            resource_manager=self.resource_manager,
-            security_settings=self.security_settings,
-            runtime_backend_resolver=self.runtime_backend_resolver,
-        )
+            )
+        with recording_span("agent.chat.graph.build", attributes={"agent.session.code": self.thread_id}):
+            return self.agent_cls.get_agent_executor(
+                personal_memory_runtime=personal_memory_runtime,
+                llm=self.chat_model,
+                non_thinking_llm=self.chat_model_non_thinking or self.chat_model,
+                fast_llm=self.chat_model_fast,
+                vision_llm=self.chat_model_vision,
+                extra_tools=self.tools,
+                chat_history=messages[:-1],
+                tool_execution_interval=self.TOOL_EXECUTION_INTERVAL,
+                support_vision=self.support_vision,
+                file_store=self.file_store,
+                callbacks=self.callbacks,
+                knowledge_query_options=self.knowledge_query_options,
+                model_context_options=self.model_context_options,
+                skills=self.skills,
+                subagent_specs=self.subagent_specs,
+                executor_info=self.executor_info,
+                execute_kwargs=execute_kwargs,
+                checkpointer=self.checkpointer,
+                resource_manager=self.resource_manager,
+                security_settings=self.security_settings,
+                runtime_backend_resolver=self.runtime_backend_resolver,
+            )
 
     def _refresh_llm_history_image_urls(self, chat_history: list[ChatPrompt]) -> None:
         """主模型支持多模态时，重签历史用户图片的 download_url（只改本轮模型输入副本）。

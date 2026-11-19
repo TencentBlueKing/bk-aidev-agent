@@ -6,10 +6,15 @@ import pytest
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
+from aidev_agent.utils import tracing
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
 from aidev_bkplugin.services.producer import celery
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
 
 
 @pytest.fixture
@@ -64,6 +69,30 @@ def test_publish_failure_reaches_web(spec, monkeypatch):
     monkeypatch.setattr(celery.current_app, "send_task", Mock(side_effect=RuntimeError("broker unavailable")))
     with pytest.raises(RuntimeError, match="broker unavailable"):
         ChatDispatcher(spec)._submit(spec)
+
+
+def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor, monkeypatch):
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
+    sender = Mock()
+    monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
+    spec.execute_kwargs = {"stream": False}
+    worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
+
+    ChatDispatcher(spec)._submit(spec)
+    run_chat_producer(**sender.call_args.kwargs["kwargs"])
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
+    assert enqueue.kind == SpanKind.PRODUCER
+    assert worker.kind == SpanKind.CONSUMER
+    assert worker.context.trace_id == enqueue.context.trace_id
+    assert worker.parent.span_id == enqueue.context.span_id
+    assert spans["bkplugin.chat.worker.build_agent"].parent.span_id == worker.context.span_id
+    provider.shutdown()
 
 
 def test_reply_channel_isolated_by_tenant_and_task(spec):
