@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "3.1.3.post1"
+version = "3.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -49,9 +49,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5f/52/ce2702c461d7fb3b91c6f94d52c1b70940d69e1302590c020e3d69ba2457/aidev_agent-3.1.3.post1.tar.gz", hash = "sha256:edd30bda95f01ef9e36525ff2ced846d9502ce4610c3f4fcc580a04848c2ec3d", size = 1748963, upload-time = "2026-11-19T11:25:16.99Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/79/77484d0a43c32fbf55917308f7ffdf12b98e79abb145455526b63d1dbc69/aidev_agent-3.1.4.tar.gz", hash = "sha256:91e2deb412b93fc6d45ad5c4ae1781c6ab8a808a7bf893feecfa96dde2622577", size = 1748634, upload-time = "2026-11-19T13:45:10.597Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/c4/eb23e1d1e4af68a7ff45312c6cc21e6aea0ec98a61cffa1d52a261eb2b8e/aidev_agent-3.1.3.post1-py3-none-any.whl", hash = "sha256:9aee08f218ef2af6afff1b105d65782e202ddc7cc2a81877c7323f32952926bf", size = 1022533, upload-time = "2026-11-19T11:25:19.17Z" },
+    { url = "https://files.pythonhosted.org/packages/64/6c/b18df8e75f2461d5aae330d23e653c26668f7c85d40d8f63818c14240e2e/aidev_agent-3.1.4-py3-none-any.whl", hash = "sha256:969487692d2c0f07a89f01e49ec9ff8a99d6a0b876018df5827af2a66b017d50", size = 1022463, upload-time = "2026-11-19T13:45:06.139Z" },
 ]
 
 [package.optional-dependencies]
@@ -72,7 +72,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "3.1.3.post1"
+version = "3.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -98,7 +98,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=3.1.3.post1" },
+    { name = "aidev-agent", specifier = ">=3.1.4" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.16rc5,<4.17.0" },
     { name = "celery", specifier = "==5.4.0" },
