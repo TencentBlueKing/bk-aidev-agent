@@ -150,6 +150,37 @@ class TestRabbitMQConnectionPool:
         pool.release_connection(replacement)
         pool.close()
 
+    @pytest.mark.parametrize("transport_lost", [False, True], ids=["channel-only", "transport-lost"])
+    def test_channel_not_found_reuses_only_healthy_connection(self, transport_lost):
+        pool = FakeConnectionPool(pool_size=1)
+        error = pika.exceptions.ChannelClosedByBroker(404, "NOT_FOUND")
+
+        with pytest.raises(pika.exceptions.ChannelClosedByBroker) as raised, pool.connection() as first:
+            first.fail_validation = transport_lost
+            raise error
+
+        assert raised.value is error
+        assert first.closed is transport_lost
+        assert pool.available_count == (0 if transport_lost else 1)
+        with pool.connection() as next_connection:
+            assert (next_connection is first) == (not transport_lost)
+        pool.close()
+
+    @pytest.mark.parametrize(
+        "error",
+        [pika.exceptions.StreamLostError("connection reset"), pika.exceptions.ChannelClosedByBroker(406, "mismatch")],
+    )
+    def test_other_broker_errors_discard_connection(self, error):
+        pool = FakeConnectionPool(pool_size=1)
+        with pytest.raises(type(error)) as raised, pool.connection() as first:
+            raise error
+
+        assert raised.value is error
+        assert first.closed
+        with pool.connection() as replacement:
+            assert replacement is not first
+        pool.close()
+
     def test_body_exception_discards_current_generation_connection(self):
         pool = FakeConnectionPool()
 

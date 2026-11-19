@@ -1205,11 +1205,11 @@ class RabbitMQConnectionPool:
 
         try:
             yield conn
-        except Exception:
-            # contextmanager 在 yield 后不能重新进入重试循环，否则会二次 yield 并触发
-            # RuntimeError("generator didn't stop after throw()")。连接内操作由调用方整体重试。
-            self._discard_connection(conn)
-            conn = None
+        except Exception as exc:
+            # 队列不存在时 broker 只关闭 channel，归还连接时仍须校验底层传输。
+            if not (isinstance(exc, pika.exceptions.ChannelClosedByBroker) and exc.reply_code == 404):
+                self._discard_connection(conn)
+                conn = None
             raise
         finally:
             if conn is not None:
