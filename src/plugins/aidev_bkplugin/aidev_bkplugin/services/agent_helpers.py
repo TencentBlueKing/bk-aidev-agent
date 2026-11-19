@@ -57,15 +57,18 @@ class AgentHelper:
         return BKDjangoSaver(checkpoint_model=Checkpoint, writes_model=Write)
 
     @classmethod
-    def build_session_detail_url(cls, session_code: str, username: str | None = None) -> str:
+    def build_session_detail_url(
+        cls, session_code: str, username: str | None = None, version: str | None = None
+    ) -> str:
         """从 agent 配置 ``saas_url`` 拼小鲸会话详情页 URL。
 
+        ``username``/``version`` 与本次请求已读配置一致时命中请求级缓存，不再重复拉取。
         返回空串表示无法构建（``session_code`` 为空 / ``saas_url`` 缺失 / 上游异常）。
         """
         if not session_code:
             return ""
         try:
-            agent_info = AgentConfigFetcher.get_info(username=username)
+            agent_info = AgentConfigFetcher.get_info(username=username, version=version)
             saas_url = agent_info.get("saas_url", "")
             if not saas_url:
                 logger.debug(f"[build_session_detail_url] agent 配置中无 saas_url, username={username}")

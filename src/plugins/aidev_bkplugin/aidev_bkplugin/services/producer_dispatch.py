@@ -10,11 +10,17 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
+from aidev_agent.utils.tracing import recording_span
 from celery import current_app
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
 from .background_dispatch import capture_trace_context
+
+try:
+    from opentelemetry.trace import SpanKind
+except ImportError:
+    SpanKind = None
 
 CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 
@@ -66,7 +72,6 @@ class ChatDispatcher:
             raise ValueError("Celery Chat requires a shared replay message backend")
         spec = self.spec.model_copy(deep=True)
         spec.execute_kwargs = execute_kwargs.model_dump(mode="json")
-        spec.trace_context = capture_trace_context()
         if execute_kwargs.stream_mode == "attach":
             return self._consume(spec, handler)
         task_id = self._submit(spec)
@@ -82,17 +87,25 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-        current_app.send_task(
-            CHAT_TASK_NAME,
-            kwargs={
-                "task_id": task_id,
-                "spec": spec.model_dump(mode="json"),
-                "expires_at": time.time() + queue_timeout,
-            },
-            task_id=task_id,
-            queue=agent_settings.BKAI_AGENT_TASK,
-            expires=queue_timeout,
-        )
+        with recording_span(
+            "bkplugin.chat.enqueue",
+            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
+            kind=SpanKind.PRODUCER if SpanKind else None,
+            use_global_tracer=True,
+        ):
+            # Worker spans continue from the enqueue span, so the trace shows queue wait as the gap after it.
+            spec.trace_context = capture_trace_context()
+            current_app.send_task(
+                CHAT_TASK_NAME,
+                kwargs={
+                    "task_id": task_id,
+                    "spec": spec.model_dump(mode="json"),
+                    "expires_at": time.time() + queue_timeout,
+                },
+                task_id=task_id,
+                queue=agent_settings.BKAI_AGENT_TASK,
+                expires=queue_timeout,
+            )
         return task_id
 
     @classmethod
