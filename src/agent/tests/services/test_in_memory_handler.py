@@ -1274,6 +1274,17 @@ class TestInMemoryQueueMessageHandler:
 class TestMessageHandlerConfig:
     """测试 Config 解析 + 工厂 + RabbitMQ 降级"""
 
+    @pytest.mark.parametrize(("override", "expected"), [(None, 4), ("1", 1), ("8", 8)])
+    def test_shared_stream_shards(self, monkeypatch, override, expected):
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_SHARED_GROUP, "test-group")
+        monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_PORT, "5552")
+        monkeypatch.setenv(EnvVarNames.REDIS_URL, "redis://localhost")
+        if override is None:
+            monkeypatch.delenv(EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS, raising=False)
+        else:
+            monkeypatch.setenv(EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS, override)
+        assert MessageHandlerConfig.get_rabbitmq_stream_config().shards == expected
+
     @pytest.mark.parametrize(
         ("env_handler_type", "env_rabbitmq_host", "env_redis_url", "expected_type"),
         [

@@ -54,7 +54,7 @@ def _read_then_disconnect(session, cursor, count):
 def test_shared_stream_worker_resume_and_cleanup(monkeypatch):
     group = uuid.uuid4().hex
     monkeypatch.setenv("RABBITMQ_STREAM_SHARED_GROUP", group)
-    monkeypatch.delenv("RABBITMQ_STREAM_SHARED_SHARDS", raising=False)
+    monkeypatch.setenv("RABBITMQ_STREAM_SHARED_SHARDS", "1")
     handler = _LiveHandler()
     a, b = f"{group}-a", f"{group}-b"
     stream = handler._get_stream_name(a)

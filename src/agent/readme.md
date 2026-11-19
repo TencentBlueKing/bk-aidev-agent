@@ -92,7 +92,7 @@ RABBITMQ_STREAM_PORT=5552
 
 - RabbitMQ 服务端需启用内置 `rabbitmq_stream` 插件，并向客户端正确发布 advertised host/port。
 - `RABBITMQ_STREAM_PORT` 一旦配置即严格启用 Stream；协议端口、插件或认证不可用时启动失败，不降级到 Classic Queue。
-- 选择 `MESSAGE_HANDLER_TYPE=rabbitmq` 后，共享 Stream 原型通过 `RABBITMQ_STREAM_SHARED_GROUP` 启用，值取应用与环境内唯一的固定名称。所有 worker 使用相同的组名和 `RABBITMQ_STREAM_SHARED_SHARDS`（默认 1），存量执行结束前应保持这两项稳定。
+- 选择 `MESSAGE_HANDLER_TYPE=rabbitmq` 后，共享 Stream 原型通过 `RABBITMQ_STREAM_SHARED_GROUP` 启用，值取应用与环境内唯一的固定名称。所有 worker 使用相同的组名和 `RABBITMQ_STREAM_SHARED_SHARDS`（默认 4）。升级前已启用共享模式且沿用旧默认值的应用，应显式配置为 1，待存量执行结束后再切换到 4，避免续读定位到其他分片。
 - 共享模式需要 broker 启用 stream filtering，并通过 `MESSAGE_REDIS_URL` 指向所有 worker 共用的 Redis。Redis 保存带 TTL 的执行标识和计数，事件保存在 RabbitMQ。同一执行的读取方可将上次返回的分片 offset 交给另一 worker 继续读取。
 - SSE 事件使用原生 offset 独立回放，多端消费不会 `get/nack` 历史消息；生产使用命名 publisher、批量发送和 broker confirm。
 - Stream 数据按 `QUEUE_EXPIRE_SECONDS` 设置 `max-age`，正常结束仍由最后一个消费者或孤儿清理任务删除 Stream 与控制资源。

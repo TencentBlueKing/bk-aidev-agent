@@ -49,7 +49,7 @@ class MessageHandlerConfig:
     @classmethod
     def get_rabbitmq_stream_config(cls) -> RabbitMQStreamConfig:
         group = env.str(EnvVarNames.RABBITMQ_STREAM_SHARED_GROUP, "").strip()
-        shards = env.int(EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS, 1) if group else 1
+        shards = env.int(EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS, 4) if group else 1
         if shards < 1:
             raise ValueError(f"{EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS} must be positive")
         redis_url = env.str(EnvVarNames.REDIS_URL, "").strip() if group else ""
