@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import os
 import pickle
 import queue
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Coroutine, Optional
 
 from environs import Env
-from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo, Producer
+from redis import Redis
+from redis.exceptions import RedisError
+from rstream import Consumer, ConsumerOffsetSpecification, FilterConfiguration, OffsetType, OnClosedErrorInfo, Producer
 from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
@@ -37,6 +41,14 @@ _METADATA_UPDATE_REASON = "Metadata Update"
 _SUBSCRIPTION_IDLE_TIMEOUT = HEARTBEAT_INTERVAL * 2
 # rstream 关闭时每个内部请求最多等 5 秒；后台关闭再加总上限，避免卡住的 socket 长期占用任务。
 _STALE_CLIENT_CLOSE_TIMEOUT = 30.0
+
+
+# 共享模式在消息前加固定长度的执行标识，先精确过滤，再解码 SSE。
+_SubscriptionKey = tuple[int, str] | tuple[int, str, str]
+
+
+async def _extract_run(message: Any) -> str:
+    return bytes(message)[:32].decode("ascii")
 
 
 @dataclass
@@ -95,17 +107,21 @@ class _StreamSubscription:
 class _RabbitMQStreamRuntime:
     """在专用 asyncio loop 中持有 rstream producer 和 consumer。"""
 
+    shared = False
+
     def __init__(
         self,
         connection_kwargs: dict[str, Any],
         operation_timeout: float,
         max_age_seconds: int,
+        shared: bool = False,
     ) -> None:
+        self.shared = shared
         self._connection_kwargs = connection_kwargs
         self._operation_timeout = operation_timeout
         self._max_age_seconds = max_age_seconds
         self._state_lock = threading.Lock()
-        self._subscriptions: dict[tuple[int, str], _StreamSubscription] = {}
+        self._subscriptions: dict[_SubscriptionKey, _StreamSubscription] = {}
         self._known_streams: set[str] = set()
         self._pid = 0
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -126,6 +142,7 @@ class _RabbitMQStreamRuntime:
             if self._pid == current_pid and self._thread is not None and self._thread.is_alive():
                 return
 
+            self.publisher_id = uuid.uuid4().hex
             self._pid = current_pid
             self._subscriptions = {}
             self._known_streams = set()
@@ -169,6 +186,7 @@ class _RabbitMQStreamRuntime:
             **self._connection_kwargs,
             connection_name="aidev-agent-stream-producer",
             on_close_handler=on_close,
+            **({"filter_value_extractor": _extract_run} if self.shared else {}),
         )
         self._producer = producer
         await producer.start()
@@ -310,7 +328,7 @@ class _RabbitMQStreamRuntime:
         publishing_ids = await self._producer.send_batch(
             stream,
             payloads,
-            publisher_name=publisher_name,
+            publisher_name=self.publisher_id if self.shared else publisher_name,
             on_publish_confirm=on_confirm,
         )
         expected = set(publishing_ids)
@@ -346,7 +364,7 @@ class _RabbitMQStreamRuntime:
 
     async def _create_subscription(
         self,
-        key: tuple[int, str],
+        key: _SubscriptionKey,
         stream: str,
         offset: int,
     ) -> _StreamSubscription:
@@ -358,6 +376,8 @@ class _RabbitMQStreamRuntime:
             subscription.connection_closed = True
 
         async def on_message(message: Any, context: Any) -> None:
+            if self.shared:
+                message = pickle.loads(message[32:])
             subscription.last_delivery_at = time.monotonic()
             subscription.messages.put((context.offset, message))
 
@@ -375,10 +395,16 @@ class _RabbitMQStreamRuntime:
         )
         try:
             await consumer.start()
+            options = {}
+            if self.shared:
+                run = key[2]
+                prefix = run.encode("ascii")
+                options["filter_input"] = FilterConfiguration([run], predicate=lambda raw: raw.startswith(prefix))
             subscription.subscriber_id = await consumer.subscribe(
                 stream,
                 on_message,
-                decoder=pickle.loads,
+                decoder=bytes if self.shared else pickle.loads,
+                **options,
                 offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
                 initial_credit=10,
             )
@@ -398,7 +424,7 @@ class _RabbitMQStreamRuntime:
 
     async def _replace_subscription(
         self,
-        key: tuple[int, str],
+        key: _SubscriptionKey,
         stream: str,
         offset: int,
     ) -> _StreamSubscription:
@@ -411,7 +437,7 @@ class _RabbitMQStreamRuntime:
 
     async def _get_subscription(
         self,
-        key: tuple[int, str],
+        key: _SubscriptionKey,
         stream: str,
         offset: int,
     ) -> _StreamSubscription:
@@ -437,7 +463,7 @@ class _RabbitMQStreamRuntime:
 
     def get_messages_since(
         self,
-        key: tuple[int, str],
+        key: _SubscriptionKey,
         stream: str,
         offset: int,
         timeout: float | None,
@@ -445,18 +471,26 @@ class _RabbitMQStreamRuntime:
         subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
         return subscription.read(offset, timeout)
 
-    async def _close_subscription(self, key: tuple[int, str]) -> None:
+    async def _close_subscription(self, key: _SubscriptionKey) -> None:
         subscription = self._subscriptions.pop(key, None)
         if subscription is not None:
             await self._discard_subscription(subscription)
 
-    def close_subscription(self, key: tuple[int, str]) -> None:
+    def close_subscription(self, key: _SubscriptionKey) -> None:
         self._submit(self._close_subscription(key))
 
     async def _close_stream_subscriptions(self, stream: str) -> None:
         keys = [key for key, subscription in self._subscriptions.items() if subscription.stream == stream]
         for key in keys:
             await self._close_subscription(key)
+
+    def close_session(self, thread_id: str, reader: int | None = None) -> None:
+        async def close_matching() -> None:
+            for key in list(self._subscriptions):
+                if key[1] == thread_id and (reader is None or reader == key[0]):
+                    await self._close_subscription(key)
+
+        self._submit(close_matching())
 
     async def _delete_stream(self, stream: str) -> None:
         await self._close_stream_subscriptions(stream)
@@ -507,12 +541,35 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     _instance: Optional["RabbitMQStreamMessageHandler"] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
+    _shared_group = ""
+    # 执行标识在多个 worker 间共享，活跃发布延长 TTL，异常退出后自动回收。
+    _get_or_start_run = """
+        local run = redis.call('hget', KEYS[1], 'run') or ARGV[1]
+        redis.call('hset', KEYS[1], 'run', run)
+        redis.call('pexpire', KEYS[1], ARGV[2])
+        return run
+    """
+    _confirm_count = """
+        if redis.call('hget', KEYS[1], 'run') == ARGV[1] then
+            return redis.call('hincrby', KEYS[1], 'count', ARGV[2])
+        end
+    """
+
     def _init_rabbitmq(self) -> None:
+        self._shared_group = env.str("RABBITMQ_STREAM_SHARED_GROUP", "")
+        if self._shared_group:
+            self._shards = env.int("RABBITMQ_STREAM_SHARED_SHARDS", 1)
+            if self._shards < 1:
+                raise ValueError("RABBITMQ_STREAM_SHARED_SHARDS must be positive")
+            self._sessions = Redis.from_url(
+                env.str(EnvVarNames.REDIS_URL), decode_responses=True, socket_timeout=5, socket_connect_timeout=5
+            )
         super()._init_rabbitmq()
         self._stream_counts: dict[str, int] = {}
         self._stream_count_lock = threading.Lock()
         self._stream_runtime = _RabbitMQStreamRuntime(
             connection_kwargs=self._get_stream_connection_kwargs(),
+            shared=bool(self._shared_group),
             operation_timeout=env.float(
                 "RABBITMQ_STREAM_OPERATION_TIMEOUT",
                 self.STREAM_PUBLISH_CONFIRM_TIMEOUT,
@@ -538,11 +595,22 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
         }
 
     def _get_stream_name(self, thread_id: str) -> str:
+        if self._shared_group:
+            digest = hashlib.sha256(thread_id.encode()).digest()
+            shard = int.from_bytes(digest[:8], "big") % self._shards
+            return f"aidev_agent.shared.v1.{self._shared_group}.{shard}"
         return f"{self.STREAM_PREFIX}{thread_id}"
+
+    def _session_key(self, thread_id: str) -> str:
+        return f"{self._get_stream_name(thread_id)}:session:{thread_id}"
 
     def _publish_stream_messages(self, thread_id: str, messages: list[Any], *, event_count: int) -> None:
         stream_name = self._get_stream_name(thread_id)
         payloads = [pickle.dumps(message) for message in messages]
+        if self._shared_group:
+            session = self._session_key(thread_id)
+            run = self._sessions.eval(self._get_or_start_run, 1, session, uuid.uuid4().hex, self.QUEUE_TTL_MS)
+            payloads = [run.encode("ascii") + payload for payload in payloads]
         publish_started_at = time.monotonic()
         try:
             publishing_ids = self._stream_runtime.publish(
@@ -568,7 +636,13 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             message_sizes=[len(payload) for payload in payloads],
             started_at=publish_started_at,
         )
-        if publishing_ids:
+        if self._shared_group:
+            try:
+                self._sessions.eval(self._confirm_count, 1, session, run, len(publishing_ids))
+            except RedisError:
+                # broker 已确认，辅助计数写入失败不能触发同一批次重发。
+                logger.exception("Failed to update confirmed count for shared stream")
+        elif publishing_ids:
             with self._stream_count_lock:
                 self._stream_counts[thread_id] = max(
                     self._stream_counts.get(thread_id, 0),
@@ -631,20 +705,34 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
         timeout: Optional[float] = None,
     ) -> tuple[list[Any], int]:
         """直接从 RabbitMQ Stream offset 读取，不扫描历史消息。"""
+        key: _SubscriptionKey = (threading.get_ident(), thread_id)
+        if self._shared_group:
+            deadline = None if timeout is None else time.monotonic() + timeout
+            while not (run := self._sessions.hget(self._session_key(thread_id), "run")):
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError("No active stream session")
+                time.sleep(0.01)
+            key = (*key, run)
+            if deadline is not None:
+                timeout = max(0, deadline - time.monotonic())
         messages, next_offset = self._stream_runtime.get_messages_since(
-            key=(threading.get_ident(), thread_id),
+            key=key,
             stream=self._get_stream_name(thread_id),
             offset=max(offset, 0),
             timeout=timeout,
         )
-        with self._stream_count_lock:
-            self._stream_counts[thread_id] = max(self._stream_counts.get(thread_id, 0), next_offset)
+        if not self._shared_group:
+            with self._stream_count_lock:
+                self._stream_counts[thread_id] = max(self._stream_counts.get(thread_id, 0), next_offset)
         return self._expand_sse_messages(messages), next_offset
 
     def release_consumer(self, thread_id: str, consumer_id: str) -> None:
         key = (threading.get_ident(), thread_id)
         with contextlib.suppress(Exception):
-            self._stream_runtime.close_subscription(key)
+            if self._shared_group:
+                self._stream_runtime.close_session(thread_id, key[0])
+            else:
+                self._stream_runtime.close_subscription(key)
         super().release_consumer(thread_id, consumer_id)
 
     def has_pending_messages(self, thread_id: str) -> bool:
@@ -652,14 +740,23 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             if self._message_buffer.get(thread_id):
                 return True
         try:
+            if self._shared_group:
+                return bool(self._sessions.exists(self._session_key(thread_id)))
             return self._stream_runtime.stream_exists(self._get_stream_name(thread_id))
         except Exception:
             # 检查失败时按无待续流处理，让本轮对话继续生成而不是中断。
             logger.exception("Error checking RabbitMQ Stream for thread_id=%s, fallback to no pending", thread_id)
             return False
 
+    def _clear_data(self, thread_id: str) -> None:
+        if self._shared_group:
+            self._sessions.delete(self._session_key(thread_id))
+            self._stream_runtime.close_session(thread_id)
+        else:
+            self._stream_runtime.delete_stream(self._get_stream_name(thread_id))
+
     def _delete_stream_and_control_resources(self, thread_id: str) -> None:
-        self._stream_runtime.delete_stream(self._get_stream_name(thread_id))
+        self._clear_data(thread_id)
         with self._with_channel() as channel:
             queue_names = [
                 self._get_cancel_queue_name(thread_id),
@@ -682,7 +779,7 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     def clear(self, thread_id: str) -> None:
         with self._buffer_lock:
             self._message_buffer.pop(thread_id, None)
-        self._stream_runtime.delete_stream(self._get_stream_name(thread_id))
+        self._clear_data(thread_id)
         with self._stream_count_lock:
             self._stream_counts.pop(thread_id, None)
         try:
@@ -696,6 +793,8 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             logger.exception("Error clearing RabbitMQ Stream controls for thread_id=%s", thread_id)
 
     def get_cached_count(self, thread_id: str) -> int:
+        if self._shared_group:
+            return int(self._sessions.hget(self._session_key(thread_id), "count") or 0)
         with self._stream_count_lock:
             known_count = self._stream_counts.get(thread_id)
         if known_count is not None:
