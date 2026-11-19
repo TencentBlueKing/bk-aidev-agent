@@ -19,6 +19,7 @@ from typing import Any, Callable, ClassVar, Coroutine, Optional
 
 from environs import Env
 from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo, Producer
+from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
 from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, EnvVarNames
@@ -29,7 +30,7 @@ logger = getLogger(__name__)
 env = Env()
 
 # OSError 已覆盖 TimeoutError、ConnectionError 等超时和断连异常。
-_RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (OSError, ConnectionClosed)
+_RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (OSError, ConnectionClosed, BrokerResolutionMaxRetryError)
 # stream 删除等元数据变化也会触发 on_close_handler，但连接本身仍可用。
 _METADATA_UPDATE_REASON = "Metadata Update"
 # 生产者每个心跳周期至少写入一条消息；订阅连续两个周期没有投递，说明订阅连接可能已失效。

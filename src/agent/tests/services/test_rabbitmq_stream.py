@@ -18,6 +18,7 @@ from aidev_agent.services.messages_handler.rabbitmq_stream import (
 )
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from rstream import ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo
+from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
 
@@ -201,6 +202,26 @@ def test_stream_exists_raises_when_retry_still_fails():
     with pytest.raises(TimeoutError):
         runtime.stream_exists("stream")
     assert len(submitted) == 3
+
+
+def test_get_messages_since_reconnects_after_broker_resolution_failure():
+    subscription = MagicMock()
+    subscription.read.return_value = ([b"message"], 8)
+    runtime, submitted = _make_runtime([BrokerResolutionMaxRetryError(), None, subscription])
+
+    assert runtime.get_messages_since((1, "thread"), "stream", 7, 0.5) == ([b"message"], 8)
+    assert _submitted_names(submitted) == ["_get_subscription", "_restart_producer", "_get_subscription"]
+    subscription.read.assert_called_once_with(7, 0.5)
+
+
+def test_get_messages_since_propagates_second_broker_resolution_failure():
+    retry_error = BrokerResolutionMaxRetryError("retry failed")
+    runtime, submitted = _make_runtime([BrokerResolutionMaxRetryError(), None, retry_error])
+
+    with pytest.raises(BrokerResolutionMaxRetryError) as raised:
+        runtime.get_messages_since((1, "thread"), "stream", 7, 0.5)
+    assert raised.value is retry_error
+    assert _submitted_names(submitted) == ["_get_subscription", "_restart_producer", "_get_subscription"]
 
 
 def test_publish_marks_producer_stale_without_retry():
