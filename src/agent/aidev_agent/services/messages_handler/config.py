@@ -1,4 +1,5 @@
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from environs import Env
 
@@ -7,6 +8,15 @@ from aidev_agent.enums import MessageHandlerType
 from .constants import EnvVarNames
 
 env = Env()
+
+
+@dataclass(frozen=True)
+class RabbitMQStreamConfig:
+    connection_kwargs: dict[str, Any] = field(repr=False)
+    operation_timeout: float
+    shared_group: str
+    shards: int
+    redis_url: str = field(repr=False)
 
 
 class MessageHandlerConfig:
@@ -35,6 +45,33 @@ class MessageHandlerConfig:
     def has_rabbitmq_stream_config(cls) -> bool:
         """检查是否启用 RabbitMQ Stream 数据面。"""
         return bool(env.str(EnvVarNames.RABBITMQ_STREAM_PORT, "").strip())
+
+    @classmethod
+    def get_rabbitmq_stream_config(cls) -> RabbitMQStreamConfig:
+        group = env.str(EnvVarNames.RABBITMQ_STREAM_SHARED_GROUP, "").strip()
+        shards = env.int(EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS, 1) if group else 1
+        if shards < 1:
+            raise ValueError(f"{EnvVarNames.RABBITMQ_STREAM_SHARED_SHARDS} must be positive")
+        redis_url = env.str(EnvVarNames.REDIS_URL, "").strip() if group else ""
+        if group and not redis_url:
+            raise ValueError(f"Shared streams require {EnvVarNames.REDIS_URL}")
+        connection_kwargs = {
+            "host": env.str(EnvVarNames.RABBITMQ_HOST, "localhost"),
+            "port": env.int(EnvVarNames.RABBITMQ_STREAM_PORT),
+            "username": env.str("RABBITMQ_USER", "guest"),
+            "password": env.str("RABBITMQ_PASSWORD", "guest"),
+            "vhost": env.str("RABBITMQ_VHOST", "/"),
+            "heartbeat": env.int("RABBITMQ_STREAM_HEARTBEAT", 60),
+            "max_retries": env.int("RABBITMQ_STREAM_MAX_RETRIES", 3),
+            "load_balancer_mode": env.bool("RABBITMQ_STREAM_LB_MODE", True),
+        }
+        return RabbitMQStreamConfig(
+            connection_kwargs=connection_kwargs,
+            operation_timeout=env.float("RABBITMQ_STREAM_OPERATION_TIMEOUT", 10.0),
+            shared_group=group,
+            shards=shards,
+            redis_url=redis_url,
+        )
 
     @classmethod
     def has_redis_config(cls) -> bool:

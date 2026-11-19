@@ -19,19 +19,18 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Coroutine, Optional
 
-from environs import Env
 from redis import Redis
 from redis.exceptions import RedisError
 from rstream import Consumer, ConsumerOffsetSpecification, FilterConfiguration, OffsetType, OnClosedErrorInfo, Producer
 from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
-from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, EnvVarNames
+from .config import MessageHandlerConfig
+from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT
 from .rabbitmq import RabbitMQMessageHandler
 from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
-env = Env()
 
 # OSError 已覆盖 TimeoutError、ConnectionError 等超时和断连异常。
 _RECONNECTABLE_ERRORS: tuple[type[BaseException], ...] = (OSError, ConnectionClosed, BrokerResolutionMaxRetryError)
@@ -537,7 +536,6 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     # Stream 按原生 offset 增量读取，不继承 Classic Queue 的 60 秒全量 replay 容忍。
     CONSUMER_HEARTBEAT_TIMEOUT: ClassVar[float] = HEARTBEAT_TIMEOUT
     STREAM_PREFIX: ClassVar[str] = "aidev_agent.stream."
-    STREAM_PUBLISH_CONFIRM_TIMEOUT: ClassVar[float] = 10.0
     _instance: Optional["RabbitMQStreamMessageHandler"] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
@@ -556,43 +554,27 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     """
 
     def _init_rabbitmq(self) -> None:
-        self._shared_group = env.str("RABBITMQ_STREAM_SHARED_GROUP", "")
+        config = MessageHandlerConfig.get_rabbitmq_stream_config()
+        self._shared_group = config.shared_group
+        self._shards = config.shards
         if self._shared_group:
-            self._shards = env.int("RABBITMQ_STREAM_SHARED_SHARDS", 1)
-            if self._shards < 1:
-                raise ValueError("RABBITMQ_STREAM_SHARED_SHARDS must be positive")
             self._sessions = Redis.from_url(
-                env.str(EnvVarNames.REDIS_URL), decode_responses=True, socket_timeout=5, socket_connect_timeout=5
+                config.redis_url, decode_responses=True, socket_timeout=5, socket_connect_timeout=5
             )
         super()._init_rabbitmq()
         self._stream_counts: dict[str, int] = {}
         self._stream_count_lock = threading.Lock()
         self._stream_runtime = _RabbitMQStreamRuntime(
-            connection_kwargs=self._get_stream_connection_kwargs(),
+            connection_kwargs=config.connection_kwargs,
             shared=bool(self._shared_group),
-            operation_timeout=env.float(
-                "RABBITMQ_STREAM_OPERATION_TIMEOUT",
-                self.STREAM_PUBLISH_CONFIRM_TIMEOUT,
-            ),
+            operation_timeout=config.operation_timeout,
             max_age_seconds=max(1, self.QUEUE_TTL_MS // 1000),
         )
         logger.info(
             "RabbitMQ Stream data plane initialized host=%s port=%s",
-            env.str(EnvVarNames.RABBITMQ_HOST, "localhost"),
-            env.int(EnvVarNames.RABBITMQ_STREAM_PORT),
+            config.connection_kwargs["host"],
+            config.connection_kwargs["port"],
         )
-
-    def _get_stream_connection_kwargs(self) -> dict[str, Any]:
-        return {
-            "host": env.str(EnvVarNames.RABBITMQ_HOST, "localhost"),
-            "port": env.int(EnvVarNames.RABBITMQ_STREAM_PORT),
-            "username": env.str("RABBITMQ_USER", "guest"),
-            "password": env.str("RABBITMQ_PASSWORD", "guest"),
-            "vhost": env.str("RABBITMQ_VHOST", "/"),
-            "heartbeat": env.int("RABBITMQ_STREAM_HEARTBEAT", 60),
-            "max_retries": env.int("RABBITMQ_STREAM_MAX_RETRIES", 3),
-            "load_balancer_mode": env.bool("RABBITMQ_STREAM_LB_MODE", True),
-        }
 
     def _get_stream_name(self, thread_id: str) -> str:
         if self._shared_group:
