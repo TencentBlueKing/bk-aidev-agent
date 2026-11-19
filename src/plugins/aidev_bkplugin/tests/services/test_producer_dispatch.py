@@ -1,6 +1,6 @@
 import json
 import time
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 from aidev_agent.enums import SessionsStatus
@@ -167,7 +167,46 @@ def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatc
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
     assert json.loads(chunks[0][6:])["event"] == {"type": "heartbeat", "message": "waiting for worker"}
     assert chunks[1:] == ["live-event"]
-    assert helper.stream.call_args.kwargs == {"expected_run_id": "worker-run", "attach_only": True}
+    assert helper.stream.call_args.kwargs == {
+        "expected_run_id": "worker-run",
+        "attach_only": True,
+        "before_first_chunk": ANY,
+    }
+
+
+@pytest.mark.parametrize("task_id", ["task-id", None])
+def test_waiting_heartbeat_until_first_chunk(spec, handler, monkeypatch, task_id):
+    clock = 0.0
+    monkeypatch.setattr(time, "monotonic", lambda: clock)
+    handler.is_stopped.return_value = False
+    handler.acquire_consumer.return_value = "consumer"
+    handler.CONSUMER_HEARTBEAT_TIMEOUT = 60
+    handler.has_pending_messages.side_effect = lambda _: clock >= 7
+    handler.has_active_producer.side_effect = lambda _: clock >= 7
+
+    def advance(seconds):
+        nonlocal clock
+        clock = round(clock + seconds, 2)
+
+    def poll(channel, offset, timeout):
+        advance(timeout)
+        if channel != spec.session_code and clock >= 7:
+            return [{"kind": "started", "run_id": "worker-run"}], 1
+        if channel == spec.session_code and clock >= (12 if offset == 0 else 20):
+            return [f"chunk-{offset}"], offset + 1
+        raise TimeoutError
+
+    monkeypatch.setattr(time, "sleep", advance)
+    handler.get_messages_since.side_effect = poll
+    stream = ChatDispatcher(spec)._consume(spec, handler, task_id)
+    heartbeat = next(stream)
+    assert [(next(stream), clock) for _ in range(4)] == [
+        (heartbeat, 5),
+        (heartbeat, 10),
+        ("chunk-0", 12),
+        ("chunk-1", 20),
+    ]
+    stream.close()
 
 
 def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkeypatch):
