@@ -14,6 +14,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from aidev_agent.pydantic_models import AgentConfig, AgentOptions
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.agent.factory import _FACTORY_TOKEN
 
@@ -31,6 +32,17 @@ def _build_factory(version=None) -> AgentInstanceFactory:
         resource_manager=_make_resource_manager(),
         version=version,
         _token=_FACTORY_TOKEN,
+    )
+
+
+def _make_agent_config() -> AgentConfig:
+    return AgentConfig(
+        agent_code="main_agent",
+        agent_name="origin",
+        chat_model="test-model",
+        non_thinking_llm="test-non-thinking",
+        fast_llm="test-non-thinking",
+        agent_options=AgentOptions(),
     )
 
 
@@ -55,6 +67,18 @@ def test_no_version_means_latest_for_all():
     assert factory.resource_manager.get_agent_config.call_count == 2
     for call in factory.resource_manager.get_agent_config.call_args_list:
         assert call.kwargs["version"] is None
+
+
+def test_same_agent_code_fetched_once_per_build_with_independent_copies():
+    factory = _build_factory(version="v2")
+    factory.resource_manager.get_agent_config.return_value = _make_agent_config()
+
+    first = factory.get_agent_config("main_agent")
+    first.agent_name = "changed"
+    second = factory.get_agent_config("main_agent")
+
+    factory.resource_manager.get_agent_config.assert_called_once_with(agent_code="main_agent", version="v2")
+    assert second.agent_name == "origin"
 
 
 def test_init_stores_version_attr():
