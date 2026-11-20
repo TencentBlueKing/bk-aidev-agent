@@ -10,13 +10,22 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
+from aidev_agent.utils.tracing import recording_span
 from celery import current_app
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
 from .background_dispatch import capture_trace_context
 
+try:
+    from opentelemetry.trace import SpanKind
+except ImportError:
+    SpanKind = None
+
 CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
+
+
+WORKER_HEARTBEAT_INTERVAL = 5
 
 
 class ChatExecutionSpec(BaseModel):
@@ -63,7 +72,6 @@ class ChatDispatcher:
             raise ValueError("Celery Chat requires a shared replay message backend")
         spec = self.spec.model_copy(deep=True)
         spec.execute_kwargs = execute_kwargs.model_dump(mode="json")
-        spec.trace_context = capture_trace_context()
         if execute_kwargs.stream_mode == "attach":
             return self._consume(spec, handler)
         task_id = self._submit(spec)
@@ -79,21 +87,34 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-        current_app.send_task(
-            CHAT_TASK_NAME,
-            kwargs={
-                "task_id": task_id,
-                "spec": spec.model_dump(mode="json"),
-                "expires_at": time.time() + queue_timeout,
-            },
-            task_id=task_id,
-            queue=agent_settings.BKAI_AGENT_TASK,
-            expires=queue_timeout,
-        )
+        with recording_span(
+            "bkplugin.chat.enqueue",
+            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
+            kind=SpanKind.PRODUCER if SpanKind else None,
+            use_global_tracer=True,
+        ):
+            # Worker spans continue from the enqueue span, so the trace shows queue wait as the gap after it.
+            spec.trace_context = capture_trace_context()
+            current_app.send_task(
+                CHAT_TASK_NAME,
+                kwargs={
+                    "task_id": task_id,
+                    "spec": spec.model_dump(mode="json"),
+                    "expires_at": time.time() + queue_timeout,
+                },
+                task_id=task_id,
+                queue=agent_settings.BKAI_AGENT_TASK,
+                expires=queue_timeout,
+            )
         return task_id
 
+    @classmethod
+    def _wait_reply(cls, channel: str, handler, *, expected_kind: str, timeout: float) -> dict:
+        polls = cls._poll_reply(channel, handler, expected_kind=expected_kind, timeout=timeout)
+        return next(reply for reply in polls if reply is not None)
+
     @staticmethod
-    def _wait_reply(channel: str, handler, *, expected_kind: str, timeout: float) -> dict:
+    def _poll_reply(channel: str, handler, *, expected_kind: str, timeout: float):
         deadline = time.monotonic() + timeout
         offset = 0
         while True:
@@ -103,27 +124,46 @@ class ChatDispatcher:
             try:
                 replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
-                continue
+                replies = ()
             for reply in replies:
                 if reply["kind"] not in ("error", expected_kind):
                     continue
                 handler.mark_completed(channel)
                 if reply["kind"] == "error":
                     raise RuntimeError(reply["error"])
-                return reply
+                yield reply
+                return
+            yield None
 
     def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
         # Flush the HTTP SSE response before waiting for worker startup.
-        yield EventEncoder().encode(
+        heartbeat = EventEncoder().encode(
             RawEvent(type=EventType.RAW, event={"type": "heartbeat", "message": "waiting for worker"})
         )
+        next_heartbeat = time.monotonic() + WORKER_HEARTBEAT_INTERVAL
+        yield heartbeat
+
+        def waiting_heartbeat():
+            nonlocal next_heartbeat
+            now = time.monotonic()
+            if now >= next_heartbeat:
+                next_heartbeat = now + WORKER_HEARTBEAT_INTERVAL
+                return heartbeat
+            return None
+
         timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
         run_id = None
         helper = GeneratorStreamingHelper(handler, thread_id=spec.session_code, defer_cleanup_on_complete=True)
         try:
             if task_id:
-                reply = self._wait_reply(spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout)
-                run_id = reply["run_id"] or None
+                for reply in self._poll_reply(
+                    spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
+                ):
+                    if reply is not None:
+                        run_id = reply["run_id"] or None
+                        break
+                    if chunk := waiting_heartbeat():
+                        yield chunk
             else:
                 deadline = time.monotonic() + timeout
                 while not handler.has_active_producer(spec.session_code) and not handler.has_pending_messages(
@@ -131,8 +171,12 @@ class ChatDispatcher:
                 ):
                     if time.monotonic() >= deadline:
                         raise TimeoutError("Chat stream did not become available")
+                    if chunk := waiting_heartbeat():
+                        yield chunk
                     time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
             yield from helper._emit_terminal_error_events(type(exc).__name__)
             return
-        yield from helper.stream(iter(()), expected_run_id=run_id, attach_only=True)
+        yield from helper.stream(
+            iter(()), expected_run_id=run_id, attach_only=True, before_first_chunk=waiting_heartbeat
+        )
