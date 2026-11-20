@@ -151,6 +151,7 @@
             commonTippyOptions,
             handleAgentAction,
             onAgentFeedback,
+            onForkSourceClick,
             onInterruptResume,
             onUserAction,
             onUserInputConfirm,
@@ -171,6 +172,7 @@
             :messages="messages"
             :on-agent-action="handleAgentAction"
             :on-agent-feedback="onAgentFeedback"
+            :on-fork-source-click="onForkSourceClick"
             :on-interrupt-resume="onInterruptResume"
             :on-user-action="onUserAction"
             :on-user-input-confirm="onUserInputConfirm"
@@ -341,6 +343,7 @@
   import MessageMinimap from '../chat-message/message-minimap/message-minimap.vue';
   import MessageLoading from '../message-loading/message-loading.vue';
   import SelectionFooter from '../selection-footer/selection-footer.vue';
+  import { scrollLocateTarget } from './locate-message-scroll';
   import { type ChatContainerResizeProps, useAsideResizeProps } from './use-aside-resize-props';
 
   import type { OnArtifactClick } from '../../ag-ui/types/file';
@@ -399,6 +402,7 @@
       messageStatus: MessageContainerProps['messageStatus'];
       messageToolsStatus: MessageContainerProps['messageToolsStatus'];
       onAgentFeedback?: MessageContainerProps['onAgentFeedback'];
+      onForkSourceClick?: MessageContainerProps['onForkSourceClick'];
       onInterruptResume?: MessageContainerProps['onInterruptResume'];
       onUserAction?: MessageContainerProps['onUserAction'];
       onUserInputConfirm?: (message: Message, content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
@@ -728,7 +732,7 @@
   };
 
   /**
-   * 定位消息组
+   * 定位消息组。同一轮提问吸附在顶部时，滚动位置留出提问高度，避免盖住回答开头。
    */
   const handleLocateMessageGroup = (uid?: string) => {
     if (!uid) {
@@ -737,12 +741,13 @@
     const dom = document.getElementById(uid);
     if (!dom) {
       const group = messageGroups.value.find(group => group.messages.some(message => message.uid === uid));
-      if (group) {
-        document.getElementById(group.uid)?.scrollIntoView({ behavior: 'smooth' });
+      const groupDom = group ? document.getElementById(group.uid) : null;
+      if (groupDom) {
+        scrollLocateTarget(groupDom);
       }
       return;
     }
-    dom.scrollIntoView({ behavior: 'smooth' });
+    scrollLocateTarget(dom);
   };
   /**
    * 把选中的侧栏 Tab 标签滚进 tab 栏。

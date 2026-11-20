@@ -36,7 +36,7 @@ useMessageMinimap({ container, messageGroups })
   │
   └── watch(container / rounds / visible, flush: 'post')
         重建 IntersectionObserver（root = container）
-        观察容器直接子节点中 data-message-group-id 属于各轮次的节点
+        观察容器内（含问答轮次 wrapper 之下）data-message-group-id 属于各轮次的节点
         提问组或回答组任一可见 → 该轮序号进入 activeIndexes
 ```
 
@@ -77,7 +77,7 @@ const { rounds, visible, activeIndexes } = useMessageMinimap({
 | `resolveMinimapRounds(groups)`  | 从消息组列表配对问答轮次                                                                                       |
 | `getQuestionText(message)`      | 提问纯文本：字符串原样使用，多模态内容只取文本片段，空白合并                                                   |
 | `getAnswerText(messages)`       | 回答纯文本：只取 assistant 的 markdown 行内文字与行内代码，跳过代码块和图片；与消息渲染一致不解析 HTML，原始标签按文字保留；reasoning / tool / activity 不参与 |
-| `findMessageGroupElement(container, uid)` | 在容器直接子节点中按 `data-message-group-id` 查找消息组元素                                          |
+| `findMessageGroupElement(container, uid)` | 在容器内按 `data-message-group-id` 查找消息组元素（消息组包在 `.ai-message-turn` 内，不要求是直接子节点） |
 
 ## 类型定义
 

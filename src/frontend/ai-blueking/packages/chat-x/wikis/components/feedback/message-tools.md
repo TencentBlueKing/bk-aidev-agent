@@ -77,7 +77,7 @@ AI 消息的操作工具栏组件，由**左侧消息工具区**和**右侧更�
 │  .ai-message-tools-container（display: flex，gap: 4px）                 │
 │  ┌────────┐  ┌─────────────────────┐  │  ┌───────────────┐  ┌───────┐ │
 │  │#prepend│  │  messageTools        │  │  │  updateTools  │  │#append│ │
-│  │        │  │  copy rebuild share  │  │  │ like unlike…  │  │       │ │
+│  │        │  │  copy rebuild fork…  │  │  │ like unlike…  │  │       │ │
 │  └────────┘  └─────────────────────┘  │  └───────────────┘  └───────┘ │
 │    插槽区          左侧区域         分隔线    右侧区域          插槽区   │
 └───────────────────────────────────────────────────────────────────────┘
@@ -166,6 +166,8 @@ onAction 返回 string[]（反馈选项列表）
 const CONST_MESSAGE_TOOLS = [
   { id: 'copy', name: '复制', description: '复制' },
   { id: 'rebuild', name: '重新生成', description: '重新生成将清空下文内容' },
+  // 基于本轮回复及之前的上下文新建分支会话；接口调用与会话切换由业务方在 onAgentAction 中处理
+  { id: 'fork', name: '新建分支会话', description: '新建分支会话' },
   { id: 'share', name: '分享', description: '分享' },
 ];
 ```
@@ -203,6 +205,7 @@ const CONST_UPDATE_TOOLS = [
 | `copy`         | 复制                                 |
 | `cite`         | 引用（不再属于内置列表，可用于自定义按钮） |
 | `rebuild`      | 重新生成                             |
+| `fork`         | 新建分支会话                         |
 | `share`        | 分享                                 |
 | `like`         | 点赞（空心）                         |
 | `unlike`       | 不满意（空心）                       |

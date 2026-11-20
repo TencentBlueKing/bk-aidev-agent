@@ -690,7 +690,7 @@ ai-chat-container（:data-ai-size="size"）
 
 ### 自定义 Tab 与「在对话中定位」
 
-`addCustomTab` 的 `data` 可携带 **`messageUid`**（与对应活动消息的 `message.uid` 一致）。`ChatContainer` 在侧栏用 `<component :is="sideRenderComponent">`（内部计算属性，见上文「侧栏渲染扩展」）渲染自定义 Tab 时，会向子组件提供 **`locateButton` 插槽**：默认渲染「在对话中定位」按钮，点击后调用内部 `handleLocateMessageGroup(messageUid)`，优先滚动到主区域 `document.getElementById(messageUid)`；若不存在该节点，则在当前 `messageGroups` 中查找包含 `message.uid === messageUid` 的消息组，并滚动到该组的容器（`MessageGroup.uid` 作为组级 `id`）。
+`addCustomTab` 的 `data` 可携带 **`messageUid`**（与对应活动消息的 `message.uid` 一致）。`ChatContainer` 在侧栏用 `<component :is="sideRenderComponent">`（内部计算属性，见上文「侧栏渲染扩展」）渲染自定义 Tab 时，会向子组件提供 **`locateButton` 插槽**：默认渲染「在对话中定位」按钮，点击后调用内部 `handleLocateMessageGroup(messageUid)`，优先在消息列表内滚到 `document.getElementById(messageUid)`；若不存在该节点，则在当前 `messageGroups` 中查找包含 `message.uid === messageUid` 的消息组，并滚到该组的容器（`MessageGroup.uid` 作为组级 `id`）。目标与同一轮吸附提问同屏时，滚动位置扣掉提问高度，避免回答开头被挡住。目标不在消息列表内时退回 `scrollIntoView`。
 
 子组件若需展示该按钮，请在模板中声明 `<slot name="locateButton" />`（例如 FlowAgent 节点详情标题栏）。`FlowAgentContent` 等会在打开节点详情 Tab 时将 `messageUid` 写入 `data`，与 `ActivityMessage` 下传给内容区的 `message-uid` 对齐。
 
@@ -1239,6 +1239,8 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
+> 分支会话：AI 消息工具栏内置「新建分支会话」（`tool.id === 'fork'`，经 `onAgentAction` 通知业务方调用接口并切换会话）；分支会话中的「从其他会话中继续」分隔线点击经继承自 MessageContainer 的 `onForkSourceClick(forkInfo, message)` 回调，容器透传给默认 `MessageContainer`，自定义 `#default` 时也在作用域里提供。
+
 > 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 
 ### v-model
@@ -1274,7 +1276,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | 插槽名            | 参数                                                                                         | 说明                                                                                                     |
 | ----------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | codeHeader        | `{ language: string; token: Token[] }`                                                       | 代码块头部自定义操作区域，经 MessageContainer 透传给默认 MessageRender                                   |
-| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`。替换后没有内置滚动容器，[消息定位器](#消息定位器)不会出现 |
+| default           | `{ messages, messageStatus, messageGroups, selectedUserMessages, messageToolsStatus, isShareMode, commonTippyOptions, handleAgentAction, onAgentFeedback, onForkSourceClick, onInterruptResume, onUserAction, onUserInputConfirm, onUserShortcutConfirm }` | 自定义消息列表区域；未提供时渲染默认 `MessageContainer`。替换后没有内置滚动容器，[消息定位器](#消息定位器)不会出现 |
 | group             | `{ group: MessageGroup }`                                                                    | 自定义单个消息组，透传至 MessageContainer `#group`；替换默认 Checkbox、消息列表与工具栏                  |
 | interruptQuestion | `{ question, qIndex, answer, setAnswer, confirm }`                                           | 自定义 UserQuestion 单题渲染，透传至 UserQuestionCard `#question`                                        |
 | message           | `MessageSlotProps`（同 MessageContainer `#default`）                                          | 自定义单条消息，会接管全部角色；不需要自定义的消息用 `<MessageRender v-bind="slotProps" />` 保持默认渲染与工具栏回调 |

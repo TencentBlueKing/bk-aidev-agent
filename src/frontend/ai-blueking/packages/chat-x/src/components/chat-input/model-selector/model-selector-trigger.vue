@@ -89,11 +89,12 @@
       white-space: nowrap;
     }
 
+    // ArrowLeftIcon 朝左：默认 -90° 朝下，展开 90° 朝上
     &-arrow {
       flex: 0 0 12px;
       font-size: 12px;
       color: variables.$color-text-secondary;
-      transform: rotate(90deg);
+      transform: rotate(-90deg);
       transition: transform 0.2s;
 
       path {
@@ -102,7 +103,7 @@
     }
 
     &.is-expanded &-arrow {
-      transform: rotate(-90deg);
+      transform: rotate(90deg);
     }
   }
 </style>

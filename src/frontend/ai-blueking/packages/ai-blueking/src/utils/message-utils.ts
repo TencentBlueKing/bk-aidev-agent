@@ -113,6 +113,68 @@ export function collectTurnMessages<T extends IMessageLike>(messages: T[], userM
 }
 
 /**
+ * 从助手组消息里取出分叉接口需要的持久化 content_id。
+ * 从组末尾向前找最后一个数字 ID（number，或纯数字字符串）；流式临时消息没有持久化 ID，返回 undefined。
+ */
+export function resolveForkContentId(groupMessages: ReadonlyArray<{ id?: number | string }>): number | undefined {
+  for (let index = groupMessages.length - 1; index >= 0; index--) {
+    const id = groupMessages[index]?.id;
+    if (typeof id === 'number' && Number.isFinite(id)) {
+      return id;
+    }
+    if (typeof id === 'string' && /^\d+$/.test(id)) {
+      return Number(id);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 在服务端消息列表中找到与本地锚点同一轮的最后一条持久化消息 ID。
+ *
+ * @description 本地刚生成的回复没有持久化 id，按本轮用户消息对齐服务端列表：
+ * 先按用户消息 id 匹配，匹配不到再按第几条用户消息匹配。
+ * 服务端可能还没写入本轮回复，此时本轮只有用户消息，返回用户消息 id。
+ *
+ * @param serverMessages - 服务端消息列表
+ * @param localMessages - 本地完整消息列表
+ * @param anchor - 本轮中的一条 AI 消息
+ * @returns 本轮（含用户消息）最后一条持久化消息 ID；对不上时返回 undefined
+ */
+export function resolveTurnLastContentId<T extends IMessageLike>(
+  serverMessages: ReadonlyArray<IMessageLike>,
+  localMessages: T[],
+  anchor: T | undefined,
+): number | undefined {
+  if (!anchor || !localMessages.includes(anchor)) {
+    return undefined;
+  }
+  const localUser = findLastUserMessageBefore(localMessages, anchor);
+  if (!localUser) {
+    return undefined;
+  }
+
+  const serverUsers = serverMessages.filter(item => item.role === 'user');
+  const localUserOrdinal = localMessages.filter(item => item.role === 'user').indexOf(localUser);
+  const serverUser =
+    serverUsers.find(item => item.id != null && String(item.id) === String(localUser.id)) ??
+    serverUsers[localUserOrdinal];
+  if (!serverUser) {
+    return undefined;
+  }
+
+  const startIndex = serverMessages.indexOf(serverUser);
+  const turnMessages: IMessageLike[] = [serverUser];
+  for (let index = startIndex + 1; index < serverMessages.length; index++) {
+    if (serverMessages[index].role === 'user') {
+      break;
+    }
+    turnMessages.push(serverMessages[index]);
+  }
+  return resolveForkContentId(turnMessages);
+}
+
+/**
  * 由这一轮里的任意一条 AI 消息取出整轮消息（含对应的用户消息）。
  *
  * @description findLastUserMessageBefore 在锚点不在列表中时会返回整个列表最后一条用户消息，

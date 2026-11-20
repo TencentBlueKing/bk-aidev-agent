@@ -92,7 +92,7 @@ sinceVersion: 1.0.0
 
 ```
 ModelSelector（Tippy 容器，theme: ai-model-selector）
-├── ModelSelectorTrigger（触发器：图标 + 名称 + 思考深度档位 + 箭头）
+├── ModelSelectorTrigger（触发器：图标 + 名称 + 思考深度档位 + 箭头；默认朝下，展开朝上）
 └── ModelSelectorPanel（下拉面板）
     ├── 搜索框（展开后自动聚焦）
     ├── 模型列表（支持键盘导航、选中态、禁用态、能力标签；名称后回显思考深度档位）

@@ -49,6 +49,8 @@ export const lang = {
   引用: 'Quote',
   重新生成: 'Regenerate',
   重新生成将清空下文内容: 'Regenerating will clear the content below',
+  新建分支会话: 'New branch chat',
+  从其他会话中继续: 'Continued from another chat',
   提交: 'Submit',
   取消: 'Cancel',
   预览内容: 'Preview Content',

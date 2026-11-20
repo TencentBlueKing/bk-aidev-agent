@@ -1,6 +1,32 @@
 <template>
-  <div class="ai-info-message">
-    <div class="ai-info-message-body">
+  <div
+    class="ai-info-message"
+    :class="{ 'is-fork': forkInfo }"
+  >
+    <!-- 分支会话的分叉点：设计稿为图标 + 蓝色文案，点击切回来源会话 -->
+    <div
+      v-if="forkInfo"
+      class="ai-info-message-body"
+    >
+      <div
+        class="ai-info-message-fork"
+        :class="{ 'is-clickable': forkClickable }"
+        :role="forkClickable ? 'button' : undefined"
+        :tabindex="forkClickable ? 0 : undefined"
+        @click="handleForkClick"
+        @keydown.enter="handleForkClick"
+      >
+        <component
+          :is="ForkIcon"
+          class="ai-info-message-fork-icon"
+        />
+        <span class="ai-info-message-fork-text">{{ t('从其他会话中继续') }}</span>
+      </div>
+    </div>
+    <div
+      v-else
+      class="ai-info-message-body"
+    >
       <div
         v-for="(text, index) in Array.isArray(content) ? content : [content]"
         :key="index"
@@ -12,8 +38,26 @@
   </div>
 </template>
 <script setup lang="ts">
-  import type { InfoMessage } from '../../../ag-ui/types/messages';
-  defineProps<Partial<InfoMessage>>();
+  import { computed } from 'vue';
+
+  import { ForkIcon } from '../../../icons/tools';
+  import { t } from '../../../lang/lang';
+
+  import type { InfoMessage, MessageForkInfo } from '../../../ag-ui/types/messages';
+
+  const props = defineProps<
+    Partial<InfoMessage> & {
+      onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
+    }
+  >();
+
+  const forkInfo = computed(() => props.property?.fork_info);
+  const forkClickable = computed(() => !!forkInfo.value && !!props.onForkSourceClick);
+
+  const handleForkClick = () => {
+    if (!forkClickable.value || !forkInfo.value) return;
+    props.onForkSourceClick?.(forkInfo.value);
+  };
 </script>
 <style lang="scss">
   @use '../../../styles/variables.scss' as variables;
@@ -26,13 +70,24 @@
     line-height: var(--ai-line-height, 20px);
     color: variables.$color-text-secondary;
 
-    // 左右虚线夹中间文案，整块居中占位，避免 height:0 溢出被遮挡
+    // 左右虚线夹中间文案：自定义虚线（4px 实段 + 4px 空隙）比默认 dashed 更疏
     &::before,
     &::after {
       flex: 1;
+      align-self: center;
       min-width: 16px;
+      height: 1px;
       content: '';
-      border-bottom: 1px dashed variables.$color-border;
+      background-image: linear-gradient(
+        to right,
+        variables.$color-border 0,
+        variables.$color-border 4px,
+        transparent 4px,
+        transparent 8px
+      );
+      background-repeat: repeat-x;
+      background-position: center;
+      background-size: 8px 1px;
     }
 
     &-body {
@@ -49,6 +104,36 @@
     &-content {
       max-width: 100%;
       word-break: break-all;
+    }
+
+    &-fork {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+
+      &.is-clickable {
+        cursor: pointer;
+      }
+
+      &-icon {
+        flex-shrink: 0;
+        font-size: 14px;
+        color: variables.$color-text-secondary;
+      }
+
+      &-text {
+        color: variables.$color-primary;
+      }
+
+      // hover：文案加深为 #1768ef（与输入区快捷入口等交互蓝一致）
+      &.is-clickable:hover .ai-info-message-fork-text {
+        color: #1768ef;
+      }
+    }
+
+    // 设计稿：分叉点分隔线与中间内容间距 8px
+    &.is-fork &-body {
+      padding: 0 8px;
     }
   }
 </style>

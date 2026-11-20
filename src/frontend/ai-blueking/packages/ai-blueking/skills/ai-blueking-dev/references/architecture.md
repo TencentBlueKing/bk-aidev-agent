@@ -74,6 +74,17 @@ AI 小鲸组件采用严格的分层架构，开发时必须遵循各层职责�
 6. 模型选中：已有有效选中则保持；无有效选中时才 resolveInitialSelection()
 ```
 
+**分支会话流程**：
+
+```
+1. 点击 AI 工具栏 fork → useToolActions → useForkSession.forkFromMessages
+2. resolveForkContentId（助手组最后一个持久化数字 ID）
+3. SessionBusinessManager.forkSession → chat-helper POST session/{code}/fork/ { content_id }
+4. 新会话插入 list 头部并 chooseSession（加载含 fork_info 的消息）
+5. emit session-switched（Header 标题 / 历史列表更新）
+6. 点击「从其他会话中继续」→ openForkSource；失败则 createNewSession
+```
+
 **模型选择流程（≥ v2.2.2）**：
 
 ```

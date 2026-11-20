@@ -61,7 +61,7 @@
 | confirm-share     | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；`source` 为触发按钮。仅 `!source \|\| source.id === 'share'` 走内置 ShareBusinessManager |
 | cancel-share      | -                                          | 取消分享                       |
 | request-share     | -                                          | 请求进入分享模式               |
-| agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
+| agent-action      | `(tool: IToolBtn, messages: Message[])`    | 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） |
 | execution-panel-change | `(isCollapse: boolean, resizeAsideWidth?: number)` | 侧栏展开/折叠与宽度变化（浮窗几何不由此事件驱动） |
 | update:asideCollapsed | `(collapsed: boolean)` | `v-model:asideCollapsed`；受控时内部展开只发此事件 |
 | rename            | `(newName: string, sessionCode: string)`   | 首条消息后 AI 自动重命名成功；第二参为被改名会话编码（切会话后仍会抛，便于业务维护列表） |
@@ -123,6 +123,7 @@
 透传 chat-x `ChatContainer` 合并扩展能力。合并规则：同 `id` 字段级覆盖、新 `id` 追加、`{ id, hidden: true }` 隐藏内置项。
 
 - `triggerSelection: true`：点击进入多选，确认走 `confirm-share(messages, source)`（**不**进 `onAgentAction`）
+- 内置 `fork`：ChatBot / AIBlueking 创建分支会话并切换，**不**走 `agent-action`
 - 其它自定义按钮：走 `agent-action`
 - 仅 builtin share（`!source || source.id === 'share'`）执行内置分享；自定义 source 只向外 emit
 
@@ -145,7 +146,7 @@
 />
 ```
 
-> **⚠️ `#message` 插槽（关键）**：作用域是 `MessageSlotProps`（`message`、`messageToolsStatus`、`onInterruptResume`、`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`），外加 `renderDefault: () => VNode`。自定义渲染请 `<MessageRender v-bind="slotProps" />`（先去掉 `renderDefault`），或对不需要自定义的消息调用 `renderDefault()`。只传 `message` / `messageToolsStatus` 时，用户消息工具栏和 HITL 恢复都会失效。完整中断/恢复机制见 [`hitl.md`](hitl.md)。
+> **⚠️ `#message` 插槽（关键）**：作用域是 `MessageSlotProps`（`message`、`messageToolsStatus`、`onInterruptResume`、`onForkSourceClick`、`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`），外加 `renderDefault: () => VNode`。自定义渲染请 `<MessageRender v-bind="slotProps" />`（先去掉 `renderDefault`），或对不需要自定义的消息调用 `renderDefault()`。只传 `message` / `messageToolsStatus` 时，用户消息工具栏、分支分隔线和 HITL 恢复都会失效。完整中断/恢复机制见 [`hitl.md`](hitl.md)。
 >
 > ```vue
 > <ChatBot :url="apiUrl">
@@ -155,6 +156,18 @@
 >   </template>
 > </ChatBot>
 > ```
+
+### 分支会话（fork）
+
+`ChatBot` / `AIBlueking` 内置处理 chat-x 的「新建分支会话」和「从其他会话中继续」：
+
+1. 点击 AI 消息工具栏 `fork`：从当前助手组解析持久化 `content_id`，`POST session/{session_code}/fork/`，`body: { content_id }`。刚流式生成的回复只有 `messageId`、没有数字 `id`，此时 `SessionBusinessManager.getForkContentId` 会拉一次 `session_content` 列表：先按 `messageId` 回填，取不到再按本轮用户消息对齐，取本轮（含用户消息）最后一条持久化消息；服务端尚未写入回复时即为用户消息 id。新会话插入历史列表顶部并切换过去。新会话消息里带 `role: info` + `property.fork_info`，chat-x 渲染分隔线。
+2. 点击分隔线：按 `fork_info.source_session_code` 切回来源会话。来源已删除或请求失败时进入新会话欢迎页（请求层可能仍弹出一次错误提示）。
+3. 切换完成走已有 `session-switched`，不新增公开事件。
+4. 不需要该能力时：`:message-tools="[{ id: 'fork', hidden: true }]"`。
+5. 单独用 chat-x 的业务要自己处理 `onAgentAction(tool.id === 'fork')` 和 `onForkSourceClick`。
+
+独立 `ChatBot` 与 `AIBlueking` 行为相同；`AIBlueking` 的 Header 标题和历史列表随 `session-switched` / `session.list` 更新。
 
 ## Expose 方法
 
@@ -387,7 +400,7 @@ AIBlueking 是完整面板组件（Nimbus 悬浮球 + 浮窗 + 拖拽 + Header +
 | transfer-messages | `({ messageIds: string[] })` | 消息转移选择 |
 | share-messages | `({ messageIds: string[] })` | 消息分享选择 |
 | confirm-share | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；自定义 `source` 不走内置分享 |
-| agent-action | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击 |
+| agent-action | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） |
 | new-chat | 无 | 点击新增会话按钮 |
 | new-chat-created | `(session: { sessionCode, sessionName?, createdAt? })` | 新会话创建成功 |
 | history-click | `(event: Event)` | 点击历史会话按钮 |
