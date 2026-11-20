@@ -8,6 +8,7 @@
 
 | 函数名                       | 说明                                                                                                                              | 文档                              |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `toolResultPresentationsKey` | Vue 注入键，用于开启后代聊天容器的指标与日志结果卡片。 | [查看](../components/setup/message-container.md#结构化工具结果) |
 | `useClipboard`               | 复制文本到剪贴板；内置 Clipboard API → `execCommand` 两级降级，自动弹出成功/失败提示                                              | [查看](./use-clipboard.md)        |
 | `useToastContainerProvider`  | 宿主声明 toast 挂载容器；处于高层级浮层内时用它避免提示被挡住                                                                     | [查看](./use-toast.md)            |
 | `useToast` / `showToast`     | 统一提示出口；`useToast` 绑定注入的容器，`showToast` 为显式传容器的纯函数                                                         | [查看](./use-toast.md)            |

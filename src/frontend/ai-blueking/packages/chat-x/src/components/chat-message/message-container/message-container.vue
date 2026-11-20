@@ -73,6 +73,10 @@
                     </template>
                   </MessageRender>
                 </slot>
+                <ToolResultPresentations
+                  v-if="message.role === MessageRole.User && toolResultCards.has(observationMessageId(message))"
+                  :cards="toolResultCards.get(observationMessageId(message))!"
+                />
               </div>
             </template>
           </MessageProcessList>
@@ -132,7 +136,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { type VNode, computed, onMounted, useTemplateRef } from 'vue';
+  import { type VNode, computed, inject, onMounted, useTemplateRef } from 'vue';
 
   import { Checkbox } from 'bkui-vue';
 
@@ -140,6 +144,7 @@
   import { CONST_MESSAGE_TOOLS, CONST_UPDATE_TOOLS, RenderMode } from '../../../common';
   import { type MessageGroup, useClipboard, useContainerScrollProvider } from '../../../composables';
   import { findMessageGroupElement } from '../../../composables/use-message-minimap';
+  import { toolResultPresentationsKey } from '../../../composables/use-tool-result-presentations';
   import { ArrowDownIcon, CloseCircleIcon } from '../../../icons';
   import { t } from '../../../lang/lang';
   import { type Token } from '../../../markdown-it';
@@ -151,6 +156,8 @@
   import MessageProcessList from '../message-process/message-process-list.vue';
   import { isMessageGenerating, shouldShowMessageProcess } from '../message-process/message-process-status';
   import MessageRender from '../message-render/message-render.vue';
+  import { observationMessageId, observationViewsByUserMessage } from '../tool-result-presentations/presentation';
+  import ToolResultPresentations from '../tool-result-presentations/tool-result-presentations.vue';
   import { getVisibleMessageGroups } from './get-visible-message-groups';
 
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
@@ -278,6 +285,12 @@
     autoScrollEnabled.value = false;
     container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
   };
+
+  const enableToolResultPresentations = inject(toolResultPresentationsKey, false);
+  // Use the complete message list so a collapsed execution group cannot hide its results.
+  const toolResultCards = computed(() =>
+    observationViewsByUserMessage(enableToolResultPresentations ? props.messages : []),
+  );
 
   const visibleMessageGroups = computed(() => getVisibleMessageGroups(props.messageGroups, props.renderMode));
 

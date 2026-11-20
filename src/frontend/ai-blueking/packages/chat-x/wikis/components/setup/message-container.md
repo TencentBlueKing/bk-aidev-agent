@@ -1277,3 +1277,23 @@ enum MessageToolsStatus {
 - [InterruptMessage 中断消息](/components/agent/interrupt-message) — `role: 'interrupt'` 的渲染与 `onInterruptResume` 透传
 - [ChatInput](/components/input/chat-input) — 常与输入区组合构成完整对话界面
 - [LoadingMessage](/components/message/loading-message) — 末尾为用户消息时自动追加加载组
+
+## 结构化工具结果
+
+在聊天容器的宿主组件中开启结果卡片。
+
+```ts
+import { provide } from 'vue';
+import { toolResultPresentationsKey } from '@blueking/chat-x';
+
+provide(toolResultPresentationsKey, true);
+```
+
+工具结果通过 `TOOL_CALL_RESULT.content` 传递 JSON 字符串，并在会话历史中保留同一份 `content` 和调用 ID。JSON 的 `presentation` 字段支持以下两种 `schema_version: 1` 的数据。
+
+| 类型 | 字段 |
+| --- | --- |
+| `metric_series` | `series` 中每条含 `name`、`unit`、`points`。点使用 `[timestampMs, value]`，缺失值用 `null`。同时提供 `total_series` 和 `sampled`。 |
+| `log_records` | `rows` 中每条含 `timestamp`（毫秒或 `null`）、`level`、`source`、`text`、`clipped`。同时提供 `total`，未知时传 `null`。 |
+
+两种类型都带 `partial` 布尔值。启用后，容器按 `toolCallId` 将卡片挂在该次工具调用对应的用户消息下，过程折叠时也会展示。默认关闭，未识别的版本和失败结果沿用普通工具消息。

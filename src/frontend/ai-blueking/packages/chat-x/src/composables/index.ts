@@ -39,3 +39,4 @@ export * from './use-message-minimap';
 export * from './use-observer-visible-list';
 export * from './use-parent-scrolling';
 export * from './use-toast';
+export * from './use-tool-result-presentations';

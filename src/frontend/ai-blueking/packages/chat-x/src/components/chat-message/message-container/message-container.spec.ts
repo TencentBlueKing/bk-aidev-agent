@@ -31,6 +31,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InterruptReason, MessageContentType, MessageRole, MessageStatus } from '../../../ag-ui/types';
 import { LOADING_MESSAGE_ID, RenderMode } from '../../../common';
+import { toolResultPresentationsKey } from '../../../composables/use-tool-result-presentations';
 import { MessageToolsStatus } from '../../../types/tool';
 import MessageContainer from './message-container.vue';
 
@@ -303,6 +304,51 @@ describe('MessageContainer', () => {
 
   afterEach(() => {
     wrapper?.unmount();
+  });
+
+  it('renders tool presentations in the user turn for live results and restored messages', async () => {
+    const user = createUserMessage('1', 'Find logs');
+    const call: AssistantMessage = {
+      ...createAssistantMessage('2', ''),
+      toolCalls: [{ id: 'logs-1', type: 'function', function: { name: 'search_logs', arguments: '{}' } }],
+    };
+    const result = createToolMessage(
+      '3',
+      JSON.stringify({
+        presentation: {
+          schema_version: 1,
+          type: 'log_records',
+          partial: false,
+          total: 1,
+          rows: [{ timestamp: null, level: 'INFO', source: 'sample', text: 'Example record', clipped: false }],
+        },
+      }),
+      'logs-1',
+    ) as ToolMessage;
+    const props = { ...defaultProps, messages: [user, call], messageGroups: buildGroups([user, call]) };
+    const slot = { default: () => h('div', 'Host message') };
+    wrapper = mount(MessageContainer, {
+      props,
+      slots: slot,
+      global: { provide: { [toolResultPresentationsKey as symbol]: true } },
+    });
+    expect(wrapper.find('[data-result-type]').exists()).toBe(false);
+
+    const messages = [user, call, result];
+    const restored = { messages, messageGroups: buildGroups(messages) };
+    await wrapper.setProps(restored);
+    expect(wrapper.get('#group-1 [data-result-type="log_records"]').text()).toContain('Example record');
+    wrapper.unmount();
+
+    wrapper = mount(MessageContainer, {
+      props: { ...defaultProps, ...restored },
+      global: { provide: { [toolResultPresentationsKey as symbol]: true } },
+    });
+    expect(wrapper.findAll('[data-result-type="log_records"]')).toHaveLength(1);
+    wrapper.unmount();
+
+    wrapper = mount(MessageContainer, { props: { ...defaultProps, ...restored } });
+    expect(wrapper.find('[data-result-type]').exists()).toBe(false);
   });
 
   describe('渲染测试', () => {
