@@ -332,13 +332,25 @@ export interface IHiddenUserMessageApi extends IBaseMessageApi {
   role: MessageRole.HiddenUser;
 }
 
+/** 分叉点信息，字段与后端 property.fork_info、chat-x MessageForkInfo 保持一致 */
+export interface IMessageForkInfo {
+  /** 新会话复制到的最后一条消息 ID */
+  last_copied_content_id?: number | string;
+  /** 点击分支时所在的消息 ID */
+  source_content_id: number | string;
+  /** 来源会话编码 */
+  source_session_code: string;
+}
+
 export interface IInfoMessage extends IBaseMessage {
   content: string;
+  property?: IMessageProperty & { fork_info?: IMessageForkInfo };
   role: MessageRole.Info;
 }
 
 export interface IInfoMessageApi extends IBaseMessageApi {
   content: string;
+  property?: IMessageProperty & { fork_info?: IMessageForkInfo };
   role: MessageRole.Info;
 }
 

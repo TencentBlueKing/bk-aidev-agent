@@ -224,6 +224,26 @@ export const useMessage = (mediator: IMediatorModule) => {
     return mediator.http?.message.shareMessages(sessionCode, contentIds, expiredAt);
   };
 
+  /**
+   * 拉取服务端消息，按 messageId 给本地缺少 id 的消息（流式消息只有 messageId）回填持久化 id。
+   * 不整表替换 list，避免打断当前渲染；返回服务端列表，供调用方按轮次对齐。
+   */
+  const syncMessageIds = async (sessionCode: string): Promise<IMessage[]> => {
+    const res = (await mediator.http?.message.getMessages(sessionCode)) ?? [];
+    const idByMessageId = new Map<string, IMessage['id']>();
+    for (const item of res) {
+      if (item.messageId && item.id != null) {
+        idByMessageId.set(item.messageId, item.id);
+      }
+    }
+    for (const item of list.value) {
+      if (item.id == null && item.messageId && idByMessageId.has(item.messageId)) {
+        item.id = idByMessageId.get(item.messageId);
+      }
+    }
+    return res;
+  };
+
   const getFlowAgentTaskInfo = (taskId: number) => mediator.http?.message.getFlowAgentTaskInfo(taskId);
 
   const getFlowAgentTaskNodeInfo = (taskId: number, nodeId: string) =>
@@ -249,6 +269,7 @@ export const useMessage = (mediator: IMediatorModule) => {
     createAndPlusMessage,
     deleteMessages,
     shareMessages,
+    syncMessageIds,
     getFlowAgentTaskInfo,
     getFlowAgentTaskNodeInfo,
     reset,

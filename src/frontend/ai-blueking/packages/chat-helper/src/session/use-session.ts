@@ -61,6 +61,7 @@ export const useSession = (mediator: IMediatorModule) => {
   const isDeleteLoading = ref(false);
   const isBatchDeleteLoading = ref(false);
   const isRenameLoading = ref(false);
+  const isForkLoading = ref(false);
 
   const hasMore = computed(() => page.value > 0 && page.value < numPages.value);
 
@@ -177,6 +178,28 @@ export const useSession = (mediator: IMediatorModule) => {
    * @param options - 选项
    * @param options.loadMessages - 创建后是否加载消息列表，默认 false（新会话消息必定为空）
    */
+  /**
+   * 从指定消息处分叉当前会话：复制该消息及之前的上下文到新会话并切换过去。
+   * 进行中时忽略重复调用。
+   */
+  const forkSession = async (sessionCode: string, contentId: number) => {
+    if (isForkLoading.value) {
+      return;
+    }
+    isForkLoading.value = true;
+    try {
+      const res = await mediator.http?.session.forkSession(sessionCode, contentId);
+      if (res) {
+        list.value.unshift(res);
+        count.value += 1;
+        await chooseSession(res.sessionCode);
+      }
+      return res;
+    } finally {
+      isForkLoading.value = false;
+    }
+  };
+
   const createSession = async (session: ISession, options?: { loadMessages?: boolean }) => {
     isCreateLoading.value = true;
     try {
@@ -350,6 +373,7 @@ export const useSession = (mediator: IMediatorModule) => {
     isDeleteLoading.value = false;
     isBatchDeleteLoading.value = false;
     isRenameLoading.value = false;
+    isForkLoading.value = false;
   };
 
   return {
@@ -366,11 +390,13 @@ export const useSession = (mediator: IMediatorModule) => {
     isUpdateLoading,
     isDeleteLoading,
     isBatchDeleteLoading,
+    isForkLoading,
     getSessions,
     loadMoreSessions,
     chooseSession,
     getSession,
     createSession,
+    forkSession,
     updateSession,
     updateReasoningEffort,
     deleteSession,

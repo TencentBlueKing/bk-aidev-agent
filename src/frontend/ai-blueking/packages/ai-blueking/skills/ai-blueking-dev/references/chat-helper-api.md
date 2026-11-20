@@ -384,6 +384,7 @@ interface IMessageProperty {
 | isListLoading | `Ref<boolean>` | 是否正在加载列表 |
 | isDeleteLoading | `Ref<boolean>` | 是否正在删除 |
 | isBatchDeleteLoading | `Ref<boolean>` | 是否正在批量删除 |
+| isForkLoading | `Ref<boolean>` | 是否正在创建分支会话 |
 
 ### SessionStatus 枚举
 
@@ -469,6 +470,29 @@ await session.createSession({
   sessionName: '新会话',
 });
 ```
+
+#### forkSession
+
+从指定消息处分叉会话。HTTP：`POST session/{session_code}/fork/`，body `{ content_id }`。响应与会话详情相同。成功后把新会话插到 `list` 头部并 `chooseSession`（会加载已复制的消息）。进行中时忽略重复调用。
+
+```typescript
+const forked = await session.forkSession(sessionCode, contentId);
+// http.session.forkSession(sessionCode, contentId) 只发请求，不切换当前会话
+```
+
+分叉点是新会话消息列表里的 `role: 'info'` 消息，`property.fork_info` 保持后端 snake_case（与 chat-x `MessageForkInfo` 一致）：
+
+```typescript
+interface IMessageForkInfo {
+  source_session_code: string;
+  source_content_id: number | string;
+  last_copied_content_id?: number | string;
+}
+```
+
+`transferMessageApi2Message` 会透传 info 的 `property`，否则分隔线无法渲染。
+
+流式生成的助手 / 思考 / 工具消息只有 AG-UI `messageId`，**没有**持久化 `id`（流结束只回填最后一条用户消息的 id）。需要 `content_id` 时用 `message.syncMessageIds(sessionCode)`：拉服务端列表、按 `messageId` 回填本地缺失的 `id`（不整表替换），并返回服务端列表供按轮次对齐。
 
 #### updateSession
 

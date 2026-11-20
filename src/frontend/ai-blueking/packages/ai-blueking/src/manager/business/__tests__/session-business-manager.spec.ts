@@ -32,6 +32,7 @@ function createSessionModule(overrides: Record<string, unknown> = {}) {
       list.value.unshift(created);
       current.value = created;
     }),
+    forkSession: vi.fn(),
     deleteSession: vi.fn(),
     getSession: vi.fn(),
     updateSession: vi.fn().mockImplementation(async (session: ISession) => {
@@ -516,5 +517,131 @@ describe('SessionBusinessManager pagination', () => {
 
     expect(manager.hasMoreSessions.value).toBe(true);
     expect(manager.isLoadingMore.value).toBe(true);
+  });
+});
+
+describe('SessionBusinessManager.forkSession', () => {
+  let sessionModule: ReturnType<typeof createSessionModule>;
+  let emit: ReturnType<typeof vi.fn>;
+  let manager: SessionBusinessManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionModule = createSessionModule();
+    emit = vi.fn();
+    manager = new SessionBusinessManager(sessionModule as never, null, { emit }, {});
+  });
+
+  it('forks the current session and emits session-switched', async () => {
+    const source: ISession = { sessionCode: 'a1b2c3d4', sessionName: '排查发布失败' };
+    const forked: ISession = { sessionCode: 'e5f6a7b8', sessionName: '排查发布失败(1)' };
+    sessionModule.current.value = source;
+    sessionModule.forkSession.mockImplementation(async () => {
+      sessionModule.list.value.unshift(forked);
+      sessionModule.current.value = forked;
+      return forked;
+    });
+
+    const result = await manager.forkSession(1052);
+
+    expect(sessionModule.forkSession).toHaveBeenCalledWith('a1b2c3d4', 1052);
+    expect(result).toEqual(forked);
+    expect(emit).toHaveBeenCalledWith('session-switched', { session: forked });
+  });
+
+  it('emits session-error and rethrows when there is no current session', async () => {
+    await expect(manager.forkSession(1052)).rejects.toThrow('No active session');
+    expect(sessionModule.forkSession).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith(
+      'session-error',
+      expect.objectContaining({ action: 'fork' }),
+    );
+  });
+});
+
+describe('SessionBusinessManager.getForkContentId', () => {
+  const createMessageModule = (local: Array<Record<string, unknown>>, server: Array<Record<string, unknown>>) => {
+    const list = ref(local);
+    return {
+      list,
+      syncMessageIds: vi.fn().mockImplementation(async () => {
+        for (const item of list.value) {
+          const matched = server.find(serverItem => serverItem.messageId && serverItem.messageId === item.messageId);
+          if (item.id == null && matched) item.id = matched.id;
+        }
+        return server;
+      }),
+    };
+  };
+
+  it('uses the persisted id in the group without requesting the server', async () => {
+    const sessionModule = createSessionModule();
+    sessionModule.current.value = { sessionCode: 's1', sessionName: '会话' };
+    const messageModule = createMessageModule([], []);
+    const manager = new SessionBusinessManager(sessionModule as never, null, null, {}, messageModule as never);
+
+    await expect(manager.getForkContentId([{ id: 1052 }] as never)).resolves.toBe(1052);
+    expect(messageModule.syncMessageIds).not.toHaveBeenCalled();
+  });
+
+  it('backfills ids by messageId for a freshly streamed reply', async () => {
+    const sessionModule = createSessionModule();
+    sessionModule.current.value = { sessionCode: 's1', sessionName: '会话' };
+    const messageModule = createMessageModule(
+      [{ id: 20, role: 'user' }, { messageId: 'stream-a', role: 'assistant' }],
+      [{ id: 20, role: 'user' }, { id: 21, messageId: 'stream-a', role: 'assistant' }],
+    );
+    const manager = new SessionBusinessManager(sessionModule as never, null, null, {}, messageModule as never);
+    const group = [messageModule.list.value[1]];
+
+    await expect(manager.getForkContentId(group as never)).resolves.toBe(21);
+    expect(messageModule.syncMessageIds).toHaveBeenCalledWith('s1');
+  });
+
+  it('falls back to the last persisted message of the same turn when messageId differs', async () => {
+    const sessionModule = createSessionModule();
+    sessionModule.current.value = { sessionCode: 's1', sessionName: '会话' };
+    const messageModule = createMessageModule(
+      [{ id: 20, role: 'user' }, { messageId: 'stream-a', role: 'assistant' }],
+      [{ id: 20, role: 'user' }, { id: 21, messageId: 'server-a', role: 'reasoning' }, { id: 22, role: 'assistant' }],
+    );
+    const manager = new SessionBusinessManager(sessionModule as never, null, null, {}, messageModule as never);
+    const group = [messageModule.list.value[1]];
+
+    await expect(manager.getForkContentId(group as never)).resolves.toBe(22);
+  });
+});
+
+describe('SessionBusinessManager.openForkSource', () => {
+  let sessionModule: ReturnType<typeof createSessionModule>;
+  let manager: SessionBusinessManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionModule = createSessionModule();
+    manager = new SessionBusinessManager(sessionModule as never, null, null, {});
+  });
+
+  it('switches to the source session when it exists', async () => {
+    const source: ISession = { sessionCode: 'a1b2c3d4', sessionName: '排查发布失败', sessionContentCount: 2 };
+    sessionModule.list.value = [source];
+    sessionModule.current.value = { sessionCode: 'e5f6a7b8', sessionName: '排查发布失败(1)', sessionContentCount: 4 };
+
+    await manager.openForkSource('a1b2c3d4');
+
+    expect(sessionModule.chooseSession).toHaveBeenCalledWith('a1b2c3d4', undefined);
+    expect(sessionModule.current.value?.sessionCode).toBe('a1b2c3d4');
+    expect(sessionModule.createSession).not.toHaveBeenCalled();
+  });
+
+  it('creates a new session when the source session cannot be opened', async () => {
+    sessionModule.current.value = { sessionCode: 'e5f6a7b8', sessionName: '排查发布失败(1)', sessionContentCount: 4 };
+    sessionModule.list.value = [sessionModule.current.value];
+    sessionModule.chooseSession.mockRejectedValue(new Error('会话不存在'));
+
+    await manager.openForkSource('a1b2c3d4');
+
+    expect(sessionModule.createSession).toHaveBeenCalled();
+    expect(sessionModule.current.value?.sessionName).toBe('新会话');
   });
 });

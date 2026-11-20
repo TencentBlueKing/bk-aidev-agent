@@ -3,11 +3,11 @@ name: ai-blueking-dev
 description: 蓝鲸 AI 小鲸组件开发指南。基于 @blueking/chat-x（UI 组件）和 @blueking/chat-helper（业务 SDK）开发 AI 聊天应用、智能体、对话界面。涵盖 ChatBot 独立使用、嵌入模式业务 Header（会话名称 + asideCollapsed 侧栏开关）、AIBlueking 完整集成、流式响应、快捷指令、划词选择、模型选择（Model Select）、自定义消息渲染（图表/表单/iframe）、HITL 人机协同（工具审批/用户提问/中断恢复）、流程化智能体节点重试跳过、渲染模式（chat/share/test 分享态）、字号主题、消息时间（timezone / MessageTime 四档格式）、消息折叠（enableMessageCollapse）、侧栏自定义与自定义 Tab、欢迎区 `#welcome` 插槽、Header `#headerLeft` / `#headerActions` 插槽、消息工具栏扩展（messageTools/updateTools）、非 Vue 宿主挂载等。触发场景：开发 AI 小鲸、集成 AI Agent、使用 chat-x/chat-helper、构建 AI 对话 UI、实现流式聊天、模型热切换、自定义消息组件渲染、human-in-the-loop、interrupt/resume、flow agent、自定义欢迎页、自定义消息工具按钮、嵌入式 ChatBot Header、侧栏展开收起、消息时间、timezone、headerActions。
 metadata:
   author: blueking
-  version: '5.57'
+  version: '5.58'
   packages:
     ai-blueking: 3.1.1
     chat-x: 3.1.2-beta.2
-    chat-helper: 3.1.0
+    chat-helper: 3.1.1
 ---
 
 # AI 小鲸组件开发指南
@@ -141,6 +141,7 @@ metadata:
 
 - `#welcome`：`AIBlueking` → `ChatBot` → `ChatContainer`，scope `{ openingRemark, welcomeTitle }`；无插槽时默认欢迎 UI 不变
 - `messageTools` / `updateTools`：透传 chat-x 按 id 合并；`triggerSelection` 确认走 `confirm-share(messages, source)`；其它自定义按钮走 `agent-action`
+- 内置 `fork`（新建分支会话）由 ChatBot / AIBlueking 处理，**不**走 `agent-action`。隐藏：`{ id: 'fork', hidden: true }`。点击分隔线切回来源会话，失败则进入新会话。详见 [ChatBot API](references/chatbot-api.md#分支会话fork)
 - 仅 `!source || source.id === 'share'` 执行内置分享（方案 A）
 
 详见 [ChatBot API](references/chatbot-api.md#消息工具栏扩展messagetools--updatetools)。
@@ -150,7 +151,7 @@ metadata:
 `MessageContainer` 默认插槽，以及 `ChatContainer` / `ChatBot` / `AIBlueking` 的 `#message`，共用 `@blueking/chat-x` 导出的 `MessageSlotProps`。字段与 `MessageRender` 的 props 对齐，宿主可以直接 `<MessageRender v-bind="slotProps" />`：
 
 - 原有：`message`、`messageToolsStatus`、`onInterruptResume`
-- 新增（回调已绑定当前 message）：`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`
+- 新增（回调已绑定当前 message）：`messageTools`、`tippyOptions`、`onAction`、`onInputConfirm`、`onShortcutConfirm`、`onForkSourceClick`
 
 `ChatBot` / `AIBlueking` 再加 `renderDefault: () => VNode`。只自定义部分角色时，其余消息调用它，就会走默认渲染（含用户消息工具栏和 `#codeHeader`）。
 
