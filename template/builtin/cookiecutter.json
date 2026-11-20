@@ -1,8 +1,8 @@
 {
   "project_name": "ai-plugin",
   "plugin_desc": "the description of this plugin",
-  "init_admin": "admin",
-  "init_apigw_maintainer": "admin",
+  "init_admin": "",
+  "init_apigw_maintainer": "",
   "app_code": "ai-plugin",
   "extra_fields": {
     "space_id": ""

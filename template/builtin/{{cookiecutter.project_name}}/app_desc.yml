@@ -21,12 +21,16 @@ modules:
           - name: BK_APIGW_MANAGER_URL_TMPL
             value: {{cookiecutter.apigw_manager_url_tmpl}}
             description: apigw manager url format
+{% if cookiecutter.init_apigw_maintainer %}
           - name: BK_APIGW_MANAGER_MAINTAINERS
-            value: {{cookiecutter.init_apigw_maintainer}}
+            value: {{ cookiecutter.init_apigw_maintainer | tojson }}
             description: plugin apigw managers
+{% endif %}
+{% if cookiecutter.init_admin %}
           - name: BK_INIT_SUPERUSER
-            value: {{cookiecutter.init_admin}}
+            value: {{ cookiecutter.init_admin | tojson }}
             description: plugin admin panel init superuser
+{% endif %}
           - name: BK_SOPS_APP_CODE
             value: bksops
             description: bk-sops app code

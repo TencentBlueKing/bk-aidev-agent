@@ -57,6 +57,8 @@ from Pyro4.util import PickleSerializer, _serializers, _serializers_by_id, trace
 from Pyro4.utils.httpgateway import make_server, pyro_app
 from wrapt import synchronized
 
+from aidev_agent.config import settings
+
 from .utils import RemoteClassFactory  # noqa
 
 try:
@@ -160,7 +162,10 @@ def parse_wiredata(msg: Message) -> Dict[str, Any]:
         if info["un_pickled_content"][-1].get("app_code") == os.getenv("WHILE_APP_CODE", "Kj9F7VAl1qN4Gx"):
             info["annotations"] = {
                 "TRAC": pickle.dumps(
-                    {"tracestate": "bk_app_code=aidev_experiment,bk_username=admin", "traceparent": "000-111-000"}
+                    {
+                        "tracestate": f"bk_app_code=aidev_experiment,bk_username={settings.BK_ADMIN_USERNAME}",
+                        "traceparent": "000-111-000",
+                    }
                 )
             }
     except Exception:  # pylint: disable=broad-except

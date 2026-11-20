@@ -52,6 +52,12 @@ load_settings("aidev_bkplugin.settings")  # 蓝鲸插件配置
 load_settings("aidev_ai_blueking.settings")  # 小鲸配置
 load_settings("aidev_wxbot.settings")  # 企微机器人配置
 
+BK_ADMIN_USERNAME = os.getenv("BKPAAS_ADMIN_USERNAME") or "bk_admin"
+_init_superusers = os.getenv("BK_INIT_SUPERUSER") or BK_ADMIN_USERNAME
+INIT_SUPERUSER = [name.strip() for name in _init_superusers.split(",") if name.strip()]
+_apigw_maintainers = os.getenv("BK_APIGW_MAINTAINERS") or os.getenv("BK_APIGW_MANAGER_MAINTAINERS") or BK_ADMIN_USERNAME
+BK_APIGW_MAINTAINERS = [name.strip() for name in _apigw_maintainers.split(",") if name.strip()]
+
 # 插件配置
 AIDEV_AGENT = os.environ.get("AIDEV_AGENT", "bk_plugin.extend.agent.CommonQAAgentExtend")
 AIDEV_RESOURCE_MANAGER = os.environ.get(
