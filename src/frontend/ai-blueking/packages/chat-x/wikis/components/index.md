@@ -46,6 +46,7 @@ aiSummary: >
 | [UserMessage](./message/user-message.md) | 渲染用户消息，包含编辑态、引用、文件与快捷指令确认。 |
 | [ReasoningMessage](./message/reasoning-message.md) | 渲染推理过程。 |
 | [ToolMessage](./message/tool-message.md) | 渲染工具返回内容。 |
+| [MetricSeriesChart](./setup/message-container.md#结构化工具结果) | 绘制带时间轴和可选触发标记的时序折线图。 |
 | [ActivityMessage](./message/activity-message.md) | 按活动类型分发 FlowAgent、知识召回、引用文档等内容。 |
 | [InfoMessage](./message/info-message.md) | 渲染系统信息提示。 |
 | [LoadingMessage](./message/loading-message.md) | 渲染消息列表中的加载占位。 |
