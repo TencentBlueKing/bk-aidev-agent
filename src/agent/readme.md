@@ -94,6 +94,9 @@ RABBITMQ_STREAM_PORT=5552
 - `RABBITMQ_STREAM_PORT` 一旦配置即严格启用 Stream；协议端口、插件或认证不可用时启动失败，不降级到 Classic Queue。
 - SSE 事件使用原生 offset 独立回放，多端消费不会 `get/nack` 历史消息；生产使用命名 publisher、批量发送和 broker confirm。
 - Stream 数据按 `QUEUE_EXPIRE_SECONDS` 设置 `max-age`，正常结束仍由最后一个消费者或孤儿清理任务删除 Stream 与控制资源。
+- SDK 在创建会话 Stream 前向当前 vhost 的持久队列 `aidev_agent.stream_cleanup.v1` 登记回收任务。消费者异常退出或 worker 重启后，任一运行新版 Stream handler 的 worker 均可接手。消费者租约和生产者释放后的回放窗口使用 `QUEUE_EXPIRE_SECONDS`（默认 3600 秒）。任务到期时若仍有生产者、消费者、回放窗口或查询失败，会保留任务，经过一个保留周期再检查。
+- 升级前的 Stream 没有回收任务。待旧 worker 及其在途会话退出后，从 broker 清单筛出 SDK 的专属 Stream，去掉完整前缀 `aidev_agent.stream.`，逐个调用已初始化 handler 的 `schedule_orphan_check(thread_id)` 补登记。补登记也经过延迟和验活检查。
+
 
 ## 构建
 1. 生成`pip`包
