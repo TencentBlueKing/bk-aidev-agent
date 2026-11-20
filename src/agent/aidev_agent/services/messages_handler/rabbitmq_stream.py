@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import pickle
 import queue
@@ -17,13 +18,16 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Any, Callable, ClassVar, Coroutine, Optional
 
+import pika
 from environs import Env
+from pika.exceptions import ChannelClosedByBroker
 from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedErrorInfo, Producer
 from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
 from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
+from .stream_cleanup import StreamCleanupQueue
 from .telemetry import record_message_publish_metrics
 
 logger = getLogger(__name__)
@@ -100,7 +104,9 @@ class _RabbitMQStreamRuntime:
         connection_kwargs: dict[str, Any],
         operation_timeout: float,
         max_age_seconds: int,
+        cleanup: StreamCleanupQueue | None = None,
     ) -> None:
+        self.cleanup = cleanup
         self._connection_kwargs = connection_kwargs
         self._operation_timeout = operation_timeout
         self._max_age_seconds = max_age_seconds
@@ -157,6 +163,8 @@ class _RabbitMQStreamRuntime:
             return
 
         self._startup_event.set()
+        if self.cleanup is not None and hasattr(self.cleanup.handler, "_stream_runtime"):
+            self.cleanup.start()
         self._loop.run_forever()
         self._loop.run_until_complete(self._close_async())
         self._loop.close()
@@ -279,6 +287,8 @@ class _RabbitMQStreamRuntime:
         if stream in self._known_streams:
             return
         assert self._producer is not None
+        if self.cleanup is not None:
+            await asyncio.to_thread(self.cleanup.remember, stream)
         await self._producer.create_stream(
             stream,
             arguments={"max-age": f"{max_age_seconds}s"},
@@ -449,6 +459,7 @@ class _RabbitMQStreamRuntime:
         subscription = self._subscriptions.pop(key, None)
         if subscription is not None:
             await self._discard_subscription(subscription)
+            self._known_streams.discard(subscription.stream)
 
     def close_subscription(self, key: tuple[int, str]) -> None:
         self._submit(self._close_subscription(key))
@@ -466,6 +477,14 @@ class _RabbitMQStreamRuntime:
 
     def delete_stream(self, stream: str) -> None:
         self._submit_with_reconnect(lambda: self._delete_stream(stream))
+
+    def release_publisher(self, stream: str) -> None:
+        async def detach() -> None:
+            assert self._producer is not None
+            await self._producer.clean_up_publishers(stream)
+            self._known_streams.discard(stream)
+
+        self._submit_with_reconnect(detach)
 
     def stream_exists(self, stream: str) -> bool:
         async def check() -> bool:
@@ -508,17 +527,24 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
     _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def _init_rabbitmq(self) -> None:
+        self._reader_pid = os.getpid()
+        self._live_readers: dict[str, set[str]] = {}
+        self._reader_guard = threading.Lock()
+        self._next_reader_refresh = 0.0
+        self._cleanup = StreamCleanupQueue(self)
         super()._init_rabbitmq()
         self._stream_counts: dict[str, int] = {}
         self._stream_count_lock = threading.Lock()
         self._stream_runtime = _RabbitMQStreamRuntime(
             connection_kwargs=self._get_stream_connection_kwargs(),
+            cleanup=self._cleanup,
             operation_timeout=env.float(
                 "RABBITMQ_STREAM_OPERATION_TIMEOUT",
                 self.STREAM_PUBLISH_CONFIRM_TIMEOUT,
             ),
             max_age_seconds=max(1, self.QUEUE_TTL_MS // 1000),
         )
+        self._cleanup.start()
         logger.info(
             "RabbitMQ Stream data plane initialized host=%s port=%s",
             env.str(EnvVarNames.RABBITMQ_HOST, "localhost"),
@@ -641,10 +667,69 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
             self._stream_counts[thread_id] = max(self._stream_counts.get(thread_id, 0), next_offset)
         return self._expand_sse_messages(messages), next_offset
 
+    def acquire_consumer(self, thread_id: str) -> str:
+        if self._reader_pid != os.getpid():
+            self._reader_pid = os.getpid()
+            self._live_readers = {}
+            self._reader_guard = threading.Lock()
+            self._next_reader_refresh = 0.0
+        self._ensure_daemon_alive()
+        with self._with_replay_lock(thread_id):
+            consumer_id = super().acquire_consumer(thread_id)
+            with self._reader_guard:
+                self._live_readers.setdefault(thread_id, set()).add(consumer_id)
+        return consumer_id
+
+    def _keepalive_held_connections(self) -> None:
+        super()._keepalive_held_connections()
+        now = time.monotonic()
+        if self._reader_pid != os.getpid() or now < self._next_reader_refresh:
+            return
+        with self._reader_guard:
+            sessions = list(self._live_readers)
+        for session in sessions:
+            try:
+                self._refresh_reader_registration(session)
+            except Exception:
+                logger.exception("Could not renew consumer registration for %s", session)
+        self._next_reader_refresh = now + self.QUEUE_TTL_MS / 3000
+
+    def _refresh_reader_registration(self, session: str) -> None:
+        with self._with_replay_lock(session):
+            with self._reader_guard:
+                if session not in self._live_readers:
+                    return
+                readers = self._live_readers[session].copy()
+            with self._with_channel() as channel:
+                queue_name = self._get_active_consumer_queue_name(session)
+                info = channel.queue_declare(queue_name, durable=True, arguments={"x-expires": self.QUEUE_TTL_MS})
+                if not info.method.message_count:
+                    for reader in readers:
+                        channel.basic_publish(
+                            "",
+                            queue_name,
+                            json.dumps({"consumer_id": reader}).encode(),
+                            properties=pika.BasicProperties(delivery_mode=2),
+                        )
+
+    def schedule_orphan_check(self, thread_id: str) -> None:
+        """将升级前的历史专属日志加入同一套延迟、验活和重试流程。"""
+        self._cleanup.remember(self._get_stream_name(thread_id))
+
+    def arm_completed_replay_expiry(self, thread_id: str) -> bool:
+        # 创建日志前已登记；无须启动依赖 producer 进程存活的轮询线程。
+        return True
+
     def release_consumer(self, thread_id: str, consumer_id: str) -> None:
         key = (threading.get_ident(), thread_id)
         with contextlib.suppress(Exception):
             self._stream_runtime.close_subscription(key)
+        with self._reader_guard:
+            readers = self._live_readers.get(thread_id)
+            if readers:
+                readers.discard(consumer_id)
+                if not readers:
+                    del self._live_readers[thread_id]
         super().release_consumer(thread_id, consumer_id)
 
     def has_pending_messages(self, thread_id: str) -> bool:
@@ -662,6 +747,7 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
         self._stream_runtime.delete_stream(self._get_stream_name(thread_id))
         with self._with_channel() as channel:
             queue_names = [
+                self._window_name(thread_id),
                 self._get_cancel_queue_name(thread_id),
                 self._get_active_consumer_queue_name(thread_id),
                 *self._get_signal_queue_names(thread_id),
@@ -671,13 +757,73 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
                     channel.queue_delete(queue=queue_name)
 
     def mark_completed(self, thread_id: str) -> None:
-        with self._buffer_lock:
-            self._message_buffer.pop(thread_id, None)
-        self._delete_stream_and_control_resources(thread_id)
-        with self._stream_count_lock:
-            self._stream_counts.pop(thread_id, None)
-        with self._flush_peek_locks_guard:
-            self._flush_peek_locks.pop(thread_id, None)
+        self._reap_if_idle(thread_id, recovery=False)
+
+    def _reap_if_idle(self, thread_id: str, *, recovery: bool) -> bool:
+        # 查锁与删除之间禁止新 producer 获权。注册新 reader 和删除共用 replay lock。
+        try:
+            owner = self._acquire_dedicated_exclusive_queue_connection(self._get_producer_lock_queue_name(thread_id))
+        except ChannelClosedByBroker as error:
+            if error.reply_code == 405:
+                return False
+            raise
+        try:
+            with self._with_replay_lock(thread_id) as channel:
+                with self._buffer_lock:
+                    if self._message_buffer.get(thread_id):
+                        return False
+                if not self._stream_runtime.stream_exists(self._get_stream_name(thread_id)):
+                    return True
+                # 非空队列拒绝删除。该检查不会续租 x-expires，崩溃 reader 的标记最终会过期。
+                try:
+                    channel.queue_delete(self._get_active_consumer_queue_name(thread_id), if_empty=True, if_unused=True)
+                except ChannelClosedByBroker as error:
+                    if error.reply_code == 406:
+                        return False
+                    if error.reply_code != 404:
+                        raise
+                # 最近重新创建的同名日志仍处于回放保留窗口。
+                if recovery and self._in_replay_window(thread_id):
+                    return False
+                self._delete_stream_and_control_resources(thread_id)
+                with self._stream_count_lock:
+                    self._stream_counts.pop(thread_id, None)
+                with self._flush_peek_locks_guard:
+                    self._flush_peek_locks.pop(thread_id, None)
+                return True
+        finally:
+            owner.close()
+
+    def _in_replay_window(self, thread_id: str) -> bool:
+        with self._with_channel() as channel:
+            try:
+                channel.queue_delete(self._window_name(thread_id), if_empty=True, if_unused=True)
+            except ChannelClosedByBroker as error:
+                if error.reply_code == 406:
+                    return True
+                if error.reply_code != 404:
+                    raise
+        return False
+
+    def _window_name(self, thread_id: str) -> str:
+        return f"aidev_agent.stream_window.{thread_id}"
+
+    def _renew_replay_window(self, thread_id: str) -> None:
+        with self._with_channel() as channel:
+            window = self._window_name(thread_id)
+            info = channel.queue_declare(window, arguments={"x-expires": self.QUEUE_TTL_MS})
+            if not info.method.message_count:
+                channel.basic_publish("", window, b"")
+
+    def release_producer(self, thread_id: str) -> None:
+        try:
+            self._renew_replay_window(thread_id)
+        finally:
+            try:
+                # 先解除本地 publisher，其他 worker 删除旧日志时不会打断同连接的活跃发布。
+                self._stream_runtime.release_publisher(self._get_stream_name(thread_id))
+            finally:
+                super().release_producer(thread_id)
 
     def clear(self, thread_id: str) -> None:
         with self._buffer_lock:
@@ -704,6 +850,8 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
 
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
+            if hasattr(self, "_cleanup"):
+                self._cleanup.stop_event.set()
             if hasattr(self, "_stream_runtime"):
                 self._stream_runtime.close()
         super().__del__()
