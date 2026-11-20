@@ -38,6 +38,7 @@ type RenderedMessage = {
   message?: SlotMessage;
   messageTools?: Array<{ id?: string; name?: string }>;
   onAction?: (tool: { id: string }) => unknown;
+  onForkSourceClick?: (forkInfo: { source_session_code: string }) => unknown;
   onInputConfirm?: (content: string, docSchema: unknown) => unknown;
   onInterruptResume?: () => unknown;
   onShortcutConfirm?: (formModel: Record<string, unknown>) => unknown;
@@ -55,11 +56,13 @@ const forwardedOnAction = vi.fn();
 const forwardedOnInputConfirm = vi.fn();
 const forwardedOnShortcutConfirm = vi.fn();
 const forwardedOnInterruptResume = vi.fn();
+const forwardedOnForkSourceClick = vi.fn();
 const forwardedScope = {
   message: { id: 'user-1', role: 'user', content: 'hello user' },
   messageTools: [{ id: 'from-container', name: '复制' }],
   messageToolsStatus: 'disabled',
   onAction: forwardedOnAction,
+  onForkSourceClick: forwardedOnForkSourceClick,
   onInputConfirm: forwardedOnInputConfirm,
   onInterruptResume: forwardedOnInterruptResume,
   onShortcutConfirm: forwardedOnShortcutConfirm,
@@ -87,6 +90,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
         messageTools: { type: Array, default: undefined },
         messageToolsStatus: { type: String, default: undefined },
         onAction: { type: Function, default: undefined },
+        onForkSourceClick: { type: Function, default: undefined },
         onInputConfirm: { type: Function, default: undefined },
         onInterruptResume: { type: Function, default: undefined },
         onShortcutConfirm: { type: Function, default: undefined },
@@ -98,6 +102,7 @@ vi.mock('@blueking/chat-x', async importOriginal => {
           message: props.message as SlotMessage | undefined,
           messageTools: props.messageTools as RenderedMessage['messageTools'],
           onAction: props.onAction as RenderedMessage['onAction'],
+          onForkSourceClick: props.onForkSourceClick as RenderedMessage['onForkSourceClick'],
           onInputConfirm: props.onInputConfirm as RenderedMessage['onInputConfirm'],
           onInterruptResume: props.onInterruptResume as RenderedMessage['onInterruptResume'],
           onShortcutConfirm: props.onShortcutConfirm as RenderedMessage['onShortcutConfirm'],
@@ -234,6 +239,7 @@ describe('ChatBot message slot', () => {
     expect(renderedMessage.current?.messageTools).toEqual(effectiveUserMessageTools.value);
     expect(renderedMessage.current?.tippyOptions).toMatchObject({ placement: 'top' });
     expect(renderedMessage.current?.onInterruptResume).toBe(forwardedOnInterruptResume);
+    expect(renderedMessage.current?.onForkSourceClick).toBe(forwardedOnForkSourceClick);
 
     const tool = { id: 'edit' };
     await renderedMessage.current?.onAction?.(tool);
@@ -268,6 +274,7 @@ describe('ChatBot message slot', () => {
     expect(captured.messageToolsStatus).toBe('disabled');
     expect(captured.tippyOptions).toEqual({ placement: 'bottom' });
     expect(captured.onInterruptResume).toBe(forwardedOnInterruptResume);
+    expect(captured.onForkSourceClick).toBe(forwardedOnForkSourceClick);
     expect(captured.onAction).toBe(forwardedOnAction);
     expect(captured.onInputConfirm).toBe(forwardedOnInputConfirm);
     expect(captured.onShortcutConfirm).toBe(forwardedOnShortcutConfirm);

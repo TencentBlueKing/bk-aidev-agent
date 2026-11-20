@@ -173,6 +173,14 @@ export const useSession = (fetchClient: FetchClient) => {
       .get<ISessionApi>(`session/${sessionCode}/`, undefined, config)
       .then(res => transferSessionApi2Session(res));
 
+  /**
+   * 从指定消息处分叉会话。body 为 `{ content_id }`，响应结构与会话详情一致。
+   */
+  const forkSession = (sessionCode: string, contentId: number, config?: IRequestConfig) =>
+    fetchClient
+      .post<ISessionApi>(`session/${sessionCode}/fork/`, { content_id: contentId }, config)
+      .then(res => transferSessionApi2Session(res));
+
   // 提交会话反馈
   const postSessionFeedback = (data: ISessionFeedback, config?: IRequestConfig) =>
     fetchClient
@@ -261,6 +269,7 @@ export const useSession = (fetchClient: FetchClient) => {
     deleteSession,
     batchDeleteSessions,
     getSession,
+    forkSession,
     postSessionFeedback,
     getSessionFeedbackReasons,
     renameSession,

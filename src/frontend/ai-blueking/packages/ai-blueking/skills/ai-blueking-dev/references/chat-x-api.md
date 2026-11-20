@@ -269,8 +269,9 @@ onSendMessage?: (
 | messageToolsTippyOptions | `MessageToolsProps['tippyOptions']` | - | 消息工具 Tippy |
 | enableSelection | `boolean` | `false` | 多选（分享） |
 | renderMode | `RenderMode` | - | 渲染模式（chat/share/test），影响选择、工具、Loading 组等，见 [RenderMode](#rendermode-渲染模式chatsharetest) |
-| onAgentAction | `(tool, messages) => Promise<string[] \| void>` | - | AI 组工具：点赞/点踩时可返回原因列表 |
+| onAgentAction | `(tool, messages) => Promise<string[] \| void>` | - | AI 组工具：点赞/点踩时可返回原因列表；`tool.id === 'fork'` 时第二个参数是当前助手组，由接入方创建分支会话。ChatBot / AIBlueking 已内置处理 |
 | onAgentFeedback | `(tool, messages, reasonList, otherReason) => void` | - | 反馈提交 |
+| onForkSourceClick | `(forkInfo: MessageForkInfo, message: Message) => void` | - | 点击「从其他会话中继续」分隔线；ChatBot / AIBlueking 已内置切回来源会话 |
 | onUserAction | `(tool, message) => Promise<string[] \| void>` | - | 用户消息工具 |
 | onInterruptResume | `OnInterruptResume` | - | **新增** HITL 中断响应回调（透传给 `MessageRender` / `InterruptMessageRender` / flow-agent 节点重试跳过） |
 | onUserInputConfirm | `(message, content, docSchema) => Promise<void>` | - | 编辑用户消息确认 |

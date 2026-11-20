@@ -31,7 +31,7 @@ import type { TippyOptions } from 'vue-tippy';
  * 使用对象语法定义，避免 Vue 模板类型推断问题
  */
 export type ChatBotEmits = {
-  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/delete/like/unlike） */
+  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） */
   'agent-action': [tool: IToolBtn, messages: Message[]];
   /** Agent 信息加载完成事件 */
   'agent-info-loaded': [chatHelper: IChatHelper];

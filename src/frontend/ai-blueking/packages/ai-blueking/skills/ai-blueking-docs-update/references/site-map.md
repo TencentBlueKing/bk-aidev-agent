@@ -36,7 +36,7 @@
 | `/guide/core-features/content-referencing` | `content-referencing.md` | 划词、引用；`enablePopup` 与 info `enableWordSelectionPopup` 联动（≥ v2.2.4）；新建会话清引用 |
 | `/guide/core-features/shortcuts` | `shortcuts.md` | 快捷指令 |
 | `/guide/core-features/prompts` | `prompts.md` | 用户 `\` 提示词、`/` Skill·MCP·工具、`@` 资源；统一 `menuSources` 与 `property.docSchema`（≥ v2.4.0） |
-| `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回 |
+| `/guide/core-features/session-management` | `session-management.md` | 会话 CRUD；`session.model` 跟随会话，切换/新建可写回；分支会话 fork（`POST session/{code}/fork/`、`property.fork_info`、分隔线切回来源、失败进新会话；ChatBot 内置、不走 `agent-action`） |
 | `/guide/core-features/model-selection` | `model-selection.md` | 模型选择（≥ v2.2.2）：`enableModelSelect`、`models`、`ModelSelectionManager`、跟随 session、写回、`GET llms/`；思考深度 `property.reasoning` / `effectiveReasoningEffort` / 每轮 `reasoning_effort`；档位 `none` 回显「关闭思考」（≥ v3.1.1）；下拉默认 `bottom-end`（≥ v3.1.1）；上传入口常驻，不跟 `support_vision`；`description` hover 气泡 |
 | `/guide/core-features/sharing` | `sharing.md` | 分享；`confirm-share` 的 `source`、自定义 `triggerSelection` |
 | `/guide/core-features/custom-message-rendering` | `custom-message-rendering.md` | `custom-component` 块 |
@@ -69,6 +69,8 @@
 `setInputContent` 落点：API `api/ai-blueking/chatbot.md`、`aiblueking.md` 的 Expose 表。整篇替换输入框（`string | TagSchema`），不发送、不清引用，标签按芯片显示。挂载后给 `ChatInput` 的 `v-model` 赋带标签的文档同样保留芯片（chat-x `AiSlashInput` 按节点同步），如需说明落在 `api/chat-x/components.md` 的 `ChatInput`。
 
 欢迎区 / 消息工具栏扩展落点：指南 `ui-customization.md`（`#welcome`、`messageTools`/`updateTools`）、`sharing.md`（`confirm-share` + `source`、`agent-action`）；API 同步 `api/ai-blueking/chatbot.md`、`aiblueking.md`、`types.md`。
+
+分支会话 fork 落点：指南 `session-management.md`（创建分支、分隔线切回、来源已删除）；API `api/ai-blueking/chatbot.md`、`aiblueking.md`（`fork` 为内置工具、隐藏 `{ id: 'fork', hidden: true }`、`session-switched`），`api/chat-helper/sdk.md`（`session.forkSession` / `http.session.forkSession`、`IMessageForkInfo`），`api/chat-x/components.md`（`onForkSourceClick`、`MessageForkInfo`）。changelog 写入「新功能：分支会话」。
 
 Header 插槽 `#headerLeft` / `#headerActions` 落点：指南 `ui-customization.md`；API `api/ai-blueking/aiblueking.md` Slots 表（仅 AIBlueking）。
 

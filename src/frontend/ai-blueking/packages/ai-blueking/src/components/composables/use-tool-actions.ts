@@ -37,6 +37,8 @@ export interface UseToolActionsParams {
   getShortcutFromMessage: (message: Message) => IShortcut | null;
   /** 返回最新 requestOptions 的 getter（每次调用时读取，确保响应式） */
   getRequestOptions?: () => IRequestOptions | undefined;
+  /** 内置「新建分支会话」；由 useForkSession 提供 */
+  onFork?: (messages: Message[]) => Promise<void> | void;
   reportError: ReportChatBotError;
   /** 停止生成的统一入口（由 useMessageSender 提供，含 stop / error 事件上报） */
   stopGeneration: () => Promise<void>;
@@ -66,6 +68,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions,
+    onFork,
     reportError,
     stopGeneration,
   } = params;
@@ -156,6 +159,11 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       return;
     }
 
+    if (tool.id === 'fork') {
+      await onFork?.(messages);
+      return;
+    }
+
     if (tool.id === 'delete') {
       await handleDeleteMessages(messages);
       return;
@@ -172,7 +180,7 @@ export function useToolActions(params: UseToolActionsParams): UseToolActionsRetu
       }
     }
 
-    // 内置 cite/rebuild/delete/like/unlike 已处理；其余交给业务方
+    // 内置 cite/rebuild/fork/delete/like/unlike 已处理；其余交给业务方
     emit('agent-action', tool, messages);
   };
 

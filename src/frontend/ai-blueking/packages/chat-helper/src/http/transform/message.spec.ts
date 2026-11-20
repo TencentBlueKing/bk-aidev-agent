@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { MessageRole, MessageType } from '../../message/type';
+import { MessageRole, MessageStatus, MessageType } from '../../message/type';
 import { transferMessage2MessageApi, transferMessageApi2Message } from './message';
 
-import type { IBinaryInputContent, IBinaryInputContentApi, IMessage, IMessageApi } from '../../message/type';
+import type {
+  IBinaryInputContent,
+  IBinaryInputContentApi,
+  IInfoMessage,
+  IInfoMessageApi,
+  IMessage,
+  IMessageApi,
+} from '../../message/type';
 
 const binaryApi: IBinaryInputContentApi = {
   type: MessageType.Binary,
@@ -67,5 +74,49 @@ describe('user message binary content transform', () => {
     const result = transferMessageApi2Message({ ...baseApi, content: [legacy] } as IMessageApi);
 
     expect((result.content as IBinaryInputContent[])[0].outputId).toBeUndefined();
+  });
+});
+
+describe('info message fork_info transform', () => {
+  const forkInfo = {
+    source_session_code: 'a1b2c3d4',
+    source_content_id: 1052,
+    last_copied_content_id: 1053,
+  };
+
+  const infoApi = {
+    id: 2001,
+    message_id: 'fork-1',
+    role: MessageRole.Info,
+    status: MessageStatus.Complete,
+    content: '其他会话中继续',
+    property: { fork_info: forkInfo },
+  } as IInfoMessageApi;
+
+  it('keeps property.fork_info when converting from API', () => {
+    const result = transferMessageApi2Message(infoApi) as IInfoMessage;
+
+    expect(result.property?.fork_info).toEqual(forkInfo);
+    expect(result.content).toBe('其他会话中继续');
+  });
+
+  it('keeps property.fork_info when converting to API', () => {
+    const result = transferMessage2MessageApi({
+      id: 2001,
+      messageId: 'fork-1',
+      role: MessageRole.Info,
+      status: MessageStatus.Complete,
+      content: '其他会话中继续',
+      property: { fork_info: forkInfo },
+    } as IInfoMessage) as IInfoMessageApi;
+
+    expect(result.property?.fork_info).toEqual(forkInfo);
+  });
+
+  it('survives an API → local → API round trip', () => {
+    const local = transferMessageApi2Message(infoApi);
+    const backToApi = transferMessage2MessageApi(local) as IInfoMessageApi;
+
+    expect(backToApi.property?.fork_info).toEqual(forkInfo);
   });
 });

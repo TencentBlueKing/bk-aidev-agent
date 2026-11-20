@@ -1,5 +1,14 @@
 # 小鲸组件 V2 重构变更日志
 
+## 分支会话（Fork）
+
+`ChatBot` / `AIBlueking` 内置处理 chat-x「新建分支会话」与「从其他会话中继续」。
+
+- 点击 AI 消息工具栏 `fork`：`POST session/{session_code}/fork/`，body `{ content_id }`，切到新会话；历史列表顶部出现新会话，分叉点渲染分隔线
+- 点击分隔线：按 `property.fork_info.source_session_code` 切回来源会话；来源已删除或请求失败时进入新会话欢迎页
+- `fork` 不再向外 `emit('agent-action')`。不需要该能力时用 `{ id: 'fork', hidden: true }` 隐藏
+- 宿主仍通过已有 `session-switched` 感知切换。自定义 `#message` 时需把 `onForkSourceClick` 传给 `MessageRender`（`<MessageRender v-bind="slotProps" />` 或 `renderDefault()`）
+
 ## 版本 2.4.0
 
 适配 `@blueking/chat-x` `2.4.0` 统一输入菜单。

@@ -29,6 +29,7 @@
       :on-agent-feedback="handleAgentFeedback"
       :on-artifact-click="handleArtifactClick"
       :on-custom-tab-change="effectiveOnCustomTabChange"
+      :on-fork-source-click="handleForkSourceClick"
       :on-interrupt-resume="handleInterruptResume"
       :on-send-message="handleSendMessage"
       :on-stop-sending="handleStopSending"
@@ -95,6 +96,7 @@
   import { useChatbotInit } from './composables/use-chatbot-init';
   import { useChatbotState } from './composables/use-chatbot-state';
   import { useErrorReporter } from './composables/use-error-reporter';
+  import { useForkSession } from './composables/use-fork-session';
   import { useInterruptResume } from './composables/use-interrupt-resume';
   import { useMessageSender } from './composables/use-message-sender';
   import { useShareSelection } from './composables/use-share-selection';
@@ -284,7 +286,19 @@
     isInitialized,
   });
 
-  // 5. 工具栏动作
+  // 5. 分支会话（须在工具栏动作之前，fork 作为内置 tool 处理）
+  const { forkFromMessages, handleForkSourceClick } = useForkSession({
+    emit,
+    chatHelper,
+    sessionBusinessManager,
+    reportError,
+    exitShareMode: () => chatContainerRef.value?.exitShareMode(),
+    clearCite: () => {
+      cite.value = '';
+    },
+  });
+
+  // 6. 工具栏动作
   const {
     handleAgentAction,
     handleAgentFeedback,
@@ -301,6 +315,7 @@
     getShortcutFromMessage,
     buildShortcutProperty,
     getRequestOptions: () => props.requestOptions as IRequestOptions | undefined,
+    onFork: forkFromMessages,
     reportError,
     stopGeneration,
   });
@@ -310,7 +325,7 @@
    * 工具回调绑定的是 ChatBot 自己的 effectiveUserMessageTools / handleUserAction 等。
    */
   const renderDefaultMessage = (slotProps: MessageSlotProps): VNode => {
-    const { message, messageToolsStatus, onInterruptResume } = slotProps;
+    const { message, messageToolsStatus, onForkSourceClick, onInterruptResume } = slotProps;
     return h(
       MessageRender,
       {
@@ -318,6 +333,7 @@
         messageTools: effectiveUserMessageTools.value,
         messageToolsStatus,
         onAction: (tool: IToolBtn) => handleUserAction(tool, message),
+        onForkSourceClick,
         onInputConfirm: (content: UserMessage['content'], docSchema: TagSchema) =>
           handleUserInputConfirm(message, content, docSchema),
         onInterruptResume,
@@ -391,7 +407,7 @@
     },
   );
 
-  // 6. 分享确认（选择模式 UI 由 ChatContainer 内部管理）
+  // 7. 分享确认（选择模式 UI 由 ChatContainer 内部管理）
   const { handleConfirmShare } = useShareSelection({
     emit,
     chatHelper,
