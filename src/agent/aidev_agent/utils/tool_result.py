@@ -11,6 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
+
+from aidev_agent.packages.interrupt_manager.approval import TOOL_APPROVAL_REJECTED_KEY
+
 # 工具返回内容里的错误信号前缀：仅认前缀，正文中部或尾部出现不判失败。
 ERROR_RESULT_MARKER = "[ERROR]"
 
@@ -30,4 +35,33 @@ def is_error_content(content: Any) -> bool:
     return isinstance(content, str) and content.lstrip().startswith(ERROR_RESULT_MARKER)
 
 
-__all__ = ["is_error_content"]
+def build_tool_rejection_message(
+    request: ToolCallRequest,
+    reason: str,
+    *,
+    skip_persistence: bool = False,
+) -> ToolMessage:
+    """构造「工具未执行」的拒绝结果。
+
+    Args:
+        request: 当前工具调用请求，取其 ``tool_call_id`` 与真实工具名。
+        reason: 拒绝原因，作为消息正文返回给模型。
+        skip_persistence: 审批类拒绝置 True，在 ``additional_kwargs`` 打语义标记，
+            供持久化层跳过落库；hook 拒绝保持 False。
+
+    Returns:
+        ``status="error"`` 的 ``ToolMessage``。
+    """
+    tool_call = request.tool_call
+    tool = request.tool
+    additional_kwargs = {TOOL_APPROVAL_REJECTED_KEY: True} if skip_persistence else {}
+    return ToolMessage(
+        content=reason,
+        tool_call_id=tool_call.get("id") or "",
+        name=tool.name if tool is not None else tool_call.get("name") or "",
+        status="error",
+        additional_kwargs=additional_kwargs,
+    )
+
+
+__all__ = ["build_tool_rejection_message", "is_error_content"]

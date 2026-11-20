@@ -47,19 +47,28 @@ def _rename(output: ToolMessage | Command) -> ToolMessage | Command:
     return output
 
 
-def _unwrap(request: ToolCallRequest, tools_by_name: Mapping[str, BaseTool]) -> ToolCallRequest | None:
-    """代理调用且目标可执行时返回目标请求，否则返回 None（原样执行）。"""
-    call = request.tool_call
+def _proxy_target(call: dict, tools_by_name: Mapping[str, BaseTool]) -> tuple[str, dict] | None:
+    """代理调用且目标可执行时返回 ``(真实工具名, 参数)``，否则返回 None。"""
     args = call.get("args")
     if call.get("name") != CALL_TOOL_NAME or not isinstance(args, dict) or set(args) - {"name", "arguments"}:
         return None
     name, arguments = args.get("name"), args.get("arguments", {})
     if not isinstance(name, str) or not isinstance(arguments, dict) or name not in tools_by_name:
         return None
+    return name, dict(arguments)
+
+
+def _unwrap(request: ToolCallRequest, tools_by_name: Mapping[str, BaseTool]) -> ToolCallRequest | None:
+    """代理调用且目标可执行时返回目标请求，否则返回 None（原样执行）。"""
+    target = _proxy_target(request.tool_call, tools_by_name)
+    if target is None:
+        return None
+    name, arguments = target
     catalog = getattr(request.tool, "catalog", None)
     if catalog is None or catalog.executable(name) is None:
         return None
-    return request.override(tool_call={**call, "name": name, "args": dict(arguments)}, tool=tools_by_name[name])
+    call = request.tool_call
+    return request.override(tool_call={**call, "name": name, "args": arguments}, tool=tools_by_name[name])
 
 
 def build_tool_call_unwrap_sync_wrapper(tools_by_name: Mapping[str, BaseTool]) -> ToolCallWrapper:

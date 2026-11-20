@@ -45,6 +45,8 @@ class ChatBuildExtras:
     reasoning_effort: Optional[str] = None
     retry_strategy: Optional[str] = None
     checkpointer: Optional["BaseCheckpointSaver"] = None
+    hook_handlers: Any = None
+    """进程内 hook 处理器集合（HookSet）；None 表示未注入，全链路保持基线行为。"""
 
 
 @dataclass

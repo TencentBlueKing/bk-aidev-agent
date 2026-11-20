@@ -34,6 +34,7 @@ from tenacity import RetryError
 
 from aidev_agent.config import settings
 from aidev_agent.core.ag_ui.types import SessionPersistenceEventNames
+from aidev_agent.core.hook.protocol import HookRetry
 from aidev_agent.packages.langchain_core.output_parsers import StructuredOutputToToolMessageParser
 from aidev_agent.packages.opentelemetry.context_obs import measure_context, observe_assembly
 from aidev_agent.utils.message_metadata import AssistantCompletionTimestamp, finalize_memory_source
@@ -47,6 +48,7 @@ except ImportError:  # OpenTelemetry is an optional SDK extra.
 from .pydantic_models import (
     RETRYABLE_EXCEPTIONS,
     ProcessorContext,
+    RecoveryRetryError,
     RetryableRateLimitError,
 )
 from .quality_gate import QualityGate
@@ -200,6 +202,7 @@ def _build_model_chain(
     token_limit: int | None = None,
     token_margin: int | None = None,
     track_memory_source: bool = False,
+    hook_runner=None,
 ) -> Runnable:
     """构建共享的 LCEL 模型链。
 
@@ -221,6 +224,9 @@ def _build_model_chain(
         token_limit: 上下文 token 预算（原值上报，未配置为 None）
         token_margin: 上下文 token 余量（原值上报，未配置为 None）
         track_memory_source: 本次运行是否接入个人记忆；关闭时不标记待结算、不派发记忆来源结算事件
+        hook_runner: hook 执行器；None 时链结构与方法体保持基线（不新增 Runnable 步骤）。
+            ``model_pre`` 在重试单元之外，每次调用模型链触发一次；``model_post`` 在重试单元
+            之内、质量门禁之后，重试与回退途中不会漏掉。
 
     Returns:
         Runnable，支持 .invoke() 和 .ainvoke()
@@ -460,9 +466,27 @@ def _build_model_chain(
     # with_fallbacks 也只包裹 model_chain——耗尽时返回最后响应。
     # Keep every raw result ineligible until transforms and quality recovery accept it.
     # Rejected attempts and exhausted retry fallbacks never reach finalization.
+    def _apply_model_pre(ctx: ProcessorContext) -> ProcessorContext:
+        """装配后、请求前触发 ``model_pre``；处理器直接读写 ``ctx``。"""
+        hook_runner.model_pre(ctx)
+        return ctx
+
+    def _apply_model_post(ctx: ProcessorContext) -> ProcessorContext:
+        """模型调用成功后触发 ``model_post``，位于重试单元内、质量门禁之后。
+
+        处理器直接读写 ``ctx``；抛 ``HookRetry`` 转为可重试异常，由 ``with_retry`` 重新调用模型。
+        """
+        try:
+            hook_runner.model_post(ctx)
+        except HookRetry as error:
+            raise RecoveryRetryError(ctx.response, str(error)) from error
+        return ctx
+
     model_chain = RunnableLambda(_call_llm, _acall_llm) | RunnableLambda(
         _check_quality if track_memory_source else quality_gate
     )
+    if hook_runner is not None:
+        model_chain = model_chain | RunnableLambda(_apply_model_post)
     if track_memory_source:
         model_chain = model_chain | RunnableLambda(_finalize_response, _afinalize_response)
     # 用重试包装 — 捕获所有 RETRYABLE_EXCEPTIONS
@@ -475,7 +499,11 @@ def _build_model_chain(
 
     # _exhaustion_fallback 是模块级函数（无闭包依赖）
 
-    model_chain = RunnableLambda(_assemble) | retryable_model_chain.with_fallbacks(
+    assembler = RunnableLambda(_assemble)
+    if hook_runner is not None:
+        assembler = assembler | RunnableLambda(_apply_model_pre)
+
+    model_chain = assembler | retryable_model_chain.with_fallbacks(
         [RunnableLambda(_exhaustion_fallback)],
         exceptions_to_handle=(RetryError,),
     )

@@ -106,6 +106,7 @@ def build_model_node(
     judge_llm: BaseChatModel | None = None,
     tools: List[BaseTool],
     node_options: ModelNodeSettings | None = None,
+    hook_runner=None,
 ) -> RunnableCallable:
     """创建标准 QA 场景的模型节点。
 
@@ -118,6 +119,7 @@ def build_model_node(
         judge_llm: 判断用 LLM（用于 quality_gate 评估任务完成度）；None 时 fail-open
         tools: 工具列表（全量工具，内部会根据 state 决策筛选）
         node_options: 模型节点选项（可选，不传则使用默认值）
+        hook_runner: hook 执行器；None 时模型链不插入任何 hook 步骤
 
     Returns:
         RunnableCallable，包含同步和异步两个节点函数
@@ -246,6 +248,7 @@ def build_model_node(
         token_limit=node_options.token_limit,
         token_margin=node_options.token_margin,
         track_memory_source=node_options.track_memory_source,
+        hook_runner=hook_runner,
     )
 
     def model_node(

@@ -33,6 +33,7 @@ class ExecuteKwargs(BaseModel):
     thread_id: str | None = Field(default=None, description="Thread ID，用于APIGW调用时自动管理会话")
     version: str | None = Field(default=None, description="agent 配置版本；为空则使用最新版本")
     turn_id: str = Field(default="", description="同一次 user-ai 回复的轮次 ID")
+    agent_code: str = Field(default="", description="本轮执行所属智能体代码；由 ChatCompletionAgent 补齐")
     input: str = Field(default="", description="用户本轮输入文本；为空串表示无输入")
 
     # 执行配置
@@ -1123,6 +1124,12 @@ class AgentExecutorKwargs(BaseModel):
     security_settings: Optional[SecuritySettings] = Field(
         default=None,
         description="安全防护配置实例；由 ChatCompletionAgent 从 AgentConfig.security_settings 传入。",
+    )
+
+    # 进程内 hook 处理器集合（HookSet）；None 表示未注入，全链路保持基线行为
+    hook_handlers: Optional[Any] = Field(
+        default=None,
+        description="hook 处理器集合（HookSet）；由 AgentInstanceFactory.build_agent(hook_handlers=...) 注入",
     )
 
 
