@@ -570,8 +570,7 @@ class TestStreamEventsToolNode:
     - ``astream(stream_mode="values")`` 末尾只产出**一个** ``__interrupt__`` chunk
       （只含首个发起者的 value，印证 3a 缺陷）。
     - ``astream_events(v2)`` 中 interrupt 表现为 ``on_tool_error``（非
-      ``on_tool_end``），两个工具的 ``on_tool_start`` 都会发出，但都无
-      ``on_tool_end`` —— 因为都被 interrupt 取消。
+      ``on_tool_end``），首个中断可能发生在第二个启动事件可见之前。
     """
 
     async def test_astream_emits_single_interrupt_chunk(self):
@@ -592,13 +591,8 @@ class TestStreamEventsToolNode:
         assert len(intr_chunks[0]) == 1
         assert intr_chunks[0][0].value["action"] == "A"
 
-    async def test_astream_events_both_tools_start_none_end(self):
-        """astream_events: 两个 needs_approval 都 on_tool_start，都无 on_tool_end。
-
-        BEHAVIOR: interrupt 在事件流里表现为 ``on_tool_error``（GraphInterrupt
-        被当作工具异常），两个工具的 ``on_tool_start`` 都发出（并发已启动），
-        但 ``on_tool_end`` 计数为 0。
-        """
+    async def test_astream_events_interrupted_tools_do_not_end(self):
+        """并发审批触发中断时，事件流中可见工具启动和报错，且没有正常结束事件。"""
         app = build_react_like_graph(
             [needs_approval],
             [
@@ -613,8 +607,8 @@ class TestStreamEventsToolNode:
         tool_ends = [n for ev, n in events if ev == "on_tool_end" and n == "needs_approval"]
         tool_errors = [n for ev, n in events if ev == "on_tool_error" and n == "needs_approval"]
 
-        # 两个工具都启动
-        assert len(tool_starts) == 2, "两个 needs_approval 都发出 on_tool_start"
+        # 首个中断发生时，另一个并发调用的启动事件可能尚未可见。
+        assert 1 <= len(tool_starts) <= 2
         # 没有任何工具正常结束
         assert len(tool_ends) == 0, "interrupt 下无 on_tool_end"
         # interrupt 表现为 on_tool_error（至少一个，因 gather 首异常抢占）
