@@ -241,6 +241,7 @@ export const transferMessageApi2Message = (data: IMessageApi): IMessage => {
       const result: IInfoMessage = {
         ...baseMessage,
         content: infoData.content,
+        property: infoData.property,
         role: infoData.role,
       };
       return result;
@@ -546,6 +547,7 @@ export const transferMessage2MessageApi = (data: IMessage): IMessageApi => {
       const result: IInfoMessageApi = {
         ...baseMessage,
         content: infoData.content,
+        property: infoData.property,
         role: infoData.role,
       };
       return result;

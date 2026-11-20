@@ -15,6 +15,7 @@ export type {
   IAgentModule,
   ILlmItem,
   IMessage,
+  IMessageForkInfo,
   IMessageModule,
   ISession,
   ISessionModule,
@@ -142,7 +143,7 @@ export interface AIBluekingEmits {
    * 仅内置分享（`!source || source.id === 'share'`）会走 ShareBusinessManager
    */
   (e: 'confirm-share', messages: Message[], source?: IToolBtn): void;
-  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/delete/like/unlike） */
+  /** 自定义 AI 消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） */
   (e: 'agent-action', tool: IToolBtn, messages: Message[]): void;
 
   // Header 相关事件

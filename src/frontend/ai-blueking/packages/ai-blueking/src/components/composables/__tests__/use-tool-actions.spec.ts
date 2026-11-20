@@ -260,6 +260,18 @@ describe('useToolActions', () => {
 
       expect(params.emit).toHaveBeenCalledWith('agent-action', tool, messages);
     });
+
+    it('should call onFork for fork action and not emit agent-action', async () => {
+      const onFork = vi.fn().mockResolvedValue(undefined);
+      const params = createParams({ onFork });
+      const { handleAgentAction } = useToolActions(params);
+
+      const messages = [createMockAIMessage()] as any;
+      await handleAgentAction({ id: 'fork' } as any, messages);
+
+      expect(onFork).toHaveBeenCalledWith(messages);
+      expect(params.emit).not.toHaveBeenCalledWith('agent-action', expect.anything(), expect.anything());
+    });
   });
 
   describe('handleAgentFeedback', () => {

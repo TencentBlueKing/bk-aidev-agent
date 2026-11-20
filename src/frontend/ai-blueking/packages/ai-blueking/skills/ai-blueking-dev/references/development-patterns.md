@@ -51,6 +51,8 @@ const sessionBusinessManager = new SessionBusinessManager(
 
 await sessionBusinessManager.createNewSession();
 await sessionBusinessManager.switchSession(sessionCode);
+await sessionBusinessManager.forkSession(contentId);
+await sessionBusinessManager.openForkSource(sourceSessionCode); // 失败则 createNewSession
 await sessionBusinessManager.deleteSession(sessionCode);
 await sessionBusinessManager.loadRecentSession({ skipLoadSessions: true });
 ```

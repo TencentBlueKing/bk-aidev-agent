@@ -7,11 +7,11 @@
  * 蓝鲸智云PaaS平台 (BlueKing PaaS) is licensed under the MIT License.
  */
 
-import { hasRealMessageContent } from '../../utils/message-utils';
+import { hasRealMessageContent, resolveForkContentId, resolveTurnLastContentId } from '../../utils/message-utils';
 import { ModelSelectionManager } from './model-selection-manager';
 
 import type { CreateSessionOptions, IEventEmitter, SessionBusinessConfig } from './types';
-import type { IAgentModule, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
+import type { IAgentModule, IMessage, IMessageModule, ISession, ISessionModule } from '@blueking/chat-helper';
 import type { ComputedRef, Ref } from 'vue';
 
 /**
@@ -400,6 +400,69 @@ export class SessionBusinessManager {
         error,
       });
       throw error;
+    }
+  }
+
+  /**
+   * 取分叉接口需要的 content_id。
+   * 刚生成的回复只有 messageId，没有持久化 id：此时拉一次服务端消息，先按 messageId 回填，
+   * 仍取不到再按本轮用户消息对齐服务端列表，取本轮（含用户消息）最后一条持久化消息。
+   * @param groupMessages 点击「新建分支会话」所在的助手组消息
+   */
+  async getForkContentId(groupMessages: IMessage[]): Promise<number | undefined> {
+    const localId = resolveForkContentId(groupMessages);
+    if (localId !== undefined) {
+      return localId;
+    }
+
+    const sessionCode = this.currentSession.value?.sessionCode;
+    if (!sessionCode || !this.messageModule) {
+      return undefined;
+    }
+
+    const serverMessages = await this.messageModule.syncMessageIds(sessionCode);
+    return (
+      resolveForkContentId(groupMessages) ??
+      resolveTurnLastContentId(serverMessages, this.messageModule.list.value, groupMessages[0])
+    );
+  }
+
+  /**
+   * 从指定消息处分叉当前会话，并切换到新会话。
+   * @param contentId 点击「新建分支会话」时所在消息的持久化 ID
+   */
+  async forkSession(contentId: number): Promise<ISession | null> {
+    try {
+      const sessionCode = this.currentSession.value?.sessionCode;
+      if (!sessionCode) {
+        throw new Error('No active session');
+      }
+
+      await this.sessionModule.forkSession(sessionCode, contentId);
+
+      this.emit('session-switched', {
+        session: this.sessionModule.current.value,
+      });
+      return this.sessionModule.current.value;
+    } catch (error) {
+      console.error('Failed to fork session:', error);
+      this.emit('session-error', {
+        action: 'fork',
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 打开分支会话的来源会话。来源已删除或请求失败时进入新会话欢迎页。
+   */
+  async openForkSource(sourceSessionCode: string): Promise<void> {
+    try {
+      await this.switchSession(sourceSessionCode);
+    } catch (error) {
+      console.error('Failed to open fork source session:', error);
+      await this.createNewSession();
     }
   }
 

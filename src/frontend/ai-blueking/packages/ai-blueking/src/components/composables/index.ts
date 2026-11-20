@@ -13,6 +13,8 @@ export { useChatbotState } from './use-chatbot-state';
 export type { UseChatbotStateParams, UseChatbotStateReturn } from './use-chatbot-state';
 export { useErrorReporter } from './use-error-reporter';
 export type { ReportChatBotError, UseErrorReporterReturn } from './use-error-reporter';
+export { useForkSession } from './use-fork-session';
+export type { UseForkSessionParams, UseForkSessionReturn } from './use-fork-session';
 export { useMessageSender } from './use-message-sender';
 export type { UseMessageSenderParams, UseMessageSenderReturn } from './use-message-sender';
 

@@ -9,6 +9,7 @@
 import { ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useSession as useSessionHttp } from '../http/module/session';
 import {
   transferSession2SessionApi,
   transferSessionApi2Session,
@@ -16,7 +17,9 @@ import {
 } from '../http/transform/session';
 import { useSession } from './use-session';
 
+import type { FetchClient } from '../http/fetch';
 import type { IMediatorModule } from '../mediator';
+import type { ISession } from './type';
 
 const createMediator = (sdkVersion?: string): IMediatorModule => {
   const uploadFile = vi.fn().mockResolvedValue({ download_url: 'https://legacy.example/file.png' });
@@ -237,5 +240,101 @@ describe('useSession keeps detail-only reasoning fields on current', () => {
 
     expect(session.current.value?.sessionName).toBe('AI 名称');
     expect(session.current.value?.effectiveReasoningEffort).toBe('high');
+  });
+});
+
+describe('http.session.forkSession', () => {
+  it('POSTs session/{code}/fork/ with content_id and maps the session payload', async () => {
+    const post = vi.fn().mockResolvedValue({
+      session_code: 'e5f6a7b8',
+      session_name: '排查发布失败(1)',
+    });
+    const http = useSessionHttp({ post } as unknown as FetchClient);
+
+    const result = await http.forkSession('a1b2c3d4', 1052);
+
+    expect(post).toHaveBeenCalledWith('session/a1b2c3d4/fork/', { content_id: 1052 }, undefined);
+    expect(result).toMatchObject({
+      sessionCode: 'e5f6a7b8',
+      sessionName: '排查发布失败(1)',
+    });
+  });
+});
+
+describe('useSession.forkSession', () => {
+  const forkedSession: ISession = {
+    sessionCode: 'e5f6a7b8',
+    sessionName: '排查发布失败(1)',
+    sessionContentCount: 4,
+  };
+
+  const createForkMediator = () => {
+    return {
+      agent: {
+        abortChat: vi.fn(),
+        resumeStreamingChat: vi.fn(),
+        pollResumeSession: vi.fn(),
+        info: ref({}),
+      },
+      http: {
+        session: {
+          forkSession: vi.fn().mockResolvedValue(forkedSession),
+          getSession: vi.fn().mockResolvedValue(forkedSession),
+        },
+      },
+      message: {
+        list: ref([]),
+        getMessages: vi.fn().mockResolvedValue(undefined),
+      },
+    } as unknown as IMediatorModule;
+  };
+
+  it('inserts the new session at the head of the list and switches to it', async () => {
+    const mediator = createForkMediator();
+    const session = useSession(mediator);
+    session.list.value = [{ sessionCode: 'a1b2c3d4', sessionName: '排查发布失败' }];
+    session.current.value = session.list.value[0];
+    session.count.value = 1;
+
+    const result = await session.forkSession('a1b2c3d4', 1052);
+
+    expect(mediator.http?.session.forkSession).toHaveBeenCalledWith('a1b2c3d4', 1052);
+    expect(session.list.value.map(item => item.sessionCode)).toEqual(['e5f6a7b8', 'a1b2c3d4']);
+    expect(session.count.value).toBe(2);
+    expect(session.current.value?.sessionCode).toBe('e5f6a7b8');
+    expect(mediator.agent?.abortChat).toHaveBeenCalled();
+    expect(mediator.message?.getMessages).toHaveBeenCalledWith('e5f6a7b8');
+    expect(result).toMatchObject(forkedSession);
+  });
+
+  it('ignores a second call while forking and resets loading afterwards', async () => {
+    const mediator = createForkMediator();
+    let resolveFork!: (value: ISession) => void;
+    const pending = new Promise<ISession>(resolve => {
+      resolveFork = resolve;
+    });
+    (mediator.http?.session.forkSession as ReturnType<typeof vi.fn>).mockReturnValue(pending);
+    const session = useSession(mediator);
+
+    const first = session.forkSession('a1b2c3d4', 1052);
+    expect(session.isForkLoading.value).toBe(true);
+
+    const second = await session.forkSession('a1b2c3d4', 1052);
+    expect(second).toBeUndefined();
+    expect(mediator.http?.session.forkSession).toHaveBeenCalledTimes(1);
+
+    resolveFork(forkedSession);
+    await first;
+    expect(session.isForkLoading.value).toBe(false);
+  });
+
+  it('does not insert a session when the request fails', async () => {
+    const mediator = createForkMediator();
+    (mediator.http?.session.forkSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('fork failed'));
+    const session = useSession(mediator);
+
+    await expect(session.forkSession('a1b2c3d4', 1052)).rejects.toThrow('fork failed');
+    expect(session.list.value).toHaveLength(0);
+    expect(session.isForkLoading.value).toBe(false);
   });
 });
