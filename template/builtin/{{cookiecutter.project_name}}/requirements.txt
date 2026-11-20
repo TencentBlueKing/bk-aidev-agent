@@ -92,7 +92,7 @@ langgraph-sdk==0.4.4
 langsmith==0.8.18
 mako==1.4.2
 markdown-it-py==4.0.0
-markupsafe==3.0.4
+markupsafe==2.1.5
 marshmallow==3.26.2
 mcp==1.30.0
 mdurl==0.1.2
