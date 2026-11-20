@@ -190,7 +190,7 @@ vine==5.1.0
 watchdog==7.1.0
 wcmatch==10.1
 wcwidth==0.2.14
-websockets==17.1
+websockets==16.0
 wecom-aibot-python-sdk-async==1.0.2
 werkzeug==3.1.9
 whitenoise==6.11.0
