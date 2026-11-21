@@ -14,7 +14,7 @@ def test_zero_disables_local_producer(monkeypatch):
 
 
 @pytest.mark.skipif(local_producer.fcntl is None, reason="requires flock")
-def test_default_single_slot_survives_dispatcher_exit(tmp_path, monkeypatch):
+def test_default_five_slots_survive_dispatcher_exit(tmp_path, monkeypatch):
     monkeypatch.delenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", raising=False)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
@@ -33,8 +33,9 @@ def test_default_single_slot_survives_dispatcher_exit(tmp_path, monkeypatch):
         f"assert try_start_local_producer({payload!r})"
     )
     monkeypatch.chdir(tmp_path)
-    subprocess.run([sys.executable, "-c", launch], check=True, timeout=10)
     try:
+        for _ in range(5):
+            subprocess.run([sys.executable, "-c", launch], check=True, timeout=10)
         assert not local_producer.try_start_local_producer(payload)
     finally:
         (tmp_path / "release").touch()
