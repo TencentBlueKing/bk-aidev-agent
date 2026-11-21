@@ -9,11 +9,10 @@ from ag_ui.core import EventType, RawEvent
 from ag_ui.encoder import EventEncoder
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
-from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler
+from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler, StreamReadError
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
-from rstream.client import BrokerResolutionMaxRetryError
 
 from .background_dispatch import capture_trace_context
 from .producer.routing import submit
@@ -52,15 +51,23 @@ class ChatExecutionSpec(BaseModel):
         return "chat-reply-" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
 
 
-def send_chat_reply(spec: ChatExecutionSpec, task_id: str, *, expires_at: float | None = None, **reply) -> None:
+def send_chat_reply(spec: ChatExecutionSpec, task_id: str, **reply) -> None:
     """Short-lived transport receipts, using the existing message backend and TTL."""
     handler = message_handler_factory.get()
     channel = spec.reply_channel(task_id)
-    if expires_at is not None and isinstance(handler, RabbitMQStreamMessageHandler):
-        handler.publish_receipt(channel, reply, expires_at=expires_at)
-        return
     handler.put(channel, reply)
     handler.flush(channel)
+
+
+def send_started_reply(spec: ChatExecutionSpec, task_id: str, run_id: str, *, expires_at: float) -> None:
+    if time.time() >= expires_at:
+        raise TimeoutError("Chat queue wait expired")
+    handler = message_handler_factory.get()
+    reply = {"kind": "started", "run_id": run_id}
+    if isinstance(handler, RabbitMQStreamMessageHandler):
+        handler.publish_receipt(spec.reply_channel(task_id), reply, expires_at=expires_at)
+    else:
+        send_chat_reply(spec, task_id, **reply)
 
 
 class ChatDispatcher:
@@ -140,8 +147,9 @@ class ChatDispatcher:
             yield None
 
     @staticmethod
-    def _record_startup_receipt(spec: ChatExecutionSpec, task_id: str, error: Exception | None = None) -> None:
-        outcome = "timeout" if isinstance(error, TimeoutError) else "error" if error else "started"
+    def _record_startup_receipt(
+        spec: ChatExecutionSpec, task_id: str, outcome: str, error_type: str | None = None
+    ) -> None:
         with (
             propagated_trace_context(spec.trace_context),
             recording_span(
@@ -150,8 +158,8 @@ class ChatDispatcher:
                 use_global_tracer=True,
             ) as span,
         ):
-            if error:
-                span.set_attribute("error.type", type(error).__name__)
+            if error_type:
+                span.set_attribute("error.type", error_type)
                 if StatusCode is not None and span.is_recording():
                     span.set_status(StatusCode.ERROR)
 
@@ -180,7 +188,7 @@ class ChatDispatcher:
                     spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
                 ):
                     if reply is not None:
-                        self._record_startup_receipt(spec, task_id)
+                        self._record_startup_receipt(spec, task_id, "started")
                         run_id = reply["run_id"] or None
                         break
                     if chunk := waiting_heartbeat():
@@ -195,10 +203,12 @@ class ChatDispatcher:
                     if chunk := waiting_heartbeat():
                         yield chunk
                     time.sleep(0.1)
-        except (TimeoutError, RuntimeError, BrokerResolutionMaxRetryError) as exc:
+        except (TimeoutError, RuntimeError) as exc:
+            error_type = type(exc.cause if isinstance(exc, StreamReadError) else exc).__name__
             if task_id:
-                self._record_startup_receipt(spec, task_id, exc)
-            yield from helper._emit_terminal_error_events(type(exc).__name__)
+                outcome = "timeout" if isinstance(exc, TimeoutError) else "error"
+                self._record_startup_receipt(spec, task_id, outcome, error_type)
+            yield from helper._emit_terminal_error_events(error_type)
             return
         yield from helper.stream(
             iter(()), expected_run_id=run_id, attach_only=True, before_first_chunk=waiting_heartbeat

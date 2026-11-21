@@ -18,11 +18,12 @@ from django.db import close_old_connections
 
 from aidev_bkplugin.services.agent_builder import AgentBuilder, LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_execution import AgentExecutor
-from aidev_bkplugin.services.background_dispatch import attach_trace_context, detach_trace_context
+from aidev_bkplugin.services.background_dispatch import restored_trace_context
 from aidev_bkplugin.services.producer.celery import CHAT_TASK_NAME
 from aidev_bkplugin.services.producer_dispatch import (
     ChatExecutionSpec,
     send_chat_reply,
+    send_started_reply,
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
@@ -36,9 +37,7 @@ logger = getLogger(__name__)
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
     with recording_span("bkplugin.chat.worker.started", use_global_tracer=True):
-        if time.time() >= expires_at:
-            raise TimeoutError("Chat queue wait expired")
-        send_chat_reply(spec, task_id, kind="started", run_id=run_id, expires_at=expires_at)
+        send_started_reply(spec, task_id, run_id, expires_at=expires_at)
 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
@@ -46,35 +45,40 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
     run_chat(task_id, spec, expires_at, backend="celery")
 
 
+def _validate_chat_start(spec: ChatExecutionSpec, task_id: str, expires_at: float) -> None:
+    if spec.protocol_version != 2:
+        raise ValueError("Invalid Chat execution protocol")
+    if spec.app_code != agent_settings.APP_CODE:
+        raise ValueError("Chat execution belongs to another application")
+    if time.time() >= expires_at:
+        raise TimeoutError("Chat queue wait expired")
+    # Preserve the existing run-scoped signal: a stop for an old run must
+    # not cancel a newly queued task. Session-wide stops bind to this task.
+    handler = message_handler_factory.get()
+    if handler.check_cancel_signal(spec.session_code, run_id=task_id):
+        handler.clear_cancel_signal(spec.session_code, run_id=task_id)
+        raise RuntimeError("Chat execution cancelled")
+
+
 def run_chat(task_id: str, spec: dict, expires_at: float, *, backend: str) -> None:
     close_old_connections()
-    token = None
     try:
         execution_spec = ChatExecutionSpec.model_validate(spec)
-        token = attach_trace_context(execution_spec.trace_context)
-        with recording_span(
-            "bkplugin.chat.worker",
-            attributes={
-                "bkplugin.chat.task_id": task_id,
-                "bkplugin.chat.producer.backend": backend,
-                "agent.session.code": execution_spec.session_code,
-            },
-            kind=SpanKind.CONSUMER if SpanKind else None,
-            use_global_tracer=True,
+        with (
+            restored_trace_context(execution_spec.trace_context),
+            recording_span(
+                "bkplugin.chat.worker",
+                attributes={
+                    "bkplugin.chat.task_id": task_id,
+                    "bkplugin.chat.producer.backend": backend,
+                    "agent.session.code": execution_spec.session_code,
+                },
+                kind=SpanKind.CONSUMER if SpanKind else None,
+                use_global_tracer=True,
+            ),
         ):
             try:
-                if execution_spec.protocol_version != 2:
-                    raise ValueError("Invalid Chat execution protocol")
-                if execution_spec.app_code != agent_settings.APP_CODE:
-                    raise ValueError("Chat execution belongs to another application")
-                if time.time() >= expires_at:
-                    raise TimeoutError("Chat queue wait expired")
-                # Preserve the existing run-scoped signal: a stop for an old run must
-                # not cancel a newly queued task. Session-wide stops bind to this task.
-                handler = message_handler_factory.get()
-                if handler.check_cancel_signal(execution_spec.session_code, run_id=task_id):
-                    handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
-                    raise RuntimeError("Chat execution cancelled")
+                _validate_chat_start(execution_spec, task_id, expires_at)
                 result = execute_chat_producer(execution_spec, task_id, expires_at)
                 if not execution_spec.execute_kwargs.get("stream", False):
                     send_chat_reply(execution_spec, task_id, kind="result", result=result)
@@ -82,7 +86,6 @@ def run_chat(task_id: str, spec: dict, expires_at: float, *, backend: str) -> No
                 send_chat_reply(execution_spec, task_id, kind="error", error=type(exc).__name__)
                 raise
     finally:
-        detach_trace_context(token)
         close_old_connections()
 
 

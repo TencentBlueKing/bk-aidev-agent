@@ -45,6 +45,14 @@ _SUBSCRIPTION_IDLE_TIMEOUT = HEARTBEAT_INTERVAL * 2
 _STALE_CLIENT_CLOSE_TIMEOUT = 30.0
 
 
+class StreamReadError(RuntimeError):
+    """Stream subscription could not be established after transport recovery."""
+
+    def __init__(self, cause: Exception):
+        super().__init__(type(cause).__name__)
+        self.cause = cause
+
+
 @dataclass
 class _StreamSubscription:
     """一个同步 SSE 消费线程对应的 RabbitMQ Stream 订阅。"""
@@ -454,7 +462,10 @@ class _RabbitMQStreamRuntime:
         offset: int,
         timeout: float | None,
     ) -> tuple[list[Any], int]:
-        subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
+        try:
+            subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
+        except _RECONNECTABLE_ERRORS as exc:
+            raise StreamReadError(exc) from exc
         return subscription.read(offset, timeout)
 
     async def _close_subscription(self, key: tuple[int, str]) -> None:

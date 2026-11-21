@@ -13,6 +13,7 @@ from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 from aidev_agent.services.messages_handler.rabbitmq_stream import (
     RabbitMQStreamMessageHandler,
+    StreamReadError,
     _RabbitMQStreamRuntime,
     _StreamSubscription,
 )
@@ -231,13 +232,17 @@ def test_get_messages_since_reconnects_after_broker_resolution_failure():
     subscription.read.assert_called_once_with(7, 0.5)
 
 
-def test_get_messages_since_propagates_second_broker_resolution_failure():
-    retry_error = BrokerResolutionMaxRetryError("retry failed")
-    runtime, submitted = _make_runtime([BrokerResolutionMaxRetryError(), None, retry_error])
+@pytest.mark.parametrize(
+    "failure", [TimeoutError, BrokerResolutionMaxRetryError, ConnectionResetError, ConnectionClosed]
+)
+def test_get_messages_since_preserves_transport_error_after_retry(failure):
+    retry_error = failure("retry failed")
+    runtime, submitted = _make_runtime([failure(), None, retry_error])
 
-    with pytest.raises(BrokerResolutionMaxRetryError) as raised:
+    with pytest.raises(StreamReadError) as raised:
         runtime.get_messages_since((1, "thread"), "stream", 7, 0.5)
-    assert raised.value is retry_error
+    assert raised.value.__cause__ is retry_error
+    assert raised.value.cause is retry_error
     assert _submitted_names(submitted) == ["_get_subscription", "_restart_producer", "_get_subscription"]
 
 

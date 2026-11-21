@@ -6,6 +6,7 @@ import pytest
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
+from aidev_agent.services.messages_handler.rabbitmq_stream import StreamReadError
 from aidev_agent.utils import tracing
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
@@ -16,6 +17,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 from rstream.client import BrokerResolutionMaxRetryError
+from rstream.connection import ConnectionClosed
 
 
 @pytest.fixture
@@ -316,7 +318,10 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     assert events[-1]["type"] == "RUN_FINISHED"
 
 
-def test_receipt_reader_broker_resolution_failure_ends_sse_and_continues_enqueue_trace(spec, handler, monkeypatch):
+@pytest.mark.parametrize(
+    "failure", [ConnectionResetError, ConnectionClosed, BrokerResolutionMaxRetryError, TimeoutError]
+)
+def test_receipt_reader_transport_failure_ends_sse_and_continues_enqueue_trace(spec, handler, monkeypatch, failure):
     provider = TracerProvider()
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -325,18 +330,18 @@ def test_receipt_reader_broker_resolution_failure_ends_sse_and_continues_enqueue
     with tracer.start_as_current_span("bkplugin.chat.enqueue") as enqueue:
         spec.trace_context = tracing.trace_headers()
 
-    handler.get_messages_since.side_effect = BrokerResolutionMaxRetryError("broker details")
+    handler.get_messages_since.side_effect = StreamReadError(failure("broker details"))
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
     events = [json.loads(chunk[6:]) for chunk in chunks]
     assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
-    assert events[1]["message"] == "BrokerResolutionMaxRetryError"
+    assert events[1]["message"] == failure.__name__
     _, receipt = exporter.get_finished_spans()
     assert receipt.name == "bkplugin.chat.web.startup_receipt"
     assert receipt.parent.span_id == enqueue.get_span_context().span_id
     assert receipt.context.trace_id == enqueue.get_span_context().trace_id
     assert receipt.status.status_code == StatusCode.ERROR
     assert receipt.attributes["bkplugin.chat.receipt"] == "error"
-    assert receipt.attributes["error.type"] == "BrokerResolutionMaxRetryError"
+    assert receipt.attributes["error.type"] == failure.__name__
     handler.mark_completed.assert_not_called()
     provider.shutdown()
 

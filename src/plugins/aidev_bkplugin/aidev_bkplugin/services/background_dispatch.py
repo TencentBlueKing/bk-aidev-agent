@@ -1,5 +1,6 @@
 """Celery 边界的 Trace 上下文捕获与恢复。"""
 
+from contextlib import contextmanager
 from typing import Any
 
 try:
@@ -24,3 +25,12 @@ def attach_trace_context(carrier: dict[str, str] | None) -> Any:
 def detach_trace_context(token: Any) -> None:
     if context is not None and token is not None:
         context.detach(token)
+
+
+@contextmanager
+def restored_trace_context(carrier: dict[str, str] | None):
+    token = attach_trace_context(carrier)
+    try:
+        yield
+    finally:
+        detach_trace_context(token)
