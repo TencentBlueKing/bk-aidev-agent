@@ -40,10 +40,16 @@ def test_producer_only_worker_never_claims_consumer(helper, monkeypatch):
     assert not helper.message_handler.has_active_producer(helper.thread_id)
 
 
-def test_producer_only_start_failure_releases_lock(helper):
+def test_producer_only_start_failure_releases_lock(helper, monkeypatch):
     helper._producer_runner = ProducerOnlyRunner(Mock(side_effect=RuntimeError("state unavailable")))
+    work = iter(["chunk"])
+    published = Mock(wraps=helper.message_handler.put)
+    monkeypatch.setattr(helper.message_handler, "put", published)
     with pytest.raises(RuntimeError, match="state unavailable"):
-        list(helper.stream(iter(["chunk"])))
+        list(helper.stream(work))
+    assert next(work) == "chunk"
+    assert any("RUN_ERROR" in str(call.args[1]) for call in published.call_args_list)
+    assert any("RUN_FINISHED" in str(call.args[1]) for call in published.call_args_list)
     assert not helper.message_handler.has_active_producer(helper.thread_id)
 
 

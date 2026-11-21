@@ -9,7 +9,8 @@ from ag_ui.core import EventType, RawEvent
 from ag_ui.encoder import EventEncoder
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
-from aidev_agent.utils.tracing import recording_span
+from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,9 +18,10 @@ from .background_dispatch import capture_trace_context
 from .producer.routing import submit
 
 try:
-    from opentelemetry.trace import SpanKind
+    from opentelemetry import trace
+    from opentelemetry.trace import SpanKind, StatusCode
 except ImportError:
-    SpanKind = None
+    trace = SpanKind = StatusCode = None
 
 
 WORKER_HEARTBEAT_INTERVAL = 5
@@ -49,10 +51,13 @@ class ChatExecutionSpec(BaseModel):
         return "chat-reply-" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
 
 
-def send_chat_reply(spec: ChatExecutionSpec, task_id: str, **reply) -> None:
+def send_chat_reply(spec: ChatExecutionSpec, task_id: str, *, expires_at: float | None = None, **reply) -> None:
     """Short-lived transport receipts, using the existing message backend and TTL."""
     handler = message_handler_factory.get()
     channel = spec.reply_channel(task_id)
+    if expires_at is not None and isinstance(handler, RabbitMQStreamMessageHandler):
+        handler.publish_receipt(channel, reply, expires_at=expires_at)
+        return
     handler.put(channel, reply)
     handler.flush(channel)
 
@@ -84,12 +89,13 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
+        request_span = trace.get_current_span() if trace is not None else None
         with recording_span(
             "bkplugin.chat.enqueue",
             attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
             kind=SpanKind.PRODUCER if SpanKind else None,
             use_global_tracer=True,
-        ):
+        ) as enqueue_span:
             # Both producer backends continue from the enqueue span.
             spec.trace_context = capture_trace_context()
             payload = {
@@ -97,7 +103,10 @@ class ChatDispatcher:
                 "spec": spec.model_dump(mode="json"),
                 "expires_at": time.time() + queue_timeout,
             }
-            submit(payload, queue_timeout)
+            backend = submit(payload, queue_timeout)
+            enqueue_span.set_attribute("bkplugin.chat.producer.backend", backend)
+            if request_span is not None:
+                request_span.set_attribute("bkplugin.chat.producer.backend", backend)
         return task_id
 
     @classmethod
@@ -117,15 +126,33 @@ class ChatDispatcher:
                 replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
                 replies = ()
-            for reply in replies:
-                if reply["kind"] not in ("error", expected_kind):
-                    continue
+            accepted = [reply for reply in replies if reply["kind"] in ("error", expected_kind)]
+            if accepted:
+                reply = accepted[0]
+                if expected_kind == "started":
+                    reply = next((item for item in accepted if item["kind"] == "error"), reply)
                 handler.mark_completed(channel)
                 if reply["kind"] == "error":
                     raise RuntimeError(reply["error"])
                 yield reply
                 return
             yield None
+
+    @staticmethod
+    def _record_startup_receipt(spec: ChatExecutionSpec, task_id: str, error: Exception | None = None) -> None:
+        outcome = "timeout" if isinstance(error, TimeoutError) else "error" if error else "started"
+        with (
+            propagated_trace_context(spec.trace_context),
+            recording_span(
+                "bkplugin.chat.web.startup_receipt",
+                attributes={"bkplugin.chat.task_id": task_id, "bkplugin.chat.receipt": outcome},
+                use_global_tracer=True,
+            ) as span,
+        ):
+            if error:
+                span.set_attribute("error.type", type(error).__name__)
+                if StatusCode is not None and span.is_recording():
+                    span.set_status(StatusCode.ERROR)
 
     def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
         # Flush the HTTP SSE response before waiting for worker startup.
@@ -152,6 +179,7 @@ class ChatDispatcher:
                     spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
                 ):
                     if reply is not None:
+                        self._record_startup_receipt(spec, task_id)
                         run_id = reply["run_id"] or None
                         break
                     if chunk := waiting_heartbeat():
@@ -167,6 +195,8 @@ class ChatDispatcher:
                         yield chunk
                     time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
+            if task_id:
+                self._record_startup_receipt(spec, task_id, exc)
             yield from helper._emit_terminal_error_events(type(exc).__name__)
             return
         yield from helper.stream(

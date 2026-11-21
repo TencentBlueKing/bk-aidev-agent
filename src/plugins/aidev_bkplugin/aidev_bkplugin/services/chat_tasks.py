@@ -38,15 +38,15 @@ def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, 
     with recording_span("bkplugin.chat.worker.started", use_global_tracer=True):
         if time.time() >= expires_at:
             raise TimeoutError("Chat queue wait expired")
-        send_chat_reply(spec, task_id, kind="started", run_id=run_id)
+        send_chat_reply(spec, task_id, kind="started", run_id=run_id, expires_at=expires_at)
 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
 def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
-    run_chat(task_id, spec, expires_at)
+    run_chat(task_id, spec, expires_at, backend="celery")
 
 
-def run_chat(task_id: str, spec: dict, expires_at: float) -> None:
+def run_chat(task_id: str, spec: dict, expires_at: float, *, backend: str) -> None:
     close_old_connections()
     token = None
     try:
@@ -54,7 +54,11 @@ def run_chat(task_id: str, spec: dict, expires_at: float) -> None:
         token = attach_trace_context(execution_spec.trace_context)
         with recording_span(
             "bkplugin.chat.worker",
-            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": execution_spec.session_code},
+            attributes={
+                "bkplugin.chat.task_id": task_id,
+                "bkplugin.chat.producer.backend": backend,
+                "agent.session.code": execution_spec.session_code,
+            },
             kind=SpanKind.CONSUMER if SpanKind else None,
             use_global_tracer=True,
         ):

@@ -135,6 +135,23 @@ def test_stream_subscription_times_out_without_message():
         subscription.read(offset=0, timeout=0)
 
 
+@pytest.mark.parametrize("recovers", [True, False])
+def test_receipt_retry_never_leaves_a_buffered_started(recovers):
+    handler = _make_handler()
+    failure = BrokerResolutionMaxRetryError("leader unavailable")
+    handler._stream_runtime.publish.side_effect = [failure, [0] if recovers else failure]
+    receipt = {"kind": "started", "run_id": "run"}
+    if recovers:
+        handler.publish_receipt("task", receipt, expires_at=time.time() + 30)
+    else:
+        with pytest.raises(BrokerResolutionMaxRetryError):
+            handler.publish_receipt("task", receipt, expires_at=time.time() + 30)
+    assert handler._stream_runtime.publish.call_count == 2
+    handler.flush("task")
+    assert handler._stream_runtime.publish.call_count == 2
+    assert not handler._message_buffer
+
+
 def test_flush_publishes_coalesced_messages_with_confirm(monkeypatch):
     handler = _make_handler()
     publish_metric = MagicMock()

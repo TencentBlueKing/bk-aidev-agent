@@ -708,8 +708,6 @@ class GeneratorStreamingHelper:
                     producer_thread = threading.Thread(target=run, daemon=True)
                     producer_thread.start()
                 else:
-                    if isinstance(self._producer_runner, ProducerOnlyRunner):
-                        self._producer_runner.on_started(self.thread_id, expected_run_id or "")
                     producer_thread = self._producer_runner(run)
                     if producer_thread is None:
                         if not started.is_set():
@@ -1387,6 +1385,14 @@ class GeneratorStreamingHelper:
                     cancel_error_emitted = True
 
         try:
+            if isinstance(self._producer_runner, ProducerOnlyRunner):
+                # A lost publish confirm can leave Web attached. Finalize this stream
+                # on startup failure just as we would on a generator failure.
+                try:
+                    self._producer_runner.on_started(self.thread_id, expected_run_id or "")
+                except Exception as exc:
+                    self._producer_completion_error = exc
+                    raise
             heartbeat_thread = threading.Thread(
                 target=_heartbeat_worker,
                 daemon=True,

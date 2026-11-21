@@ -25,6 +25,8 @@ from rstream import Consumer, ConsumerOffsetSpecification, OffsetType, OnClosedE
 from rstream.client import BrokerResolutionMaxRetryError
 from rstream.connection import ConnectionClosed
 
+from aidev_agent.utils.tracing import recording_span
+
 from .constants import EOD_CHUNK, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, EnvVarNames
 from .rabbitmq import RabbitMQMessageHandler
 from .stream_cleanup import StreamCleanupQueue
@@ -600,6 +602,23 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
                     self._stream_counts.get(thread_id, 0),
                     max(publishing_ids) + 1,
                 )
+
+    def publish_receipt(self, thread_id: str, receipt: dict, *, expires_at: float) -> None:
+        """Publish a task-scoped receipt synchronously, outside the SSE retry buffer."""
+        for attempt in range(2):
+            if time.time() >= expires_at:
+                raise TimeoutError("Chat queue wait expired")
+            try:
+                with recording_span(
+                    "agent.messaging.publish_receipt",
+                    attributes={"messaging.system": "rabbitmq", "messaging.operation.attempt": attempt + 1},
+                    use_global_tracer=True,
+                ):
+                    self._publish_stream_messages(thread_id, [receipt], event_count=1)
+                return
+            except _RECONNECTABLE_ERRORS:
+                if attempt:
+                    raise
 
     def _flush_one_stream(self, thread_id: str, messages: list[Any], background: bool) -> None:
         messages_to_publish = self._coalesce_sse_messages(messages)

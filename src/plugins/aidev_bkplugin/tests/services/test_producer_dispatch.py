@@ -82,13 +82,17 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     spec.execute_kwargs = {"stream": False}
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
-    ChatDispatcher(spec)._submit(spec)
+    with tracer.start_as_current_span("request") as request:
+        ChatDispatcher(spec)._submit(spec)
     reply_contexts = []
     handler.put.side_effect = lambda *_: reply_contexts.append(tracing.trace.get_current_span().get_span_context())
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
     enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
+    for span in (spans["request"], enqueue, spans["bkplugin.chat.producer.dispatch"], worker):
+        assert span.attributes["bkplugin.chat.producer.backend"] == "celery"
+    assert enqueue.parent.span_id == request.get_span_context().span_id
     assert enqueue.kind == SpanKind.PRODUCER
     assert reply_contexts == [worker.context]
     assert worker.kind == SpanKind.CONSUMER
@@ -161,6 +165,16 @@ def test_sync_lock_conflict_does_not_execute_or_release_other_owner(spec, handle
 def test_started_receipt_contains_actual_run_id(spec, handler):
     mark_chat_started(spec, "task-id", time.time() + 30, spec.session_code, "actual-run")
     handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "started", "run_id": "actual-run"})
+
+
+def test_startup_error_supersedes_buffered_started_in_same_batch(spec, handler):
+    handler.get_messages_since.return_value = (
+        [{"kind": "started", "run_id": "run"}, {"kind": "error", "error": "TimeoutError"}],
+        2,
+    )
+    with pytest.raises(RuntimeError, match="TimeoutError"):
+        ChatDispatcher._wait_reply(spec.reply_channel("task"), handler, expected_kind="started", timeout=10)
+    handler.mark_completed.assert_called_once_with(spec.reply_channel("task"))
 
 
 def test_started_after_expiry_does_not_publish_ready(spec, handler):
