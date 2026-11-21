@@ -11,6 +11,7 @@ from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
 from aidev_agent.services.resume_events import uses_resume_event_stream
+from aidev_agent.utils.tracing import recording_span
 from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections
@@ -25,13 +26,19 @@ from aidev_bkplugin.services.producer_dispatch import (
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
+try:
+    from opentelemetry.trace import SpanKind
+except ImportError:
+    SpanKind = None
+
 logger = getLogger(__name__)
 
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
-    if time.time() >= expires_at:
-        raise TimeoutError("Chat queue wait expired")
-    send_chat_reply(spec, task_id, kind="started", run_id=run_id)
+    with recording_span("bkplugin.chat.worker.started", use_global_tracer=True):
+        if time.time() >= expires_at:
+            raise TimeoutError("Chat queue wait expired")
+        send_chat_reply(spec, task_id, kind="started", run_id=run_id)
 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
@@ -54,7 +61,13 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
             handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
             raise RuntimeError("Chat execution cancelled")
         token = attach_trace_context(execution_spec.trace_context)
-        result = execute_chat_producer(execution_spec, task_id, expires_at)
+        with recording_span(
+            "bkplugin.chat.worker",
+            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": execution_spec.session_code},
+            kind=SpanKind.CONSUMER if SpanKind else None,
+            use_global_tracer=True,
+        ):
+            result = execute_chat_producer(execution_spec, task_id, expires_at)
         if not execution_spec.execute_kwargs.get("stream", False):
             send_chat_reply(execution_spec, task_id, kind="result", result=result)
     except Exception as exc:
@@ -80,7 +93,8 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
         reasoning_effort=spec.reasoning_effort,
     )
     try:
-        agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
+        with recording_span("bkplugin.chat.worker.build_agent", use_global_tracer=True):
+            agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
     except Exception:
         # Serialize failure finalization with producers so another active run is not overwritten.
         try:
@@ -119,10 +133,12 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
             return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
         finally:
             handler.release_producer(spec.session_code)
-    event_handler = getattr(agent, "event_handler", None)
-    if event_handler and hasattr(event_handler, "set_streaming_started"):
-        event_handler.set_streaming_started()
-    output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
+    # Covers stream setup up to the point where the producer publishes the started receipt.
+    with recording_span("bkplugin.chat.worker.prepare", use_global_tracer=True):
+        event_handler = getattr(agent, "event_handler", None)
+        if event_handler and hasattr(event_handler, "set_streaming_started"):
+            event_handler.set_streaming_started()
+        output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
     if execute_kwargs.legacy_streaming:
         helper = GeneratorStreamingHelper(thread_id=spec.session_code, resource_manager=agent.resource_manager)
         output = helper.stream(output, expected_run_id=task_id)

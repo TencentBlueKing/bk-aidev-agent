@@ -466,6 +466,7 @@ class TestExecuteFillsSessionCallerDefaults:
             ),
         )
         assert kwargs.caller_bk_app_code == "app-001"
+        rm.retrieve_chat_session.assert_called_once_with("sess-1")
         rm.update_chat_session_caller_context.assert_called_once_with(
             "sess-1",
             {
@@ -475,6 +476,17 @@ class TestExecuteFillsSessionCallerDefaults:
                 "executor": "user-a",
             },
         )
+
+    def test_session_read_failure_skips_persist_but_fills_defaults(self):
+        rm = MagicMock(username="user")
+        rm.retrieve_chat_session.side_effect = RuntimeError("platform down")
+        kwargs, _ = self._execute_and_capture(
+            ExecuteKwargs(stream=True, session_code="sess-1", caller_bk_app_code="app-001"),
+            resource_manager=rm,
+        )
+        assert kwargs.caller_bk_app_code == "app-001"
+        assert kwargs.executor == "user"
+        rm.update_chat_session_caller_context.assert_not_called()
 
     def test_resume_restores_caller_context_over_worker_username(self):
         rm = MagicMock(username="approver")

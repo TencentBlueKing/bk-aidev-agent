@@ -818,6 +818,7 @@ class GeneratorStreamingHelper:
         on_complete: Callable[[], None] | None = None,
         producer_thread: threading.Thread | None = None,
         event_handler: Callable[[Any], None] | None = None,
+        before_first_chunk: Callable[[], str | None] | None = None,
     ) -> Generator[Any, None, str]:
         """消费者循环：读取队列、处理控制消息并向上游产出业务消息。
 
@@ -869,6 +870,8 @@ class GeneratorStreamingHelper:
 
         try:
             while True:
+                if yielded_total == 0 and before_first_chunk and (waiting_event := before_first_chunk()):
+                    yield waiting_event
                 loop_iter += 1
                 try:
                     if not consumer_draining and self._is_cancelled(cancel_event):
@@ -1075,6 +1078,7 @@ class GeneratorStreamingHelper:
         expected_run_id: str | None = None,
         cancel_event: threading.Event | None = None,
         attach_only: bool = False,
+        before_first_chunk: Callable[[], str | None] | None = None,
     ) -> Generator[Any, None, None]:
         """使用队列处理器缓存流式请求
 
@@ -1087,6 +1091,7 @@ class GeneratorStreamingHelper:
                 producer 将 RUN_FINISHED 入队后立即调用；缺少 RUN_FINISHED 时在 EOD 路径兜底调用。
             event_handler: AG-UI 事件处理器，用于同步记录受控错误和结束状态。
             expected_run_id: 正常 AG-UI 流的 run_id；提供时保证 EOD 前至少输出一次 RUN_FINISHED。
+            before_first_chunk: 首个流事件前轮询，可返回需发送的等待心跳。
             attach_only: 仅接管/回放已有流，不允许创建新的生产者。
 
         Yields:
@@ -1156,6 +1161,7 @@ class GeneratorStreamingHelper:
                 enable_heartbeat_check=enable_heartbeat_check,
                 on_complete=completion_callback,
                 producer_thread=producer_thread,
+                before_first_chunk=before_first_chunk,
                 event_handler=event_handler,
             )
         except GeneratorExit:
