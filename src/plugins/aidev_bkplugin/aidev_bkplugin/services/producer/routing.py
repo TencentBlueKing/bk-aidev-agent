@@ -9,16 +9,16 @@ except ImportError:
 
 
 def submit(payload: dict, queue_timeout: int) -> str:
-    with recording_span("producer_route", record_exception=False, use_global_tracer=True) as span:
+    with recording_span("bkplugin.chat.producer.dispatch", record_exception=False, use_global_tracer=True) as span:
         try:
             if local.try_start_local_producer(payload):
-                span.set_attribute("bkplugin.chat.producer.backend", "local")
+                span.set_attribute("producer_backend", "local")
                 return "local"
-            span.set_attribute("bkplugin.chat.producer.backend", "celery")
+            span.set_attribute("producer_backend", "celery")
             celery.enqueue(payload, queue_timeout)
             return "celery"
         except Exception as exc:
-            span.set_attribute("error.type", type(exc).__name__)
+            span.set_attribute("error_type", type(exc).__name__)
             if StatusCode is not None and span.is_recording():
                 span.set_status(StatusCode.ERROR)
             raise

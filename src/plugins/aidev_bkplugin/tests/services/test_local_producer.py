@@ -68,8 +68,8 @@ def test_local_command_records_launch_before_worker(monkeypatch):
     command.Command().handle(launch_time_ns=launched)
     run.assert_called_once_with(task_id="task", spec={}, expires_at=10, backend="local")
     _, startup = exporter.get_finished_spans()
-    assert startup.name == "local_bootstrap"
+    assert startup.name == "bkplugin.chat.local.startup"
     assert startup.parent.span_id == dispatch.get_span_context().span_id
     assert startup.start_time == launched < startup.end_time
-    assert startup.attributes["process.pid"] == os.getpid()
+    assert startup.attributes["process_pid"] == os.getpid()
     provider.shutdown()

@@ -22,8 +22,8 @@ def test_dispatch_span_records_selected_backend(monkeypatch, started, backend):
         routing.submit({}, 30)
     span, _ = exporter.get_finished_spans()
     assert span.parent.span_id == request.get_span_context().span_id
-    assert span.name == "producer_route"
-    assert span.attributes["bkplugin.chat.producer.backend"] == backend
+    assert span.name == "bkplugin.chat.producer.dispatch"
+    assert span.attributes["producer_backend"] == backend
     assert enqueue.called == (backend == "celery")
     provider.shutdown()
 
@@ -40,7 +40,7 @@ def test_failed_celery_dispatch_marks_span_without_exception_details(monkeypatch
     (span,) = exporter.get_finished_spans()
     assert span.status.status_code == StatusCode.ERROR
     assert span.status.description is None
-    assert span.attributes["error.type"] == "ConnectionError"
-    assert span.attributes["bkplugin.chat.producer.backend"] == "celery"
+    assert span.attributes["error_type"] == "ConnectionError"
+    assert span.attributes["producer_backend"] == "celery"
     assert not span.events
     provider.shutdown()

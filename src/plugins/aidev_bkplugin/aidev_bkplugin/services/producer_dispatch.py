@@ -99,8 +99,8 @@ class ChatDispatcher:
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
         request_span = trace.get_current_span() if trace is not None else None
         with recording_span(
-            "submit",
-            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
+            "bkplugin.chat.enqueue",
+            attributes={"task_id": task_id, "agent_session_code": spec.session_code},
             kind=SpanKind.PRODUCER if SpanKind else None,
             use_global_tracer=True,
         ) as enqueue_span:
@@ -112,9 +112,9 @@ class ChatDispatcher:
                 "expires_at": time.time() + queue_timeout,
             }
             backend = submit(payload, queue_timeout)
-            enqueue_span.set_attribute("bkplugin.chat.producer.backend", backend)
+            enqueue_span.set_attribute("producer_backend", backend)
             if request_span is not None:
-                request_span.set_attribute("bkplugin.chat.producer.backend", backend)
+                request_span.set_attribute("producer_backend", backend)
         return task_id
 
     @classmethod
@@ -153,13 +153,13 @@ class ChatDispatcher:
         with (
             propagated_trace_context(spec.trace_context),
             recording_span(
-                "web_read_startup_receipt",
-                attributes={"bkplugin.chat.task_id": task_id, "bkplugin.chat.receipt": outcome},
+                "bkplugin.chat.web.startup_receipt",
+                attributes={"task_id": task_id, "receipt": outcome},
                 use_global_tracer=True,
             ) as span,
         ):
             if error_type:
-                span.set_attribute("error.type", error_type)
+                span.set_attribute("error_type", error_type)
                 if StatusCode is not None and span.is_recording():
                     span.set_status(StatusCode.ERROR)
 
