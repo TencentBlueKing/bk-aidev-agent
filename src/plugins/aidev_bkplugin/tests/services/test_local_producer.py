@@ -8,14 +8,14 @@ import pytest
 from aidev_bkplugin.services.producer import local as local_producer
 
 
-def test_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", raising=False)
+def test_zero_disables_local_producer(monkeypatch):
+    monkeypatch.setenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "0")
     assert not local_producer.try_start_local_producer({})
 
 
 @pytest.mark.skipif(local_producer.fcntl is None, reason="requires flock")
-def test_slot_survives_dispatcher_exit(tmp_path, monkeypatch):
-    monkeypatch.setenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "1")
+def test_default_single_slot_survives_dispatcher_exit(tmp_path, monkeypatch):
+    monkeypatch.delenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", raising=False)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join(sys.path))

@@ -2,7 +2,7 @@
 
 本插件需与智能体模板配合使用，用于开发和管理智能体插件。
 
-Linux Web 实例可设置环境变量 `BKAI_CHAT_LOCAL_PRODUCER_LIMIT=2`，让最多两个 Chat producer 在独立 Python 进程中运行。默认值为 0，全部交给 Celery。并发已满时新请求直接投递 Celery。本地进程冷启动会重新初始化 Django，仍使用应用配置的共享消息后端交付事件和结果。
+Linux Web 实例默认最多同时运行一个本地 Chat producer。通过环境变量 `BKAI_CHAT_LOCAL_PRODUCER_LIMIT` 调整并发上限；设为 `0` 时全部交给 Celery。并发已满时新请求直接投递 Celery。本地进程冷启动会重新初始化 Django，仍使用应用配置的共享消息后端交付事件和结果。
 
 同一应用、系统用户和临时目录下的 Gunicorn worker 共用名额。子进程持有文件锁直至退出，worker 轮换后仍占用原名额并继续执行；原 HTTP 流断开时客户端可按现有协议续接。Pod 或容器退出会终止其中的本地进程。
 

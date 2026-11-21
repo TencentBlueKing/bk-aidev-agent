@@ -48,6 +48,7 @@ def worker_executor(monkeypatch, settings):
 
 
 def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
+    monkeypatch.setenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "0")
     sender = Mock()
     monkeypatch.setattr(celery.current_app, "send_task", sender)
     task_id = ChatDispatcher(spec)._submit(spec)
@@ -59,6 +60,7 @@ def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
 
 
 def test_publish_failure_reaches_web(spec, monkeypatch):
+    monkeypatch.setenv("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "0")
     monkeypatch.setattr(celery.current_app, "send_task", Mock(side_effect=RuntimeError("broker unavailable")))
     with pytest.raises(RuntimeError, match="broker unavailable"):
         ChatDispatcher(spec)._submit(spec)

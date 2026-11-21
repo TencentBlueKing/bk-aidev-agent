@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def try_start_local_producer(payload: dict) -> bool:
     try:
-        limit = int(os.environ.get("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "0"))
+        limit = int(os.environ.get("BKAI_CHAT_LOCAL_PRODUCER_LIMIT", "1"))
     except ValueError:
         logger.warning("Invalid BKAI_CHAT_LOCAL_PRODUCER_LIMIT, using Celery")
         return False
