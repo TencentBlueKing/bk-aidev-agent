@@ -13,6 +13,7 @@ from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStream
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
+from rstream.client import BrokerResolutionMaxRetryError
 
 from .background_dispatch import capture_trace_context
 from .producer.routing import submit
@@ -194,7 +195,7 @@ class ChatDispatcher:
                     if chunk := waiting_heartbeat():
                         yield chunk
                     time.sleep(0.1)
-        except (TimeoutError, RuntimeError) as exc:
+        except (TimeoutError, RuntimeError, BrokerResolutionMaxRetryError) as exc:
             if task_id:
                 self._record_startup_receipt(spec, task_id, exc)
             yield from helper._emit_terminal_error_events(type(exc).__name__)

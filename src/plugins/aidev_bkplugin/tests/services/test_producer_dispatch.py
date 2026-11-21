@@ -15,6 +15,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
+from rstream.client import BrokerResolutionMaxRetryError
 
 
 @pytest.fixture
@@ -313,6 +314,31 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     events = [json.loads(chunk[6:]) for chunk in chunks if chunk.startswith("data: ")]
     assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[-1]["type"] == "RUN_FINISHED"
+
+
+def test_receipt_reader_broker_resolution_failure_ends_sse_and_continues_enqueue_trace(spec, handler, monkeypatch):
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
+    with tracer.start_as_current_span("bkplugin.chat.enqueue") as enqueue:
+        spec.trace_context = tracing.trace_headers()
+
+    handler.get_messages_since.side_effect = BrokerResolutionMaxRetryError("broker details")
+    chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
+    events = [json.loads(chunk[6:]) for chunk in chunks]
+    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert events[1]["message"] == "BrokerResolutionMaxRetryError"
+    _, receipt = exporter.get_finished_spans()
+    assert receipt.name == "bkplugin.chat.web.startup_receipt"
+    assert receipt.parent.span_id == enqueue.get_span_context().span_id
+    assert receipt.context.trace_id == enqueue.get_span_context().trace_id
+    assert receipt.status.status_code == StatusCode.ERROR
+    assert receipt.attributes["bkplugin.chat.receipt"] == "error"
+    assert receipt.attributes["error.type"] == "BrokerResolutionMaxRetryError"
+    handler.mark_completed.assert_not_called()
+    provider.shutdown()
 
 
 def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, settings):
