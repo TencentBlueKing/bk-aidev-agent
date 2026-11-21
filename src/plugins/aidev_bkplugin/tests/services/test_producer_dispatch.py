@@ -94,8 +94,8 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    enqueue, worker = spans["bkplugin.chat.submit"], spans["bkplugin.chat.worker.run"]
-    for span in (spans["request"], enqueue, spans["bkplugin.chat.producer.route"], worker):
+    enqueue, worker = spans["bkplugin_chat_submit"], spans["bkplugin_chat_worker_run"]
+    for span in (spans["request"], enqueue, spans["bkplugin_chat_producer_route"], worker):
         assert span.attributes["bkplugin.chat.producer.backend"] == "celery"
     agent_context = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
     assert agent_context["traceparent"].split("-")[2] == format(worker.context.span_id, "016x")
@@ -110,7 +110,7 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     with pytest.raises(TimeoutError):
         run_chat_producer(**{**payload, "expires_at": time.time() - 1})
     expired = exporter.get_finished_spans()[-1]
-    assert expired.name == "bkplugin.chat.worker.run"
+    assert expired.name == "bkplugin_chat_worker_run"
     assert expired.parent.span_id == enqueue.context.span_id
     assert expired.status.status_code == StatusCode.ERROR
     assert reply_contexts[-1] == expired.context
@@ -328,7 +328,7 @@ def test_receipt_reader_transport_failure_ends_sse_and_continues_enqueue_trace(s
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     tracer = provider.get_tracer("test")
     monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
-    with tracer.start_as_current_span("bkplugin.chat.submit") as enqueue:
+    with tracer.start_as_current_span("bkplugin_chat_submit") as enqueue:
         spec.trace_context = tracing.trace_headers()
 
     handler.get_messages_since.side_effect = StreamReadError(failure("broker details"))
@@ -337,7 +337,7 @@ def test_receipt_reader_transport_failure_ends_sse_and_continues_enqueue_trace(s
     assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[1]["message"] == failure.__name__
     _, receipt = exporter.get_finished_spans()
-    assert receipt.name == "bkplugin.chat.web.read_startup_receipt"
+    assert receipt.name == "bkplugin_chat_web_read_startup_receipt"
     assert receipt.parent.span_id == enqueue.get_span_context().span_id
     assert receipt.context.trace_id == enqueue.get_span_context().trace_id
     assert receipt.status.status_code == StatusCode.ERROR

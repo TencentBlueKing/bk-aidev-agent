@@ -99,7 +99,7 @@ class ChatDispatcher:
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
         request_span = trace.get_current_span() if trace is not None else None
         with recording_span(
-            "bkplugin.chat.submit",
+            "bkplugin_chat_submit",
             attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
             kind=SpanKind.PRODUCER if SpanKind else None,
             use_global_tracer=True,
@@ -153,7 +153,7 @@ class ChatDispatcher:
         with (
             propagated_trace_context(spec.trace_context),
             recording_span(
-                "bkplugin.chat.web.read_startup_receipt",
+                "bkplugin_chat_web_read_startup_receipt",
                 attributes={"bkplugin.chat.task_id": task_id, "bkplugin.chat.receipt": outcome},
                 use_global_tracer=True,
             ) as span,

@@ -33,7 +33,7 @@ class Command(BaseCommand):
             if trace is not None and launch_context and options.get("launch_time_ns") is not None:
                 with propagated_trace_context(launch_context):
                     startup = trace.get_tracer(__name__).start_span(
-                        "bkplugin.chat.local.bootstrap",
+                        "bkplugin_chat_local_bootstrap",
                         start_time=options["launch_time_ns"],
                         attributes={
                             "bkplugin.chat.task_id": payload["task_id"],

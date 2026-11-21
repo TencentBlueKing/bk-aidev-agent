@@ -1,6 +1,6 @@
 """Spawn-safe fixtures: actual HTTP Web process + separate durable wxbot consumer.
 
-Only auth/platform/model execution and the external WeCom socket are fakes.
+The HTTP fixture runs the producer eagerly with a process-local replay log.
 The view, AgentBuilder event injection, AgentExecutor, core streaming producer,
 database publisher/leases and wxbot AG-UI renderer/consumer are production code.
 """
@@ -15,6 +15,7 @@ import traceback
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from celery import current_app
 from django.apps import AppConfig
 
 
@@ -37,6 +38,7 @@ def configure_database(path):
     from aidev_wxbot import settings as wxbot_settings
     from django.conf import settings
 
+    agent_settings.set("APP_CODE", "app")
     agent_settings.set("BKAI_EVENT_DATABASE_ENABLED", True)
     app_config_module = "aidev_wxbot_test_app_configs"
     sys.modules.setdefault(app_config_module, sys.modules[__name__])
@@ -134,6 +136,38 @@ def approval_record(status="approved"):
     }
 
 
+class EagerReplayQueue:
+    """Replay one eager task's output after it returns, using the SDK queue for locks and signals."""
+
+    def __init__(self, queue):
+        self.queue = queue
+        self.messages = {}
+
+    def __getattr__(self, name):
+        return getattr(self.queue, name)
+
+    def supports_replay_from_start(self):
+        return True
+
+    def put(self, channel, item):
+        self.messages.setdefault(channel, []).append(item)
+
+    def get_messages_since(self, channel, offset, timeout=None):
+        items = self.messages.get(channel, [])
+        return items[offset:], len(items)
+
+    def has_pending_messages(self, channel):
+        return bool(self.messages.get(channel))
+
+    def clear(self, channel):
+        self.messages.pop(channel, None)
+        self.queue.clear(channel)
+
+    def mark_completed(self, channel):
+        self.messages.pop(channel, None)
+        self.queue.mark_completed(channel)
+
+
 def build_web_application(events, execution_count, *, polling_record=None):
     from aidev_agent.core.ag_ui.types import AgentInput
     from aidev_agent.pydantic_models import ChatPrompt
@@ -164,7 +198,13 @@ def build_web_application(events, execution_count, *, polling_record=None):
                 state={},
                 forwarded_props={"command": {"resume": execute_kwargs.resume}},
             )
-            return self._stream_with_queue(Runtime(), input, resume=True)
+            return self._stream_with_queue(
+                Runtime(),
+                input,
+                queue_thread_id=execute_kwargs.session_code,
+                background_only=execute_kwargs.background_only,
+                resume=True,
+            )
 
         def execute(self, execute_kwargs):
             if execute_kwargs.stream:
@@ -181,7 +221,8 @@ def build_web_application(events, execution_count, *, polling_record=None):
 
     writer = MagicMock(spec=BaseSessionWriter)
     writer.session_code, writer.turn_id = "session-original", "turn-original"
-    rm = MagicMock()
+    rm = MagicMock(app_code="app", tenant_id="default")
+    rm.get_producer_runner.return_value = None
     rm.get_agent_code.return_value = "app"
     rm.event_publishing_enabled.return_value = False
 
@@ -205,6 +246,13 @@ def build_web_application(events, execution_count, *, polling_record=None):
 
         return run_polling
 
+    # Web and producer share this process; wxbot still receives events through SQLite.
+    message_handler_factory.replace_defaults(EagerReplayQueue(InMemoryQueueMessageHandler()))
+    current_app.autodiscover_tasks(["aidev_bkplugin"], force=True)
+
+    def send_task(name, *, kwargs, **options):
+        current_app.tasks[name].run(**kwargs)
+
     def application(environ, start_response):
         raw = environ["wsgi.input"].read(int(environ["CONTENT_LENGTH"]))
         http_request = APIRequestFactory().post(
@@ -215,6 +263,9 @@ def build_web_application(events, execution_count, *, polling_record=None):
         view = ChatCompletionViewSet()
         view.request = request
         with (
+            patch.dict(os.environ, {"BKAI_CHAT_LOCAL_PRODUCER_LIMIT": "0"}),
+            patch.object(current_app, "send_task", side_effect=send_task),
+            patch("aidev_bkplugin.services.chat_tasks.LLMOverrideResourceManager", return_value=rm),
             patch.object(view, "get_username", return_value="author"),
             patch.object(view, "get_resource_manager", return_value=rm),
             patch.object(view, "_resolve_chat_turn_id", return_value="turn-original"),

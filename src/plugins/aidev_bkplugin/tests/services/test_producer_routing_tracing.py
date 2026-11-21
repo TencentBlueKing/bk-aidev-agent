@@ -22,7 +22,7 @@ def test_dispatch_span_records_selected_backend(monkeypatch, started, backend):
         routing.submit({}, 30)
     span, _ = exporter.get_finished_spans()
     assert span.parent.span_id == request.get_span_context().span_id
-    assert span.name == "bkplugin.chat.producer.route"
+    assert span.name == "bkplugin_chat_producer_route"
     assert span.attributes["bkplugin.chat.producer.backend"] == backend
     assert enqueue.called == (backend == "celery")
     provider.shutdown()

@@ -16,7 +16,7 @@ def test_chat_request_span_uses_application_module_tracer():
 
     assert result == "response"
     recording_span.assert_called_once_with(
-        "bkplugin.chat.handle_request",
+        "bkplugin.chat.request",
         kind=chat_tracing.SpanKind.INTERNAL if chat_tracing.SpanKind else None,
         record_exception=False,
         use_global_tracer=True,
