@@ -390,7 +390,9 @@ class ChatSessionContentViewSet(PluginViewSet):
 
     @action(["POST"], url_path="batch_delete", detail=False)
     def batch_delete(self, request):
-        result = self.client.api.batch_delete_chat_session_content(json=request.data)
+        result = self.client.api.batch_delete_chat_session_content(
+            json=request.data, headers={"X-BKAIDEV-USER": request.user.username}
+        )
         return Response(data=result["data"])
 
     @action(["POST"], url_path="stop", detail=False)
