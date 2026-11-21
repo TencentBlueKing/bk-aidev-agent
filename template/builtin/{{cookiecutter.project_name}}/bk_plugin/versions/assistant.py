@@ -107,7 +107,7 @@ class AssistantInputs(InputsModel):
 class AssistantOutputs(OutputsModel):
     intermediate_steps: list[Any] = Field(default_factory=list, title="intermediate_steps")
     chat_history: list[Any] = Field(default_factory=list, title="chat_history")
-    output: str = Field(default="", title="output")
+    output: str = Field(default="", title="output", contentMediaType="text/markdown")
     input: str = Field(default="", title="input")
     session_code: str = Field(default="", title="session_code")
 
