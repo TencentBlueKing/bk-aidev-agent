@@ -9,7 +9,7 @@ except ImportError:
 
 
 def submit(payload: dict, queue_timeout: int) -> str:
-    with recording_span("bkplugin.chat.producer.dispatch", record_exception=False, use_global_tracer=True) as span:
+    with recording_span("bkplugin.chat.producer.route", record_exception=False, use_global_tracer=True) as span:
         try:
             if local.try_start_local_producer(payload):
                 span.set_attribute("bkplugin.chat.producer.backend", "local")

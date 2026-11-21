@@ -156,7 +156,7 @@ def test_polling_trace_survives_separate_web_and_wxbot_processes(process_case, a
     assert card["jump_list"][0]["title"] == ("审批已通过" if approved else "审批已拒绝")
 
 
-def assert_trace_records(records, entry_name="bkplugin.chat.request"):
+def assert_trace_records(records, entry_name="bkplugin.chat.handle_request"):
     spans = []
     while True:
         try:

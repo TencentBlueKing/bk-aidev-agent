@@ -23,7 +23,7 @@ def chat_request_span(function):
         with (
             parent,
             recording_span(
-                "bkplugin.chat.request",
+                "bkplugin.chat.handle_request",
                 kind=SpanKind.INTERNAL if SpanKind else None,
                 record_exception=False,
                 use_global_tracer=True,
