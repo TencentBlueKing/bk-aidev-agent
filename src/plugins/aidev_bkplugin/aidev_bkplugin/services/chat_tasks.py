@@ -18,8 +18,8 @@ from django.db import close_old_connections
 from aidev_bkplugin.services.agent_builder import AgentBuilder, LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.background_dispatch import attach_trace_context, detach_trace_context
+from aidev_bkplugin.services.producer.celery import CHAT_TASK_NAME
 from aidev_bkplugin.services.producer_dispatch import (
-    CHAT_TASK_NAME,
     ChatExecutionSpec,
     send_chat_reply,
 )
@@ -36,6 +36,10 @@ def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
 def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
+    run_chat(task_id, spec, expires_at)
+
+
+def run_chat(task_id: str, spec: dict, expires_at: float) -> None:
     close_old_connections()
     token = None
     execution_spec = None

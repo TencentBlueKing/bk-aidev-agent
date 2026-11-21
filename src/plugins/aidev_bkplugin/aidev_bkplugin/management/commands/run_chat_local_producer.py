@@ -3,7 +3,7 @@ import sys
 
 from django.core.management.base import BaseCommand
 
-from aidev_bkplugin.services.chat_tasks import run_chat_producer
+from aidev_bkplugin.services.chat_tasks import run_chat
 
 
 class Command(BaseCommand):
@@ -11,4 +11,4 @@ class Command(BaseCommand):
     requires_system_checks = []
 
     def handle(self, *args, **options):
-        run_chat_producer.run(**json.load(sys.stdin))
+        run_chat(**json.load(sys.stdin))

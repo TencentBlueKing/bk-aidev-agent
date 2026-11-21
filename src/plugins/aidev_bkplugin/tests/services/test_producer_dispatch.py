@@ -8,6 +8,7 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
+from aidev_bkplugin.services.producer import celery
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
 
 
@@ -48,7 +49,7 @@ def worker_executor(monkeypatch, settings):
 
 def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
     sender = Mock()
-    monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
+    monkeypatch.setattr(celery.current_app, "send_task", sender)
     task_id = ChatDispatcher(spec)._submit(spec)
     payload = sender.call_args.kwargs
     assert payload["queue"] == "bkai_agent_task"
@@ -58,9 +59,7 @@ def test_submission_has_queue_expiry_and_no_database(spec, monkeypatch):
 
 
 def test_publish_failure_reaches_web(spec, monkeypatch):
-    monkeypatch.setattr(
-        producer_dispatch.current_app, "send_task", Mock(side_effect=RuntimeError("broker unavailable"))
-    )
+    monkeypatch.setattr(celery.current_app, "send_task", Mock(side_effect=RuntimeError("broker unavailable")))
     with pytest.raises(RuntimeError, match="broker unavailable"):
         ChatDispatcher(spec)._submit(spec)
 
@@ -151,7 +150,7 @@ def test_wait_has_bounded_timeout(spec, handler):
 
 def test_attach_never_submits(spec, handler, monkeypatch):
     sender = Mock()
-    monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
+    monkeypatch.setattr(celery.current_app, "send_task", sender)
     consume = Mock(return_value=iter(["replay"]))
     monkeypatch.setattr(ChatDispatcher, "_consume", consume)
     result = ChatDispatcher(spec).execute(ExecuteKwargs(stream=True, stream_mode="attach"))

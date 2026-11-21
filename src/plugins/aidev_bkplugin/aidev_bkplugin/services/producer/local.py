@@ -1,3 +1,5 @@
+"""Dispatch a chat producer to a detached local process with a shared slot limit."""
+
 import hashlib
 import json
 import logging

@@ -7,17 +7,13 @@ import uuid
 
 from ag_ui.core import EventType, RawEvent
 from ag_ui.encoder import EventEncoder
-from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
-from celery import current_app
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
 from .background_dispatch import capture_trace_context
-from .local_producer import try_start_local_producer
-
-CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
+from .producer.routing import submit
 
 
 class ChatExecutionSpec(BaseModel):
@@ -85,15 +81,7 @@ class ChatDispatcher:
             "spec": spec.model_dump(mode="json"),
             "expires_at": time.time() + queue_timeout,
         }
-        if try_start_local_producer(payload):
-            return task_id
-        current_app.send_task(
-            CHAT_TASK_NAME,
-            kwargs=payload,
-            task_id=task_id,
-            queue=agent_settings.BKAI_AGENT_TASK,
-            expires=queue_timeout,
-        )
+        submit(payload, queue_timeout)
         return task_id
 
     @staticmethod

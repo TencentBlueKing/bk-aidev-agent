@@ -5,7 +5,7 @@ import tempfile
 import time
 
 import pytest
-from aidev_bkplugin.services import local_producer
+from aidev_bkplugin.services.producer import local as local_producer
 
 
 def test_disabled_by_default(monkeypatch):
@@ -29,7 +29,7 @@ def test_slot_survives_dispatcher_exit(tmp_path, monkeypatch):
     )
     payload = {"task_id": "task", "spec": {"app_code": "app"}}
     launch = (
-        "from aidev_bkplugin.services.local_producer import try_start_local_producer\n"
+        "from aidev_bkplugin.services.producer.local import try_start_local_producer\n"
         f"assert try_start_local_producer({payload!r})"
     )
     monkeypatch.chdir(tmp_path)
