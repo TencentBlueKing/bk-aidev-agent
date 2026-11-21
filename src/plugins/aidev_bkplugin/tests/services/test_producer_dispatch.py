@@ -6,6 +6,7 @@ import pytest
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
+from aidev_agent.services.messages_handler.rabbitmq_stream import StreamReadError
 from aidev_agent.utils import tracing
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
@@ -149,6 +150,16 @@ def test_sync_lock_conflict_does_not_execute_or_release_other_owner(spec, handle
 def test_started_receipt_contains_actual_run_id(spec, handler):
     mark_chat_started(spec, "task-id", time.time() + 30, spec.session_code, "actual-run")
     handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "started", "run_id": "actual-run"})
+
+
+def test_startup_error_supersedes_buffered_started_in_same_batch(spec, handler):
+    handler.get_messages_since.return_value = (
+        [{"kind": "started", "run_id": "run"}, {"kind": "error", "error": "TimeoutError"}],
+        2,
+    )
+    with pytest.raises(RuntimeError, match="TimeoutError"):
+        ChatDispatcher._wait_reply(spec.reply_channel("task"), handler, expected_kind="started", timeout=10)
+    handler.mark_completed.assert_called_once_with(spec.reply_channel("task"))
 
 
 def test_started_after_expiry_does_not_publish_ready(spec, handler):
@@ -329,3 +340,11 @@ def test_build_failure_finalizes_session_without_overwriting_active_run(
         builder.session_manager.update_session_status.assert_not_called()
         handler.release_producer.assert_not_called()
     handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
+
+
+def test_exhausted_stream_read_returns_terminal_events(spec, handler):
+    handler.get_messages_since.side_effect = StreamReadError(ConnectionResetError())
+    events = [json.loads(chunk[6:]) for chunk in ChatDispatcher(spec)._consume(spec, handler, "task-id")]
+    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert events[1]["message"] == "ConnectionResetError"
+    handler.mark_completed.assert_not_called()

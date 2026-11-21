@@ -23,6 +23,7 @@ from aidev_bkplugin.services.producer_dispatch import (
     CHAT_TASK_NAME,
     ChatExecutionSpec,
     send_chat_reply,
+    send_started_reply,
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
@@ -36,9 +37,7 @@ logger = getLogger(__name__)
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
     with recording_span("bkplugin.chat.worker.started", use_global_tracer=True):
-        if time.time() >= expires_at:
-            raise TimeoutError("Chat queue wait expired")
-        send_chat_reply(spec, task_id, kind="started", run_id=run_id)
+        send_started_reply(spec, task_id, run_id, expires_at=expires_at)
 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)

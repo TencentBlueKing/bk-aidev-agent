@@ -10,6 +10,7 @@ from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
+from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler, StreamReadError
 from aidev_agent.utils.tracing import recording_span
 from celery import current_app
 from django.conf import settings
@@ -58,6 +59,17 @@ def send_chat_reply(spec: ChatExecutionSpec, task_id: str, **reply) -> None:
     channel = spec.reply_channel(task_id)
     handler.put(channel, reply)
     handler.flush(channel)
+
+
+def send_started_reply(spec: ChatExecutionSpec, task_id: str, run_id: str, *, expires_at: float) -> None:
+    if time.time() >= expires_at:
+        raise TimeoutError("Chat queue wait expired")
+    handler = message_handler_factory.get()
+    reply = {"kind": "started", "run_id": run_id}
+    if isinstance(handler, RabbitMQStreamMessageHandler):
+        handler.publish_receipt(spec.reply_channel(task_id), reply, expires_at=expires_at)
+    else:
+        send_chat_reply(spec, task_id, **reply)
 
 
 class ChatDispatcher:
@@ -125,9 +137,11 @@ class ChatDispatcher:
                 replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
                 replies = ()
-            for reply in replies:
-                if reply["kind"] not in ("error", expected_kind):
-                    continue
+            accepted = [reply for reply in replies if reply["kind"] in ("error", expected_kind)]
+            if accepted:
+                reply = accepted[0]
+                if expected_kind == "started":
+                    reply = next((item for item in accepted if item["kind"] == "error"), reply)
                 handler.mark_completed(channel)
                 if reply["kind"] == "error":
                     raise RuntimeError(reply["error"])
@@ -175,7 +189,8 @@ class ChatDispatcher:
                         yield chunk
                     time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
-            yield from helper._emit_terminal_error_events(type(exc).__name__)
+            cause = exc.cause if isinstance(exc, StreamReadError) else exc
+            yield from helper._emit_terminal_error_events(type(cause).__name__)
             return
         yield from helper.stream(
             iter(()), expected_run_id=run_id, attach_only=True, before_first_chunk=waiting_heartbeat
