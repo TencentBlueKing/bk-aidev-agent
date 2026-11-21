@@ -15,6 +15,7 @@ from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
 
 from .background_dispatch import capture_trace_context
+from .local_producer import try_start_local_producer
 
 CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 
@@ -79,13 +80,16 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
+        payload = {
+            "task_id": task_id,
+            "spec": spec.model_dump(mode="json"),
+            "expires_at": time.time() + queue_timeout,
+        }
+        if try_start_local_producer(payload):
+            return task_id
         current_app.send_task(
             CHAT_TASK_NAME,
-            kwargs={
-                "task_id": task_id,
-                "spec": spec.model_dump(mode="json"),
-                "expires_at": time.time() + queue_timeout,
-            },
+            kwargs=payload,
             task_id=task_id,
             queue=agent_settings.BKAI_AGENT_TASK,
             expires=queue_timeout,
