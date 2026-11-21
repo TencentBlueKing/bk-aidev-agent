@@ -7,7 +7,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+from aidev_agent.utils.tracing import trace_headers
 
 try:
     import fcntl
@@ -41,10 +44,17 @@ def try_start_local_producer(payload: dict) -> bool:
                 except BlockingIOError:
                     continue
                 with tempfile.TemporaryFile(mode="w+b") as request:
-                    request.write(json.dumps(payload).encode())
+                    request.write(json.dumps({**payload, "launch_context": trace_headers()}).encode())
                     request.seek(0)
                     subprocess.Popen(
-                        [sys.executable, "-m", "django", "run_chat_local_producer"],
+                        [
+                            sys.executable,
+                            "-m",
+                            "django",
+                            "run_chat_local_producer",
+                            "--launch-time-ns",
+                            str(time.time_ns()),
+                        ],
                         stdin=request,
                         pass_fds=(slot.fileno(),),
                         start_new_session=True,

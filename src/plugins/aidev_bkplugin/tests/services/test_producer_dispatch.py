@@ -83,6 +83,7 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
     with tracer.start_as_current_span("request") as request:
+        spec.execute_kwargs["caller_trace_context"] = tracing.trace_headers()
         ChatDispatcher(spec)._submit(spec)
     reply_contexts = []
     handler.put.side_effect = lambda *_: reply_contexts.append(tracing.trace.get_current_span().get_span_context())
@@ -92,6 +93,8 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
     for span in (spans["request"], enqueue, spans["bkplugin.chat.producer.dispatch"], worker):
         assert span.attributes["bkplugin.chat.producer.backend"] == "celery"
+    agent_context = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
+    assert agent_context["traceparent"].split("-")[2] == format(worker.context.span_id, "016x")
     assert enqueue.parent.span_id == request.get_span_context().span_id
     assert enqueue.kind == SpanKind.PRODUCER
     assert reply_contexts == [worker.context]
