@@ -90,7 +90,7 @@ class ChatDispatcher:
             kind=SpanKind.PRODUCER if SpanKind else None,
             use_global_tracer=True,
         ):
-            # Worker spans continue from the enqueue span, so the trace shows queue wait as the gap after it.
+            # Both producer backends continue from the enqueue span.
             spec.trace_context = capture_trace_context()
             payload = {
                 "task_id": task_id,

@@ -14,7 +14,7 @@ from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecut
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, StatusCode
 
 
 @pytest.fixture
@@ -83,15 +83,26 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
     ChatDispatcher(spec)._submit(spec)
+    reply_contexts = []
+    handler.put.side_effect = lambda *_: reply_contexts.append(tracing.trace.get_current_span().get_span_context())
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
     enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
     assert enqueue.kind == SpanKind.PRODUCER
+    assert reply_contexts == [worker.context]
     assert worker.kind == SpanKind.CONSUMER
     assert worker.context.trace_id == enqueue.context.trace_id
     assert worker.parent.span_id == enqueue.context.span_id
     assert spans["bkplugin.chat.worker.build_agent"].parent.span_id == worker.context.span_id
+    payload = sender.call_args.kwargs["kwargs"]
+    with pytest.raises(TimeoutError):
+        run_chat_producer(**{**payload, "expires_at": time.time() - 1})
+    expired = exporter.get_finished_spans()[-1]
+    assert expired.name == "bkplugin.chat.worker"
+    assert expired.parent.span_id == enqueue.context.span_id
+    assert expired.status.status_code == StatusCode.ERROR
+    assert reply_contexts[-1] == expired.context
     provider.shutdown()
 
 

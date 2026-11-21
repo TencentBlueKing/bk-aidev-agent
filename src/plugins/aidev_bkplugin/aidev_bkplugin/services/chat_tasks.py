@@ -49,21 +49,8 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
 def run_chat(task_id: str, spec: dict, expires_at: float) -> None:
     close_old_connections()
     token = None
-    execution_spec = None
-    handler = message_handler_factory.get()
     try:
         execution_spec = ChatExecutionSpec.model_validate(spec)
-        if execution_spec.protocol_version != 2:
-            raise ValueError("Invalid Chat execution protocol")
-        if execution_spec.app_code != agent_settings.APP_CODE:
-            raise ValueError("Chat execution belongs to another application")
-        if time.time() >= expires_at:
-            raise TimeoutError("Chat queue wait expired")
-        # Preserve the existing run-scoped signal: a stop for an old run must
-        # not cancel a newly queued task. Session-wide stops bind to this task.
-        if handler.check_cancel_signal(execution_spec.session_code, run_id=task_id):
-            handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
-            raise RuntimeError("Chat execution cancelled")
         token = attach_trace_context(execution_spec.trace_context)
         with recording_span(
             "bkplugin.chat.worker",
@@ -71,13 +58,25 @@ def run_chat(task_id: str, spec: dict, expires_at: float) -> None:
             kind=SpanKind.CONSUMER if SpanKind else None,
             use_global_tracer=True,
         ):
-            result = execute_chat_producer(execution_spec, task_id, expires_at)
-        if not execution_spec.execute_kwargs.get("stream", False):
-            send_chat_reply(execution_spec, task_id, kind="result", result=result)
-    except Exception as exc:
-        if execution_spec is not None:
-            send_chat_reply(execution_spec, task_id, kind="error", error=type(exc).__name__)
-        raise
+            try:
+                if execution_spec.protocol_version != 2:
+                    raise ValueError("Invalid Chat execution protocol")
+                if execution_spec.app_code != agent_settings.APP_CODE:
+                    raise ValueError("Chat execution belongs to another application")
+                if time.time() >= expires_at:
+                    raise TimeoutError("Chat queue wait expired")
+                # Preserve the existing run-scoped signal: a stop for an old run must
+                # not cancel a newly queued task. Session-wide stops bind to this task.
+                handler = message_handler_factory.get()
+                if handler.check_cancel_signal(execution_spec.session_code, run_id=task_id):
+                    handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
+                    raise RuntimeError("Chat execution cancelled")
+                result = execute_chat_producer(execution_spec, task_id, expires_at)
+                if not execution_spec.execute_kwargs.get("stream", False):
+                    send_chat_reply(execution_spec, task_id, kind="result", result=result)
+            except Exception as exc:
+                send_chat_reply(execution_spec, task_id, kind="error", error=type(exc).__name__)
+                raise
     finally:
         detach_trace_context(token)
         close_old_connections()
@@ -137,7 +136,7 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
             return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
         finally:
             handler.release_producer(spec.session_code)
-    # Covers stream setup up to the point where the producer publishes the started receipt.
+    # Prepare constructs the stream. Iteration below triggers the started receipt.
     with recording_span("bkplugin.chat.worker.prepare", use_global_tracer=True):
         event_handler = getattr(agent, "event_handler", None)
         if event_handler and hasattr(event_handler, "set_streaming_started"):

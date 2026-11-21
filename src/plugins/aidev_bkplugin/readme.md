@@ -6,6 +6,8 @@ Linux Web 实例默认最多同时运行 5 个本地 Chat producer。通过环�
 
 在 trace 的 `bkplugin.chat.producer.dispatch` span 上查看 `bkplugin.chat.producer.backend`。`local` 表示已启动本地进程，`celery` 表示走 Celery 投递路径。
 
+两种后端的执行 span 均为 `bkplugin.chat.worker`，父 span 为 Web 端的 `bkplugin.chat.enqueue`。流式请求中，`worker.prepare` 记录同步构造流的耗时。从 `worker` 开始到 `worker.started` 成功结束，是执行端发布就绪回执所用的时间。
+
 同一应用、系统用户和临时目录下的 Gunicorn worker 共用名额。子进程持有文件锁直至退出，worker 轮换后仍占用原名额并继续执行；原 HTTP 流断开时客户端可按现有协议续接。Pod 或容器退出会终止其中的本地进程。
 
 审批 Web 回调与企业微信跨进程联动见 [DatabaseEventBus 使用说明](docs/database-events.md)。
