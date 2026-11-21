@@ -67,7 +67,7 @@ def run_chat(task_id: str, spec: dict, expires_at: float, *, backend: str) -> No
         with (
             restored_trace_context(execution_spec.trace_context),
             recording_span(
-                "bkplugin_chat_worker_run",
+                "worker_run",
                 attributes={
                     "bkplugin.chat.task_id": task_id,
                     "bkplugin.chat.producer.backend": backend,
