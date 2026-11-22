@@ -27,11 +27,6 @@ from aidev_bkplugin.services.producer_dispatch import (
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
-try:
-    from opentelemetry.trace import SpanKind
-except ImportError:
-    SpanKind = None
-
 logger = getLogger(__name__)
 
 
@@ -60,13 +55,7 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
             handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
             raise RuntimeError("Chat execution cancelled")
         token = attach_trace_context(execution_spec.trace_context)
-        with recording_span(
-            "bkplugin.chat.worker",
-            attributes={"task_id": task_id, "agent_session_code": execution_spec.session_code},
-            kind=SpanKind.CONSUMER if SpanKind else None,
-            use_global_tracer=True,
-        ):
-            result = execute_chat_producer(execution_spec, task_id, expires_at)
+        result = execute_chat_producer(execution_spec, task_id, expires_at)
         if not execution_spec.execute_kwargs.get("stream", False):
             send_chat_reply(execution_spec, task_id, kind="result", result=result)
     except Exception as exc:

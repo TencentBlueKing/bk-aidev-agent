@@ -88,15 +88,15 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
-    enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
+    enqueue = spans["bkplugin.chat.enqueue"]
+    assert "bkplugin.chat.worker" not in spans
     assert enqueue.parent.span_id == request.get_span_context().span_id
     caller = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
-    assert caller["traceparent"].split("-")[2] == format(worker.context.span_id, "016x")
+    assert caller["traceparent"].split("-")[2] == format(enqueue.context.span_id, "016x")
     assert enqueue.kind == SpanKind.PRODUCER
-    assert worker.kind == SpanKind.CONSUMER
-    assert worker.context.trace_id == enqueue.context.trace_id
-    assert worker.parent.span_id == enqueue.context.span_id
-    assert spans["bkplugin.chat.worker.build_agent"].parent.span_id == worker.context.span_id
+    build = spans["bkplugin.chat.worker.build_agent"]
+    assert build.context.trace_id == enqueue.context.trace_id
+    assert build.parent.span_id == enqueue.context.span_id
     provider.shutdown()
 
 
