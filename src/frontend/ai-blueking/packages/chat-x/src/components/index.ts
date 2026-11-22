@@ -66,7 +66,7 @@ import ToolCallRender from './tool-call/toolcall-render/toolcall-render.vue';
 //   UserQuestionOption,
 // } from './chat-message/interrupt-message';
 export * from './chat-message/interrupt-message';
-export * from './markdown-token';
+export { default as MetricSeriesChart } from './chat-message/tool-result-presentations/metric-series-chart.vue';
 export {
   AiImage,
   AiLoading,
@@ -93,3 +93,6 @@ export {
   ShortcutRender,
   ToolCallRender,
 };
+
+export type { MetricSeries } from './chat-message/tool-result-presentations/presentation';
+export * from './markdown-token';
