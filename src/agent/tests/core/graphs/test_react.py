@@ -23,6 +23,7 @@ from aidev_agent.core.tools.a2a_tools.types import AgentSpec
 from aidev_agent.core.tools.ask_user_question import ask_user_question
 from aidev_agent.core.tools.runtime_tools import RuntimeBackendResolver
 from aidev_agent.core.tools.runtime_tools.bubblewrap_backend import BubblewrapFilesystemBackend
+from aidev_agent.core.tools.skill.bkai_backend import BkAiBackend
 from aidev_agent.core.tools.tool_lazy_loading.meta_tools import CALL_TOOL_NAME, DESCRIBE_TOOL_NAME
 from aidev_agent.packages.langchain_core.models import ChatModel
 from aidev_agent.packages.langgraph.streaming.streaming_protocol import AgentStreamAdapter
@@ -1498,6 +1499,28 @@ class TestReActAgentBuilder:
     # ----------------------------------------------------------------
     # P2. _prepare_skills 的 paas_sandbox + resource_manager 分支
     # ----------------------------------------------------------------
+
+    @pytest.mark.parametrize("activate_first", [True, False])
+    def test_paas_skill_detail_loaded_on_first_use(self, activate_first):
+        rm = MagicMock()
+        rm.retrieve_skill.return_value = {"skill_markdown": "instructions", "sandbox": {"image": "release-image"}}
+        skills = [
+            {"id": n, "skill_name": f"skill-{n}", "description": "test", "version": "1", "discovery": {}}
+            for n in (1, 2)
+        ]
+        resolver = RuntimeBackendResolver()
+        builder = ReActAgentBuilder().set_runtime_backend_resolver(resolver).enable_runtime_paas(True)
+        builder.set_skill_sources([BkAiBackend(rm, skills)])
+        builder._resource_manager = rm
+        builder._prepare_skills()
+        rm.retrieve_skill.assert_not_called()
+        assert "paas_sandbox_skill-1" in resolver.runtime_param_description()
+        if activate_first:
+            assert builder._skill_registry.activate_skill("skill-1")["instructions"] == "instructions"
+        backend = resolver.resolve_backend("paas_sandbox_skill-1")
+        assert backend._snapshot == "release-image"
+        assert resolver.resolve_backend("paas_sandbox_skill-1") is backend
+        rm.retrieve_skill.assert_called_once_with(skill_id="1", version="1")
 
     def test_prepare_skills_paas_sandbox_with_resource_manager(self, tmp_path, monkeypatch):
         """paas_sandbox runtime skill + resource_manager 时应注入 client 到 construct_params"""

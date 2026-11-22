@@ -694,11 +694,10 @@ class ChatCompletionAgent(BaseModel):
             model.default_headers["X-BKAIDEV-Attributes"] = header_value
 
     def _fetch_platform_pv(self, sandbox_pv_id: str | None = None) -> list[dict]:
-        """复用会话已绑定的 PV，缺少绑定时向平台读取最新值。"""
+        """复用 running 快照；已知空绑定留给 PV 节点或文件服务按需读取。"""
         if self.resource_manager is None or not self.thread_id:
             return []
-        if not sandbox_pv_id:
-            # 上传可并发创建卷，running 快照中的空值必须重新读取。
+        if sandbox_pv_id is None:
             try:
                 session = self.resource_manager.retrieve_chat_session(self.thread_id)
                 session_property = (session or {}).get("session_property") or {}
@@ -1333,6 +1332,10 @@ class ChatCompletionAgent(BaseModel):
         # 快照 messages 数据源为 lossless ChatPrompt 单账本（含本轮 patch 记录并入）；
         # run_id/stream_input 仍用 langchain messages（LLM 路径不受影响）。
         agui_messages = self._build_snapshot_agui_messages()
+        if not state.get("runtime_paas_sbx_pv") and self.pv_file_service:
+            signed_volume = self.pv_file_service.cached_volume_id(self.thread_id)
+            if signed_volume:
+                state["runtime_paas_sbx_pv"] = self._fetch_platform_pv(signed_volume)
         preprocessed = self._prepare_stream_input(
             agent_e,
             cfg,

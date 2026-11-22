@@ -589,6 +589,10 @@ class SandboxPvFileService:
     # 反查 & Client 构造
     # ------------------------------------------------------------------
 
+    def cached_volume_id(self, session_code: str) -> str | None:
+        """历史图片签发已经确认的卷，无网络请求。"""
+        return self._volume_id_cache.get(session_code)
+
     def _get_volume_id(self, session_code: str) -> str:
         """从 `ChatSession.session_property.sandbox_pv_id` 读取 volume_id，缺失即报错。
 

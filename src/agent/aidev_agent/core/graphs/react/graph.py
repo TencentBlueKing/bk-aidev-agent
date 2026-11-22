@@ -19,6 +19,7 @@ to the current version of the project delivered to anyone in the future.
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import TYPE_CHECKING, Annotated, Any, Callable, List, Optional, Sequence, Tuple, get_type_hints
 
 from langchain.agents.middleware.types import (
@@ -1064,51 +1065,73 @@ class ReActAgentBuilder:
             if skill_runtime is None or resolver is None or not resolver.have_runtime_cls(skill_runtime):
                 logger.warning(f"Skill '{skill_name}' 声明 runtime='{skill_runtime}' 但未注册对应类型，跳过该 skill")
                 continue
-            # 实例化独立 backend 所需构造参数
-            extractor = self._runtime_param_with_skill.get(skill_runtime)
-            params = extractor(skill, self._executor_info or {}) if extractor is not None else {}
-            # local runtime：平台下发 sandbox_policy 时启用内核级文件隔离，改注册/构造
-            # BubblewrapFilesystemBackend（类型名 `bubblewrap`）；否则保持纯同进程
-            # FilesystemBackend。
-            effective_runtime = skill_runtime
-            if skill_runtime == "local":
-                ss = self._security_settings
-                assert ss is not None  # _prepare_agent_options 已校验非空
-                if ss.sandbox_policy is not None:
-                    if not resolver.have_runtime_cls("bubblewrap"):
-                        resolver.register_runtime_cls("bubblewrap", BubblewrapFilesystemBackend)
-                    self._runtime_param_with_skill.setdefault("bubblewrap", _extract_local_params)
-                    bwrap_params = {"sandbox_policy": ss.sandbox_policy}
-                    # fail-open：bwrap 不可用（未安装 / user namespace 被禁）时降级回
-                    # 同进程 FilesystemBackend，避免功能因缺二进制而整体失效。
-                    if BubblewrapFilesystemBackend(**bwrap_params).is_available():
-                        params.update(bwrap_params)
-                        effective_runtime = "bubblewrap"
-                    else:
-                        logger.warning(
-                            "bwrap 不可用，local skill '%s' 降级为同进程 FilesystemBackend（文件隔离未生效）",
-                            skill_name,
-                        )
-            if skill_runtime == "paas_sandbox" and self._resource_manager is not None:
-                client = self._resource_manager.get_paas_sbx_client(self._executor_info or {})
-                params["client"] = client
-            logger.info(
-                f"[credential] skill_runtime={skill_runtime}, skill_name={skill_name}, "
-                f"executor_info_keys={list((self._executor_info or {}).keys())}, "
-                f"has_app_code={bool((self._executor_info or {}).get('app_code'))}, "
-                f"has_access_token={bool((self._executor_info or {}).get('access_token'))}, "
-                f"runtime_cls_name={skill_runtime}"
-            )
-            # 所有 runtime（含 local / bubblewrap）统一走 get_or_create_backend：
-            # runtime_name = {runtime}_{skill}（模型可见路由名，注册 _backends 供 target_runtime 解析）；
-            # runtime_id 由 resolver 内部 compose_runtime_id 幂等推导（{agent_code}:{session_code}:{runtime}_{skill}），
-            # resolver 内部按 runtime_cls_name 从 _backend_cls 查类构造实例。
-            runtime_name = f"{effective_runtime}_{skill_name}"
-            resolver.get_or_create_backend(
-                runtime_name=runtime_name,
-                runtime_cls_name=effective_runtime,  # resolver 内部按名查 _backend_cls
-                construct_params=params,
-            )
+            provider = registry.provider_for(skill_name)
+            if (
+                isinstance(provider, BkAiBackend)
+                and skill["path"] in provider.deferred_paths
+                and skill_runtime == "paas_sandbox"
+            ):
+                resolver.register_lazy_backend(
+                    f"{skill_runtime}_{skill_name}", partial(self._load_skill_backend, skill)
+                )
+            else:
+                self._register_skill_backend(skill)
+
+    def _load_skill_backend(self, skill: SkillOptions):
+        self._skill_registry.activate_skill(skill["name"])
+        if "bkai_paas_sandbox" not in skill.get("metadata", {}):
+            raise ValueError(f"Unable to load sandbox configuration for skill {skill['name']}")
+        return self._register_skill_backend(skill)
+
+    def _register_skill_backend(self, skill: SkillOptions):
+        resolver = self._runtime_backend_resolver
+        skill_name = skill["name"]
+        skill_runtime = skill["runtime"]
+        # 实例化独立 backend 所需构造参数
+        extractor = self._runtime_param_with_skill.get(skill_runtime)
+        params = extractor(skill, self._executor_info or {}) if extractor is not None else {}
+        # local runtime：平台下发 sandbox_policy 时启用内核级文件隔离，改注册/构造
+        # BubblewrapFilesystemBackend（类型名 `bubblewrap`）；否则保持纯同进程
+        # FilesystemBackend。
+        effective_runtime = skill_runtime
+        if skill_runtime == "local":
+            ss = self._security_settings
+            assert ss is not None  # _prepare_agent_options 已校验非空
+            if ss.sandbox_policy is not None:
+                if not resolver.have_runtime_cls("bubblewrap"):
+                    resolver.register_runtime_cls("bubblewrap", BubblewrapFilesystemBackend)
+                self._runtime_param_with_skill.setdefault("bubblewrap", _extract_local_params)
+                bwrap_params = {"sandbox_policy": ss.sandbox_policy}
+                # fail-open：bwrap 不可用（未安装 / user namespace 被禁）时降级回
+                # 同进程 FilesystemBackend，避免功能因缺二进制而整体失效。
+                if BubblewrapFilesystemBackend(**bwrap_params).is_available():
+                    params.update(bwrap_params)
+                    effective_runtime = "bubblewrap"
+                else:
+                    logger.warning(
+                        "bwrap 不可用，local skill '%s' 降级为同进程 FilesystemBackend（文件隔离未生效）",
+                        skill_name,
+                    )
+        if skill_runtime == "paas_sandbox" and self._resource_manager is not None:
+            client = self._resource_manager.get_paas_sbx_client(self._executor_info or {})
+            params["client"] = client
+        logger.info(
+            f"[credential] skill_runtime={skill_runtime}, skill_name={skill_name}, "
+            f"executor_info_keys={list((self._executor_info or {}).keys())}, "
+            f"has_app_code={bool((self._executor_info or {}).get('app_code'))}, "
+            f"has_access_token={bool((self._executor_info or {}).get('access_token'))}, "
+            f"runtime_cls_name={skill_runtime}"
+        )
+        # 所有 runtime（含 local / bubblewrap）统一走 get_or_create_backend：
+        # runtime_name = {runtime}_{skill}（模型可见路由名，注册 _backends 供 target_runtime 解析）；
+        # runtime_id 由 resolver 内部 compose_runtime_id 幂等推导（{agent_code}:{session_code}:{runtime}_{skill}），
+        # resolver 内部按 runtime_cls_name 从 _backend_cls 查类构造实例。
+        runtime_name = f"{effective_runtime}_{skill_name}"
+        return resolver.get_or_create_backend(
+            runtime_name=runtime_name,
+            runtime_cls_name=effective_runtime,  # resolver 内部按名查 _backend_cls
+            construct_params=params,
+        )
 
     def _prepare_a2a(self) -> None:
         """准备 A2A 多智能体系统。

@@ -96,6 +96,10 @@ class SkillRegistry:
         self.ensure_loaded()
         return list(self._skills.values())
 
+    def provider_for(self, name: str) -> SkillProviderBackend | None:
+        self.ensure_loaded()
+        return self._skill_provider_map.get(name)
+
     def get_skill(self, name: str) -> SkillOptions | None:
         self.ensure_loaded()
         return self._skills.get(name)
@@ -141,7 +145,7 @@ class SkillRegistry:
             logger.debug(f"已激活技能: {name}")
         except Exception as e:
             logger.warning(f"激活技能失败 '{name}': {e}")
-            skill["instructions"] = ""
+            return {**skill, "instructions": ""}
 
         return skill
 

@@ -466,7 +466,11 @@ class TestExecuteFillsSessionCallerDefaults:
             }
         }
         writer = AGUISessionWriter("sess-1", client)
-        kwargs.remember_running_session(writer.set_streaming_started())
+        kwargs.remember_running_session(writer.start_with_caller_context({"executor": "approver"}))
+        assert client.api.update_chat_session.call_args.kwargs["json"] == {
+            "status": "running",
+            "initial_caller_context": {"executor": "approver"},
+        }
         kwargs, rm = self._execute_and_capture(kwargs)
         assert kwargs.executor == "original"
         rm.retrieve_chat_session.assert_not_called()
