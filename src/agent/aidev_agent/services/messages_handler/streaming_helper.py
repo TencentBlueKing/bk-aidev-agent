@@ -9,8 +9,10 @@ from typing import Any, Callable, Generator
 
 from ag_ui.core import EventType, RawEvent, RunErrorEvent, RunFinishedEvent
 from ag_ui.encoder import EventEncoder
+from rstream.client import BrokerResolutionMaxRetryError
 
 from aidev_agent.core.ag_ui.types import CustomMessageType, RunFinishedSuccessOutcome, serialize_run_finished_outcome
+from aidev_agent.utils import tracing
 from aidev_agent.utils.event import RunId, emit_run_finished_event, stamp_round_end_event
 
 try:
@@ -1308,7 +1310,10 @@ class GeneratorStreamingHelper:
         # 标记是否进入取消终止流程
         draining = False
         done_event_seen = False
-        producer_error = False
+        producer_error = ""
+        parent_context = tracing.context_api.get_current() if tracing.context_api is not None else None
+        tracer = tracing.get_agent_tracer(__name__)
+        start_span = tracer.start_span("bkplugin.chat.producer.write.start") if tracer else None
         run_finished_seen = False
         cancel_error_emitted = False
         cancel_finished_emitted = False
@@ -1448,6 +1453,9 @@ class GeneratorStreamingHelper:
                     # 初始化帧也由后台 producer 写入。RUN_STARTED 到达后立即提交，
                     # 避免等待批量写入周期，同时保持 MESSAGES_SNAPSHOT 在其之前。
                     self.message_handler.flush(self.thread_id)
+                if start_span is not None:
+                    start_span.end()
+                    start_span = None
                 if self.producer_observer is not None:
                     self.producer_observer.on_chunk(chunk)
                 logger.debug(f"Produced chunk for thread_id={self.thread_id}")
@@ -1465,11 +1473,16 @@ class GeneratorStreamingHelper:
                 logger.info("Producer generator stopped after cancellation for thread_id=%s", self.thread_id)
                 _emit_cancel_and_complete()
             else:
-                producer_error = True
+                producer_error = type(e).__name__
                 logger.exception(f"Producer error for thread_id={self.thread_id}: {e}")
+                message = (
+                    "无法连接会话消息队列，回复传输中断。请稍后重试。"
+                    if isinstance(e, BrokerResolutionMaxRetryError)
+                    else "Agent 执行异常，请稍后重试"
+                )
                 try:
                     for event in self._emit_terminal_error_events(
-                        "Agent 执行异常，请稍后重试",
+                        message,
                         event_handler=event_handler,
                     ):
                         is_run_finished = self._is_run_finished_event_chunk(event)
@@ -1486,6 +1499,11 @@ class GeneratorStreamingHelper:
                         f"Failed to send terminal error events for thread_id={self.thread_id}: {encode_err}"
                     )
         finally:
+            if start_span is not None:
+                if producer_error:
+                    start_span.set_status(tracing.trace.StatusCode.ERROR, producer_error)
+                    start_span.set_attribute("producer_error_type", producer_error)
+                start_span.end()
             logger.info(
                 f"[PRODUCER] finally enter thread_id={self.thread_id} "
                 f"producer_error={producer_error} done_event_seen={done_event_seen} "
@@ -1506,79 +1524,83 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining heartbeat thread for thread_id={self.thread_id}: {e}")
 
             try:
-                if not producer_error and not run_finished_seen and _is_cancel_requested(check_cross_process=True):
-                    # generator 可能在内部检测取消后直接 StopIteration，生产者循环没有机会看到新 chunk。
-                    _emit_cancel_and_complete()
-                elif expected_run_id and not producer_error and not run_finished_seen:
-                    logger.warning(
-                        "[RUN_FINISHED] missing from normal producer stream; emitting fallback thread_id=%s run_id=%s",
-                        self.thread_id,
-                        expected_run_id,
-                    )
-                    fallback = emit_run_finished_event(
-                        thread_id=self.thread_id,
-                        run_id=expected_run_id,
-                        event_handler=event_handler,
-                    )
-                    self.message_handler.put(self.thread_id, fallback)
-                    if self.producer_observer is not None:
-                        self.producer_observer.on_chunk(fallback)
-                    _record_published_sse_event()
-                    _complete_session()
-
-                # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。
-                logger.info(
-                    f"[EOD] Producer sending EOD_CHUNK for thread_id={self.thread_id} (producer_error={producer_error})"
-                )
-                eod_commit_event = threading.Event()
-                register_eod_commit = getattr(self.message_handler, "register_eod_commit_event", None)
-                unregister_eod_commit = getattr(self.message_handler, "unregister_eod_commit_event", None)
-                eod_commit_registered = callable(register_eod_commit) and callable(unregister_eod_commit)
-                if eod_commit_registered:
-                    register_eod_commit(self.thread_id, eod_commit_event)
-
-                try:
-                    self.message_handler.put(self.thread_id, EOD_CHUNK)
-                    try:
-                        self.message_handler.flush(self.thread_id)
-                    except Exception as flush_error:
-                        if not eod_commit_registered:
-                            self._producer_completion_error = flush_error
-                            raise
+                with tracing.recording_span("bkplugin.chat.producer.write.end", parent_context=parent_context) as span:
+                    if producer_error and span.is_recording():
+                        span.set_attribute("producer_error_type", producer_error)
+                        span.set_status(tracing.trace.StatusCode.ERROR, producer_error)
+                    if not producer_error and not run_finished_seen and _is_cancel_requested(check_cross_process=True):
+                        # generator 可能在内部检测取消后直接 StopIteration，生产者循环没有机会看到新 chunk。
+                        _emit_cancel_and_complete()
+                    elif expected_run_id and not producer_error and not run_finished_seen:
                         logger.warning(
-                            "[EOD] synchronous flush failed; waiting for background recovery "
-                            "thread_id=%s timeout=%.1fs",
+                            "[RUN_FINISHED] missing from normal producer stream; emitting fallback thread_id=%s run_id=%s",
                             self.thread_id,
-                            self._EOD_COMMIT_RECOVERY_TIMEOUT,
-                            exc_info=True,
+                            expected_run_id,
                         )
-                        if not eod_commit_event.wait(timeout=self._EOD_COMMIT_RECOVERY_TIMEOUT):
-                            completion_error = RuntimeError(
-                                f"EOD commit did not recover within {self._EOD_COMMIT_RECOVERY_TIMEOUT:.1f}s"
-                            )
-                            self._producer_completion_error = completion_error
-                            raise completion_error from flush_error
-                        logger.info("[EOD] background flush recovered thread_id=%s", self.thread_id)
-                finally:
+                        fallback = emit_run_finished_event(
+                            thread_id=self.thread_id,
+                            run_id=expected_run_id,
+                            event_handler=event_handler,
+                        )
+                        self.message_handler.put(self.thread_id, fallback)
+                        if self.producer_observer is not None:
+                            self.producer_observer.on_chunk(fallback)
+                        _record_published_sse_event()
+                        _complete_session()
+
+                    # 无论是正常结束还是取消，都推送 EOD_CHUNK 让消费者知道流已结束。
+                    logger.info(
+                        f"[EOD] Producer sending EOD_CHUNK for thread_id={self.thread_id} (producer_error={producer_error})"
+                    )
+                    eod_commit_event = threading.Event()
+                    register_eod_commit = getattr(self.message_handler, "register_eod_commit_event", None)
+                    unregister_eod_commit = getattr(self.message_handler, "unregister_eod_commit_event", None)
+                    eod_commit_registered = callable(register_eod_commit) and callable(unregister_eod_commit)
                     if eod_commit_registered:
-                        unregister_eod_commit(self.thread_id, eod_commit_event)
-                logger.info(f"[EOD] Producer EOD_CHUNK sent successfully for thread_id={self.thread_id}")
+                        register_eod_commit(self.thread_id, eod_commit_event)
 
-                # 只有 Producer 确认 EOD 已提交后，才清理自己所属 Run 的取消信号。
-                self._clear_cancel_signal_safely(
-                    "Error clearing committed cancel signal",
-                    run_id=expected_run_id or self.run_id or None,
-                )
+                    try:
+                        self.message_handler.put(self.thread_id, EOD_CHUNK)
+                        try:
+                            self.message_handler.flush(self.thread_id)
+                        except Exception as flush_error:
+                            if not eod_commit_registered:
+                                self._producer_completion_error = flush_error
+                                raise
+                            logger.warning(
+                                "[EOD] synchronous flush failed; waiting for background recovery "
+                                "thread_id=%s timeout=%.1fs",
+                                self.thread_id,
+                                self._EOD_COMMIT_RECOVERY_TIMEOUT,
+                                exc_info=True,
+                            )
+                            if not eod_commit_event.wait(timeout=self._EOD_COMMIT_RECOVERY_TIMEOUT):
+                                completion_error = RuntimeError(
+                                    f"EOD commit did not recover within {self._EOD_COMMIT_RECOVERY_TIMEOUT:.1f}s"
+                                )
+                                self._producer_completion_error = completion_error
+                                raise completion_error from flush_error
+                            logger.info("[EOD] background flush recovered thread_id=%s", self.thread_id)
+                    finally:
+                        if eod_commit_registered:
+                            unregister_eod_commit(self.thread_id, eod_commit_event)
+                    logger.info(f"[EOD] Producer EOD_CHUNK sent successfully for thread_id={self.thread_id}")
 
-                # EOD 仅负责消费者结束与队列资源回收；会话终态已在 RUN_FINISHED 入队后回写。
-                self._schedule_session_cleanup(done_event_seen=done_event_seen)
+                    # 只有 Producer 确认 EOD 已提交后，才清理自己所属 Run 的取消信号。
+                    self._clear_cancel_signal_safely(
+                        "Error clearing committed cancel signal",
+                        run_id=expected_run_id or self.run_id or None,
+                    )
 
-                if on_complete and self._supports_replay_from_start():
-                    _complete_session()
-                if self.producer_observer is not None:
-                    self.producer_observer.on_complete(self._producer_completion_error)
-                if self._producer_completion_error is not None:
-                    raise self._producer_completion_error
+                    # EOD 仅负责消费者结束与队列资源回收；会话终态已在 RUN_FINISHED 入队后回写。
+                    self._schedule_session_cleanup(done_event_seen=done_event_seen)
+
+                    if on_complete and self._supports_replay_from_start():
+                        _complete_session()
+                    if self.producer_observer is not None:
+                        self.producer_observer.on_complete(self._producer_completion_error)
+                    if self._producer_completion_error is not None:
+                        raise self._producer_completion_error
             finally:
                 if release_producer:
                     logger.info(

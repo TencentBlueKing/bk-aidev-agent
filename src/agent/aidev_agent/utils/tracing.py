@@ -92,6 +92,7 @@ def recording_span(
     attributes: dict[str, Any] | None = None,
     kind: Any = None,
     root: bool = False,
+    parent_context: Any = None,
     record_exception: bool = True,
     use_global_tracer: bool = False,
 ) -> Iterator[Any]:
@@ -116,6 +117,8 @@ def recording_span(
         start_kwargs.update(record_exception=False, set_status_on_exception=False)
     if kind is not None:
         start_kwargs["kind"] = kind
+    if parent_context is not None:
+        start_kwargs["context"] = parent_context
     if root and context_api is not None:
         start_kwargs["context"] = context_api.Context()
     with tracer.start_as_current_span(name, **start_kwargs) as span:
