@@ -4,7 +4,7 @@ import os
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, StrictInt, model_validator
 
 from aidev_agent.config import settings
 from aidev_agent.enums import FineGrainedScoreType, IndependentQueryMode
@@ -72,6 +72,22 @@ class ExecuteKwargs(BaseModel):
         "caller_order_type",
         "executor",
     )
+
+    _running_session: dict | None = PrivateAttr(default=None)
+
+    def remember_running_session(self, session: dict | None) -> None:
+        """仅在本次 worker 执行内传递状态更新响应，不进入请求或队列协议。"""
+        self._running_session = session
+
+    def take_running_caller_context(self, session_code: str) -> dict | None:
+        session, self._running_session = self._running_session, None
+        if not isinstance(session, dict) or session.get("session_code") != session_code:
+            return None
+        properties = session.get("session_property")
+        if not isinstance(properties, dict):
+            return None
+        context = properties.get("caller_context", {})
+        return context if isinstance(context, dict) else None
 
     def to_caller_context(self) -> dict[str, Any]:
         """抽取可持久化到 ``ChatSession.property.caller_context`` 的调用方字段。

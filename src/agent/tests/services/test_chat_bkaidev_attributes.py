@@ -9,6 +9,7 @@ from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.agent import ChatCompletionAgent
 from aidev_agent.services.agent.chat import ChatAgentBuilder
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
+from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.fallbacks import RunnableWithFallbacks
@@ -454,6 +455,42 @@ class TestExecuteFillsSessionCallerDefaults:
         assert kwargs.caller_bk_app_code is None
         assert kwargs.executor == "user"
         assert kwargs.caller_executor == "user"
+
+    def test_running_response_supplies_resume_identity_once(self):
+        kwargs = ExecuteKwargs(session_code="sess-1", resume=[{"interruptId": "approval-1"}])
+        client = MagicMock()
+        client.api.update_chat_session.return_value = {
+            "data": {
+                "session_code": "sess-1",
+                "session_property": {"caller_context": {"executor": "original", "caller_executor": "original"}},
+            }
+        }
+        writer = AGUISessionWriter("sess-1", client)
+        kwargs.remember_running_session(writer.set_streaming_started())
+        kwargs, rm = self._execute_and_capture(kwargs)
+        assert kwargs.executor == "original"
+        rm.retrieve_chat_session.assert_not_called()
+        rm.update_chat_session_caller_context.assert_not_called()
+        self._execute_and_capture(kwargs, resource_manager=rm)
+        rm.retrieve_chat_session.assert_called_once_with("sess-1")
+
+    @pytest.mark.parametrize(
+        "session", [None, {"session_code": "sess-1"}, {"session_code": "other", "session_property": {}}]
+    )
+    def test_unusable_running_response_reads_session(self, session):
+        kwargs = ExecuteKwargs(session_code="sess-1")
+        kwargs.remember_running_session(session)
+        _, rm = self._execute_and_capture(kwargs)
+        rm.retrieve_chat_session.assert_called_once_with("sess-1")
+
+    def test_empty_running_properties_skip_read_and_persist_first_caller(self):
+        kwargs = ExecuteKwargs(session_code="sess-1", executor="alice")
+        kwargs.remember_running_session({"session_code": "sess-1", "session_property": {}})
+        _, rm = self._execute_and_capture(kwargs)
+        rm.retrieve_chat_session.assert_not_called()
+        rm.update_chat_session_caller_context.assert_called_once_with(
+            "sess-1", {"executor": "alice", "caller_executor": "alice"}
+        )
 
     def test_first_call_persists_caller_context(self):
         kwargs, rm = self._execute_and_capture(

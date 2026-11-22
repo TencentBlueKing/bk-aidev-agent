@@ -523,7 +523,9 @@ class ChatCompletionAgent(BaseModel):
         """
         session_code = self._session_code_for_caller_context(execute_kwargs)
         with recording_span("agent.chat.caller_context.sync", attributes={"agent.session.code": session_code}):
-            stored = self._load_session_caller_context(session_code) if session_code else None
+            stored = execute_kwargs.take_running_caller_context(session_code)
+            if stored is None and session_code:
+                stored = self._load_session_caller_context(session_code)
             execute_kwargs.apply_caller_context(stored, overwrite=bool(execute_kwargs.resume))
             execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
             if stored is not None:
