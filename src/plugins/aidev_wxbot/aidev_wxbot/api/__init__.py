@@ -24,12 +24,12 @@ class Api(object):
     def get_auth_header(self, bk_username):
         return {}
 
-    def call_action(self, action: str, method="POST", bk_username="admin", **params):
+    def call_action(self, action: str, method="POST", bk_username=None, **params):
         if not bk_username:
             bk_username = (
                 params.get("json", {}).get("bk_username", None)
                 or params.get("params", {}).get("bk_username", None)
-                or "admin"
+                or settings.BK_ADMIN_USERNAME
             )
         auth_header = self.get_auth_header(bk_username)
         url = f"{self.base_url}/{action}"

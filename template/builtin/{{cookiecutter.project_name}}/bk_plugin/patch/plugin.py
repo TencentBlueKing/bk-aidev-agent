@@ -10,10 +10,30 @@ an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express o
 specific language governing permissions and limitations under the License.
 """
 
+import base64
 import os
 
 import pymysql
 
+
+def _configure_session_queue_url():
+    """在插件运行时加载 SDK 前，将平台下发的 Base64 地址还原为 Redis URL。"""
+    if os.getenv("MESSAGE_HANDLER_TYPE", "").strip().lower() not in {"", "auto", "redis"}:
+        return
+    value = os.getenv("MESSAGE_REDIS_URL", "")
+    schemes = ("redis://", "rediss://", "unix://")
+    if not value or value.startswith(schemes):
+        return
+    try:
+        url = base64.b64decode(value, validate=True).decode("utf-8")
+    except ValueError:
+        raise ValueError("Invalid MESSAGE_REDIS_URL: expected a Redis URL or its Base64 encoding") from None
+    if not url.startswith(schemes) or "\x00" in url:
+        raise ValueError("Invalid Redis URL in Base64-encoded MESSAGE_REDIS_URL")
+    os.environ["MESSAGE_REDIS_URL"] = url
+
+
+_configure_session_queue_url()
 pymysql.install_as_MySQLdb()
 
 # URL 配置模块

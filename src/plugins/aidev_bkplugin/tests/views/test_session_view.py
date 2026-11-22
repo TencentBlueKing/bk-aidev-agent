@@ -24,6 +24,7 @@ base_mod.PluginResourceManager = MagicMock()
 base_mod.PluginViewSet = object
 base_mod.client = SimpleNamespace(api=MagicMock())
 base_mod.logger = MagicMock()
+base_mod.resolve_tenant_id = MagicMock()
 sys.modules["aidev_bkplugin.views.base"] = base_mod
 
 agent_config_mod = types.ModuleType("aidev_bkplugin.services.agent_config")
@@ -224,6 +225,20 @@ def test_stop_cancels_local_stream_when_platform_stop_fails(monkeypatch):
 
     cancel.assert_called_once_with("session-stop", message_handler=handler, run_id=None)
     handler.wait_for_consumer_cancelled.assert_called_once()
+
+
+def test_batch_delete_forwards_current_user_and_content_ids():
+    api = MagicMock()
+    api.batch_delete_chat_session_content.return_value = {"data": "OK"}
+    view = _view(session_mod.ChatSessionContentViewSet, api)
+    request = _request(username="bob", data={"ids": [12, 34]})
+
+    response = view.batch_delete(request)
+
+    api.batch_delete_chat_session_content.assert_called_once_with(
+        json={"ids": [12, 34]}, headers={"X-BKAIDEV-USER": "bob"}
+    )
+    assert response.data == "OK"
 
 
 def test_create_attaches_image_url_to_user_binary(monkeypatch):

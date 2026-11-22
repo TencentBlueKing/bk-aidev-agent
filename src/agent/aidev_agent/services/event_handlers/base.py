@@ -1650,7 +1650,7 @@ class BaseSessionWriter(ABC):
 
     # ---------- 断点续传支持（基于会话状态判断） ----------
 
-    def set_streaming_started(self) -> None:
+    def set_streaming_started(self) -> dict | None:
         """标记流式传输开始
 
         子类应覆盖此方法来更新会话状态为 running。

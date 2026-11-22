@@ -26,6 +26,7 @@ from aidev_agent.services.messages_handler.config import MessageHandlerConfig
 from aidev_agent.services.messages_handler.constants import EnvVarNames
 from aidev_agent.services.messages_handler.factory import _create_handler, _init_factory
 from aidev_agent.utils.event import RunId, emit_run_finished_event
+from rstream.client import BrokerResolutionMaxRetryError
 
 
 def _event_types(chunks: list[str]) -> list[str]:
@@ -196,6 +197,21 @@ class TestReplayFromStartStreamingHelper:
         assert enable_heartbeat_check is True
         assert producer_iterated == []
 
+    @pytest.mark.parametrize("attach_only", [True, False])
+    def test_finished_stream_replay_preserves_session_status(self, attach_only):
+        session = "finished-session"
+        handler = ReplayFromStartHandler()
+        handler.put(session, "cached")
+        handler.put(session, EOD_CHUNK)
+        statuses = ["finished"]
+        writer = MagicMock()
+        writer.set_streaming_started.side_effect = lambda: statuses.append("running")
+        helper = GeneratorStreamingHelper(handler, thread_id=session)
+
+        assert not handler.has_active_producer(session)
+        assert list(helper.stream(iter(["new"]), event_handler=writer, attach_only=attach_only)) == ["cached"]
+        assert statuses == ["finished"]
+
     def test_attach_cached_stream_ignores_new_request_run_id(self):
         thread_id = "test_attach_cached_stream"
         handler = ReplayFromStartHandler()
@@ -253,17 +269,20 @@ class TestReplayFromStartStreamingHelper:
         thread_id = "test_replay_on_complete_once"
         handler = ReplayFromStartHandler()
         lifecycle = []
+        writer = MagicMock()
+        writer.set_streaming_started.side_effect = lambda: lifecycle.append("running")
         handler.flush = lambda _thread_id: lifecycle.append("flush")
 
         result = list(
             GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
                 iter(["chunk_0"]),
+                event_handler=writer,
                 on_complete=lambda: lifecycle.append("complete"),
             )
         )
 
         assert result == ["chunk_0"]
-        assert lifecycle == ["flush", "complete"]
+        assert lifecycle == ["running", "flush", "complete"]
         assert thread_id not in handler.producer_locks
 
     def test_replay_mode_propagates_on_complete_failure(self):
@@ -1112,6 +1131,23 @@ class TestInMemoryQueueMessageHandler:
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
         assert completed == [True]
         assert recorder.record_sse_event.call_count == 3
+
+    def test_broker_resolution_failure_reports_reply_delivery_error(self, handler, monkeypatch):
+        helper = GeneratorStreamingHelper(handler, thread_id="broker-resolution")
+        flush = handler.flush
+        dispatched = []
+
+        def fail_first_flush(thread_id):
+            monkeypatch.setattr(handler, "flush", flush)
+            raise BrokerResolutionMaxRetryError("Failed to connect to internal-host after 3 tries")
+
+        monkeypatch.setattr(handler, "flush", fail_first_flush)
+        started = 'data: {"type":"RUN_STARTED","runId":"run","threadId":"broker-resolution"}\n\n'
+        chunks = list(helper.stream(iter([started]), event_handler=dispatched.append))
+        error, finished = [json.loads(chunk.removeprefix("data: ")) for chunk in chunks[-2:]]
+        assert error["type"] == "RUN_ERROR"
+        assert error["message"] == dispatched[0].message == "无法连接会话消息队列，回复传输中断。请稍后重试。"
+        assert finished["type"] == "RUN_FINISHED"
 
     def test_sse_metrics_count_only_events_enqueued_for_delivery(self, handler, monkeypatch):
         recorder = MagicMock()

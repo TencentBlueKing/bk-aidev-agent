@@ -191,7 +191,9 @@ class ChatCompletionViewSet(PluginViewSet):
         )
         output = ChatDispatcher(spec).execute(execute_kwargs)
         if execute_kwargs.stream:
-            return self.streaming_response(output, session_code=session_code)
+            return self.streaming_response(
+                output, session_code=session_code, username=username, version=execute_kwargs.version
+            )
         return Response(output)
 
     def _save_user_input(
@@ -293,7 +295,8 @@ class ChatCompletionViewSet(PluginViewSet):
         )
         task_id = None
         resume_action: str = ""
-        if session_code:
+        execute_kwargs = data.get("execute_kwargs")
+        if session_code and getattr(execute_kwargs, "stream_mode", None) != "attach":
             flow_info = session_manager.get_flow_info(session_code)
             if flow_info.get("resume_pending"):
                 resume_task_id = flow_info.get("task_id")
@@ -378,7 +381,7 @@ class ChatCompletionViewSet(PluginViewSet):
         )
 
         try:
-            generator = agent_instance.execute()
+            generator = agent_instance.execute(execute_kwargs)
         except Exception as err:
             logger.exception(f"[FLOW_AGENT] execute error: session_code={session_code}, error={err}")
             message = getattr(err, "message", str(err))
@@ -402,8 +405,6 @@ class ChatCompletionViewSet(PluginViewSet):
             raise ClientBlueException(message=message)
 
         logger.info(f"[FLOW_AGENT] Streaming started: session_code={session_code}, task_id={task_id}")
-        if event_handler and hasattr(event_handler, "set_streaming_started"):
-            event_handler.set_streaming_started()
         return self.streaming_response(generator, session_code=session_code)
 
     def _wrap_streaming_with_status(self, generator, event_handler, session_code: str = "", username: str = ""):
@@ -444,7 +445,9 @@ class ChatCompletionViewSet(PluginViewSet):
                 logger.info(f"[WRAP_STATUS] 流正常结束, 调用 set_streaming_finished: session_code={session_code}")
                 event_handler.set_streaming_finished()
 
-    def streaming_response(self, generator, session_code: str = ""):
+    def streaming_response(
+        self, generator, session_code: str = "", username: str | None = None, version: str | None = None
+    ):
         sr = StreamingHttpResponse(generator)
         sr.headers["Cache-Control"] = "no-cache"
         sr.headers["X-Accel-Buffering"] = "no"
@@ -454,7 +457,7 @@ class ChatCompletionViewSet(PluginViewSet):
         # 注入 session 相关响应标头，便于客户端获取会话信息和跳转链接
         if session_code:
             sr.headers["x-bkaidev-agent-session-code"] = session_code
-            session_url = AgentHelper.build_session_detail_url(session_code)
+            session_url = AgentHelper.build_session_detail_url(session_code, username=username, version=version)
             if session_url:
                 sr.headers["x-bkaidev-agent-session-url"] = session_url
                 logger.debug(f"[streaming_response] 注入响应标头: session_code={session_code}, url={session_url}")

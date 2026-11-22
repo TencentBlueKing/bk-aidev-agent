@@ -119,6 +119,7 @@ class AgentInstanceFactory:
         self.version = version
         self.reasoning_effort = reasoning_effort or None
         self.hook_handlers = hook_handlers
+        self._agent_configs: dict[str, AgentConfig] = {}
 
     @classmethod
     def build_agent(
@@ -218,9 +219,14 @@ class AgentInstanceFactory:
 
         version 仅作用于主 agent；命令切换出去的子 agent_code 各有独立版本语义，
         本工厂不替它们做版本路由（一律传 None → 最新版）。
+        同一次构建内按 agent_code 只取回一次，每次返回独立副本，避免装配器之间互相修改。
         """
-        version = self.version if agent_code == self.agent_code else None
-        return self.resource_manager.get_agent_config(agent_code=agent_code, version=version)
+        if agent_code not in self._agent_configs:
+            version = self.version if agent_code == self.agent_code else None
+            self._agent_configs[agent_code] = self.resource_manager.get_agent_config(
+                agent_code=agent_code, version=version
+            )
+        return self._agent_configs[agent_code].model_copy(deep=True)
 
     def _build_token_usage_callback(
         self,

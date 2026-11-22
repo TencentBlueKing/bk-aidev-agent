@@ -102,7 +102,7 @@ class AgentExecutor:
         if execute_kwargs.stream and isinstance(handler, BaseSessionWriter):
             if turn_id:
                 handler.turn_id = turn_id
-            if hasattr(handler, "set_streaming_started"):
+            if execute_kwargs.legacy_streaming and hasattr(handler, "set_streaming_started"):
                 handler.set_streaming_started()
         out = cls(session_manager).execute_with_save(
             agent_instance,
@@ -310,7 +310,7 @@ class AgentExecutor:
         if execute_kwargs.stream and isinstance(handler, BaseSessionWriter):
             if turn_id:
                 handler.turn_id = turn_id
-            if hasattr(handler, "set_streaming_started"):
+            if execute_kwargs.legacy_streaming and hasattr(handler, "set_streaming_started"):
                 handler.set_streaming_started()
         result = cls(builder.session_manager).execute_with_save(
             agent_instance,
