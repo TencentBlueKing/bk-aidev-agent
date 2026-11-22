@@ -1072,15 +1072,15 @@ class ReActAgentBuilder:
                 and skill_runtime == "paas_sandbox"
             ):
                 resolver.register_lazy_backend(
-                    f"{skill_runtime}_{skill_name}", partial(self._load_skill_backend, skill)
+                    f"{skill_runtime}_{skill_name}", partial(self._load_skill_backend, skill_name)
                 )
             else:
                 self._register_skill_backend(skill)
 
-    def _load_skill_backend(self, skill: SkillOptions):
-        self._skill_registry.activate_skill(skill["name"])
-        if "bkai_paas_sandbox" not in skill.get("metadata", {}):
-            raise ValueError(f"Unable to load sandbox configuration for skill {skill['name']}")
+    def _load_skill_backend(self, name: str):
+        skill = self._skill_registry.load_skill(name)
+        if skill is None:
+            raise ValueError(f"Unknown skill {name!r}")
         return self._register_skill_backend(skill)
 
     def _register_skill_backend(self, skill: SkillOptions):

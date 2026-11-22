@@ -456,6 +456,25 @@ class TestExecuteFillsSessionCallerDefaults:
         assert kwargs.executor == "user"
         assert kwargs.caller_executor == "user"
 
+    def test_legacy_writer_status_and_start_overrides(self):
+        class LegacyStatusWriter(AGUISessionWriter):
+            def _update_session_status(self, status, *, raise_on_failure=False):
+                return {"status": status}
+
+        class LegacyStartWriter(AGUISessionWriter):
+            def set_streaming_started(self):
+                return {"custom_start": True}
+
+        client = MagicMock()
+        for writer_type, expected in [
+            (LegacyStatusWriter, {"status": "running"}),
+            (LegacyStartWriter, {"custom_start": True}),
+        ]:
+            writer = writer_type("session", client)
+            assert writer.set_streaming_started() == expected
+            assert writer.start_with_caller_context({"executor": "alice"}) == expected
+        client.api.update_chat_session.assert_not_called()
+
     def test_running_response_supplies_resume_identity_once(self):
         kwargs = ExecuteKwargs(session_code="sess-1", resume=[{"interruptId": "approval-1"}])
         client = MagicMock()

@@ -105,6 +105,20 @@ except ImportError:  # OpenTelemetry is an optional SDK extra.
 logger = getLogger(__name__)
 
 
+def _session_pv_mounts(thread_id: str, volume_id: str | None, source: str) -> list[dict]:
+    if not volume_id:
+        return []
+    return [
+        {
+            "type": "paas-sbx-pv",
+            "volume_id": volume_id,
+            "volume_name": f"agent-pv-{thread_id}",
+            "mount_path": "session",
+            "source": source,
+        }
+    ]
+
+
 def _to_ledger_dict(record: Any) -> dict:
     """把 chat_history 账本记录归一为 dict 形态。
 
@@ -705,17 +719,7 @@ class ChatCompletionAgent(BaseModel):
             except Exception:
                 logger.warning("restore platform PV failed: session_code=%s", self.thread_id, exc_info=True)
                 return []
-        if not sandbox_pv_id:
-            return []
-        return [
-            {
-                "type": "paas-sbx-pv",
-                "volume_id": sandbox_pv_id,
-                "volume_name": f"agent-pv-{self.thread_id}",
-                "mount_path": "session",
-                "source": "platform",
-            }
-        ]
+        return _session_pv_mounts(self.thread_id, sandbox_pv_id, "platform")
 
     def _fetch_execute_pv(self) -> list[dict]:
         """从 execute_kwargs 读取 sandbox_pv_id，构造 execute_kwargs 来源的 PV 条目。
@@ -732,17 +736,7 @@ class ChatCompletionAgent(BaseModel):
         except Exception:
             logger.warning("fetch execute PV failed: thread_id=%s", self.thread_id, exc_info=True)
             return []
-        if not sandbox_pv_id:
-            return []
-        return [
-            {
-                "type": "paas-sbx-pv",
-                "volume_id": sandbox_pv_id,
-                "volume_name": f"agent-pv-{self.thread_id}",
-                "mount_path": "session",
-                "source": "execute_kwargs",
-            }
-        ]
+        return _session_pv_mounts(self.thread_id, sandbox_pv_id, "execute_kwargs")
 
     # ---------- messages 处理流水线（Phase 11.4: 从 agent.py 整合） ----------
     def _sync_checkpoint_messages(self, agent_e: Runnable, cfg: RunnableConfig) -> list[BaseMessage]:
@@ -1335,7 +1329,7 @@ class ChatCompletionAgent(BaseModel):
         if not state.get("runtime_paas_sbx_pv") and self.pv_file_service:
             signed_volume = self.pv_file_service.cached_volume_id(self.thread_id)
             if signed_volume:
-                state["runtime_paas_sbx_pv"] = self._fetch_platform_pv(signed_volume)
+                state["runtime_paas_sbx_pv"] = _session_pv_mounts(self.thread_id, signed_volume, "platform")
         preprocessed = self._prepare_stream_input(
             agent_e,
             cfg,

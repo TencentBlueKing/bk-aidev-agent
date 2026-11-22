@@ -5,8 +5,10 @@
 
 import ast
 import inspect
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Event
 from typing import List, TypedDict, get_type_hints
 from unittest.mock import MagicMock, patch
 
@@ -1521,6 +1523,55 @@ class TestReActAgentBuilder:
         assert backend._snapshot == "release-image"
         assert resolver.resolve_backend("paas_sandbox_skill-1") is backend
         rm.retrieve_skill.assert_called_once_with(skill_id="1", version="1")
+
+    @pytest.mark.parametrize("fail_first", [False, True])
+    def test_activation_and_runtime_share_inflight_detail(self, monkeypatch, fail_first):
+        started, joined, release = Event(), Event(), Event()
+
+        class ObservedFuture(Future):
+            def result(self, timeout=None):
+                joined.set()
+                return super().result(timeout=5)
+
+        monkeypatch.setattr("aidev_agent.core.tools.skill.provider.Future", ObservedFuture)
+        rm = MagicMock()
+        payload = {"skill_markdown": "body", "sandbox": {"image": "release-image"}}
+
+        def fetch(**kwargs):
+            started.set()
+            assert release.wait(5)
+            if fail_first:
+                raise RuntimeError("detail unavailable")
+            return payload
+
+        rm.retrieve_skill.side_effect = fetch
+        resolver = RuntimeBackendResolver()
+        builder = ReActAgentBuilder().set_runtime_backend_resolver(resolver).enable_runtime_paas(True)
+        builder.set_skill_sources(
+            [BkAiBackend(rm, [{"id": 15, "skill_name": "abc", "description": "d", "discovery": {}}])]
+        )
+        builder._resource_manager = rm
+        builder._prepare_skills()
+        with ThreadPoolExecutor(2) as pool:
+            activation = pool.submit(builder._skill_registry.activate_skill, "abc")
+            assert started.wait(5)
+            runtime = pool.submit(resolver.resolve_backend, "paas_sandbox_abc")
+            try:
+                assert joined.wait(5)
+            finally:
+                release.set()
+            assert activation.result()["instructions"] == ("" if fail_first else "body")
+            if fail_first:
+                with pytest.raises(RuntimeError, match="detail unavailable"):
+                    runtime.result()
+            else:
+                assert runtime.result()._snapshot == "release-image"
+        assert rm.retrieve_skill.call_count == 1
+        rm.retrieve_skill.side_effect = None
+        rm.retrieve_skill.return_value = payload
+        assert resolver.resolve_backend("paas_sandbox_abc")._snapshot == "release-image"
+        assert builder._skill_registry.activate_skill("abc")["instructions"] == "body"
+        assert rm.retrieve_skill.call_count == (2 if fail_first else 1)
 
     def test_prepare_skills_paas_sandbox_with_resource_manager(self, tmp_path, monkeypatch):
         """paas_sandbox runtime skill + resource_manager 时应注入 client 到 construct_params"""

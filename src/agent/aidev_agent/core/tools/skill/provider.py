@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import Future
+from threading import Lock
 from typing import Union
 
 from langchain_core.tools import BaseTool, StructuredTool
@@ -35,6 +37,8 @@ class SkillRegistry:
         self._providers: list[SkillProviderBackend] = []
         self._skills: dict[str, SkillOptions] = {}
         self._skill_provider_map: dict[str, SkillProviderBackend] = {}
+        self._detail_lock = Lock()
+        self._loading_details: dict[int, Future[SkillOptions]] = {}
         self._loaded = False
 
         for source in sources:
@@ -125,28 +129,40 @@ class SkillRegistry:
     # ------------------------------------------------------------------
 
     def activate_skill(self, name: str) -> SkillOptions | None:
-        self.ensure_loaded()
-
-        skill = self._skills.get(name)
-        if skill is None:
-            return None
-
-        if "instructions" in skill:
-            return skill
-
-        provider = self._skill_provider_map.get(name)
-        if provider is None:
-            logger.warning(f"激活技能失败 '{name}': 未找到对应的 provider")
-            skill["instructions"] = ""
-            return skill
-
         try:
-            skill["instructions"] = provider.fetch_instructions(skill)
-            logger.debug(f"已激活技能: {name}")
-        except Exception as e:
-            logger.warning(f"激活技能失败 '{name}': {e}")
-            return {**skill, "instructions": ""}
+            return self.load_skill(name)
+        except Exception as exc:
+            logger.warning(f"激活技能失败 '{name}': {exc}")
+            skill = self.get_skill(name)
+            return {**skill, "instructions": ""} if skill is not None else None
 
+    def load_skill(self, name: str) -> SkillOptions | None:
+        """激活与 runtime 共用本轮详情；同时到达的调用共享结果或异常。"""
+        with self._detail_lock:
+            self.ensure_loaded()
+            skill = self._skills.get(name)
+            if skill is None or "instructions" in skill:
+                return skill
+            key = id(skill)
+            owner = key not in self._loading_details
+            if owner:
+                self._loading_details[key] = Future()
+            pending = self._loading_details[key]
+            provider = self._skill_provider_map[name]
+
+        if not owner:
+            return pending.result()
+        try:
+            instructions = provider.fetch_instructions(skill)
+        except BaseException as exc:
+            with self._detail_lock:
+                del self._loading_details[key]
+                pending.set_exception(exc)
+            raise
+        with self._detail_lock:
+            skill["instructions"] = instructions
+            del self._loading_details[key]
+            pending.set_result(skill)
         return skill
 
     # ------------------------------------------------------------------
