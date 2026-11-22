@@ -40,6 +40,32 @@ def test_producer_only_worker_never_claims_consumer(helper, monkeypatch):
     assert not helper.message_handler.has_active_producer(helper.thread_id)
 
 
+@pytest.mark.parametrize("receipt_fails", [False, True])
+def test_worker_claim_spans_preparation_and_production(helper, monkeypatch, receipt_fails):
+    handler = helper.message_handler
+    acquire = Mock(wraps=handler.acquire_producer)
+    release = Mock(wraps=handler.release_producer)
+    monkeypatch.setattr(handler, "acquire_producer", acquire)
+    monkeypatch.setattr(handler, "release_producer", release)
+    runner = ProducerOnlyRunner(Mock(side_effect=RuntimeError("receipt") if receipt_fails else None))
+    helper._producer_runner = runner
+    writer = Mock()
+    with runner.claim(handler, helper.thread_id):
+        assert runner.locked_session == helper.thread_id
+        writer.set_streaming_started()
+        output = helper.stream(iter(["chunk"]), event_handler=writer)
+        if receipt_fails:
+            with pytest.raises(RuntimeError, match="receipt"):
+                list(output)
+        else:
+            assert list(output) == []
+        release.assert_not_called()
+    acquire.assert_called_once_with(helper.thread_id)
+    release.assert_called_once_with(helper.thread_id)
+    writer.set_streaming_started.assert_called_once_with()
+    assert not handler.has_active_producer(helper.thread_id)
+
+
 def test_producer_only_start_failure_releases_lock(helper):
     helper._producer_runner = ProducerOnlyRunner(Mock(side_effect=RuntimeError("state unavailable")))
     with pytest.raises(RuntimeError, match="state unavailable"):

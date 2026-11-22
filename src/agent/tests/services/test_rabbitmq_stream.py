@@ -13,6 +13,7 @@ from aidev_agent.services.messages_handler.constants import EOD_CHUNK
 from aidev_agent.services.messages_handler.rabbitmq import RabbitMQMessageHandler
 from aidev_agent.services.messages_handler.rabbitmq_stream import (
     RabbitMQStreamMessageHandler,
+    StreamReadError,
     _RabbitMQStreamRuntime,
     _StreamSubscription,
 )
@@ -135,6 +136,23 @@ def test_stream_subscription_times_out_without_message():
         subscription.read(offset=0, timeout=0)
 
 
+@pytest.mark.parametrize("recovers", [True, False])
+def test_receipt_retry_never_leaves_a_buffered_started(recovers):
+    handler = _make_handler()
+    failure = BrokerResolutionMaxRetryError("leader unavailable")
+    handler._stream_runtime.publish.side_effect = [failure, [0] if recovers else failure]
+    receipt = {"kind": "started", "run_id": "run"}
+    if recovers:
+        handler.publish_receipt("task", receipt, expires_at=time.time() + 30)
+    else:
+        with pytest.raises(BrokerResolutionMaxRetryError):
+            handler.publish_receipt("task", receipt, expires_at=time.time() + 30)
+    assert handler._stream_runtime.publish.call_count == 2
+    handler.flush("task")
+    assert handler._stream_runtime.publish.call_count == 2
+    assert not handler._message_buffer
+
+
 def test_flush_publishes_coalesced_messages_with_confirm(monkeypatch):
     handler = _make_handler()
     publish_metric = MagicMock()
@@ -214,13 +232,17 @@ def test_get_messages_since_reconnects_after_broker_resolution_failure():
     subscription.read.assert_called_once_with(7, 0.5)
 
 
-def test_get_messages_since_propagates_second_broker_resolution_failure():
-    retry_error = BrokerResolutionMaxRetryError("retry failed")
-    runtime, submitted = _make_runtime([BrokerResolutionMaxRetryError(), None, retry_error])
+@pytest.mark.parametrize(
+    "failure", [TimeoutError, BrokerResolutionMaxRetryError, ConnectionResetError, ConnectionClosed]
+)
+def test_get_messages_since_preserves_transport_error_after_retry(failure):
+    retry_error = failure("retry failed")
+    runtime, submitted = _make_runtime([failure(), None, retry_error])
 
-    with pytest.raises(BrokerResolutionMaxRetryError) as raised:
+    with pytest.raises(StreamReadError) as raised:
         runtime.get_messages_since((1, "thread"), "stream", 7, 0.5)
-    assert raised.value is retry_error
+    assert raised.value.__cause__ is retry_error
+    assert raised.value.cause is retry_error
     assert _submitted_names(submitted) == ["_get_subscription", "_restart_producer", "_get_subscription"]
 
 

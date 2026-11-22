@@ -113,6 +113,8 @@ env.read_env()
 existed_keys = list(locals().keys())
 existed_keys.append("existed_keys")
 
+BK_ADMIN_USERNAME = os.getenv("BKPAAS_ADMIN_USERNAME") or "bk_admin"
+
 
 # begin: 配置
 ENABLE_SIMILARITY_MODEL = env.bool("ENABLE_SIMILARITY_MODEL", False)

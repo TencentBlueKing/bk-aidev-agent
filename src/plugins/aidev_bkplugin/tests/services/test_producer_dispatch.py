@@ -1,14 +1,20 @@
 import json
 import time
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 from aidev_agent.enums import SessionsStatus
 from aidev_agent.pydantic_models import ExecuteKwargs
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
+from aidev_agent.services.messages_handler.rabbitmq_stream import StreamReadError
+from aidev_agent.utils import tracing
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind, StatusCode
 
 
 @pytest.fixture
@@ -63,6 +69,42 @@ def test_publish_failure_reaches_web(spec, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="broker unavailable"):
         ChatDispatcher(spec)._submit(spec)
+
+
+@pytest.mark.parametrize("has_caller_context", [True, False])
+def test_publish_and_worker_inherit_request_context(has_caller_context, spec, handler, worker_executor, monkeypatch):
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
+    publish_context = []
+    sender = Mock(side_effect=lambda *args, **kwargs: publish_context.append(tracing.trace_headers()))
+    monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
+    spec.execute_kwargs = {"stream": False}
+    worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
+
+    with tracer.start_as_current_span("bkplugin.chat.request") as request:
+        request_headers = tracing.trace_headers()
+        if has_caller_context:
+            spec.execute_kwargs["caller_trace_context"] = request_headers
+        ChatDispatcher(spec)._submit(spec)
+    run_chat_producer(**sender.call_args.kwargs["kwargs"])
+
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    enqueue = spans["bkplugin.chat.enqueue"]
+    assert "bkplugin.chat.worker" not in spans
+    assert enqueue.parent.span_id == request.get_span_context().span_id
+    caller = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
+    assert caller == (request_headers if has_caller_context else None)
+    assert publish_context == [request_headers]
+    assert spec.trace_context == request_headers
+    assert enqueue.kind == SpanKind.INTERNAL
+    assert not enqueue.attributes
+    build = spans["bkplugin.chat.worker.build_agent"]
+    assert build.context.trace_id == enqueue.context.trace_id
+    assert build.parent.span_id == request.get_span_context().span_id
+    provider.shutdown()
 
 
 def test_reply_channel_isolated_by_tenant_and_task(spec):
@@ -122,6 +164,16 @@ def test_started_receipt_contains_actual_run_id(spec, handler):
     handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "started", "run_id": "actual-run"})
 
 
+def test_startup_error_supersedes_buffered_started_in_same_batch(spec, handler):
+    handler.get_messages_since.return_value = (
+        [{"kind": "started", "run_id": "run"}, {"kind": "error", "error": "TimeoutError"}],
+        2,
+    )
+    with pytest.raises(RuntimeError, match="TimeoutError"):
+        ChatDispatcher._wait_reply(spec.reply_channel("task"), handler, expected_kind="started", timeout=10)
+    handler.mark_completed.assert_called_once_with(spec.reply_channel("task"))
+
+
 def test_started_after_expiry_does_not_publish_ready(spec, handler):
     with pytest.raises(TimeoutError):
         mark_chat_started(spec, "task-id", time.time() - 1, spec.session_code, "actual-run")
@@ -160,14 +212,62 @@ def test_attach_never_submits(spec, handler, monkeypatch):
 
 
 def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatch):
-    handler.get_messages_since.side_effect = [TimeoutError(), ([{"kind": "started", "run_id": "worker-run"}], 1)]
+    handler.get_messages_since.side_effect = [
+        ([{"kind": "received"}], 1),
+        ([{"kind": "received"}, {"kind": "started", "run_id": "worker-run"}], 3),
+    ]
     helper = Mock()
     helper.stream.return_value = iter(["live-event"])
     monkeypatch.setattr(producer_dispatch, "GeneratorStreamingHelper", Mock(return_value=helper))
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
-    assert json.loads(chunks[0][6:])["event"] == {"type": "heartbeat", "message": "waiting for worker"}
-    assert chunks[1:] == ["live-event"]
-    assert helper.stream.call_args.kwargs == {"expected_run_id": "worker-run", "attach_only": True}
+    assert [json.loads(chunk[6:])["event"]["type"] for chunk in chunks[:-1]] == [
+        "celery_enqueued",
+        "heartbeat",
+        "celery_received",
+    ]
+    assert chunks[-1] == "live-event"
+    assert helper.stream.call_args.kwargs == {
+        "expected_run_id": "worker-run",
+        "attach_only": True,
+        "before_first_chunk": ANY,
+    }
+
+
+@pytest.mark.parametrize("task_id", ["task-id", None])
+def test_waiting_heartbeat_until_first_chunk(spec, handler, monkeypatch, task_id):
+    clock = 0.0
+    monkeypatch.setattr(time, "monotonic", lambda: clock)
+    handler.is_stopped.return_value = False
+    handler.acquire_consumer.return_value = "consumer"
+    handler.CONSUMER_HEARTBEAT_TIMEOUT = 60
+    handler.has_pending_messages.side_effect = lambda _: clock >= 7
+    handler.has_active_producer.side_effect = lambda _: clock >= 7
+
+    def advance(seconds):
+        nonlocal clock
+        clock = round(clock + seconds, 2)
+
+    def poll(channel, offset, timeout):
+        advance(timeout)
+        if channel != spec.session_code and clock >= 7:
+            return [{"kind": "started", "run_id": "worker-run"}], 1
+        if channel == spec.session_code and clock >= (12 if offset == 0 else 20):
+            return [f"chunk-{offset}"], offset + 1
+        raise TimeoutError
+
+    monkeypatch.setattr(time, "sleep", advance)
+    handler.get_messages_since.side_effect = poll
+    stream = ChatDispatcher(spec)._consume(spec, handler, task_id)
+    if task_id:
+        assert json.loads(next(stream)[6:])["event"]["type"] == "celery_enqueued"
+    heartbeat = next(stream)
+    assert [(next(stream), clock) for _ in range(4)] == [
+        (heartbeat, 5),
+        (heartbeat, 10),
+        ("chunk-0", 12),
+        ("chunk-1", 20),
+    ]
+    stream.close()
 
 
 def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkeypatch):
@@ -180,7 +280,7 @@ def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkey
     handler.acquire_producer.assert_not_called()
 
 
-def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, settings):
+def test_worker_rebuilds_identity_options_and_producer_only(spec, handler, monkeypatch, settings):
     factory = Mock()
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = factory
     builder = Mock()
@@ -201,8 +301,22 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
     assert executor.execute_with_save.call_args.args[1].background_only is True
 
 
+def test_worker_without_producer_lock_does_not_start_writer(spec, handler, monkeypatch, settings):
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    builder = Mock()
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    handler.acquire_producer.return_value = False
+
+    with pytest.raises(RuntimeError, match="producer lock"):
+        execute_chat_producer(spec, "task-id", time.time() + 30)
+
+    builder.by_session_code.return_value.event_handler.set_streaming_started.assert_not_called()
+    handler.release_producer.assert_not_called()
+
+
 def test_sse_headers_can_flush_before_worker_receipt(spec, handler):
     stream = ChatDispatcher(spec)._consume(spec, handler, "task-id")
+    assert json.loads(next(stream)[6:])["event"]["type"] == "celery_enqueued"
     chunk = next(stream)
     assert chunk.startswith("data: ") and chunk.endswith("\n\n")
     assert json.loads(chunk[6:]) == {"type": "RAW", "event": {"type": "heartbeat", "message": "waiting for worker"}}
@@ -214,11 +328,11 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
     events = [json.loads(chunk[6:]) for chunk in chunks if chunk.startswith("data: ")]
-    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert [event["type"] for event in events] == ["RAW", "RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[-1]["type"] == "RUN_FINISHED"
 
 
-def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, settings):
+def test_worker_keeps_session_history_instead_of_overwriting(spec, handler, monkeypatch, settings):
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
     history = [{"role": "assistant", "content": "persisted interrupt"}]
     agent = Mock(chat_history=history)
@@ -260,4 +374,25 @@ def test_build_failure_finalizes_session_without_overwriting_active_run(
     else:
         builder.session_manager.update_session_status.assert_not_called()
         handler.release_producer.assert_not_called()
-    handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
+    handler.put.assert_called_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
+    assert handler.put.call_count == (2 if stream else 1)
+
+
+def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatch):
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
+    with provider.get_tracer("test").start_as_current_span("bkplugin.chat.request") as request:
+        spec.trace_context = tracing.trace_headers()
+    handler.get_messages_since.side_effect = StreamReadError(ConnectionResetError())
+    events = [json.loads(chunk[6:]) for chunk in ChatDispatcher(spec)._consume(spec, handler, "task-id")]
+    assert [event["type"] for event in events] == ["RAW", "RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert events[-2]["message"] == "ConnectionResetError"
+    handler.mark_completed.assert_not_called()
+    receipt = next(span for span in exporter.get_finished_spans() if span.name == "bkplugin.chat.web.startup_receipt")
+    assert receipt.parent.span_id == request.get_span_context().span_id
+    assert receipt.status.status_code == StatusCode.ERROR
+    assert receipt.status.description == "ConnectionResetError"
+    assert not receipt.attributes
+    provider.shutdown()

@@ -7,6 +7,8 @@ These settings can be overridden in the main Django project's settings.
 
 import os
 
+BK_ADMIN_USERNAME = os.getenv("BKPAAS_ADMIN_USERNAME") or "bk_admin"
+
 # aidev_wxbot app specific settings
 BK_APIGW_MANAGER_URL_TMPL = os.getenv("BK_APIGW_MANAGER_URL_TMPL")
 BKPAAS_BK_PLUGIN_APIGW_NAME = os.getenv("BKPAAS_BK_PLUGIN_APIGW_NAME", "")

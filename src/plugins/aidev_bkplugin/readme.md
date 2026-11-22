@@ -4,6 +4,17 @@
 
 审批 Web 回调与企业微信跨进程联动见 [DatabaseEventBus 使用说明](docs/database-events.md)。
 
+## Chat 流式响应的 Celery 进度事件
+
+新任务的 SSE 使用 AG-UI 的 `RAW` 事件，客户端可按 `event.type` 区分阶段。
+
+| event.type | 触发时机 | 对应 span |
+| --- | --- | --- |
+| `celery_enqueued` | Web 的 `send_task` 成功返回 | `bkplugin.chat.enqueue` |
+| `celery_received` | worker 进入任务函数、通过启动校验并发送接单回执，Web 读到该回执 | `bkplugin.chat.worker.received` |
+
+等待期间继续发送 `heartbeat`（`waiting for worker`）。接单时 Agent 尚待构建；Web 仍等到 `started` 回执带回 run ID 后才接入业务流。接单进度回执发送失败会记录日志，业务任务继续执行。重新连接已有流不会重复投递或生成这两个事件。
+
 ## 管理命令的指标和 Trace 采集
 
 通过 `manage.py` 或 `django-admin` 运行一次性管理命令（如 `migrate`、

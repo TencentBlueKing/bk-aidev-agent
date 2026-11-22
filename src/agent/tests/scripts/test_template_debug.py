@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import os
+import runpy
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 
@@ -51,3 +56,36 @@ def test_template_celery_worker_listens_to_plugin_agent_and_metric_queues(tmp_pa
     args = subprocess.check_output(["bash", str(project / "bin/start_celery.sh")], env=env, text=True).splitlines()
     assert args[args.index("-Q") + 1] == "plugin_schedule,bkai_agent_task,bkai_agent_metric"
     assert args[args.index("-c") + 1] == expected
+
+
+@pytest.fixture
+def load_plugin_settings(monkeypatch):
+    project = Path(__file__).resolve().parents[4] / "template/builtin/{{cookiecutter.project_name}}"
+    monkeypatch.setenv("BKPAAS_ENVIRONMENT", "dev")
+    monkeypatch.setitem(sys.modules, "pymysql", Mock())
+    module = "bk_plugin_runtime.config.dev"
+    monkeypatch.setitem(sys.modules, module, ModuleType(module))
+    return lambda: runpy.run_path(str(project / "bk_plugin/patch/plugin.py"))
+
+
+@pytest.mark.parametrize("scheme", ["redis", "rediss", "unix"])
+@pytest.mark.parametrize("encoded", [True, False])
+def test_session_queue_url(load_plugin_settings, monkeypatch, scheme, encoded):
+    url = f"{scheme}:///tmp/测试" if scheme == "unix" else f"{scheme}://queue.example.invalid:6379/1"
+    value = base64.b64encode(url.encode()).decode() if encoded else url
+    monkeypatch.setenv("MESSAGE_REDIS_URL", value)
+    monkeypatch.setenv("MESSAGE_HANDLER_TYPE", "auto")
+    load_plugin_settings()
+    assert os.environ["MESSAGE_REDIS_URL"] == url
+
+
+@pytest.mark.parametrize("value", ["not_base64!", "/w==", base64.b64encode(b"https://example.invalid").decode()])
+def test_invalid_session_queue_url(load_plugin_settings, monkeypatch, value):
+    monkeypatch.setenv("MESSAGE_REDIS_URL", value)
+    monkeypatch.setenv("MESSAGE_HANDLER_TYPE", "redis")
+    with pytest.raises(ValueError, match="MESSAGE_REDIS_URL") as exc:
+        load_plugin_settings()
+    assert value not in str(exc.value)
+    monkeypatch.setenv("MESSAGE_HANDLER_TYPE", "rabbitmq")
+    load_plugin_settings()
+    assert os.environ["MESSAGE_REDIS_URL"] == value
