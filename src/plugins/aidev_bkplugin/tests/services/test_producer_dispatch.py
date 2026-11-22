@@ -71,7 +71,7 @@ def test_publish_failure_reaches_web(spec, monkeypatch):
         ChatDispatcher(spec)._submit(spec)
 
 
-def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor, monkeypatch):
+def test_worker_setup_inherits_enqueue_and_agent_keeps_request_context(spec, handler, worker_executor, monkeypatch):
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -83,7 +83,8 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
     with tracer.start_as_current_span("bkplugin.chat.request") as request:
-        spec.execute_kwargs["caller_trace_context"] = tracing.trace_headers()
+        request_headers = tracing.trace_headers()
+        spec.execute_kwargs["caller_trace_context"] = request_headers
         ChatDispatcher(spec)._submit(spec)
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
@@ -92,7 +93,8 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     assert "bkplugin.chat.worker" not in spans
     assert enqueue.parent.span_id == request.get_span_context().span_id
     caller = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
-    assert caller["traceparent"].split("-")[2] == format(enqueue.context.span_id, "016x")
+    assert caller == request_headers
+    assert caller["traceparent"].split("-")[2] == format(request.get_span_context().span_id, "016x")
     assert enqueue.kind == SpanKind.PRODUCER
     build = spans["bkplugin.chat.worker.build_agent"]
     assert build.context.trace_id == enqueue.context.trace_id
