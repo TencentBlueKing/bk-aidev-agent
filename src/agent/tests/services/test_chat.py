@@ -4120,6 +4120,36 @@ class TestBuildKnowledgeQueryOptions:
         assert options.enable_agentic_rag_tool is expected
 
 
+@pytest.mark.parametrize(
+    ("snapshot_session", "bound", "explicit", "expected_id", "source", "reads"),
+    [
+        ("session", "bound", None, "bound", "platform", 0),
+        ("session", "", None, "uploaded", "platform", 1),
+        ("session", None, None, "uploaded", "platform", 1),
+        ("other", "unrelated", None, "uploaded", "platform", 1),
+        ("session", "bound", "explicit", "explicit", "execute_kwargs", 0),
+    ],
+)
+def test_stream_restores_bound_pv(monkeypatch, snapshot_session, bound, explicit, expected_id, source, reads):
+    agent = _seed_agent()
+    agent.thread_id = "session"
+    agent.resource_manager = MagicMock(username="alice")
+    retrieve = agent.resource_manager.retrieve_chat_session
+    retrieve.return_value = {"session_property": {"sandbox_pv_id": "uploaded"}}
+    kwargs = ExecuteKwargs(stream=True, session_code="session", sandbox_pv_id=explicit)
+    kwargs.remember_running_session({"session_code": snapshot_session, "session_property": {"sandbox_pv_id": bound}})
+    agent._sync_session_caller_context(kwargs)
+    retrieve.reset_mock()
+    monkeypatch.setattr(ChatCompletionAgent, "_get_agent", lambda *a, **kw: (MagicMock(), {}))
+    monkeypatch.setattr(ChatCompletionAgent, "_sync_checkpoint_messages", lambda *a: None)
+    stream = MagicMock()
+    monkeypatch.setattr(ChatCompletionAgent, "_stream", stream)
+    agent._execute([HumanMessage(content="hi")], kwargs)
+    (pv,) = stream.call_args.args[2]["runtime_paas_sbx_pv"]
+    assert (pv["volume_id"], pv["source"]) == (expected_id, source)
+    assert retrieve.call_count == reads
+
+
 class TestFetchExecutePv:
     """Tests for ChatCompletionAgent._fetch_execute_pv() (Phase 39)."""
 
