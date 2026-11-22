@@ -75,6 +75,9 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
 
 
 def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: float):
+    execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
+    if execute_kwargs.stream_mode == "attach":
+        raise ValueError("A replay request cannot start a Chat producer")
     factory = getattr(settings, "BKAI_CHAT_RESOURCE_MANAGER_FACTORY", LLMOverrideResourceManager)
     resources = factory(username=spec.username, model=spec.model, tenant_id=spec.tenant_id)
     builder = AgentBuilder(
@@ -102,7 +105,6 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
         except Exception:
             logger.exception("Failed to finalize session after Agent build failure")
         raise
-    execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
     if not execute_kwargs.input and not agent.chat_history:
         raise ValueError("The chat history cannot be empty. Please provide input.")
     # Only an HTTP stream has a separate Web consumer. Synchronous resume
@@ -128,21 +130,22 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
             return executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
         finally:
             handler.release_producer(spec.session_code)
-    # Covers stream setup up to the point where the producer publishes the started receipt.
-    with recording_span("bkplugin.chat.worker.prepare", use_global_tracer=True):
-        event_handler = getattr(agent, "event_handler", None)
-        if event_handler and hasattr(event_handler, "set_streaming_started"):
-            start_with_context = getattr(type(event_handler), "start_with_caller_context", None)
-            if start_with_context is not None:
-                running_session = event_handler.start_with_caller_context(execute_kwargs.to_caller_context())
-            else:
-                running_session = event_handler.set_streaming_started()
-            if running_session is not None and hasattr(execute_kwargs, "remember_running_session"):
-                execute_kwargs.remember_running_session(running_session)
-        output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
-    if execute_kwargs.legacy_streaming:
-        helper = GeneratorStreamingHelper(thread_id=spec.session_code, resource_manager=agent.resource_manager)
-        output = helper.stream(output, expected_run_id=task_id)
-    for _ in output:
-        pass
-    return None
+    with runner.claim(message_handler_factory.get(), spec.session_code):
+        # Covers stream setup up to the point where the producer publishes the started receipt.
+        with recording_span("bkplugin.chat.worker.prepare", use_global_tracer=True):
+            event_handler = getattr(agent, "event_handler", None)
+            if event_handler and hasattr(event_handler, "set_streaming_started"):
+                start_with_context = getattr(type(event_handler), "start_with_caller_context", None)
+                if start_with_context is not None:
+                    running_session = event_handler.start_with_caller_context(execute_kwargs.to_caller_context())
+                else:
+                    running_session = event_handler.set_streaming_started()
+                if running_session is not None and hasattr(execute_kwargs, "remember_running_session"):
+                    execute_kwargs.remember_running_session(running_session)
+            output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)
+        if execute_kwargs.legacy_streaming:
+            helper = GeneratorStreamingHelper(thread_id=spec.session_code, resource_manager=agent.resource_manager)
+            output = helper.stream(output, expected_run_id=task_id)
+        for _ in output:
+            pass
+        return None
