@@ -43,6 +43,14 @@ _SUBSCRIPTION_IDLE_TIMEOUT = HEARTBEAT_INTERVAL * 2
 _STALE_CLIENT_CLOSE_TIMEOUT = 30.0
 
 
+class StreamReadError(RuntimeError):
+    """Stream subscription could not be established after transport recovery."""
+
+    def __init__(self, cause: Exception):
+        super().__init__(type(cause).__name__)
+        self.cause = cause
+
+
 @dataclass
 class _StreamSubscription:
     """一个同步 SSE 消费线程对应的 RabbitMQ Stream 订阅。"""
@@ -452,7 +460,10 @@ class _RabbitMQStreamRuntime:
         offset: int,
         timeout: float | None,
     ) -> tuple[list[Any], int]:
-        subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
+        try:
+            subscription = self._submit_with_reconnect(lambda: self._get_subscription(key, stream, offset))
+        except _RECONNECTABLE_ERRORS as exc:
+            raise StreamReadError(exc) from exc
         return subscription.read(offset, timeout)
 
     async def _close_subscription(self, key: tuple[int, str]) -> None:
@@ -600,6 +611,18 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
                     self._stream_counts.get(thread_id, 0),
                     max(publishing_ids) + 1,
                 )
+
+    def publish_receipt(self, thread_id: str, receipt: dict, *, expires_at: float) -> None:
+        """Publish a task-scoped receipt synchronously, outside the SSE retry buffer."""
+        for attempt in range(2):
+            if time.time() >= expires_at:
+                raise TimeoutError("Chat queue wait expired")
+            try:
+                self._publish_stream_messages(thread_id, [receipt], event_count=1)
+                return
+            except _RECONNECTABLE_ERRORS:
+                if attempt:
+                    raise
 
     def _flush_one_stream(self, thread_id: str, messages: list[Any], background: bool) -> None:
         messages_to_publish = self._coalesce_sse_messages(messages)
