@@ -132,7 +132,11 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
     with recording_span("bkplugin.chat.worker.prepare", use_global_tracer=True):
         event_handler = getattr(agent, "event_handler", None)
         if event_handler and hasattr(event_handler, "set_streaming_started"):
-            running_session = event_handler.set_streaming_started()
+            start_with_context = getattr(type(event_handler), "start_with_caller_context", None)
+            if start_with_context is not None:
+                running_session = event_handler.start_with_caller_context(execute_kwargs.to_caller_context())
+            else:
+                running_session = event_handler.set_streaming_started()
             if running_session is not None and hasattr(execute_kwargs, "remember_running_session"):
                 execute_kwargs.remember_running_session(running_session)
         output = executor.execute_with_save(agent, execute_kwargs, spec.session_code, turn_id=spec.turn_id)

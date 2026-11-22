@@ -95,8 +95,9 @@ class ExecuteKwargs(BaseModel):
         if not isinstance(properties, dict):
             return None
         pv_id = properties.get("sandbox_pv_id")
-        if isinstance(pv_id, str) and pv_id.strip():
-            self._running_pv = (session_code, pv_id)
+        if pv_id is None or isinstance(pv_id, str):
+            # 空串表示同一会话的已知空绑定；None 保留给缺少可信快照的调用。
+            self._running_pv = (session_code, (pv_id or "").strip())
         context = properties.get("caller_context", {})
         return context if isinstance(context, dict) else None
 

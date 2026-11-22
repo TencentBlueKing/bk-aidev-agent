@@ -35,7 +35,9 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Callable
 from functools import partial
+from threading import Lock
 from typing import Annotated, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -289,6 +291,8 @@ class RuntimeBackendResolver:
         session_code: str | None = None,
         security_settings: SecuritySettings | None = None,
     ) -> None:
+        self._lazy_backends: dict[str, Callable[[], RuntimeBackend]] = {}
+        self._lazy_lock = Lock()
         self._backends: dict[str, RuntimeBackend] = {}
         self._backend_cls: dict[str, type] = {}  # runtime 类型名 -> backend 类（唯一事实源）
         self._default_runtime = default_runtime
@@ -413,16 +417,25 @@ class RuntimeBackendResolver:
 
         return self._resolve_backend(runtime)
 
+    def register_lazy_backend(self, name: str, factory: Callable[[], RuntimeBackend]) -> None:
+        self._lazy_backends[name] = factory
+
     def _runtime_param_description(self) -> str:
-        names = sorted(self._backends.keys())
+        names = sorted(self._backends.keys() | self._lazy_backends.keys())
         joined = ", ".join(names) if names else "(none)"
         return f"运行此工具的目标运行时（必填）。可选值: {joined}。"
 
     def _resolve_backend(self, runtime: str) -> RuntimeBackend | str:
         resolved_runtime = runtime
 
+        if resolved_runtime in self._lazy_backends:
+            with self._lazy_lock:
+                factory = self._lazy_backends.get(resolved_runtime)
+                if factory is not None:
+                    factory()
+                    del self._lazy_backends[resolved_runtime]
         if resolved_runtime not in self._backends:
-            available = ", ".join(sorted(self._backends.keys()))
+            available = ", ".join(sorted(self._backends.keys() | self._lazy_backends.keys()))
             raise ValueError(f"Unknown runtime '{resolved_runtime}'. Available runtimes: {available or '(none)'}")
 
         backend = self._backends[resolved_runtime]
@@ -505,6 +518,7 @@ class RuntimeBackendResolver:
 
         此方法是幂等的 — 多次调用不会产生副作用。
         """
+        self._lazy_backends.clear()
         if not self._enable_deferred_destroy:
             try:
                 self._exit_stack.close()

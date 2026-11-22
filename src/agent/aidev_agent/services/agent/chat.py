@@ -105,6 +105,20 @@ except ImportError:  # OpenTelemetry is an optional SDK extra.
 logger = getLogger(__name__)
 
 
+def _session_pv_mounts(thread_id: str, volume_id: str | None, source: str) -> list[dict]:
+    if not volume_id:
+        return []
+    return [
+        {
+            "type": "paas-sbx-pv",
+            "volume_id": volume_id,
+            "volume_name": f"agent-pv-{thread_id}",
+            "mount_path": "session",
+            "source": source,
+        }
+    ]
+
+
 def _to_ledger_dict(record: Any) -> dict:
     """把 chat_history 账本记录归一为 dict 形态。
 
@@ -694,11 +708,10 @@ class ChatCompletionAgent(BaseModel):
             model.default_headers["X-BKAIDEV-Attributes"] = header_value
 
     def _fetch_platform_pv(self, sandbox_pv_id: str | None = None) -> list[dict]:
-        """复用会话已绑定的 PV，缺少绑定时向平台读取最新值。"""
+        """复用 running 快照；已知空绑定留给 PV 节点或文件服务按需读取。"""
         if self.resource_manager is None or not self.thread_id:
             return []
-        if not sandbox_pv_id:
-            # 上传可并发创建卷，running 快照中的空值必须重新读取。
+        if sandbox_pv_id is None:
             try:
                 session = self.resource_manager.retrieve_chat_session(self.thread_id)
                 session_property = (session or {}).get("session_property") or {}
@@ -706,17 +719,7 @@ class ChatCompletionAgent(BaseModel):
             except Exception:
                 logger.warning("restore platform PV failed: session_code=%s", self.thread_id, exc_info=True)
                 return []
-        if not sandbox_pv_id:
-            return []
-        return [
-            {
-                "type": "paas-sbx-pv",
-                "volume_id": sandbox_pv_id,
-                "volume_name": f"agent-pv-{self.thread_id}",
-                "mount_path": "session",
-                "source": "platform",
-            }
-        ]
+        return _session_pv_mounts(self.thread_id, sandbox_pv_id, "platform")
 
     def _fetch_execute_pv(self) -> list[dict]:
         """从 execute_kwargs 读取 sandbox_pv_id，构造 execute_kwargs 来源的 PV 条目。
@@ -733,17 +736,7 @@ class ChatCompletionAgent(BaseModel):
         except Exception:
             logger.warning("fetch execute PV failed: thread_id=%s", self.thread_id, exc_info=True)
             return []
-        if not sandbox_pv_id:
-            return []
-        return [
-            {
-                "type": "paas-sbx-pv",
-                "volume_id": sandbox_pv_id,
-                "volume_name": f"agent-pv-{self.thread_id}",
-                "mount_path": "session",
-                "source": "execute_kwargs",
-            }
-        ]
+        return _session_pv_mounts(self.thread_id, sandbox_pv_id, "execute_kwargs")
 
     # ---------- messages 处理流水线（Phase 11.4: 从 agent.py 整合） ----------
     def _sync_checkpoint_messages(self, agent_e: Runnable, cfg: RunnableConfig) -> list[BaseMessage]:
@@ -1333,6 +1326,10 @@ class ChatCompletionAgent(BaseModel):
         # 快照 messages 数据源为 lossless ChatPrompt 单账本（含本轮 patch 记录并入）；
         # run_id/stream_input 仍用 langchain messages（LLM 路径不受影响）。
         agui_messages = self._build_snapshot_agui_messages()
+        if not state.get("runtime_paas_sbx_pv") and self.pv_file_service:
+            signed_volume = self.pv_file_service.cached_volume_id(self.thread_id)
+            if signed_volume:
+                state["runtime_paas_sbx_pv"] = _session_pv_mounts(self.thread_id, signed_volume, "platform")
         preprocessed = self._prepare_stream_input(
             agent_e,
             cfg,

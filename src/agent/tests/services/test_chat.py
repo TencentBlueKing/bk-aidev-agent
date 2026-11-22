@@ -39,7 +39,7 @@ from aidev_agent.pydantic_models import (
     ModelContextSettings,
 )
 from aidev_agent.services.agent import ChatCompletionAgent
-from aidev_agent.services.agent.chat import ChatAgentBuilder
+from aidev_agent.services.agent.chat import ChatAgentBuilder, _session_pv_mounts
 from aidev_agent.services.agent.factory import AgentInstanceFactory
 from aidev_agent.services.agent.registry import AgentBuildContext, ChatBuildExtras
 from aidev_agent.services.event_handlers.base import BaseSessionWriter
@@ -1550,6 +1550,23 @@ def _vision_agent_with_historical_image(expired: str) -> ChatCompletionAgent:
         resource_manager=MagicMock(),
         executor_info={"app_code": "app", "executor": "luka"},
     )
+
+
+def test_history_image_resolves_volume_after_empty_running_response():
+    agent = _vision_agent_with_historical_image("https://example.test/stale")
+    kwargs = ExecuteKwargs(stream=True, session_code=agent.thread_id)
+    kwargs.remember_running_session({"session_code": agent.thread_id, "session_property": {}})
+    agent._sync_session_caller_context(kwargs)
+    retrieve = agent.resource_manager.retrieve_chat_session
+    retrieve.assert_not_called()
+    retrieve.return_value = {"session_property": {"sandbox_pv_id": "uploaded"}}
+    signer = agent.resource_manager.get_paas_sbx_client.return_value.get_download_url.request
+    signer.return_value.json.return_value = {"download_url": "https://example.test/fresh"}
+    assert agent._build_llm_history()[0].content[0]["url"] == "https://example.test/fresh"
+    assert agent._build_snapshot_agui_messages()[0]["content"][0]["url"] == "https://example.test/fresh"
+    assert agent.pv_file_service.cached_volume_id(agent.thread_id) == "uploaded"
+    assert signer.call_args.kwargs["path_params"]["volume_id"] == "uploaded"
+    retrieve.assert_called_once_with(agent.thread_id)
 
 
 @patch(
@@ -4124,8 +4141,8 @@ class TestBuildKnowledgeQueryOptions:
     ("snapshot_session", "bound", "explicit", "expected_id", "source", "reads"),
     [
         ("session", "bound", None, "bound", "platform", 0),
-        ("session", "", None, "uploaded", "platform", 1),
-        ("session", None, None, "uploaded", "platform", 1),
+        ("session", "", None, None, None, 0),
+        ("session", None, None, None, None, 0),
         ("other", "unrelated", None, "uploaded", "platform", 1),
         ("session", "bound", "explicit", "explicit", "execute_kwargs", 0),
     ],
@@ -4145,9 +4162,23 @@ def test_stream_restores_bound_pv(monkeypatch, snapshot_session, bound, explicit
     stream = MagicMock()
     monkeypatch.setattr(ChatCompletionAgent, "_stream", stream)
     agent._execute([HumanMessage(content="hi")], kwargs)
-    (pv,) = stream.call_args.args[2]["runtime_paas_sbx_pv"]
-    assert (pv["volume_id"], pv["source"]) == (expected_id, source)
+    volumes = stream.call_args.args[2].get("runtime_paas_sbx_pv", [])
+    assert [(pv["volume_id"], pv["source"]) for pv in volumes] == ([(expected_id, source)] if expected_id else [])
     assert retrieve.call_count == reads
+
+
+@pytest.mark.parametrize("source", ["platform", "execute_kwargs"])
+def test_session_pv_mounts_from_known_binding(source):
+    assert _session_pv_mounts("s1", None, source) == []
+    assert _session_pv_mounts("s1", "vol", source) == [
+        {
+            "type": "paas-sbx-pv",
+            "volume_id": "vol",
+            "volume_name": "agent-pv-s1",
+            "mount_path": "session",
+            "source": source,
+        }
+    ]
 
 
 class TestFetchExecutePv:

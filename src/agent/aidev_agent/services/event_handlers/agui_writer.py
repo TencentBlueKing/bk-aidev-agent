@@ -587,6 +587,18 @@ class AGUISessionWriter(BaseSessionWriter):
         """标记流式传输开始（会话状态设为 running）"""
         return self._update_session_status(SessionsStatus.RUNNING.value)
 
+    def start_with_caller_context(self, caller_context: dict) -> dict | None:
+        """平台在写入 running 时补齐调用方字段，并返回已存的身份。"""
+        if (
+            type(self).set_streaming_started is not AGUISessionWriter.set_streaming_started
+            or type(self)._update_session_status is not AGUISessionWriter._update_session_status
+        ):
+            return self.set_streaming_started()
+        payload = {"status": SessionsStatus.RUNNING.value}
+        if caller_context:
+            payload["initial_caller_context"] = caller_context
+        return self._put_session_status(payload)
+
     def set_streaming_finished(self) -> None:
         """
         标记流式传输结束
@@ -612,11 +624,10 @@ class AGUISessionWriter(BaseSessionWriter):
             self._has_run_error = True
 
     def _update_session_status(self, status: str, *, raise_on_failure: bool = False) -> dict | None:
-        """更新会话状态（内部方法）
+        return self._put_session_status({"status": status}, raise_on_failure=raise_on_failure)
 
-        Args:
-            status: 会话状态，如 "running", "finished"
-        """
+    def _put_session_status(self, payload: dict, *, raise_on_failure: bool = False) -> dict | None:
+        status = payload["status"]
         headers = {"X-BKAIDEV-USER": self.username} if self.username else {}
         for attempt in range(self._SESSION_STATUS_MAX_ATTEMPTS):
             try:
@@ -628,7 +639,7 @@ class AGUISessionWriter(BaseSessionWriter):
                 )
                 result = self.client.api.update_chat_session(
                     path_params={"session_code": self.session_code},
-                    json={"status": status},
+                    json=payload,
                     headers=headers,
                 )
                 logger.info(

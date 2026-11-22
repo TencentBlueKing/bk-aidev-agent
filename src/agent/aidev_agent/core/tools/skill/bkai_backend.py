@@ -100,6 +100,11 @@ class BkAiBackend:
         """
         self.client = client
         self.related_skills = related_skills
+        self.deferred_paths = {
+            f"api://{s.get('id')}/{s.get('version', 'latest')}"
+            for s in related_skills
+            if isinstance(s.get("discovery"), dict)
+        }
 
         # 初始化时直接构建 skill_metadata，无需延迟到 discover()
         self.skill_options: list[SkillOptions] = self._build_skill_options(related_skills)
@@ -157,8 +162,17 @@ class BkAiBackend:
 
         try:
             cached = self._get_skill_data(skill_id, version, callee_agent_code)
+            if skill["path"] in self.deferred_paths:
+                metadata = skill.setdefault("metadata", {})
+                sandbox = cached.get("sandbox") or {}
+                metadata["bkai_paas_sandbox"] = sandbox
+                workspace = (sandbox.get("envs") or {}).get("WORKSPACE")
+                if workspace:
+                    return f"{cached.get('_cache_instructions', '')}\n技能工作目录：{workspace}，脚本位于 {workspace}/scripts。"
             return cached.get("_cache_instructions", "")
         except Exception as e:
+            if skill["path"] in self.deferred_paths:
+                raise
             logger.error(
                 f"获取技能指引失败 {skill_name}: {type(e).__name__}: {e}",
                 exc_info=True,
@@ -281,6 +295,14 @@ class BkAiBackend:
             "description": skill_description,
             "path": f"api://{skill_id}/{version}",
         }
+
+        discovery = skill_data.get("discovery")
+        if isinstance(discovery, dict):
+            apply_optional_frontmatter_fields(skill_options, discovery, convert_list_elements=True)
+            skill_options.setdefault("runtime", "paas_sandbox")
+            if callee_agent_code:
+                skill_options.setdefault("metadata", {})["callee_agent_code"] = callee_agent_code
+            return skill_options
 
         # 从 API 获取可选字段（frontmatter）
         try:
