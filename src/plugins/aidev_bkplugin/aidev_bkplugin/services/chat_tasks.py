@@ -11,7 +11,7 @@ from aidev_agent.services.messages_handler import GeneratorStreamingHelper
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
 from aidev_agent.services.resume_events import uses_resume_event_stream
-from aidev_agent.utils.tracing import recording_span
+from aidev_agent.utils.tracing import recording_span, trace_headers
 from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections
@@ -62,7 +62,7 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
         token = attach_trace_context(execution_spec.trace_context)
         with recording_span(
             "bkplugin.chat.worker",
-            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": execution_spec.session_code},
+            attributes={"task_id": task_id, "agent_session_code": execution_spec.session_code},
             kind=SpanKind.CONSUMER if SpanKind else None,
             use_global_tracer=True,
         ):
@@ -107,6 +107,8 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
             logger.exception("Failed to finalize session after Agent build failure")
         raise
     execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
+    if worker_context := trace_headers():
+        execute_kwargs.caller_trace_context = worker_context
     if not execute_kwargs.input and not agent.chat_history:
         raise ValueError("The chat history cannot be empty. Please provide input.")
     # Only an HTTP stream has a separate Web consumer. Synchronous resume

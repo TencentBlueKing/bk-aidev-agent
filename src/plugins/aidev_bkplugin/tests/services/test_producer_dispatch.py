@@ -14,7 +14,7 @@ from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecut
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, StatusCode
 
 
 @pytest.fixture
@@ -82,11 +82,16 @@ def test_worker_spans_continue_from_enqueue_span(spec, handler, worker_executor,
     spec.execute_kwargs = {"stream": False}
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
-    ChatDispatcher(spec)._submit(spec)
+    with tracer.start_as_current_span("bkplugin.chat.request") as request:
+        spec.execute_kwargs["caller_trace_context"] = tracing.trace_headers()
+        ChatDispatcher(spec)._submit(spec)
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
     spans = {span.name: span for span in exporter.get_finished_spans()}
     enqueue, worker = spans["bkplugin.chat.enqueue"], spans["bkplugin.chat.worker"]
+    assert enqueue.parent.span_id == request.get_span_context().span_id
+    caller = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
+    assert caller["traceparent"].split("-")[2] == format(worker.context.span_id, "016x")
     assert enqueue.kind == SpanKind.PRODUCER
     assert worker.kind == SpanKind.CONSUMER
     assert worker.context.trace_id == enqueue.context.trace_id
@@ -342,9 +347,20 @@ def test_build_failure_finalizes_session_without_overwriting_active_run(
     handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
 
 
-def test_exhausted_stream_read_returns_terminal_events(spec, handler):
+def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatch):
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
+    with provider.get_tracer("test").start_as_current_span("bkplugin.chat.enqueue") as enqueue:
+        spec.trace_context = tracing.trace_headers()
     handler.get_messages_since.side_effect = StreamReadError(ConnectionResetError())
     events = [json.loads(chunk[6:]) for chunk in ChatDispatcher(spec)._consume(spec, handler, "task-id")]
     assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[1]["message"] == "ConnectionResetError"
     handler.mark_completed.assert_not_called()
+    receipt = next(span for span in exporter.get_finished_spans() if span.name == "bkplugin.chat.web.startup_receipt")
+    assert receipt.parent.span_id == enqueue.get_span_context().span_id
+    assert receipt.status.status_code == StatusCode.ERROR
+    assert receipt.attributes["error_type"] == "ConnectionResetError"
+    provider.shutdown()

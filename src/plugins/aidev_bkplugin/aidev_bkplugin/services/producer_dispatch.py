@@ -11,7 +11,7 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler, StreamReadError
-from aidev_agent.utils.tracing import recording_span
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from celery import current_app
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,9 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from .background_dispatch import capture_trace_context
 
 try:
-    from opentelemetry.trace import SpanKind
+    from opentelemetry.trace import SpanKind, StatusCode
 except ImportError:
-    SpanKind = None
+    SpanKind = StatusCode = None
 
 CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 
@@ -101,7 +101,7 @@ class ChatDispatcher:
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
         with recording_span(
             "bkplugin.chat.enqueue",
-            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
+            attributes={"task_id": task_id, "agent_session_code": spec.session_code},
             kind=SpanKind.PRODUCER if SpanKind else None,
             use_global_tracer=True,
         ):
@@ -149,6 +149,23 @@ class ChatDispatcher:
                 return
             yield None
 
+    @staticmethod
+    def _record_startup_receipt(
+        spec: ChatExecutionSpec, task_id: str, outcome: str, error_type: str | None = None
+    ) -> None:
+        with (
+            propagated_trace_context(spec.trace_context),
+            recording_span(
+                "bkplugin.chat.web.startup_receipt",
+                attributes={"task_id": task_id, "receipt": outcome},
+                use_global_tracer=True,
+            ) as span,
+        ):
+            if error_type:
+                span.set_attribute("error_type", error_type)
+                if StatusCode is not None and span.is_recording():
+                    span.set_status(StatusCode.ERROR)
+
     def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
         # Flush the HTTP SSE response before waiting for worker startup.
         heartbeat = EventEncoder().encode(
@@ -174,6 +191,7 @@ class ChatDispatcher:
                     spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
                 ):
                     if reply is not None:
+                        self._record_startup_receipt(spec, task_id, "started")
                         run_id = reply["run_id"] or None
                         break
                     if chunk := waiting_heartbeat():
@@ -190,6 +208,9 @@ class ChatDispatcher:
                     time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
             cause = exc.cause if isinstance(exc, StreamReadError) else exc
+            if task_id:
+                outcome = "timeout" if isinstance(exc, TimeoutError) else "error"
+                self._record_startup_receipt(spec, task_id, outcome, type(cause).__name__)
             yield from helper._emit_terminal_error_events(type(cause).__name__)
             return
         yield from helper.stream(
