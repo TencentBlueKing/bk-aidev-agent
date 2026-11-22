@@ -280,7 +280,7 @@ def test_replayed_delivery_is_not_persistent_deduplication(spec, handler, monkey
     handler.acquire_producer.assert_not_called()
 
 
-def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, settings):
+def test_worker_rebuilds_identity_options_and_producer_only(spec, handler, monkeypatch, settings):
     factory = Mock()
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = factory
     builder = Mock()
@@ -301,6 +301,19 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
     assert executor.execute_with_save.call_args.args[1].background_only is True
 
 
+def test_worker_without_producer_lock_does_not_start_writer(spec, handler, monkeypatch, settings):
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    builder = Mock()
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks.AgentBuilder", Mock(return_value=builder))
+    handler.acquire_producer.return_value = False
+
+    with pytest.raises(RuntimeError, match="producer lock"):
+        execute_chat_producer(spec, "task-id", time.time() + 30)
+
+    builder.by_session_code.return_value.event_handler.set_streaming_started.assert_not_called()
+    handler.release_producer.assert_not_called()
+
+
 def test_sse_headers_can_flush_before_worker_receipt(spec, handler):
     stream = ChatDispatcher(spec)._consume(spec, handler, "task-id")
     assert json.loads(next(stream)[6:])["event"]["type"] == "celery_enqueued"
@@ -319,7 +332,7 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     assert events[-1]["type"] == "RUN_FINISHED"
 
 
-def test_worker_keeps_session_history_instead_of_overwriting(spec, monkeypatch, settings):
+def test_worker_keeps_session_history_instead_of_overwriting(spec, handler, monkeypatch, settings):
     settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
     history = [{"role": "assistant", "content": "persisted interrupt"}]
     agent = Mock(chat_history=history)

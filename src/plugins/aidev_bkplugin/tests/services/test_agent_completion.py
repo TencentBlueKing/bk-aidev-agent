@@ -47,12 +47,13 @@ class TestAgentExecutorCompletion:
 
         handler = MagicMock(spec=BaseSessionWriter)
         agent = MagicMock(event_handler=handler)
-        execute_kwargs = MagicMock(stream=True)
+        execute_kwargs = MagicMock(stream=True, legacy_streaming=False)
         with patch.object(AgentExecutor, "execute_with_save", return_value=stream()):
             AgentExecutor.run_agent_to_completion(agent, execute_kwargs, "session-abc", MagicMock())
 
         assert execute_kwargs.background_only is True
         assert lifecycle == ["drained"]
+        handler.set_streaming_started.assert_not_called()
         handler.set_streaming_finished.assert_not_called()
 
     def test_does_not_set_finished_when_stream_drain_fails(self):
@@ -65,7 +66,7 @@ class TestAgentExecutorCompletion:
 
         handler = MagicMock(spec=BaseSessionWriter)
         agent = MagicMock(event_handler=handler)
-        execute_kwargs = MagicMock(stream=True)
+        execute_kwargs = MagicMock(stream=True, legacy_streaming=False)
         with (
             patch.object(AgentExecutor, "execute_with_save", return_value=failing_stream()),
             pytest.raises(RuntimeError, match="heartbeat timeout"),

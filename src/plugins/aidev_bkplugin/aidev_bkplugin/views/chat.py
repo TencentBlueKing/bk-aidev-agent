@@ -295,7 +295,8 @@ class ChatCompletionViewSet(PluginViewSet):
         )
         task_id = None
         resume_action: str = ""
-        if session_code:
+        execute_kwargs = data.get("execute_kwargs")
+        if session_code and getattr(execute_kwargs, "stream_mode", None) != "attach":
             flow_info = session_manager.get_flow_info(session_code)
             if flow_info.get("resume_pending"):
                 resume_task_id = flow_info.get("task_id")
@@ -380,7 +381,7 @@ class ChatCompletionViewSet(PluginViewSet):
         )
 
         try:
-            generator = agent_instance.execute()
+            generator = agent_instance.execute(execute_kwargs)
         except Exception as err:
             logger.exception(f"[FLOW_AGENT] execute error: session_code={session_code}, error={err}")
             message = getattr(err, "message", str(err))
@@ -404,8 +405,6 @@ class ChatCompletionViewSet(PluginViewSet):
             raise ClientBlueException(message=message)
 
         logger.info(f"[FLOW_AGENT] Streaming started: session_code={session_code}, task_id={task_id}")
-        if event_handler and hasattr(event_handler, "set_streaming_started"):
-            event_handler.set_streaming_started()
         return self.streaming_response(generator, session_code=session_code)
 
     def _wrap_streaming_with_status(self, generator, event_handler, session_code: str = "", username: str = ""):

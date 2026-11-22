@@ -1,10 +1,13 @@
 """可选 producer 策略：默认线程或当前 worker 内执行。"""
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from threading import Thread
 
 from typing_extensions import Protocol, runtime_checkable
+
+from .base import BaseMessageQueueHandler
 
 
 @dataclass
@@ -12,6 +15,20 @@ class ProducerOnlyRunner:
     """Run production in a worker without registering a competing consumer."""
 
     on_started: Callable[[str, str], None]
+
+    locked_session: str | None = field(default=None, init=False)
+
+    @contextmanager
+    def claim(self, handler: BaseMessageQueueHandler, session_code: str) -> Iterator[None]:
+        """Hold ownership across worker preparation and inline production."""
+        if not handler.acquire_producer(session_code):
+            raise RuntimeError("Worker could not acquire the producer lock")
+        self.locked_session = session_code
+        try:
+            yield
+        finally:
+            self.locked_session = None
+            handler.release_producer(session_code)
 
     def __call__(self, produce: Callable[[], None]) -> None:
         produce()

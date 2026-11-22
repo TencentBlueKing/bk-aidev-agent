@@ -196,6 +196,21 @@ class TestReplayFromStartStreamingHelper:
         assert enable_heartbeat_check is True
         assert producer_iterated == []
 
+    @pytest.mark.parametrize("attach_only", [True, False])
+    def test_finished_stream_replay_preserves_session_status(self, attach_only):
+        session = "finished-session"
+        handler = ReplayFromStartHandler()
+        handler.put(session, "cached")
+        handler.put(session, EOD_CHUNK)
+        statuses = ["finished"]
+        writer = MagicMock()
+        writer.set_streaming_started.side_effect = lambda: statuses.append("running")
+        helper = GeneratorStreamingHelper(handler, thread_id=session)
+
+        assert not handler.has_active_producer(session)
+        assert list(helper.stream(iter(["new"]), event_handler=writer, attach_only=attach_only)) == ["cached"]
+        assert statuses == ["finished"]
+
     def test_attach_cached_stream_ignores_new_request_run_id(self):
         thread_id = "test_attach_cached_stream"
         handler = ReplayFromStartHandler()
@@ -253,17 +268,20 @@ class TestReplayFromStartStreamingHelper:
         thread_id = "test_replay_on_complete_once"
         handler = ReplayFromStartHandler()
         lifecycle = []
+        writer = MagicMock()
+        writer.set_streaming_started.side_effect = lambda: lifecycle.append("running")
         handler.flush = lambda _thread_id: lifecycle.append("flush")
 
         result = list(
             GeneratorStreamingHelper(handler, thread_id=thread_id).stream(
                 iter(["chunk_0"]),
+                event_handler=writer,
                 on_complete=lambda: lifecycle.append("complete"),
             )
         )
 
         assert result == ["chunk_0"]
-        assert lifecycle == ["flush", "complete"]
+        assert lifecycle == ["running", "flush", "complete"]
         assert thread_id not in handler.producer_locks
 
     def test_replay_mode_propagates_on_complete_failure(self):

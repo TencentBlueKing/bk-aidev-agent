@@ -657,7 +657,11 @@ class GeneratorStreamingHelper:
             return producer_thread, True, True
 
         if not has_pending:
-            producer_acquired = self.message_handler.acquire_producer(self.thread_id)
+            worker_owns_lock = (
+                isinstance(self._producer_runner, ProducerOnlyRunner)
+                and self._producer_runner.locked_session == self.thread_id
+            )
+            producer_acquired = worker_owns_lock or self.message_handler.acquire_producer(self.thread_id)
             if not producer_acquired and self._replace_replay_run:
                 deadline = time.monotonic() + self.CANCEL_DRAIN_TIMEOUT + 2.0
                 while time.monotonic() < deadline and not producer_acquired:
@@ -684,7 +688,8 @@ class GeneratorStreamingHelper:
                 if expected_run_id:
                     self.message_handler.bind_replay_run(self.thread_id, expected_run_id)
             except Exception:
-                self.message_handler.release_producer(self.thread_id)
+                if not worker_owns_lock:
+                    self.message_handler.release_producer(self.thread_id)
                 raise
 
             # OTel 的当前 Span 存在 contextvars 中，而新线程不会自动继承它。
@@ -699,7 +704,7 @@ class GeneratorStreamingHelper:
                     on_complete=on_complete,
                     event_handler=event_handler,
                     expected_run_id=expected_run_id,
-                    release_producer=True,
+                    release_producer=not worker_owns_lock,
                 )
 
             run = partial(producer_context.run, produce)
@@ -719,7 +724,7 @@ class GeneratorStreamingHelper:
             except Exception:
                 # 启动失败由调用方释放；执行已开始则由 producer 的 finally 释放，
                 # 避免重复释放另一请求随后取得的锁。
-                if not started.is_set():
+                if not started.is_set() and not worker_owns_lock:
                     self.message_handler.release_producer(self.thread_id)
                 raise
             logger.info(f"Started producer for thread_id={self.thread_id}")
@@ -1393,6 +1398,10 @@ class GeneratorStreamingHelper:
                 name=f"stream-heartbeat-{self.thread_id[:8]}",
             )
             heartbeat_thread.start()
+            # 自己持锁的 producer 负责写 running；worker 提前持锁时已在准备阶段写入。
+            start_writer = getattr(event_handler, "set_streaming_started", None)
+            if release_producer and start_writer:
+                start_writer()
 
             # stop 可能早于 producer/consumer 注册；启动时必须保留并消费该取消意图。
             if _is_cancel_requested(check_cross_process=True):

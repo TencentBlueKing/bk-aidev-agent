@@ -10,6 +10,7 @@
 """
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -104,5 +105,16 @@ def test_flow_http_does_not_install_second_terminal_status_writer(flow_agent_env
     result = view._handle_flow_agent(_data(), "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock())
 
     assert result == "STREAM"
-    writer_cls.return_value.set_streaming_started.assert_called_once_with()
+    writer_cls.return_value.set_streaming_started.assert_not_called()
     view._wrap_streaming_with_status.assert_not_called()
+
+
+def test_flow_attach_preserves_resume_marker_and_forwards_attach_mode(flow_agent_env):
+    view, build_agent, manager, writer = flow_agent_env
+    options = SimpleNamespace(stream_mode="attach")
+    view._handle_flow_agent(
+        {**_data(), "execute_kwargs": options}, "sc-1", "alice", turn_id="turn-1", resource_manager=MagicMock()
+    )
+    build_agent.return_value.execute.assert_called_once_with(options)
+    manager.set_flow_resume_pending.assert_not_called()
+    writer.return_value.set_streaming_started.assert_not_called()
