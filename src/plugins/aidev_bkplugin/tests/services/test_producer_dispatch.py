@@ -71,20 +71,23 @@ def test_publish_failure_reaches_web(spec, monkeypatch):
         ChatDispatcher(spec)._submit(spec)
 
 
-def test_worker_setup_inherits_enqueue_and_agent_keeps_request_context(spec, handler, worker_executor, monkeypatch):
+@pytest.mark.parametrize("has_caller_context", [True, False])
+def test_publish_and_worker_inherit_request_context(has_caller_context, spec, handler, worker_executor, monkeypatch):
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     tracer = provider.get_tracer("test")
     monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
-    sender = Mock()
+    publish_context = []
+    sender = Mock(side_effect=lambda *args, **kwargs: publish_context.append(tracing.trace_headers()))
     monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
     spec.execute_kwargs = {"stream": False}
     worker_executor.execute_with_save = Mock(return_value={"answer": "done"})
 
     with tracer.start_as_current_span("bkplugin.chat.request") as request:
         request_headers = tracing.trace_headers()
-        spec.execute_kwargs["caller_trace_context"] = request_headers
+        if has_caller_context:
+            spec.execute_kwargs["caller_trace_context"] = request_headers
         ChatDispatcher(spec)._submit(spec)
     run_chat_producer(**sender.call_args.kwargs["kwargs"])
 
@@ -93,12 +96,13 @@ def test_worker_setup_inherits_enqueue_and_agent_keeps_request_context(spec, han
     assert "bkplugin.chat.worker" not in spans
     assert enqueue.parent.span_id == request.get_span_context().span_id
     caller = worker_executor.execute_with_save.call_args.args[1].caller_trace_context
-    assert caller == request_headers
-    assert caller["traceparent"].split("-")[2] == format(request.get_span_context().span_id, "016x")
+    assert caller == (request_headers if has_caller_context else None)
+    assert publish_context == [request_headers]
+    assert spec.trace_context == request_headers
     assert enqueue.kind == SpanKind.PRODUCER
     build = spans["bkplugin.chat.worker.build_agent"]
     assert build.context.trace_id == enqueue.context.trace_id
-    assert build.parent.span_id == enqueue.context.span_id
+    assert build.parent.span_id == request.get_span_context().span_id
     provider.shutdown()
 
 
@@ -365,7 +369,7 @@ def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatc
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
-    with provider.get_tracer("test").start_as_current_span("bkplugin.chat.enqueue") as enqueue:
+    with provider.get_tracer("test").start_as_current_span("bkplugin.chat.request") as request:
         spec.trace_context = tracing.trace_headers()
     handler.get_messages_since.side_effect = StreamReadError(ConnectionResetError())
     events = [json.loads(chunk[6:]) for chunk in ChatDispatcher(spec)._consume(spec, handler, "task-id")]
@@ -373,7 +377,7 @@ def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatc
     assert events[-2]["message"] == "ConnectionResetError"
     handler.mark_completed.assert_not_called()
     receipt = next(span for span in exporter.get_finished_spans() if span.name == "bkplugin.chat.web.startup_receipt")
-    assert receipt.parent.span_id == enqueue.get_span_context().span_id
+    assert receipt.parent.span_id == request.get_span_context().span_id
     assert receipt.status.status_code == StatusCode.ERROR
     assert receipt.attributes["error_type"] == "ConnectionResetError"
     provider.shutdown()

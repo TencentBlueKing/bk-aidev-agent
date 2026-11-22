@@ -54,7 +54,8 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
         if handler.check_cancel_signal(execution_spec.session_code, run_id=task_id):
             handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
             raise RuntimeError("Chat execution cancelled")
-        token = attach_trace_context(execution_spec.trace_context)
+        caller_context = execution_spec.execute_kwargs.get("caller_trace_context")
+        token = attach_trace_context(caller_context or execution_spec.trace_context)
         if execution_spec.execute_kwargs.get("stream", False):
             try:
                 with recording_span("bkplugin.chat.worker.received", use_global_tracer=True):

@@ -98,14 +98,17 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-        with recording_span(
-            "bkplugin.chat.enqueue",
-            attributes={"task_id": task_id, "agent_session_code": spec.session_code},
-            kind=SpanKind.PRODUCER if SpanKind else None,
-            use_global_tracer=True,
+        spec.trace_context = spec.execute_kwargs.get("caller_trace_context") or capture_trace_context()
+        with (
+            recording_span(
+                "bkplugin.chat.enqueue",
+                attributes={"task_id": task_id, "agent_session_code": spec.session_code},
+                kind=SpanKind.PRODUCER if SpanKind else None,
+                use_global_tracer=True,
+            ),
+            # Celery instruments send_task using the active parent at publish time.
+            propagated_trace_context(spec.trace_context),
         ):
-            # Worker spans continue from the enqueue span, so the trace shows queue wait as the gap after it.
-            spec.trace_context = capture_trace_context()
             current_app.send_task(
                 CHAT_TASK_NAME,
                 kwargs={
