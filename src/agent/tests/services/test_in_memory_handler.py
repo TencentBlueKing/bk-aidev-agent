@@ -26,6 +26,7 @@ from aidev_agent.services.messages_handler.config import MessageHandlerConfig
 from aidev_agent.services.messages_handler.constants import EnvVarNames
 from aidev_agent.services.messages_handler.factory import _create_handler, _init_factory
 from aidev_agent.utils.event import RunId, emit_run_finished_event
+from rstream.client import BrokerResolutionMaxRetryError
 
 
 def _event_types(chunks: list[str]) -> list[str]:
@@ -1130,6 +1131,23 @@ class TestInMemoryQueueMessageHandler:
         assert [event.type for event in dispatched] == [EventType.RUN_ERROR, EventType.RUN_FINISHED]
         assert completed == [True]
         assert recorder.record_sse_event.call_count == 3
+
+    def test_broker_resolution_failure_reports_reply_delivery_error(self, handler, monkeypatch):
+        helper = GeneratorStreamingHelper(handler, thread_id="broker-resolution")
+        flush = handler.flush
+        dispatched = []
+
+        def fail_first_flush(thread_id):
+            monkeypatch.setattr(handler, "flush", flush)
+            raise BrokerResolutionMaxRetryError("Failed to connect to internal-host after 3 tries")
+
+        monkeypatch.setattr(handler, "flush", fail_first_flush)
+        started = 'data: {"type":"RUN_STARTED","runId":"run","threadId":"broker-resolution"}\n\n'
+        chunks = list(helper.stream(iter([started]), event_handler=dispatched.append))
+        error, finished = [json.loads(chunk.removeprefix("data: ")) for chunk in chunks[-2:]]
+        assert error["type"] == "RUN_ERROR"
+        assert error["message"] == dispatched[0].message == "无法连接会话消息队列，回复传输中断。请稍后重试。"
+        assert finished["type"] == "RUN_FINISHED"
 
     def test_sse_metrics_count_only_events_enqueued_for_delivery(self, handler, monkeypatch):
         recorder = MagicMock()
