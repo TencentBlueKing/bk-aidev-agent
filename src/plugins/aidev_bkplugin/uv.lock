@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "aidev-agent"
-version = "3.1.4"
+version = "3.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -49,9 +49,9 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/79/77484d0a43c32fbf55917308f7ffdf12b98e79abb145455526b63d1dbc69/aidev_agent-3.1.4.tar.gz", hash = "sha256:91e2deb412b93fc6d45ad5c4ae1781c6ab8a808a7bf893feecfa96dde2622577", size = 1748634, upload-time = "2026-11-19T13:45:10.597Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/13/851c7c40da5f3a7f6e77c507cc329ce27703cb1abffbaf17daef7cb40f37/aidev_agent-3.1.5.tar.gz", hash = "sha256:69b6eca789356fa44586f70975067d94c63150d1445eba32a398f877420eeeea", size = 1760531, upload-time = "2026-11-22T06:43:56.783Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/6c/b18df8e75f2461d5aae330d23e653c26668f7c85d40d8f63818c14240e2e/aidev_agent-3.1.4-py3-none-any.whl", hash = "sha256:969487692d2c0f07a89f01e49ec9ff8a99d6a0b876018df5827af2a66b017d50", size = 1022463, upload-time = "2026-11-19T13:45:06.139Z" },
+    { url = "https://files.pythonhosted.org/packages/82/3e/525ce85c34dc1eebaec553d28e90a84fb28efe1416c686803b2d813dab7e/aidev_agent-3.1.5-py3-none-any.whl", hash = "sha256:ad6f0d8cb62a292ae5940b57c81ee37bdb4582c001711f412c8fb9d710fe53d5", size = 1028954, upload-time = "2026-11-22T06:43:52.4Z" },
 ]
 
 [package.optional-dependencies]
@@ -72,7 +72,7 @@ opentelemetry = [
 
 [[package]]
 name = "aidev-bkplugin"
-version = "3.1.4"
+version = "3.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "aidev-agent" },
@@ -98,7 +98,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aidev-agent", specifier = ">=3.1.4" },
+    { name = "aidev-agent", specifier = ">=3.1.5" },
     { name = "aidev-agent", extras = ["opentelemetry"], marker = "extra == 'opentelemetry'", specifier = ">=2.2.2rc17" },
     { name = "blueapps", specifier = ">=4.16rc8,<4.17.0" },
     { name = "celery", specifier = "==5.4.0" },
