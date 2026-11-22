@@ -99,7 +99,8 @@ def test_publish_and_worker_inherit_request_context(has_caller_context, spec, ha
     assert caller == (request_headers if has_caller_context else None)
     assert publish_context == [request_headers]
     assert spec.trace_context == request_headers
-    assert enqueue.kind == SpanKind.PRODUCER
+    assert enqueue.kind == SpanKind.INTERNAL
+    assert not enqueue.attributes
     build = spans["bkplugin.chat.worker.build_agent"]
     assert build.context.trace_id == enqueue.context.trace_id
     assert build.parent.span_id == request.get_span_context().span_id
@@ -379,5 +380,6 @@ def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatc
     receipt = next(span for span in exporter.get_finished_spans() if span.name == "bkplugin.chat.web.startup_receipt")
     assert receipt.parent.span_id == request.get_span_context().span_id
     assert receipt.status.status_code == StatusCode.ERROR
-    assert receipt.attributes["error_type"] == "ConnectionResetError"
+    assert receipt.status.description == "ConnectionResetError"
+    assert not receipt.attributes
     provider.shutdown()
