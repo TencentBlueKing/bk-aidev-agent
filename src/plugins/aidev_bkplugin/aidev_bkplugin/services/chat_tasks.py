@@ -23,7 +23,7 @@ from aidev_bkplugin.services.producer_dispatch import (
     CHAT_TASK_NAME,
     ChatExecutionSpec,
     send_chat_reply,
-    send_started_reply,
+    send_startup_reply,
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
 
@@ -32,7 +32,7 @@ logger = getLogger(__name__)
 
 def mark_chat_started(spec: ChatExecutionSpec, task_id: str, expires_at: float, thread_id: str, run_id: str) -> None:
     with recording_span("bkplugin.chat.worker.started", use_global_tracer=True):
-        send_started_reply(spec, task_id, run_id, expires_at=expires_at)
+        send_startup_reply(spec, task_id, kind="started", run_id=run_id, expires_at=expires_at)
 
 
 @shared_task(name=CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
@@ -55,6 +55,12 @@ def run_chat_producer(task_id: str, spec: dict, expires_at: float) -> None:
             handler.clear_cancel_signal(execution_spec.session_code, run_id=task_id)
             raise RuntimeError("Chat execution cancelled")
         token = attach_trace_context(execution_spec.trace_context)
+        if execution_spec.execute_kwargs.get("stream", False):
+            try:
+                with recording_span("bkplugin.chat.worker.received", use_global_tracer=True):
+                    send_startup_reply(execution_spec, task_id, kind="received", expires_at=expires_at)
+            except Exception:
+                logger.warning("Failed to publish Celery receive progress for task %s", task_id, exc_info=True)
         result = execute_chat_producer(execution_spec, task_id, expires_at)
         if not execution_spec.execute_kwargs.get("stream", False):
             send_chat_reply(execution_spec, task_id, kind="result", result=result)

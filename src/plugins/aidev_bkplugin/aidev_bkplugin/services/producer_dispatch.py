@@ -61,11 +61,10 @@ def send_chat_reply(spec: ChatExecutionSpec, task_id: str, **reply) -> None:
     handler.flush(channel)
 
 
-def send_started_reply(spec: ChatExecutionSpec, task_id: str, run_id: str, *, expires_at: float) -> None:
+def send_startup_reply(spec: ChatExecutionSpec, task_id: str, *, expires_at: float, **reply) -> None:
     if time.time() >= expires_at:
         raise TimeoutError("Chat queue wait expired")
     handler = message_handler_factory.get()
-    reply = {"kind": "started", "run_id": run_id}
     if isinstance(handler, RabbitMQStreamMessageHandler):
         handler.publish_receipt(spec.reply_channel(task_id), reply, expires_at=expires_at)
     else:
@@ -126,7 +125,7 @@ class ChatDispatcher:
         return next(reply for reply in polls if reply is not None)
 
     @staticmethod
-    def _poll_reply(channel: str, handler, *, expected_kind: str, timeout: float):
+    def _poll_reply(channel: str, handler, *, expected_kind: str, timeout: float, report_received: bool = False):
         deadline = time.monotonic() + timeout
         offset = 0
         while True:
@@ -137,6 +136,9 @@ class ChatDispatcher:
                 replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
                 replies = ()
+            if report_received and any(reply["kind"] == "received" for reply in replies):
+                report_received = False
+                yield {"kind": "received"}
             accepted = [reply for reply in replies if reply["kind"] in ("error", expected_kind)]
             if accepted:
                 reply = accepted[0]
@@ -172,6 +174,10 @@ class ChatDispatcher:
             RawEvent(type=EventType.RAW, event={"type": "heartbeat", "message": "waiting for worker"})
         )
         next_heartbeat = time.monotonic() + WORKER_HEARTBEAT_INTERVAL
+        if task_id:
+            yield EventEncoder().encode(
+                RawEvent(type=EventType.RAW, event={"type": "celery_enqueued", "message": "sent to celery"})
+            )
         yield heartbeat
 
         def waiting_heartbeat():
@@ -188,8 +194,16 @@ class ChatDispatcher:
         try:
             if task_id:
                 for reply in self._poll_reply(
-                    spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
+                    spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout, report_received=True
                 ):
+                    if reply and reply["kind"] == "received":
+                        yield EventEncoder().encode(
+                            RawEvent(
+                                type=EventType.RAW,
+                                event={"type": "celery_received", "message": "received by celery worker"},
+                            )
+                        )
+                        continue
                     if reply is not None:
                         self._record_startup_receipt(spec, task_id, "started")
                         run_id = reply["run_id"] or None

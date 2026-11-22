@@ -205,13 +205,20 @@ def test_attach_never_submits(spec, handler, monkeypatch):
 
 
 def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatch):
-    handler.get_messages_since.side_effect = [TimeoutError(), ([{"kind": "started", "run_id": "worker-run"}], 1)]
+    handler.get_messages_since.side_effect = [
+        ([{"kind": "received"}], 1),
+        ([{"kind": "received"}, {"kind": "started", "run_id": "worker-run"}], 3),
+    ]
     helper = Mock()
     helper.stream.return_value = iter(["live-event"])
     monkeypatch.setattr(producer_dispatch, "GeneratorStreamingHelper", Mock(return_value=helper))
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
-    assert json.loads(chunks[0][6:])["event"] == {"type": "heartbeat", "message": "waiting for worker"}
-    assert chunks[1:] == ["live-event"]
+    assert [json.loads(chunk[6:])["event"]["type"] for chunk in chunks[:-1]] == [
+        "celery_enqueued",
+        "heartbeat",
+        "celery_received",
+    ]
+    assert chunks[-1] == "live-event"
     assert helper.stream.call_args.kwargs == {
         "expected_run_id": "worker-run",
         "attach_only": True,
@@ -244,6 +251,8 @@ def test_waiting_heartbeat_until_first_chunk(spec, handler, monkeypatch, task_id
     monkeypatch.setattr(time, "sleep", advance)
     handler.get_messages_since.side_effect = poll
     stream = ChatDispatcher(spec)._consume(spec, handler, task_id)
+    if task_id:
+        assert json.loads(next(stream)[6:])["event"]["type"] == "celery_enqueued"
     heartbeat = next(stream)
     assert [(next(stream), clock) for _ in range(4)] == [
         (heartbeat, 5),
@@ -287,6 +296,7 @@ def test_worker_rebuilds_identity_options_and_producer_only(spec, monkeypatch, s
 
 def test_sse_headers_can_flush_before_worker_receipt(spec, handler):
     stream = ChatDispatcher(spec)._consume(spec, handler, "task-id")
+    assert json.loads(next(stream)[6:])["event"]["type"] == "celery_enqueued"
     chunk = next(stream)
     assert chunk.startswith("data: ") and chunk.endswith("\n\n")
     assert json.loads(chunk[6:]) == {"type": "RAW", "event": {"type": "heartbeat", "message": "waiting for worker"}}
@@ -298,7 +308,7 @@ def test_startup_failure_is_encoded_as_sse(spec, handler):
     handler.get_messages_since.return_value = ([{"kind": "error", "error": "ValueError"}], 1)
     chunks = list(ChatDispatcher(spec)._consume(spec, handler, "task-id"))
     events = [json.loads(chunk[6:]) for chunk in chunks if chunk.startswith("data: ")]
-    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert [event["type"] for event in events] == ["RAW", "RAW", "RUN_ERROR", "RUN_FINISHED"]
     assert events[-1]["type"] == "RUN_FINISHED"
 
 
@@ -344,7 +354,8 @@ def test_build_failure_finalizes_session_without_overwriting_active_run(
     else:
         builder.session_manager.update_session_status.assert_not_called()
         handler.release_producer.assert_not_called()
-    handler.put.assert_called_once_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
+    handler.put.assert_called_with(spec.reply_channel("task-id"), {"kind": "error", "error": "ValueError"})
+    assert handler.put.call_count == (2 if stream else 1)
 
 
 def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatch):
@@ -356,8 +367,8 @@ def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatc
         spec.trace_context = tracing.trace_headers()
     handler.get_messages_since.side_effect = StreamReadError(ConnectionResetError())
     events = [json.loads(chunk[6:]) for chunk in ChatDispatcher(spec)._consume(spec, handler, "task-id")]
-    assert [event["type"] for event in events] == ["RAW", "RUN_ERROR", "RUN_FINISHED"]
-    assert events[1]["message"] == "ConnectionResetError"
+    assert [event["type"] for event in events] == ["RAW", "RAW", "RUN_ERROR", "RUN_FINISHED"]
+    assert events[-2]["message"] == "ConnectionResetError"
     handler.mark_completed.assert_not_called()
     receipt = next(span for span in exporter.get_finished_spans() if span.name == "bkplugin.chat.web.startup_receipt")
     assert receipt.parent.span_id == enqueue.get_span_context().span_id
