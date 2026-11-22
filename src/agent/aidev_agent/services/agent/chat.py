@@ -523,7 +523,9 @@ class ChatCompletionAgent(BaseModel):
         """
         session_code = self._session_code_for_caller_context(execute_kwargs)
         with recording_span("agent.chat.caller_context.sync", attributes={"agent.session.code": session_code}):
-            stored = self._load_session_caller_context(session_code) if session_code else None
+            stored = execute_kwargs.take_running_caller_context(session_code)
+            if stored is None and session_code:
+                stored = self._load_session_caller_context(session_code)
             execute_kwargs.apply_caller_context(stored, overwrite=bool(execute_kwargs.resume))
             execute_kwargs.apply_session_caller_defaults(getattr(self.resource_manager, "username", None) or None)
             if stored is not None:
@@ -691,22 +693,19 @@ class ChatCompletionAgent(BaseModel):
                 model.default_headers = {}
             model.default_headers["X-BKAIDEV-Attributes"] = header_value
 
-    def _fetch_platform_pv(self) -> list[dict]:
-        """从平台拉取已存在的 sandbox PV，返回包含 PV 信息的列表。
-
-        通过 resource_manager.retrieve_chat_session 获取会话的
-        session_property.sandbox_pv_id，若存在则构造 platform 来源的 PV 条目；
-        失败时返回空列表，不阻塞图执行。
-        """
+    def _fetch_platform_pv(self, sandbox_pv_id: str | None = None) -> list[dict]:
+        """复用会话已绑定的 PV，缺少绑定时向平台读取最新值。"""
         if self.resource_manager is None or not self.thread_id:
             return []
-        try:
-            session = self.resource_manager.retrieve_chat_session(self.thread_id)
-            session_property = (session or {}).get("session_property") or {}
-            sandbox_pv_id = session_property.get("sandbox_pv_id")
-        except Exception:
-            logger.warning("restore platform PV failed: session_code=%s", self.thread_id, exc_info=True)
-            return []
+        if not sandbox_pv_id:
+            # 上传可并发创建卷，running 快照中的空值必须重新读取。
+            try:
+                session = self.resource_manager.retrieve_chat_session(self.thread_id)
+                session_property = (session or {}).get("session_property") or {}
+                sandbox_pv_id = session_property.get("sandbox_pv_id")
+            except Exception:
+                logger.warning("restore platform PV failed: session_code=%s", self.thread_id, exc_info=True)
+                return []
         if not sandbox_pv_id:
             return []
         return [
@@ -1056,7 +1055,7 @@ class ChatCompletionAgent(BaseModel):
 
         # platform_pv 统一在此构造，下传给 _stream_with_legacy / _stream / _invoke
         state: dict[str, Any] = {}
-        platform_pv = self._fetch_execute_pv() or self._fetch_platform_pv()
+        platform_pv = self._fetch_execute_pv() or self._fetch_platform_pv(execute_kwargs.running_pv_id(self.thread_id))
         if platform_pv:
             state["runtime_paas_sbx_pv"] = platform_pv
 

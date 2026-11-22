@@ -583,9 +583,9 @@ class AGUISessionWriter(BaseSessionWriter):
             if message_id is not None and isinstance(prop, dict):
                 self._assistant_message_properties[message_id] = dict(prop)
 
-    def set_streaming_started(self) -> None:
+    def set_streaming_started(self) -> dict | None:
         """标记流式传输开始（会话状态设为 running）"""
-        self._update_session_status(SessionsStatus.RUNNING.value)
+        return self._update_session_status(SessionsStatus.RUNNING.value)
 
     def set_streaming_finished(self) -> None:
         """
@@ -611,7 +611,7 @@ class AGUISessionWriter(BaseSessionWriter):
         if not self._is_cancelled:
             self._has_run_error = True
 
-    def _update_session_status(self, status: str, *, raise_on_failure: bool = False) -> None:
+    def _update_session_status(self, status: str, *, raise_on_failure: bool = False) -> dict | None:
         """更新会话状态（内部方法）
 
         Args:
@@ -634,7 +634,7 @@ class AGUISessionWriter(BaseSessionWriter):
                 logger.info(
                     "会话状态更新成功: session_code=%s, status=%s, result=%s", self.session_code, status, result
                 )
-                return
+                return result.get("data") if isinstance(result, dict) else None
             except Exception:
                 is_last_attempt = attempt == self._SESSION_STATUS_MAX_ATTEMPTS - 1
                 if is_last_attempt:

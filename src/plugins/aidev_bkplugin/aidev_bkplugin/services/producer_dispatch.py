@@ -11,7 +11,7 @@ from aidev_agent.config import settings as agent_settings
 from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler, StreamReadError
-from aidev_agent.utils.tracing import recording_span
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from celery import current_app
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,9 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from .background_dispatch import capture_trace_context
 
 try:
-    from opentelemetry.trace import SpanKind
+    from opentelemetry.trace import StatusCode
 except ImportError:
-    SpanKind = None
+    StatusCode = None
 
 CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 
@@ -61,11 +61,10 @@ def send_chat_reply(spec: ChatExecutionSpec, task_id: str, **reply) -> None:
     handler.flush(channel)
 
 
-def send_started_reply(spec: ChatExecutionSpec, task_id: str, run_id: str, *, expires_at: float) -> None:
+def send_startup_reply(spec: ChatExecutionSpec, task_id: str, *, expires_at: float, **reply) -> None:
     if time.time() >= expires_at:
         raise TimeoutError("Chat queue wait expired")
     handler = message_handler_factory.get()
-    reply = {"kind": "started", "run_id": run_id}
     if isinstance(handler, RabbitMQStreamMessageHandler):
         handler.publish_receipt(spec.reply_channel(task_id), reply, expires_at=expires_at)
     else:
@@ -99,14 +98,12 @@ class ChatDispatcher:
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex
         queue_timeout = getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300)
-        with recording_span(
-            "bkplugin.chat.enqueue",
-            attributes={"bkplugin.chat.task_id": task_id, "agent.session.code": spec.session_code},
-            kind=SpanKind.PRODUCER if SpanKind else None,
-            use_global_tracer=True,
+        spec.trace_context = spec.execute_kwargs.get("caller_trace_context") or capture_trace_context()
+        with (
+            recording_span("bkplugin.chat.enqueue", use_global_tracer=True),
+            # Celery instruments send_task using the active parent at publish time.
+            propagated_trace_context(spec.trace_context),
         ):
-            # Worker spans continue from the enqueue span, so the trace shows queue wait as the gap after it.
-            spec.trace_context = capture_trace_context()
             current_app.send_task(
                 CHAT_TASK_NAME,
                 kwargs={
@@ -126,7 +123,7 @@ class ChatDispatcher:
         return next(reply for reply in polls if reply is not None)
 
     @staticmethod
-    def _poll_reply(channel: str, handler, *, expected_kind: str, timeout: float):
+    def _poll_reply(channel: str, handler, *, expected_kind: str, timeout: float, report_received: bool = False):
         deadline = time.monotonic() + timeout
         offset = 0
         while True:
@@ -137,6 +134,9 @@ class ChatDispatcher:
                 replies, offset = handler.get_messages_since(channel, offset, timeout=min(1, remaining))
             except TimeoutError:
                 replies = ()
+            if report_received and any(reply["kind"] == "received" for reply in replies):
+                report_received = False
+                yield {"kind": "received"}
             accepted = [reply for reply in replies if reply["kind"] in ("error", expected_kind)]
             if accepted:
                 reply = accepted[0]
@@ -149,12 +149,25 @@ class ChatDispatcher:
                 return
             yield None
 
+    @staticmethod
+    def _record_startup_receipt(spec: ChatExecutionSpec, error_type: str | None = None) -> None:
+        with (
+            propagated_trace_context(spec.trace_context),
+            recording_span("bkplugin.chat.web.startup_receipt", use_global_tracer=True) as span,
+        ):
+            if error_type and StatusCode is not None and span.is_recording():
+                span.set_status(StatusCode.ERROR, error_type)
+
     def _consume(self, spec: ChatExecutionSpec, handler, task_id: str | None = None):
         # Flush the HTTP SSE response before waiting for worker startup.
         heartbeat = EventEncoder().encode(
             RawEvent(type=EventType.RAW, event={"type": "heartbeat", "message": "waiting for worker"})
         )
         next_heartbeat = time.monotonic() + WORKER_HEARTBEAT_INTERVAL
+        if task_id:
+            yield EventEncoder().encode(
+                RawEvent(type=EventType.RAW, event={"type": "celery_enqueued", "message": "sent to celery"})
+            )
         yield heartbeat
 
         def waiting_heartbeat():
@@ -171,9 +184,18 @@ class ChatDispatcher:
         try:
             if task_id:
                 for reply in self._poll_reply(
-                    spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout
+                    spec.reply_channel(task_id), handler, expected_kind="started", timeout=timeout, report_received=True
                 ):
+                    if reply and reply["kind"] == "received":
+                        yield EventEncoder().encode(
+                            RawEvent(
+                                type=EventType.RAW,
+                                event={"type": "celery_received", "message": "received by celery worker"},
+                            )
+                        )
+                        continue
                     if reply is not None:
+                        self._record_startup_receipt(spec)
                         run_id = reply["run_id"] or None
                         break
                     if chunk := waiting_heartbeat():
@@ -190,6 +212,8 @@ class ChatDispatcher:
                     time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
             cause = exc.cause if isinstance(exc, StreamReadError) else exc
+            if task_id:
+                self._record_startup_receipt(spec, type(cause).__name__)
             yield from helper._emit_terminal_error_events(type(cause).__name__)
             return
         yield from helper.stream(
