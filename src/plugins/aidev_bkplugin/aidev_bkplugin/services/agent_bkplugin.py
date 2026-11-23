@@ -401,7 +401,9 @@ class BkpluginChat(BkpluginAgentRunner):
             runner = run_producer_inline
             if not ek.resume:
                 runner = ProducerOnlyRunner(
-                    on_started=lambda session, _: manager.update_session_status(session, SessionsStatus.PENDING.value),
+                    on_started=lambda session, _: manager.update_session_status(
+                        session, SessionsStatus.PENDING.value, stream_attachable=False
+                    ),
                     publish_to_queue=False,
                 )
             resources = ProducerResourceManager(

@@ -149,8 +149,11 @@ class ChatCompletionViewSet(PluginViewSet):
             if not execute_kwargs.stream or not session_code:
                 raise ClientBlueException(message="attach requires stream=True and session_code")
             # Authorize access before reading the shared stream; no Agent is built.
-            if not resources.retrieve_chat_session(session_code, headers={"X-BKAIDEV-USER": username}):
+            session = resources.retrieve_chat_session(session_code, headers={"X-BKAIDEV-USER": username})
+            if not session:
                 raise ClientBlueException(message="Chat session not found")
+            if (session.get("session_property") or {}).get("stream_attachable") is False:
+                return Response({"code": "409", "message": "本轮为轮询模式，请通过 schedule 查询结果"}, status=409)
         else:
             if data["thread_id"]:
                 history = [ChatPrompt(role=item["role"], content=item["content"]) for item in data["chat_history"]]
