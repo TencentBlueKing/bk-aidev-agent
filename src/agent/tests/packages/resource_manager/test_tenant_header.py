@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from aidev_agent.api.constants import DEFAULT_TENANT_ID, MCP_ALLOWED_HEADERS_HEADER, TENANT_HEADER
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 
@@ -275,3 +276,48 @@ class TestConstructMcpTenantHeader:
         headers = client_config["srv"]["headers"]
         assert headers[TENANT_HEADER] == DEFAULT_TENANT_ID
         assert headers[MCP_ALLOWED_HEADERS_HEADER] == TENANT_HEADER
+
+
+class TestConstructToolTenantHeader:
+    """``construct_tool`` 的 ``X-Bk-Tenant-Id`` 租户头注入契约（多租户与社区版兼容）。"""
+
+    _TOOL_DATA = {
+        "tool_code": "apigw__bk_sops__get_task",
+        "tool_name": "查询任务",
+        "description": "查询任务详情",
+        "method": "get",
+        "url": "https://gw.example.com/prod/tasks/",
+        "property": {"header": [], "query": [], "body": [], "path": []},
+    }
+
+    @staticmethod
+    def _extract_headers(tool) -> dict[str, str]:
+        func = tool.func
+        wrapper = func if hasattr(func, "_extra") else None
+        if wrapper is None and getattr(func, "__closure__", None):
+            wrapper = next((c.cell_contents for c in func.__closure__ if hasattr(c.cell_contents, "_extra")), None)
+        return dict(wrapper._extra.header or {}) if wrapper else {}
+
+    def _build_rm(self, credential_type: str = "blueapps", tenant_id: str = "") -> AgentResourceManager:
+        rm = AgentResourceManager(app_code="a", app_secret="s", tenant_id=tenant_id)
+        mock_client = MagicMock()
+        mock_client.api.retrieve_tool.return_value = {"data": {**self._TOOL_DATA, "credential_type": credential_type}}
+        rm.get_client = MagicMock(return_value=mock_client)
+        rm.resolve_access_token = MagicMock(return_value="")
+        return rm
+
+    @pytest.mark.parametrize(
+        ("credential_type", "rm_tenant", "executor_info", "expected_tenant"),
+        [
+            ("blueapps", "tenant-x", None, "tenant-x"),
+            ("blueapps", "tenant-x", {"tenant_id": "exec-tenant"}, "exec-tenant"),
+            ("blueapps", "", None, DEFAULT_TENANT_ID),
+            ("custom", "tenant-x", None, "tenant-x"),
+            ("null", "tenant-x", None, None),
+        ],
+    )
+    def test_construct_tool_tenant_header(self, credential_type, rm_tenant, executor_info, expected_tenant):
+        rm = self._build_rm(credential_type=credential_type, tenant_id=rm_tenant)
+        tool = rm.construct_tool(self._TOOL_DATA["tool_code"], executor_info=executor_info)
+        headers = self._extract_headers(tool)
+        assert headers.get(TENANT_HEADER) == expected_tenant

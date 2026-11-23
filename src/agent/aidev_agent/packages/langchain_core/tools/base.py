@@ -235,50 +235,56 @@ class ApiWrapper:
         if self._check_max_call(kwargs):
             return self.CALL_TOO_MUCH_PROMPT
 
+        # 每次调用基于初始默认值构造独立副本，避免覆盖模板 URL 或跨次调用残留参数
+        query = dict(self._query)
+        header = dict(self._header)
+        body = dict(self._body)
+        path = dict(self._path)
+
         for k, v in kwargs.items():
             http_part, field = k.split("__", 1)
             if http_part == "query":
-                self._query[field] = v
+                query[field] = v
             elif http_part == "header":
-                self._header[field] = v
+                header[field] = v
             elif http_part == "path":
-                self._path[field] = v
+                path[field] = v
             else:
-                self._body[field] = v
+                body[field] = v
 
         # 补充内置变量
         context = self._build_render_context(runtime_config, runtime_state)
-        self._header = {k: self._render_variables(v, context) for k, v in self._header.items()} if self._header else {}
-        self._body = {k: self._render_variables(v, context) for k, v in self._body.items()} if self._body else {}
-        self._query = {k: self._render_variables(v, context) for k, v in self._query.items()} if self._query else {}
-        self._path = {k: self._render_variables(v, context) for k, v in self._path.items()} if self._path else {}
-        self._load_body()
+        header = {k: self._render_variables(v, context) for k, v in header.items()} if header else {}
+        body = {k: self._render_variables(v, context) for k, v in body.items()} if body else {}
+        query = {k: self._render_variables(v, context) for k, v in query.items()} if query else {}
+        path = {k: self._render_variables(v, context) for k, v in path.items()} if path else {}
+        self._load_body(body)
         if self._extra:
             if self._extra.query:
-                self._query.update(self._extra.query)
+                query.update(self._extra.query)
             if self._extra.header:
-                self._header.update(self._extra.header)
+                header.update(self._extra.header)
             if self._extra.body:
-                self._body.update(self._extra.body)
+                body.update(self._extra.body)
             if self._extra.path:
-                self._path.update(self._extra.path)
+                path.update(self._extra.path)
         # 审批人凭证只作用于本次请求，且仅替换已有的 APIGW 凭证头，避免发给无需鉴权的工具地址
-        headers = self._header
+        headers = header
         if AUTHORIZATION_HEADER in headers:
             approver_auth = approver_authorization("http", self._tool_code)
             if approver_auth is not None:
                 headers = {**headers, AUTHORIZATION_HEADER: approver_auth}
 
-        # LLM填充url模版
-        self._url = self._build_dynamic_url()
+        # LLM 填充 url 模版（不覆写 self._url，确保同一工具多次调用可替换不同路径参数）
+        request_url = self._build_dynamic_url(path)
 
         try:
             resp = self.session.request(
                 self._method,
-                self._url,
+                request_url,
                 headers=headers if headers else None,
-                params=self._query if self._query else None,
-                json=self._body if self._body else None,
+                params=query if query else None,
+                json=body if body else None,
                 timeout=self._timeout,
             )
             resp.raise_for_status()
@@ -296,12 +302,13 @@ class ApiWrapper:
             _logger.exception(f"failed to run tool: {err}")
             raise ToolException(f"Request ERROR: {err}")
 
-    def _load_body(self):
-        for key in self._body:
-            if key not in self._complex_fields or not isinstance(self._body[key], str):
+    def _load_body(self, body: dict | None = None):
+        target = self._body if body is None else body
+        for key in target:
+            if key not in self._complex_fields or not isinstance(target[key], str):
                 continue
             with contextlib.suppress(json.decoder.JSONDecodeError):
-                self._body[key] = json.loads(self._body[key])
+                target[key] = json.loads(target[key])
 
     def _check_max_call(self, requests: dict) -> bool:
         """检查同个请求是否请求多次"""
@@ -316,11 +323,11 @@ class ApiWrapper:
         self._request_counter[request_hash] += 1
         return False
 
-    def _build_dynamic_url(self) -> str:
+    def _build_dynamic_url(self, path_values: dict | None = None) -> str:
         """构建最终的URL，支持动态路径参数"""
 
-        # 使用当前的路径参数状态（已经合并了默认值和LLM传入值）
-        path_values = self._path
+        # 使用本次请求的路径参数状态（默认回退到初始路径参数字典）
+        resolved_path = self._path if path_values is None else path_values
 
         # 检查是否有路径参数需要处理, 匹配大括号内的参数名
         pattern = r"\{([^}/]+)\}"
@@ -330,13 +337,13 @@ class ApiWrapper:
             return self._url
 
         # 检查是否有未填充的必需路径参数
-        missing_params = [param for param in required_params if param not in path_values]
+        missing_params = [param for param in required_params if param not in resolved_path]
         if missing_params:
             raise ValueError(f"缺少必须的路径参数: {', '.join(missing_params)}")
 
         # 替换路径参数
         result_url = self._url
-        for param, value in path_values.items():
+        for param, value in resolved_path.items():
             if param and isinstance(param, str):
                 result_url = result_url.replace(f"{{{param}}}", str(value))
 
@@ -465,7 +472,7 @@ def make_structured_tool(
     if method in ["get", "delete", "head"]:
         key_list = ["header", "query", "path"]
     elif method in ["post", "put", "patch"]:
-        key_list = ["header", "body", "path"]
+        key_list = ["header", "query", "body", "path"]
     else:
         key_list = ["header", "path"]
     for key in key_list:

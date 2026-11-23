@@ -541,14 +541,17 @@ class BaseResourceManager(abc.ABC):
         # 构造 agent_info：完整的原始配置字典（不对 otel_info 解码，保持原始数据）
         agent_info = dict(res)
 
-        # 兼容 related_tools 新协议：可能为 list[str] 或 dict{"tools": [...]}
+        # 兼容 related_tools 新协议：可能为 list[str] 或 dict{"tools": [...], "apigws": [...]}
         related_tools_data = res.get("related_tools") or []
         if isinstance(related_tools_data, dict):
-            tool_codes = [
-                each.get("tool_code")
-                for each in related_tools_data.get("tools", []) or []
-                if isinstance(each, dict) and each.get("tool_code")
-            ]
+            raw_tool_items = list(related_tools_data.get("tools") or []) + list(related_tools_data.get("apigws") or [])
+            tool_codes = list(
+                dict.fromkeys(
+                    code
+                    for each in raw_tool_items
+                    if (code := each.get("tool_code") if isinstance(each, dict) else each) and isinstance(code, str)
+                )
+            )
         else:
             tool_codes = related_tools_data
 
@@ -644,6 +647,9 @@ class BaseResourceManager(abc.ABC):
             app_code = (executor_info or {}).get("app_code") or self.app_code
             app_secret = (executor_info or {}).get("app_secret") or self.app_secret
             access_token = (executor_info or {}).get("access_token") or self.resolve_access_token(resolved_username)
+            bk_ticket_key = (executor_info or {}).get("bk_ticket_key") or ""
+            bk_ticket_value = (executor_info or {}).get("bk_ticket_value") or ""
+            tenant_id = (executor_info or {}).get("tenant_id") or self.tenant_id
 
             if access_token:
                 auth_info: dict = {"access_token": access_token}
@@ -655,14 +661,22 @@ class BaseResourceManager(abc.ABC):
                 # 仅在用户名非空时携带 bk_username，与 construct_mcp 分支保持一致。
                 if resolved_username:
                     auth_info["bk_username"] = resolved_username
+                # 兼容社区版 bk_token 与内部版 bk_ticket，前端直调缺 access_token 时透传用户票据
+                if bk_ticket_key and bk_ticket_value:
+                    auth_info[bk_ticket_key] = bk_ticket_value
 
-            tool.extra = ToolExtra(header={AUTHORIZATION_HEADER: json.dumps(auth_info)})
+            headers: dict[str, str] = {AUTHORIZATION_HEADER: json.dumps(auth_info)}
+            # 多租户与全租户应用直连网关（blueapps）或工具代理（custom）均需携带 X-Bk-Tenant-Id
+            if tenant_id:
+                headers[TENANT_HEADER] = tenant_id
+            tool.extra = ToolExtra(header=headers)
 
             _logger.info(
                 f"[credential] construct_tool: tool_code={tool_code}, "
                 f"app_code={self.app_code}, rm_type={type(self).__name__}, "
                 f"has_executor_info={bool(executor_info)}, "
                 f"has_access_token={bool(access_token)}, "
+                f"tenant_id={tenant_id or 'empty'}, "
                 f"username={resolved_username or ''}"
             )
             return make_structured_tool(tool, ssl_verify=ssl_verify)

@@ -21,6 +21,9 @@ import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from langchain_core.tools import StructuredTool
+from langchain_core.tools.base import ToolException
+
 from aidev_agent.config import settings
 from aidev_agent.packages.langchain_core.tools.base import (
     MCPExceptionWrapper,
@@ -32,8 +35,6 @@ from aidev_agent.packages.langchain_core.tools.base import (
 from aidev_agent.packages.resource_manager.agent import AgentResourceManager
 from aidev_agent.packages.resource_manager.registry import resource_manager
 from aidev_agent.pydantic_models import ExecuteKwargs
-from langchain_core.tools import StructuredTool
-from langchain_core.tools.base import ToolException
 
 # ================== make_structured_tool Mock 测试 ==================
 
@@ -1323,6 +1324,36 @@ def test_construct_tool_skips_header_when_credential_type_is_null(sample_weather
             {"access_token": "dummy_exec_value"},
             id="with_access_token",
         ),
+        # 社区版缺 access_token 时透传 bk_token
+        pytest.param(
+            "",
+            {
+                "username": "alice",
+                "executor_info": {"bk_ticket_key": "bk_token", "bk_ticket_value": "open_token_val"},
+            },
+            {
+                "bk_app_code": "dummy_app",
+                "bk_app_secret": "dummy_credential",
+                "bk_username": "alice",
+                "bk_token": "open_token_val",
+            },
+            id="with_open_bk_token",
+        ),
+        # 内部版缺 access_token 时透传 bk_ticket
+        pytest.param(
+            "",
+            {
+                "username": "alice",
+                "executor_info": {"bk_ticket_key": "bk_ticket", "bk_ticket_value": "ieod_ticket_val"},
+            },
+            {
+                "bk_app_code": "dummy_app",
+                "bk_app_secret": "dummy_credential",
+                "bk_username": "alice",
+                "bk_ticket": "ieod_ticket_val",
+            },
+            id="with_ieod_bk_ticket",
+        ),
     ],
 )
 def test_construct_tool_injects_expected_authorization_header(
@@ -1333,7 +1364,8 @@ def test_construct_tool_injects_expected_authorization_header(
     覆盖场景：
     - 纯应用态（无任何 username 来源）不含 bk_username 字段；
     - 仅显式 username / 仅 self.username 回退 / 显式 username 覆盖 self.username；
-    - executor_info.access_token 优先，其他字段被忽略。
+    - executor_info.access_token 优先，其他字段被忽略；
+    - 缺 access_token 时透传社区版 bk_token 或内部版 bk_ticket。
     """
     rm = _rm_with_mocked_client(sample_weather_tool_data)
     rm.username = self_username
@@ -1343,3 +1375,60 @@ def test_construct_tool_injects_expected_authorization_header(
     auth_header = _extract_auth_header(tool)
     assert auth_header is not None
     assert json.loads(auth_header) == expected_auth
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
+def test_make_structured_tool_path_params_reusable_across_invocations(mock_session_class, sample_path_param_tool_data):
+    """同一工具多次调用不同路径参数时，URL 模板与参数互不污染。"""
+    mock_response = Mock()
+    mock_response.json.return_value = {"ok": True}
+    mock_response.headers.get.return_value = "application/json"
+    mock_response.raise_for_status = Mock()
+
+    mock_session = Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_class.return_value = mock_session
+
+    structured_tool = make_structured_tool(Tool.model_validate(sample_path_param_tool_data))
+    structured_tool.invoke({"path__user_id": "101"})
+    structured_tool.invoke({"path__user_id": "202"})
+
+    urls = [call[0][1] for call in mock_session.request.call_args_list]
+    assert urls == ["https://api.example.com/users/101", "https://api.example.com/users/202"]
+
+
+@patch("aidev_agent.packages.langchain_core.tools.base.requests.Session")
+def test_make_structured_tool_post_supports_query_and_body(mock_session_class, sample_post_tool_data):
+    """POST/PUT/PATCH 工具支持同时传递 query 与 body 参数。"""
+    mock_response = Mock()
+    mock_response.json.return_value = {"ok": True}
+    mock_response.headers.get.return_value = "application/json"
+    mock_response.raise_for_status = Mock()
+
+    mock_session = Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_class.return_value = mock_session
+
+    post_data = {
+        **sample_post_tool_data,
+        "property": {
+            **sample_post_tool_data["property"],
+            "query": [
+                {
+                    "name": "bk_biz_id",
+                    "required": True,
+                    "type": "integer",
+                    "default": "",
+                    "validate": {"enable": False, "rules": []},
+                    "description": "业务 ID",
+                }
+            ],
+        },
+    }
+    structured_tool = make_structured_tool(Tool.model_validate(post_data))
+    structured_tool.invoke({"query__bk_biz_id": 2, "body__username": "alice", "body__email": "a@example.com"})
+
+    call_kwargs = mock_session.request.call_args.kwargs
+    assert call_kwargs["params"] == {"bk_biz_id": 2}
+    assert call_kwargs["json"]["username"] == "alice"
+    assert call_kwargs["json"]["email"] == "a@example.com"
