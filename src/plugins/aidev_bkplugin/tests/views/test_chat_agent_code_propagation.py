@@ -38,7 +38,7 @@ def test_create_passes_request_scoped_agent_code_to_serializer(monkeypatch):
         def is_valid(self, raise_exception=False):
             raise RuntimeError("stop-after-context-capture")
 
-    monkeypatch.setattr(mod.ChatCompletionViewSet, "request_serializer", _CapturingSerializer)
+    monkeypatch.setattr(mod, "ChatCompletionRequestSerializer", _CapturingSerializer)
 
     rm = MagicMock()
     rm.get_agent_code.return_value = "sub-agent"

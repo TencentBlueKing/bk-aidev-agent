@@ -2,7 +2,6 @@
 """标准运维插件核心契约：Session 轮询 + Chat / Flow 编排。"""
 
 import sys
-from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -138,43 +137,27 @@ class TestBkpluginExecution:
         ):
             mock_info.return_value = {"agent_type": agent_type.value, "prompt_setting": {"content": []}}
             mock_sm = mock_sm_cls.return_value
-            mock_sm.agent_code = "agent"
-            mock_sm.resource_manager.tenant_id = "tenant"
-            mock_sm.get_or_create_by_thread_id.return_value = "sess-1"
             mock_sm.prepare_session_turn.return_value = ("sess-1", "turn-1")
             task = MagicMock()
             agent = build_bkplugin_runner(
                 chat_history=[],
-                execute_kwargs={"session_code": "thread-1", "turn_id": "turn-1"},
+                execute_kwargs={"session_code": "thread-1"},
                 input_text="hi",
                 username="alice",
             )
-            with (
-                patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task),
-                patch.object(agent_bkplugin, "reserve_poll_turn", return_value=nullcontext("ticket")),
-                patch.object(agent_bkplugin.ChatDispatcher, "submit_poll") as poll,
-            ):
+            with patch("aidev_bkplugin.services.agent_bkplugin.run_bkplugin_background_agent_task", task):
                 storage = agent.dispatch_async()
 
         mock_sm.prepare_session_turn.assert_called_once_with(
             "thread-1",
             input_text="hi",
             turn_id=ANY,
-            **(
-                {"session_code": "sess-1"}
-                if agent_type == AgentType.CHAT
-                else {"channel_type": ChannelType.BKPLUGIN.value}
-            ),
+            channel_type=ChannelType.BKPLUGIN.value,
         )
         assert storage["turn_id"] and storage["agent_type"] == agent_type.value
-        if agent_type == AgentType.CHAT:
-            poll.assert_called_once()
-            assert poll.call_args.args[0].stream is False
-            assert storage["response_mode"] == "poll"
-            task.delay.assert_not_called()
-        else:
-            assert task.delay.call_args.kwargs["execute_payload"]["stream"] is True
-            poll.assert_not_called()
+        task.delay.assert_called_once()
+        assert task.delay.call_args.kwargs["execute_payload"]["turn_id"] == "turn-1"
+        assert task.delay.call_args.kwargs["execute_payload"]["stream"] is True
 
     def test_enqueue_background_uses_delay(self):
         from aidev_bkplugin.services.agent_bkplugin import BkpluginChat
@@ -385,7 +368,10 @@ def test_worker_injects_inline_resources_and_restores_execution(agent_type, monk
     runner.run_worker("session", {"stream": True, "turn_id": "turn"})
     resource_key = "resource_manager" if agent_type == AgentType.CHAT else "flow_resource_manager"
     manager = build.call_args.kwargs[resource_key]
-    assert manager.get_producer_runner() is run_producer_inline
+    if agent_type == AgentType.CHAT:
+        assert manager.get_producer_runner().publish_to_queue is False
+    else:
+        assert manager.get_producer_runner() is run_producer_inline
     assert "producer_runner" not in build.call_args.kwargs
     assert runner._worker_execution is False
 
@@ -451,7 +437,7 @@ def test_worker_keeps_custom_default_resources(monkeypatch):
     runner.run_worker("session", {"stream": True, "turn_id": "turn"})
     manager = build.call_args.kwargs["resource_manager"]
     assert manager.get_client is custom.get_client
-    assert manager.get_producer_runner() is run_producer_inline
+    assert manager.get_producer_runner().publish_to_queue is False
     assert not hasattr(custom, "get_producer_runner")
 
 
@@ -464,4 +450,8 @@ def test_worker_chat_selects_resume_history(monkeypatch, resume):
     runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
     runner.run_worker("session", {"stream": True, "resume": resume})
     assert build.call_args.kwargs["resume"] is bool(resume)
-    assert build.call_args.kwargs["resource_manager"].get_producer_runner() is run_producer_inline
+    producer = build.call_args.kwargs["resource_manager"].get_producer_runner()
+    if resume:
+        assert producer is run_producer_inline
+    else:
+        assert producer.publish_to_queue is False

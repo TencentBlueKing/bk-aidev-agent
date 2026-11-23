@@ -52,22 +52,3 @@ BK Plugin 沿用 `dispatch_async()` 的 Celery 入口，直接调用 `run_bkplug
 原插件后台路径仍有异步事件循环、心跳与清理线程，不代表整个 SDK 无线程。跨进程 SSE 续流仍需共享消息后端，InMemory 只适用于单进程。普通 Chat 的远端投递不改变原插件后台任务的去重、取消与重连契约。
 
 已关闭 executor 的 DNS 提交异常仍需结合进程生命周期排查。本改动消除 worker 依赖独立 producer 线程的生命周期风险，并不证明线上 executor 关闭来源。
-
-### 只轮询普通 Chat 的状态和最终回复
-
-标准运维 Plugin 2.0 的普通 Chat 自动使用会话轮询。首次调用投递 Celery，后续使用原有的 POLL 接口。Flow 和显式审批恢复沿用原执行路径。
-
-OpenAPI 调用示例（路径相对于应用态 OpenAPI 的挂载点）。
-
-```http
-POST agent/chat_completion/
-Content-Type: application/json
-
-{"input":"总结本次巡检结果","response_mode":"poll"}
-```
-
-投递成功返回 HTTP 200，响应数据包含 `session_code` 和 `turn_id`。使用同一调用身份查询 `GET agent/session/{session_code}/poll/?turn_id={turn_id}`。`state` 为 `RUNNING` 时继续轮询，为 `SUCCESS` 时从 `output` 读取最终回复，为 `FAILED` 时从 `output` 读取失败原因。同一会话已有任务时，轮询提交返回 HTTP 409。普通同步、SSE 和审批恢复使用原请求格式。
-
-两种入口共用 `run_poll_chat` 任务，worker 执行模型并将最终回复写回会话。任务执行期间，会话维持 `pending`，轮询返回 `RUNNING`，用户打开会话时前端读取历史记录。轮询不创建 SSE producer、回放流或回执队列。
-
-升级时先执行 `aidev_bkplugin` 数据库迁移，再更新 Celery worker，最后开启新版本 Web 流量。在途任务表保存会话键、轮次、任务票据、领取状态和截止时间，完成后删除。超过排队与执行等待期限的任务在下一次轮询或提交时标为失败。

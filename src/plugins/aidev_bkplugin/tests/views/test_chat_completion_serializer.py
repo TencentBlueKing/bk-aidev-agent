@@ -14,10 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidev_agent.pydantic_models import ExecuteKwargs
-from aidev_bkplugin.serializers.chat_completion import (
-    ChatCompletionRequestSerializer,
-    OpenapiChatCompletionRequestSerializer,
-)
+from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from rest_framework.exceptions import ValidationError
 
 
@@ -117,6 +114,7 @@ class TestChatCompletionRequestSerializerExecuteKwargs:
         )
         attach.is_valid(raise_exception=True)
         assert attach.validated_data["execute_kwargs"].stream_mode == "attach"
+
 
     def test_mode_defaults_to_default_and_legal_values_pass_through(self):
         """REQ-8 / REQ-9：mode 缺省为 default，合法值原样透传。"""
@@ -263,23 +261,3 @@ class TestChatCompletionRequestSerializerModelAccess:
             s = ChatCompletionRequestSerializer(data={"input": "hi"}, context={"username": "alice"})
             s.is_valid(raise_exception=True)
         mock_access.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "extra, valid",
-    [
-        ({}, True),
-        ({"execute_kwargs": {"stream": True}}, False),
-        ({"execute_kwargs": {"stream_mode": "attach"}}, False),
-        ({"resume": [{"interruptId": "x"}]}, False),
-    ],
-)
-def test_openapi_poll_is_explicit_and_non_streaming(extra, valid):
-    payload = {"input": "hello", "response_mode": "poll", **extra}
-    serializer = OpenapiChatCompletionRequestSerializer(data=payload)
-    assert serializer.is_valid() is valid
-    if valid:
-        assert serializer.validated_data["response_mode"] == "poll"
-        standard = ChatCompletionRequestSerializer(data=payload)
-        assert standard.is_valid()
-        assert "response_mode" not in standard.validated_data

@@ -29,9 +29,6 @@ CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 WORKER_HEARTBEAT_INTERVAL = 5
 
 
-POLL_CHAT_TASK_NAME = "aidev_bkplugin.run_poll_chat"
-
-
 class ChatExecutionSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,21 +94,6 @@ class ChatDispatcher:
             expected_kind="result",
             timeout=getattr(settings, "BKAI_CHAT_WAIT_TIMEOUT", 1800),
         )["result"]
-
-    def submit_poll(self, execute_kwargs, ticket: str, *, chat_context: list[dict] | None = None) -> None:
-        spec = self.spec.model_copy(update={"execute_kwargs": execute_kwargs.model_dump(mode="json")})
-        spec.trace_context = execute_kwargs.caller_trace_context or capture_trace_context()
-        # The worker checks the deadline so an expired task can still finalize the session.
-        current_app.send_task(
-            POLL_CHAT_TASK_NAME,
-            kwargs={
-                "spec": spec.model_dump(mode="json"),
-                "ticket": ticket,
-                "chat_context": chat_context,
-                "expires_at": time.time() + getattr(settings, "BKAI_CHAT_QUEUE_TIMEOUT", 300),
-            },
-            queue=agent_settings.BKAI_AGENT_TASK,
-        )
 
     def _submit(self, spec: ChatExecutionSpec) -> str:
         task_id = uuid.uuid4().hex

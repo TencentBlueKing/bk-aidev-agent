@@ -2,7 +2,6 @@
 
 from logging import getLogger
 
-from aidev_agent.enums import ChannelType
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework.decorators import action
@@ -10,10 +9,8 @@ from rest_framework.response import Response
 
 from aidev_bkplugin.packages.apigw.permissions import ApigwPermission
 from aidev_bkplugin.permissions import AgentPluginPermission
-from aidev_bkplugin.serializers.chat_completion import OpenapiChatCompletionRequestSerializer
+from aidev_agent.enums import ChannelType
 from aidev_bkplugin.services.agent_helpers import AgentHelper
-from aidev_bkplugin.services.agent_session import SessionManager
-from aidev_bkplugin.services.session_poll import poll_turn_result
 from aidev_bkplugin.views.agent import AgentInfoViewSet
 from aidev_bkplugin.views.base import PluginViewSet
 from aidev_bkplugin.views.chat import ChatCompletionViewSet
@@ -50,8 +47,6 @@ class OpenapiPluginViewSet(PluginViewSet):
 
 
 class OpenapiChatCompletionViewSet(OpenapiPluginViewSet, ChatCompletionViewSet):
-    request_serializer = OpenapiChatCompletionRequestSerializer
-
     @property
     def channel_type(self):
         return ChannelType.API.value
@@ -77,16 +72,6 @@ class OpenapiAgentAbilitiesViewSet(OpenapiPluginViewSet):
 
 
 class OpenapiChatSessionViewSet(OpenapiPluginViewSet, ChatSessionViewSet):
-    @action(detail=True, methods=["GET"])
-    def poll(self, request, pk=None):
-        turn_id = request.query_params.get("turn_id")
-        if not turn_id:
-            return Response({"code": "400", "message": "turn_id is required"}, status=400)
-        resources = self.get_resource_manager()
-        manager = SessionManager(self.get_username(), agent_code=resources.get_agent_code(), resource_manager=resources)
-        state, output = poll_turn_result(manager, pk, turn_id)
-        return Response({"state": state.value, "output": output})
-
     @property
     def channel_type(self):
         return ChannelType.API.value
@@ -106,3 +91,5 @@ class OpenapiUserOperationViewSet(OpenapiPluginViewSet, UserOperationViewSet):
 
 class OpenapiLLMViewSet(OpenapiPluginViewSet, LLMViewSet):
     """应用态 LLM 列表接口：供小鲸等已发布智能体入口拉取空间可用模型。"""
+
+    pass

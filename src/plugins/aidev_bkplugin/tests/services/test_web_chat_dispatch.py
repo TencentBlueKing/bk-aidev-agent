@@ -1,6 +1,5 @@
 """HTTP Chat keeps SSE while delegating construction exclusively to the worker."""
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -15,7 +14,7 @@ from aidev_bkplugin.views import chat
 def remote_view(monkeypatch):
     resources = Mock(app_code="test-app", tenant_id="tenant")
     resources.get_agent_code.return_value = "agent"
-    manager = Mock(username="alice", agent_code="agent")
+    manager = Mock()
     manager.prepare_chat_history.return_value = ("session", "saved-turn")
     monkeypatch.setattr(chat, "SessionManager", Mock(return_value=manager))
     builder = Mock(side_effect=AssertionError("Web must not build an Agent"))
@@ -49,7 +48,7 @@ def test_create_dispatches_sync_and_resume_without_build(
         agent_type="chat",
     )
     serializer = Mock(validated_data=data)
-    monkeypatch.setattr(chat.ChatCompletionViewSet, "request_serializer", Mock(return_value=serializer))
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=serializer))
     expected = iter(["data: event\n\n"]) if stream else {"answer": "done"}
     remote_view.dispatcher.execute.return_value = expected
     response = remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
@@ -105,7 +104,7 @@ def test_attach_authorization_failure_never_consumes_stream(remote_view):
 def test_attach_does_not_create_session_even_with_persist_input(remote_view, monkeypatch):
     ek = ExecuteKwargs(stream=True, stream_mode="attach", persist_input=True)
     data = dict(execute_kwargs=ek, session_code="session", thread_id="", input="", chat_history=[], agent_type="chat")
-    monkeypatch.setattr(chat.ChatCompletionViewSet, "request_serializer", Mock(return_value=Mock(validated_data=data)))
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=Mock(validated_data=data)))
     remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
     remote_view.manager.get_or_create_by_session_code.assert_not_called()
     remote_view.manager.prepare_chat_history.assert_not_called()
@@ -122,7 +121,7 @@ def test_dispatch_failure_never_falls_back_to_web(remote_view, monkeypatch, stre
         chat_history=[],
         agent_type="chat",
     )
-    monkeypatch.setattr(chat.ChatCompletionViewSet, "request_serializer", Mock(return_value=Mock(validated_data=data)))
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=Mock(validated_data=data)))
     remote_view.dispatcher.execute.side_effect = RuntimeError("broker unavailable")
     with pytest.raises(Exception, match="broker unavailable"):
         remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
@@ -140,7 +139,7 @@ def test_flow_uses_existing_entry_without_chat_dispatch(remote_view, monkeypatch
         chat_history=[],
         agent_type="flow",
     )
-    monkeypatch.setattr(chat.ChatCompletionViewSet, "request_serializer", Mock(return_value=Mock(validated_data=data)))
+    monkeypatch.setattr(chat, "ChatCompletionRequestSerializer", Mock(return_value=Mock(validated_data=data)))
     remote_view.view._save_user_input = Mock(return_value="turn")
     remote_view.view._handle_flow_agent = Mock(return_value="flow-response")
     response = remote_view.view.create(SimpleNamespace(data={}, user=SimpleNamespace(username="alice")))
@@ -148,15 +147,3 @@ def test_flow_uses_existing_entry_without_chat_dispatch(remote_view, monkeypatch
     remote_view.view._handle_flow_agent.assert_called_once()
     remote_view.dispatcher.execute.assert_not_called()
     remote_view.builder.assert_not_called()
-
-
-def test_poll_submits_and_returns_turn_without_waiting(remote_view, monkeypatch):
-    monkeypatch.setattr(chat, "reserve_poll_turn", Mock(return_value=nullcontext("ticket")))
-    view = remote_view.view
-    data = dict(execute_kwargs=ExecuteKwargs(), response_mode="poll", thread_id="", input="question", chat_history=[])
-    response = view._dispatch_chat(data, "alice", remote_view.resources, "session", "turn")
-    assert response.status_code == 200
-    assert response.data == {"session_code": "session", "turn_id": "turn"}
-    remote_view.dispatcher.submit_poll.assert_called_once_with(data["execute_kwargs"], "ticket")
-    remote_view.dispatcher.execute.assert_not_called()
-    view.streaming_response.assert_not_called()

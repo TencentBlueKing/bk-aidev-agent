@@ -21,15 +21,12 @@ from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.chat_tracing import chat_request_span
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
-from aidev_bkplugin.services.session_poll import PollSessionBusy, PollSubmissionFailed, reserve_poll_turn
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
 class ChatCompletionViewSet(PluginViewSet):
     # 使用自定义内容协商，忽略 Accept 头限制，支持流式响应
     content_negotiation_class = IgnoreClientContentNegotiation
-
-    request_serializer = ChatCompletionRequestSerializer
 
     @property
     def channel_type(self):
@@ -61,7 +58,7 @@ class ChatCompletionViewSet(PluginViewSet):
         agent_code = rm.get_agent_code()
 
         try:
-            serializer = self.request_serializer(
+            serializer = ChatCompletionRequestSerializer(
                 data=request.data,
                 context={"username": username, "agent_code": agent_code, "resource_manager": rm},
             )
@@ -121,10 +118,6 @@ class ChatCompletionViewSet(PluginViewSet):
                 )
 
             return self._dispatch_chat(data, username, rm, session_code, turn_id)
-        except PollSessionBusy as err:
-            return Response({"code": "409", "message": str(err)}, status=409)
-        except PollSubmissionFailed as err:
-            raise ClientBlueException(message=str(err)) from err
         except Exception as err:
             logger.exception(f"ChatCompletionViewSet create error: {err}")
             message = getattr(err, "message", str(err))
@@ -152,18 +145,6 @@ class ChatCompletionViewSet(PluginViewSet):
         execute_kwargs = data["execute_kwargs"]
         agent_code = resources.get_agent_code()
         manager = SessionManager(username=username, agent_code=agent_code, resource_manager=resources)
-        if data.get("response_mode") == "poll":
-            if data["thread_id"]:
-                session_code = manager.get_or_create_by_thread_id(data["thread_id"], channel_type=self.channel_type)
-            turn_id = turn_id or uuid.uuid4().hex
-            with reserve_poll_turn(manager, session_code, turn_id, execute_kwargs.invoke_timeout) as ticket:
-                return self._dispatch_prepared_chat(data, manager, resources, session_code, turn_id, ticket)
-        return self._dispatch_prepared_chat(data, manager, resources, session_code, turn_id)
-
-    def _dispatch_prepared_chat(self, data, manager, resources, session_code, turn_id, poll_ticket=None):
-        username = manager.username
-        agent_code = manager.agent_code
-        execute_kwargs = data["execute_kwargs"]
         if execute_kwargs.stream_mode == "attach":
             if not execute_kwargs.stream or not session_code:
                 raise ClientBlueException(message="attach requires stream=True and session_code")
@@ -178,11 +159,7 @@ class ChatCompletionViewSet(PluginViewSet):
                 if not history:
                     raise ClientBlueException(message="input or chat_history is required when using thread_id")
                 session_code, turn_id = manager.prepare_chat_history(
-                    data["thread_id"],
-                    history,
-                    turn_id=turn_id,
-                    channel_type=self.channel_type,
-                    session_code=session_code if poll_ticket else "",
+                    data["thread_id"], history, turn_id=turn_id, channel_type=self.channel_type
                 )
                 # The supplied final user message is already persisted in the session.
                 execute_kwargs.input = ""
@@ -212,9 +189,6 @@ class ChatCompletionViewSet(PluginViewSet):
             version=execute_kwargs.version,
             channel_type=self.channel_type,
         )
-        if poll_ticket:
-            ChatDispatcher(spec).submit_poll(execute_kwargs, poll_ticket)
-            return Response({"session_code": session_code, "turn_id": turn_id})
         output = ChatDispatcher(spec).execute(execute_kwargs)
         if execute_kwargs.stream:
             return self.streaming_response(

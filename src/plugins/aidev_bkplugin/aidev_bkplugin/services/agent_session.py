@@ -271,16 +271,10 @@ class SessionManager:
         )
 
     def prepare_chat_history(
-        self,
-        thread_id: str,
-        chat_history: list[ChatPrompt],
-        *,
-        turn_id: str = "",
-        channel_type: str = "popup",
-        session_code: str = "",
+        self, thread_id: str, chat_history: list[ChatPrompt], *, turn_id: str = "", channel_type: str = "popup"
     ) -> tuple[str, str]:
         """Persist supplied history once before local execution or Celery dispatch."""
-        session_code = session_code or self.get_or_create_by_thread_id(
+        session_code = self.get_or_create_by_thread_id(
             thread_id,
             channel_type=channel_type or ChannelType.POPUP.value,
         )
@@ -315,9 +309,7 @@ class SessionManager:
                 session_code,
             )
 
-    def save_ai_response(
-        self, session_code: str, result: dict, *, turn_id: str = "", persist_empty: bool = False
-    ) -> None:
+    def save_ai_response(self, session_code: str, result: dict, *, turn_id: str = "") -> None:
         """从非流式 LLM 响应中提取 ``choices[0].delta.content`` 并写回。"""
         content = ""
         has_tool_calls = False
@@ -325,7 +317,7 @@ class SessionManager:
             delta = result["choices"][0].get("delta", {})
             content = delta.get("content", "")
             has_tool_calls = bool(delta.get("tool_calls"))
-        if content or (persist_empty and not has_tool_calls):
+        if content:
             self.save_content(session_code=session_code, role=PromptRole.AI.value, content=content, turn_id=turn_id)
         elif has_tool_calls:
             # tool_calls 场景：AI 仅调用工具不产生文本，写入占位消息
@@ -346,11 +338,10 @@ class SessionManager:
         *,
         input_text: str = "",
         turn_id: str = "",
-        session_code: str = "",
         channel_type: str = ChannelType.POPUP.value,
     ) -> tuple[str, str]:
         """取/建 session，必要时落库本轮 user，返回 ``session_code`` 与 ``turn_id``。"""
-        session_code = session_code or self.get_or_create_by_thread_id(thread_id, channel_type=channel_type)
+        session_code = self.get_or_create_by_thread_id(thread_id, channel_type=channel_type)
         if input_text:
             saved = self.save_content(
                 session_code=session_code,

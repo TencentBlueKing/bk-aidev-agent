@@ -14,7 +14,8 @@ from .base import BaseMessageQueueHandler
 class ProducerOnlyRunner:
     """Run production in a worker without registering a competing consumer."""
 
-    on_started: Callable[[str, str], None]
+    on_started: Callable[[str, str], None] | None = None
+    publish_to_queue: bool = True
 
     locked_session: str | None = field(default=None, init=False)
 
