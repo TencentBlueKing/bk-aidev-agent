@@ -3,5 +3,6 @@
 
 from .services.agent_bkplugin import run_bkplugin_background_agent_task as run_bkplugin_background_agent_task
 from .services.chat_tasks import run_chat_producer as run_chat_producer
+from .services.chat_tasks import run_poll_chat as run_poll_chat
 from .services.telemetry import enqueue_bkm_metrics_task as enqueue_bkm_metrics_task
 from .services.telemetry import push_bkm_metrics_task as push_bkm_metrics_task

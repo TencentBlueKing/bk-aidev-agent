@@ -16,16 +16,19 @@ from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections
 
+from aidev_bkplugin.services.agent_bkplugin import build_chat_agent_for_session
 from aidev_bkplugin.services.agent_builder import AgentBuilder, LLMOverrideResourceManager
 from aidev_bkplugin.services.agent_execution import AgentExecutor
 from aidev_bkplugin.services.background_dispatch import attach_trace_context, detach_trace_context
 from aidev_bkplugin.services.producer_dispatch import (
     CHAT_TASK_NAME,
+    POLL_CHAT_TASK_NAME,
     ChatExecutionSpec,
     send_chat_reply,
     send_startup_reply,
 )
 from aidev_bkplugin.services.producer_resources import ProducerResourceManager
+from aidev_bkplugin.services.session_poll import execute_poll_turn
 
 logger = getLogger(__name__)
 
@@ -78,18 +81,7 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
     execute_kwargs = ExecuteKwargs.model_validate(spec.execute_kwargs)
     if execute_kwargs.stream_mode == "attach":
         raise ValueError("A replay request cannot start a Chat producer")
-    factory = getattr(settings, "BKAI_CHAT_RESOURCE_MANAGER_FACTORY", LLMOverrideResourceManager)
-    resources = factory(username=spec.username, model=spec.model, tenant_id=spec.tenant_id)
-    builder = AgentBuilder(
-        username=spec.username,
-        agent_code=spec.agent_code,
-        resource_manager=resources,
-        turn_id=spec.turn_id,
-        model=spec.model,
-        temperature=spec.temperature,
-        retry_strategy=spec.retry_strategy,
-        reasoning_effort=spec.reasoning_effort,
-    )
+    builder = _chat_builder(spec)
     try:
         with recording_span("bkplugin.chat.worker.build_agent", use_global_tracer=True):
             agent = builder.by_session_code(spec.session_code, version=spec.version, channel_type=spec.channel_type)
@@ -149,3 +141,58 @@ def execute_chat_producer(spec: ChatExecutionSpec, task_id: str, expires_at: flo
         for _ in output:
             pass
         return None
+
+
+def _chat_builder(spec: ChatExecutionSpec) -> AgentBuilder:
+    factory = getattr(settings, "BKAI_CHAT_RESOURCE_MANAGER_FACTORY", LLMOverrideResourceManager)
+    resources = factory(username=spec.username, model=spec.model, tenant_id=spec.tenant_id)
+    return AgentBuilder(
+        username=spec.username,
+        agent_code=spec.agent_code,
+        resource_manager=resources,
+        turn_id=spec.turn_id,
+        model=spec.model,
+        temperature=spec.temperature,
+        retry_strategy=spec.retry_strategy,
+        reasoning_effort=spec.reasoning_effort,
+    )
+
+
+@shared_task(name=POLL_CHAT_TASK_NAME, ignore_result=True, queue=agent_settings.BKAI_AGENT_TASK)
+def run_poll_chat(spec: dict, ticket: str, expires_at: float, chat_context: list[dict] | None = None) -> None:
+    execution = ChatExecutionSpec.model_validate(spec)
+    if execution.app_code != agent_settings.APP_CODE or execution.protocol_version != 2:
+        raise ValueError("Invalid polling Chat execution")
+    close_old_connections()
+    token = attach_trace_context(execution.trace_context)
+    try:
+        builder = _chat_builder(execution)
+
+        def invoke():
+            if time.time() >= expires_at:
+                raise TimeoutError("Chat queue wait expired")
+            ek = ExecuteKwargs.model_validate(execution.execute_kwargs)
+            if ek.stream or ek.resume or ek.stream_mode == "attach":
+                raise ValueError("Invalid polling Chat arguments")
+            if chat_context is None:
+                agent = builder.by_session_code(
+                    execution.session_code, version=execution.version, channel_type=execution.channel_type
+                )
+            else:
+                agent = build_chat_agent_for_session(
+                    session_code=execution.session_code,
+                    chat_context=chat_context,
+                    username=execution.username,
+                    version=execution.version,
+                    turn_id=execution.turn_id,
+                    channel_type=execution.channel_type,
+                    resource_manager=builder.resource_manager,
+                )
+            if not ek.input and not agent.chat_history:
+                raise ValueError("The chat history cannot be empty. Please provide input.")
+            return agent.execute(ek)
+
+        execute_poll_turn(builder.session_manager, execution.session_code, execution.turn_id, ticket, invoke)
+    finally:
+        detach_trace_context(token)
+        close_old_connections()

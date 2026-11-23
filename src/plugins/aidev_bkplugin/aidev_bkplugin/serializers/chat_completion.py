@@ -16,7 +16,7 @@
 
 import uuid
 
-from aidev_agent.enums import ReasoningEffort
+from aidev_agent.enums import AgentType, ReasoningEffort
 from aidev_agent.pydantic_models import ExecuteKwargs
 from pydantic import ValidationError
 from rest_framework import serializers
@@ -133,4 +133,16 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
         if model and not LLMService.is_llm_accessible(username=username, llm_code=model, resource_manager=rm):
             raise serializers.ValidationError({"model": f"模型 {model} 不在当前空间可用模型列表内"})
 
+        return attrs
+
+
+class OpenapiChatCompletionRequestSerializer(ChatCompletionRequestSerializer):
+    response_mode = serializers.ChoiceField(choices=["poll"], required=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs.get("response_mode") == "poll":
+            ek = attrs["execute_kwargs"]
+            if attrs["agent_type"] == AgentType.FLOW.value or ek.stream or ek.stream_mode == "attach" or ek.resume:
+                raise serializers.ValidationError({"response_mode": "poll requires a non-streaming Chat request"})
         return attrs

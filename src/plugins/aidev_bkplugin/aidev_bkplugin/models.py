@@ -83,3 +83,13 @@ class EventDelivery(models.Model):
             models.UniqueConstraint(fields=["subscription", "event_id"], name="unique_event_delivery"),
         ]
         indexes = [models.Index(fields=["status", "available_at"], name="event_delivery_ready")]
+
+
+class SessionPollTurn(models.Model):
+    """当前会话在途的轮询任务。回复正文和终态由平台保存。"""
+
+    session_key = models.CharField(max_length=64, primary_key=True)
+    turn_id = models.CharField(max_length=255)
+    expires_at = models.DateTimeField()
+    ticket = models.UUIDField(unique=True)
+    started = models.BooleanField(default=False)

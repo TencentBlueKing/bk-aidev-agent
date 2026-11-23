@@ -40,7 +40,9 @@ from .agent_execution import AgentExecutor, build_execute_kwargs
 from .agent_helpers import AgentHelper
 from .agent_session import SessionManager
 from .background_dispatch import attach_trace_context, capture_trace_context, detach_trace_context
+from .producer_dispatch import ChatDispatcher, ChatExecutionSpec
 from .producer_resources import ProducerResourceManager
+from .session_poll import PollSessionBusy, PollSubmissionFailed, poll_turn_result, reserve_poll_turn
 from ..enums import PluginPollTaskState
 from ..views.base import PluginResourceManager
 
@@ -210,6 +212,8 @@ class BkpluginAgentRunner(ABC):
         """投递 Celery 后台任务并返回 POLL storage；投递失败时写回失败状态 。"""
         try:
             return self._do_dispatch_async()
+        except (PollSessionBusy, PollSubmissionFailed):
+            raise
         except Exception as e:
             logger.exception("[Bkplugin] dispatch_async failed: %s", e)
             session_code = self.session_code or ""
@@ -377,13 +381,42 @@ class BkpluginChat(BkpluginAgentRunner):
         return result["choices"][0]["delta"]["content"]
 
     def _do_dispatch_async(self) -> dict:
-        session_code, turn_id, ek, _ = self._prepare_execution_context()
-        return self._enqueue_background(
-            session_code,
-            turn_id,
-            self._merge_execute_payload(ek, turn_id),
-            chat_context=self._build_chat_context(),
-        )
+        ek = self._parsed_ek
+        chat_context = self._build_chat_context()
+        if ek.resume:
+            session_code, turn_id, ek, _ = self._prepare_execution_context()
+            payload = self._merge_execute_payload(ek, turn_id)
+            return self._enqueue_background(session_code, turn_id, payload, chat_context=chat_context)
+
+        manager = SessionManager(self.username or "")
+        thread_id = ek.session_code or uuid.uuid4().hex
+        session_code = manager.get_or_create_by_thread_id(thread_id, channel_type=ChannelType.BKPLUGIN.value)
+        turn_id = ek.turn_id or uuid.uuid4().hex
+        with reserve_poll_turn(manager, session_code, turn_id, ek.invoke_timeout) as ticket:
+            manager.prepare_session_turn(
+                thread_id, session_code=session_code, input_text=self.input_text or "", turn_id=turn_id
+            )
+            ek.session_code = session_code
+            ek.turn_id = turn_id
+            ek.stream = False
+            spec = ChatExecutionSpec(
+                app_code=agent_settings.APP_CODE,
+                tenant_id=getattr(manager.resource_manager, "tenant_id", ""),
+                username=self.username or "",
+                agent_code=manager.agent_code,
+                session_code=session_code,
+                turn_id=turn_id,
+                version=ek.version,
+                channel_type=ChannelType.BKPLUGIN.value,
+            )
+            ChatDispatcher(spec).submit_poll(ek, ticket, chat_context=chat_context)
+        return {
+            "session_code": session_code,
+            "turn_id": turn_id,
+            "plugin_username": self.username or "",
+            "agent_type": self.agent_type.value,
+            "response_mode": "poll",
+        }
 
     def invoke_agent(
         self,
@@ -610,7 +643,11 @@ def poll_bkplugin_agent(storage: dict) -> tuple[PluginPollTaskState, str, AgentT
     except ValueError:
         agent_type = AgentType.CHAT
 
-    state, detail = SessionManager(username or "").poll_task_state(
+    manager = SessionManager(username or "")
+    if storage.get("response_mode") == "poll":
+        state, detail = poll_turn_result(manager, session_code, storage["turn_id"])
+        return state, detail, agent_type
+    state, detail = manager.poll_task_state(
         session_code,
         turn_id=storage.get("turn_id") or "",
     )
@@ -620,7 +657,7 @@ def poll_bkplugin_agent(storage: dict) -> tuple[PluginPollTaskState, str, AgentT
 def record_plugin_poll_failure(storage: dict, error_message: str) -> None:
     """SSE 2.0 轮询失败时与后台异常一致：写 error content 并标记 session failed。"""
     session_code = storage.get("session_code") or ""
-    if not session_code:
+    if not session_code or storage.get("response_mode") == "poll":
         return
     SessionManager(storage.get("plugin_username") or "").save_stream_failure(
         session_code,
