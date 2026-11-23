@@ -149,15 +149,11 @@ def test_flow_uses_existing_entry_without_chat_dispatch(remote_view, monkeypatch
     remote_view.builder.assert_not_called()
 
 
-@pytest.mark.parametrize("properties", [{}, {"stream_attachable": False}, {"stream_attachable": True}])
-def test_attach_checks_current_session_property(remote_view, properties):
-    remote_view.resources.retrieve_chat_session.return_value = {"session_property": properties}
+@pytest.mark.parametrize("error,status", [(chat.StreamAttachUnavailableError, 409), (chat.StreamLookupError, 503)])
+def test_attach_returns_error_before_sse(remote_view, error, status):
+    remote_view.dispatcher.execute.side_effect = error("unavailable")
     data = {"execute_kwargs": ExecuteKwargs(stream=True, stream_mode="attach")}
     response = remote_view.view._dispatch_chat(data, "alice", remote_view.resources, "session", "")
-    if properties.get("stream_attachable") is False:
-        assert response.status_code == 409
-        assert "schedule" in response.data["message"]
-        remote_view.dispatcher.execute.assert_not_called()
-    else:
-        assert response.streaming
-        remote_view.dispatcher.execute.assert_called_once()
+    assert response.status_code == status
+    assert response.data == {"code": str(status), "message": "unavailable"}
+    remote_view.view.streaming_response.assert_not_called()

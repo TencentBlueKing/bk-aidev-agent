@@ -111,6 +111,10 @@ class BaseMessageQueueHandler(ABC):
             False 表示没有消息，需要创建生产者
         """
 
+    def has_replay_stream(self, thread_id: str) -> bool:
+        """检查共享回放数据是否可读，后端查询异常交给调用方处理。"""
+        return self.has_pending_messages(thread_id)
+
     def restore_messages(self, thread_id: str) -> int:
         """恢复竞争消费模式已读取的消息；replay backend 默认无需处理。"""
         return 0

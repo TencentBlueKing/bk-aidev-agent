@@ -182,14 +182,11 @@ class SessionManager:
             saved.setdefault("property", {}).setdefault("turn_id", turn_id)
         return saved
 
-    def update_session_status(self, session_code: str, status: str, *, stream_attachable: bool | None = None) -> None:
+    def update_session_status(self, session_code: str, status: str) -> None:
         """更新会话状态，用于标准运维插件后台任务兜底结束态。"""
-        payload = {"status": status}
-        if stream_attachable is not None:
-            payload["session_property"] = {"stream_attachable": stream_attachable}
         self._client().api.update_chat_session(
             path_params={"session_code": session_code},
-            json=payload,
+            json={"status": status},
             headers=self._user_headers(),
         )
 

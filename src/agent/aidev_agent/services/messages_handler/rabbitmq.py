@@ -2115,6 +2115,16 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
 
             self._wait_for_replay_retry(deadline, self.REPLAY_MESSAGE_RETRY_INTERVAL)
 
+    def has_replay_stream(self, thread_id: str) -> bool:
+        try:
+            with self._with_channel() as channel:
+                queue = channel.queue_declare(queue=self._get_queue_name(thread_id), durable=True, passive=True)
+                return queue.method.message_count > 0
+        except pika.exceptions.ChannelClosedByBroker as exc:
+            if exc.reply_code == 404:
+                return False
+            raise
+
     def has_pending_messages(self, thread_id: str) -> bool:
         """检查是否有未消费的消息（用于判断是否需要创建生产者）
 
@@ -2135,13 +2145,7 @@ class RabbitMQMessageHandler(_RabbitMQConsumerMixin, ReplayBufferMixin, BaseMess
 
         # 检查 RabbitMQ 主队列。
         try:
-            main_queue_name = self._get_queue_name(thread_id)
-            with self._with_channel() as channel:
-                try:
-                    queue_info = channel.queue_declare(queue=main_queue_name, durable=True, passive=True)
-                    return queue_info.method.message_count > 0
-                except Exception:
-                    return False
+            return self.has_replay_stream(thread_id)
         except Exception as e:
             logger.error(f"Error checking pending messages for thread_id={thread_id}: {e}")
             return False

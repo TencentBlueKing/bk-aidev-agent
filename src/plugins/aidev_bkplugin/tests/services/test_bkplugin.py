@@ -369,12 +369,7 @@ def test_worker_injects_inline_resources_and_restores_execution(agent_type, monk
     resource_key = "resource_manager" if agent_type == AgentType.CHAT else "flow_resource_manager"
     manager = build.call_args.kwargs[resource_key]
     if agent_type == AgentType.CHAT:
-        producer = manager.get_producer_runner()
-        assert producer.publish_to_queue is False
-        producer.on_started("session", "run")
-        agent_bkplugin.SessionManager.return_value.update_session_status.assert_called_once_with(
-            "session", "pending", stream_attachable=False
-        )
+        assert manager.get_producer_runner().publish_to_queue is False
     else:
         assert manager.get_producer_runner() is run_producer_inline
     assert "producer_runner" not in build.call_args.kwargs
