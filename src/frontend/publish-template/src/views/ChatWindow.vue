@@ -20,7 +20,7 @@
           </BkButton>
 
           <!-- 会话列表 -->
-          <div class="session-list" :class="{ 'has-footer': hasSelected }">
+          <div ref="sessionListRef" class="session-list" :class="{ 'has-footer': hasSelected }">
             <template v-if="filteredSessionList.length > 0">
               <BkLoading
                 v-for="session in filteredSessionList"
@@ -169,6 +169,7 @@
               height="100%"
               size="normal"
               @agent-info-loaded="handleAgentInfoLoaded"
+              @session-switched="handleSessionSwitched"
               @error="handleChatBotError"
             />
           </div>
@@ -194,7 +195,7 @@
   } from "../composables/use-agent-access"
   import router from "../router"
 
-  import type { ChatBotExpose } from "@blueking/ai-blueking"
+  import type { ChatBotExpose, ISession } from "@blueking/ai-blueking"
 
   const AsideToggleIcon = defineComponent({
     name: "AsideToggleIcon",
@@ -217,6 +218,7 @@
   }
 
   const chatBotRef = ref<ChatBotExpose | null>(null)
+  const sessionListRef = ref<HTMLElement | null>(null)
   // shallowRef 避免 reactive 自动解包内部 ref，保留 session.list / session.current 原始 Ref 语义
   const chatHelperInstance = shallowRef<ChatHelper | null>(null)
   /** 嵌入式 ChatBot 不自带侧栏开关，由业务 Header 受控 */
@@ -288,6 +290,24 @@
     selectedCodes.value = new Set()
   }
 
+  const syncSessionQuery = async (sessionCode?: string | null) => {
+    const currentQueryCode =
+      typeof router.currentRoute.value.query.session === "string" ? router.currentRoute.value.query.session : ""
+    if (!sessionCode) {
+      if (!currentQueryCode) return
+      const { session: _removed, ...restQuery } = router.currentRoute.value.query
+      await router.replace({ query: restQuery })
+      return
+    }
+    if (currentQueryCode === sessionCode) return
+    await router.replace({
+      query: {
+        ...router.currentRoute.value.query,
+        session: sessionCode,
+      },
+    })
+  }
+
   const doBatchDelete = async () => {
     if (!chatHelperInstance.value) return
     const codes = [...selectedCodes.value]
@@ -299,6 +319,11 @@
       }
     }
     selectedCodes.value = new Set()
+    const nextCode =
+      chatHelperInstance.value.session.list.value.length > 0
+        ? chatHelperInstance.value.session.current.value?.sessionCode
+        : undefined
+    await syncSessionQuery(nextCode)
   }
 
   const batchDelete = () => {
@@ -319,12 +344,7 @@
     if (!chatHelperInstance.value) return
     try {
       await chatHelperInstance.value.session.chooseSession(sessionCode)
-      await router.replace({
-        query: {
-          ...router.currentRoute.value.query,
-          session: sessionCode,
-        },
-      })
+      await syncSessionQuery(sessionCode)
     } catch (e) {
       console.error("切换会话失败:", e)
     }
@@ -358,12 +378,7 @@
         sessionName: "新会话",
       })
       const activeCode = chatHelperInstance.value.session.current.value?.sessionCode ?? sessionCode
-      await router.replace({
-        query: {
-          ...router.currentRoute.value.query,
-          session: activeCode,
-        },
-      })
+      await syncSessionQuery(activeCode)
     } catch (e) {
       console.error("创建会话失败:", e)
     }
@@ -452,6 +467,11 @@
         try {
           await chatHelperInstance.value.session.deleteSession(sessionCode)
           selectedCodes.value.delete(sessionCode)
+          const nextCode =
+            chatHelperInstance.value.session.list.value.length > 0
+              ? chatHelperInstance.value.session.current.value?.sessionCode
+              : undefined
+          await syncSessionQuery(nextCode)
         } catch (e) {
           console.error("删除会话失败:", e)
         }
@@ -505,6 +525,19 @@
       },
       { immediate: true },
     )
+  }
+
+  const handleSessionSwitched = (session: ISession | null) => {
+    if (editingCode.value && editingCode.value !== session?.sessionCode) {
+      editingCode.value = null
+      editPlace.value = null
+    }
+    void syncSessionQuery(session?.sessionCode)
+    nextTick(() => {
+      sessionListRef.value?.querySelector<HTMLElement>(".session-item.active")?.scrollIntoView({
+        block: "nearest",
+      })
+    })
   }
 
   const handleChatBotError = (error: Error) => {
