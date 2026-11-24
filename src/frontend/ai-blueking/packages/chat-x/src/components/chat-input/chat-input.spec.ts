@@ -870,6 +870,61 @@ describe('ChatInput', () => {
       expect(onSendMessage).not.toHaveBeenCalled();
     });
 
+    it('Fetching 时空输入连续触发发送不会调用 onSendMessage', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '',
+          messageStatus: MessageStatus.Fetching,
+          onSendMessage,
+        },
+      });
+
+      const inputAttachment = wrapper.findComponent({ name: 'InputAttachment' });
+      expect(inputAttachment.props('messageState')).toBe(MessageStatus.Fetching);
+
+      await wrapper.find('.send-btn').trigger('click');
+      await wrapper.find('.send-btn').trigger('click');
+      const sent = await (wrapper.vm as { triggerSendMessage: () => Promise<boolean> }).triggerSendMessage();
+
+      expect(sent).toBe(false);
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('StopLoading 且输入框仍有草稿时不应该发送', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '草稿',
+          messageStatus: MessageStatus.StopLoading,
+          onSendMessage,
+        },
+      });
+
+      expect(wrapper.findComponent({ name: 'InputAttachment' }).props('messageState')).toBe(MessageStatus.StopLoading);
+      await wrapper.find('.send-btn').trigger('click');
+      await wrapper.find('.mock-ai-slash-input').trigger('keydown', { key: 'Enter' });
+
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('空内容点击发送不应该调用 onSendMessage', async () => {
+      const onSendMessage = vi.fn();
+
+      wrapper = mount(ChatInput, {
+        props: {
+          modelValue: '   ',
+          onSendMessage,
+        },
+      });
+
+      await wrapper.find('.send-btn').trigger('click');
+
+      expect(onSendMessage).not.toHaveBeenCalled();
+    });
+
     it('点击快捷指令应该触发 selectShortcut 事件', async () => {
       const shortcuts = [
         { id: 'shortcut1', name: '快捷指令1' },

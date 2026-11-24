@@ -349,11 +349,15 @@
   const inputText = computed(() =>
     typeof props.modelValue === 'string' ? props.modelValue : tagSchemaToMessageString(props.modelValue),
   );
+  // 与输入按钮的停止态一致。StopLoading 也要留在停止态，避免输入框里还有草稿时被当成可发送。
+  const STOP_MESSAGE_STATUSES = [
+    MessageStatus.Pending,
+    MessageStatus.Streaming,
+    MessageStatus.Fetching,
+    MessageStatus.StopLoading,
+  ];
   const messageState = computed(() => {
-    if (
-      props.messageStatus &&
-      [MessageStatus.Pending, MessageStatus.Streaming, MessageStatus.Fetching].includes(props.messageStatus)
-    ) {
+    if (props.messageStatus && STOP_MESSAGE_STATUSES.includes(props.messageStatus)) {
       return props.messageStatus;
     }
     // 已有附件即可发送，纯附件消息无需再输入文字
@@ -405,6 +409,14 @@
       if (effectiveSendDisabledTip.value) {
         return false;
       }
+      // 生成中只允许停止。Fetching 时输入已被清空，放行会连点插入多条空 UserMessage。
+      if (messageState.value && STOP_MESSAGE_STATUSES.includes(messageState.value)) {
+        return false;
+      }
+      // 没有文字也没有附件时不发送，避免空内容进入消息列表
+      if (!uploadFiles.value.length && !inputText.value.trim()) {
+        return false;
+      }
       aiSlashInputRef.value?.cleanup?.();
       let content: undefined | UserMessage['content'] = undefined;
 
@@ -454,11 +466,7 @@
       if (effectiveSendDisabledTip.value) {
         return;
       }
-      if (
-        messageState.value === MessageStatus.Fetching ||
-        messageState.value === MessageStatus.Streaming ||
-        messageState.value === MessageStatus.Pending
-      ) {
+      if (messageState.value && STOP_MESSAGE_STATUSES.includes(messageState.value)) {
         return;
       }
       handleSendMessage();

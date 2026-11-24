@@ -13,16 +13,11 @@
           messageState && `send-message-icon__${messageState}`,
           { 'send-message-icon__disabled': sendDisabledTip },
         ]"
-        @click="handleSendMessage"
+        @click="handleButtonClick"
       >
         <LoadingMessageIcon
-          v-if="
-            messageState === MessageStatus.Streaming ||
-            messageState === MessageStatus.Pending ||
-            messageState === MessageStatus.Fetching
-          "
+          v-if="isStopState"
           v-tippy="{ ...tippyOptions, content: t('停止'), theme: 'ai-chat-box', offset: [0, 16] }"
-          @click="handleStopSending"
         />
         <SendMessageIcon
           v-else
@@ -39,6 +34,8 @@
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue';
+
   import { directive as vTippy } from 'vue-tippy';
 
   import { MessageStatus } from '../../../ag-ui/types';
@@ -58,16 +55,22 @@
     (e: 'sendMessage'): void;
     (e: 'stopSending'): void;
   }>();
-  const handleStopSending = () => {
-    emit('stopSending');
-  };
-  const handleSendMessage = () => {
-    if (
-      props.sendDisabledTip ||
-      props.messageState === MessageStatus.Disabled ||
-      props.messageState === MessageStatus.Pending ||
-      props.messageState === MessageStatus.Streaming
-    ) {
+  // Fetching 出现在助手消息落地前：输入已清空，但按钮仍可点。漏掉它时连点会把空内容当成新的用户消息。
+  const STOP_MESSAGE_STATUSES = [
+    MessageStatus.Pending,
+    MessageStatus.Streaming,
+    MessageStatus.Fetching,
+    MessageStatus.StopLoading,
+  ];
+  const isStopState = computed(
+    () => props.messageState !== undefined && STOP_MESSAGE_STATUSES.includes(props.messageState),
+  );
+  const handleButtonClick = () => {
+    if (isStopState.value) {
+      emit('stopSending');
+      return;
+    }
+    if (props.sendDisabledTip || props.messageState === MessageStatus.Disabled) {
       return;
     }
     emit('sendMessage');

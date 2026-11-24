@@ -274,7 +274,7 @@ describe('InputAttachment', () => {
       expect(wrapper.emitted('stopSending')).toBeTruthy();
     });
 
-    it('Fetching 状态点击 LoadingMessageIcon 应该发出 stopSending 事件', async () => {
+    it('Fetching 状态点击按钮只停止，不发送', async () => {
       wrapper = mount(InputAttachment, {
         props: {
           messageState: MessageStatus.Fetching,
@@ -286,9 +286,32 @@ describe('InputAttachment', () => {
         },
       });
 
-      await wrapper.find('.mock-loading-icon').trigger('click');
+      const button = wrapper.find('.send-message-icon');
+      await button.trigger('click');
+      await button.trigger('click');
+      await button.trigger('click');
 
-      expect(wrapper.emitted('stopSending')).toBeTruthy();
+      expect(wrapper.emitted('stopSending')).toHaveLength(3);
+      expect(wrapper.emitted('sendMessage')).toBeFalsy();
+    });
+
+    it('StopLoading 状态点击按钮只停止，不发送', async () => {
+      wrapper = mount(InputAttachment, {
+        props: {
+          messageState: MessageStatus.StopLoading,
+        },
+        global: {
+          directives: {
+            tippy: {},
+          },
+        },
+      });
+
+      expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
+      await wrapper.find('.send-message-icon').trigger('click');
+
+      expect(wrapper.emitted('stopSending')).toHaveLength(1);
+      expect(wrapper.emitted('sendMessage')).toBeFalsy();
     });
 
     it('Disabled 状态点击发送按钮容器不应该发出 sendMessage 事件', async () => {
@@ -339,10 +362,11 @@ describe('InputAttachment', () => {
         },
       });
 
-      // Pending 状态显示 LoadingIcon，点击容器不应发出 sendMessage
+      // 生成中点击整颗按钮只停止
       expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
       await wrapper.find('.send-message-icon').trigger('click');
       expect(wrapper.emitted('sendMessage')).toBeFalsy();
+      expect(wrapper.emitted('stopSending')).toHaveLength(1);
     });
 
     it('Streaming 状态点击发送按钮容器不应该发送消息', async () => {
@@ -357,10 +381,10 @@ describe('InputAttachment', () => {
         },
       });
 
-      // Streaming 状态显示 LoadingIcon，点击容器不应发出 sendMessage
       expect(wrapper.find('.mock-loading-icon').exists()).toBe(true);
       await wrapper.find('.send-message-icon').trigger('click');
       expect(wrapper.emitted('sendMessage')).toBeFalsy();
+      expect(wrapper.emitted('stopSending')).toHaveLength(1);
     });
   });
 
