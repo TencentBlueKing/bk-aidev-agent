@@ -107,6 +107,7 @@ vi.mock('../../ai-buttons/tool-btn/tool-btn.vue', () => ({
       name: { type: String, default: '' },
       description: { type: String, default: '' },
       disabled: { type: Boolean, default: false },
+      loading: { type: Boolean, default: false },
       tippyOptions: { type: Object, default: undefined },
     },
     emits: ['click'],
@@ -118,6 +119,7 @@ vi.mock('../../ai-buttons/tool-btn/tool-btn.vue', () => ({
             class: 'mock-tool-btn',
             'data-tool-id': props.id,
             'data-disabled': props.disabled,
+            'data-loading': props.loading,
           },
           props.name,
         );
@@ -248,6 +250,21 @@ describe('DeleteTool', () => {
 
       expect(tippy.attributes('data-show-prevented')).toBeUndefined();
       expect(tippy.classes()).not.toContain('show-prevented');
+    });
+
+    it('loading 为 true 时应透传给 ToolBtn、阻止 Tippy 展示且屏蔽 confirm', async () => {
+      wrapper = mount(DeleteTool, {
+        props: { ...defaultProps, loading: true },
+      });
+
+      expect(wrapper.find('.mock-tool-btn').attributes('data-loading')).toBe('true');
+
+      const tippy = wrapper.find('.mock-tippy');
+      await tippy.trigger('mouseenter');
+      expect(tippy.attributes('data-show-prevented')).toBe('true');
+
+      await wrapper.find('.mock-button-danger').trigger('click');
+      expect(wrapper.emitted('confirm')).toBeFalsy();
     });
   });
 

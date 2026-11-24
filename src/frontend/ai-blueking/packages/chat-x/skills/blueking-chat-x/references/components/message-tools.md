@@ -385,14 +385,15 @@ const CONST_UPDATE_TOOLS = [
 | messageTools       | `IToolBtn[]`                                                                                             | `CONST_MESSAGE_TOOLS` | 左侧工具列表                                                                                                                         |
 | updateTools        | `IToolBtn[]`                                                                                             | `CONST_UPDATE_TOOLS`  | 右侧工具列表（`like`/`unlike` 弹反馈表单，`delete` 弹确认框，其他直接触发 `onAction`）                                               |
 | messageToolsStatus | `MessageToolsStatus`                                                                                     | —                     | 工具栏状态：`disabled` 禁用除复制外的按钮和弹窗                                                                                              |
-| onAction           | `(tool: IToolBtn, content?: UserMessage['content'], docSchema?: TagSchema) => Promise<string[] \| void>` | —                     | 工具操作回调；`like`/`unlike` 需返回 `string[]` 作为反馈选项；`delete` 确认后触发；`content`、`docSchema` 为可选参数，供上层扩展使用 |
+| onAction           | `(tool: IToolBtn, content?: UserMessage['content'], docSchema?: TagSchema) => Promise<string[] \| void> \| string[] \| void` | —                     | 工具操作回调；`like`/`unlike` 需返回 `string[]` 作为反馈选项；`delete` 确认后触发；非本地按钮（如 `fork`/`rebuild`/`delete`/自定义）返回未决 Promise 时自动在当前按钮展示 loading、禁用同组除 `copy` 外的其余按钮并保持工具栏可见 |
 | tippyOptions       | `AITippyProps`                                                                                           | —                     | 覆盖反馈弹窗和删除确认弹窗的默认配置；可覆盖 `placement` 等                                                                          |
 
 ### Events
 
-| 事件名   | 参数                                                          | 触发时机                                   |
-| -------- | ------------------------------------------------------------- | ------------------------------------------ |
-| feedback | `(tool: IToolBtn, reasonList: string[], otherReason: string)` | 用户在反馈表单点击"提交"后触发（not 取消） |
+| 事件名        | 参数                                                          | 触发时机                                                         |
+| ------------- | ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| feedback      | `(tool: IToolBtn, reasonList: string[], otherReason: string)` | 用户在反馈表单点击"提交"后触发（not 取消）                       |
+| loadingChange | `(loading: boolean)`                                          | 工具栏整体是否处于按钮 loading 状态变化时触发（供外层保持可见） |
 
 ### Slots
 
@@ -413,6 +414,7 @@ interface IToolBtn {
   description?: string; // tooltip 文本
   icon?: Component | VNode; // 自定义图标（组件/VNode），优先级高于内置 ToolIconsMap[id]
   hidden?: boolean; // 按 id 合并时隐藏该按钮（仅在 MessageContainer/ChatContainer 合并语义下生效）
+  loading?: boolean; // 外部受控 loading 态（图标切换为 mini spin 并禁用点击）
   triggerSelection?: boolean; // 标记点击后进入多选态（复用 share 选择流程），确认走 confirmShare
 }
 

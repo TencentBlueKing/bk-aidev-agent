@@ -44,6 +44,8 @@ export interface IToolBtn {
   icon?: Component | VNode;
   // 内置 id 保留自动补全，同时允许业务自定义任意字符串（如 'save'）
   id?: (string & {}) | ToolIcons;
+  // 是否处于加载中态（图标切换为 mini spin 并禁用点击）
+  loading?: boolean;
   name?: string;
   // 标记该按钮点击后进入多选态（复用 share 的选择流程），确认走 confirmShare
   triggerSelection?: boolean;

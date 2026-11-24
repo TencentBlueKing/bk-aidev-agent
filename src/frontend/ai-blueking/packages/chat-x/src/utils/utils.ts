@@ -76,3 +76,11 @@ export const formatElapsedTime = (seconds: number): string => {
 
   return parts.join('');
 };
+
+/**
+ * 判断返回值是否为 Promise / thenable，用于区分同步与异步回调
+ */
+export const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') &&
+  value !== null &&
+  typeof (value as PromiseLike<unknown>).then === 'function';

@@ -1239,7 +1239,7 @@ ChatContainer 的 Props 继承自 `ChatInputProps` 和 `MessageContainerProps`�
 | onCustomTabChange         | `(tab: CustomTab) => Promise<any>`                                                       | —         | 自定义 Tab 切换回调，返回值作为 Tab 组件 props                                                                                       |
 | onArtifactClick           | `(file: AIFileInfo) => Promise<{ download_url?: string; preview_url?: string }>`          | —         | 异步获取下载 / 预览链接（每次调用重新获取，无缓存；同文件并发去重）。文本类预览依赖 `download_url`，iframe 类依赖 `preview_url`；未传则隐藏下载、预览无数据 |
 
-> 分支会话：AI 消息工具栏内置「新建分支会话」（`tool.id === 'fork'`，经 `onAgentAction` 通知业务方调用接口并切换会话）；分支会话中的「从其他会话中继续」分隔线点击经继承自 MessageContainer 的 `onForkSourceClick(forkInfo, message)` 回调，容器透传给默认 `MessageContainer`，自定义 `#default` 时也在作用域里提供。
+> 分支会话：AI 消息工具栏内置「新建分支会话」（`tool.id === 'fork'`，经 `onAgentAction` 通知业务方调用接口并切换会话，返回未决 `Promise` 期间按钮自动展示 loading 并保持工具栏可见）；分支会话中的「从其他会话中继续」分隔线点击经继承自 MessageContainer 的 `onForkSourceClick(forkInfo, message)` 回调（支持返回 `Promise` 自动展示分隔线 loading），容器透传给默认 `MessageContainer`，自定义 `#default` 时也在作用域里提供。
 
 > 其余 Props（如 `messages`、`messageStatus`、`onSendMessage`、`menuSources`、`shortcuts`、`userMessageTools` 等）继承自 [ChatInput](/components/input/chat-input) 与 [MessageContainer](/components/setup/message-container)。`menuSources` 由容器补齐会话产物后再下发（见 [输入框菜单与资源引用](#输入框菜单与资源引用)）；`userMessageTools` 透传给内部 `MessageContainer`，用于按 id 覆盖或隐藏用户消息工具栏。
 

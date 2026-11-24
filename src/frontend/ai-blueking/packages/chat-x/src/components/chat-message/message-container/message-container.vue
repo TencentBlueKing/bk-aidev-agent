@@ -94,13 +94,14 @@
               :message-tools="messageTools"
               :message-tools-status="messageToolsStatus"
               :on-action="(tool: IToolBtn) => handleAgentAction(tool, group.messages)"
-              :style="{ visibility: group.isHover ? 'visible' : 'hidden' }"
+              :style="{ visibility: group.isHover || loadingGroupUids.has(group.uid) ? 'visible' : 'hidden' }"
               :tippy-options="props.messageToolsTippyOptions"
               :update-tools="updateTools"
               @feedback="
                 (tool: IToolBtn, reasonList: string[], otherReason: string) =>
                   props.onAgentFeedback?.(tool, group.messages, reasonList, otherReason)
               "
+              @loading-change="(loading: boolean) => handleToolsLoadingChange(group.uid, loading)"
             >
               <!-- 设计稿：AI 消息的时间在工具图标右侧 -->
               <template #append>
@@ -189,7 +190,7 @@
     onAgentAction?: AgentActionCallback;
     onAgentFeedback?: AgentFeedbackCallback;
     // 点击分支会话的「从其他会话中继续」分隔线，业务方据 forkInfo 切回来源会话
-    onForkSourceClick?: (forkInfo: MessageForkInfo, message: Message) => void;
+    onForkSourceClick?: (forkInfo: MessageForkInfo, message: Message) => Promise<void> | void;
     onInterruptResume?: OnInterruptResume; // ag-ui human-in-the-loop 中断响应回调
     onUserAction?: UserActionCallback;
     renderMode?: RenderMode;
@@ -207,7 +208,7 @@
    * @param tool - 工具按钮信息
    * @param messages - 当前消息组的消息列表（用于 cite 等需要消息内容的操作）
    */
-  type AgentActionCallback = (tool: IToolBtn, messages: Message[]) => Promise<string[] | void>;
+  type AgentActionCallback = (tool: IToolBtn, messages: Message[]) => Promise<string[] | void> | string[] | void;
 
   /**
    * Agent 反馈回调类型
@@ -223,7 +224,7 @@
    * @param tool - 工具按钮信息
    * @param message - 当前用户消息（用于 delete 等需要消息信息的操作）
    */
-  type UserActionCallback = (tool: IToolBtn, message: Message) => Promise<string[] | void>;
+  type UserActionCallback = (tool: IToolBtn, message: Message) => Promise<string[] | void> | string[] | void;
 
   const props = withDefaults(defineProps<MessageContainerProps>(), {
     enableMessageCollapse: true,
@@ -432,7 +433,22 @@
       .flat();
   };
 
-  const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
+  /** 组内存在异步工具按钮 loading 时保持工具栏可见，避免鼠标移出后 loading 消失 */
+  const loadingGroupUids = shallowRef(new Set<string>());
+
+  const handleToolsLoadingChange = (uid: string, loading: boolean) => {
+    const hasUid = loadingGroupUids.value.has(uid);
+    if (loading === hasUid) return;
+    const next = new Set(loadingGroupUids.value);
+    if (loading) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    loadingGroupUids.value = next;
+  };
+
+  const handleAgentAction = (tool: IToolBtn, messages: Message[]) => {
     if (tool.id === 'copy') {
       const markdownContent = messages
         .filter(message => message.role !== MessageRole.Reasoning)
@@ -441,11 +457,11 @@
       copy(markdownContent);
     }
     // 传递 messages 给外部回调，支持 cite 等需要消息内容的操作
-    // 需要 return 以便 like/unlike 等操作能获取返回的原因列表
+    // 需要 return 以便 like/unlike 等操作能获取返回的原因列表，以及让 MessageTools 追踪异步 loading
     return props.onAgentAction?.(tool, messages);
   };
-  const handleUserAction = async (tool: IToolBtn, message: Message) => {
-    props.onUserAction?.(tool, message);
+  const handleUserAction = (tool: IToolBtn, message: Message) => {
+    return props.onUserAction?.(tool, message);
   };
 
   /**

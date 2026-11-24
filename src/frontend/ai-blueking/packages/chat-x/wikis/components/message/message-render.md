@@ -459,8 +459,8 @@ h(ContentRender, { content: message.content || '', status: message.status }, /* 
 | message            | `Partial<Message>`                                                         | —      | **必填**，消息对象，`role` 字段决定渲染哪个子组件 |
 | messageTools       | `IToolBtn[]`                                                               | —      | 自定义用户消息工具组；**仅转发给 `UserMessage`**  |
 | messageToolsStatus | `MessageToolsStatus`                                                       | —      | 工具按钮状态；**仅转发给 `UserMessage`**          |
-| onAction           | `(tool: IToolBtn) => Promise<string[] \| void>`                            | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
-| onForkSourceClick  | `(forkInfo: MessageForkInfo) => void`                                      | —      | 分支会话分叉点分隔线点击回调；**仅转发给 `InfoMessage`** |
+| onAction           | `(tool: IToolBtn) => Promise<string[] \| void> \| string[] \| void`        | —      | 工具操作回调；**仅转发给 `UserMessage`**          |
+| onForkSourceClick  | `(forkInfo: MessageForkInfo) => Promise<void> \| void`                     | —      | 分支会话分叉点分隔线点击回调（支持返回 Promise 展示 loading）；**仅转发给 `InfoMessage`** |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>` | —      | 用户编辑确认回调；**仅转发给 `UserMessage`**      |
 | onInterruptResume  | `(payload: InterruptResume, interrupt?: Interrupt) => Promise<void>`         | —      | 中断 / FlowAgent 节点操作回调；转发给 `InterruptMessageRender` 与 `ActivityMessage`（后者仅 `flow_agent` 子组件消费） |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                    | —      | 用户快捷指令提交回调；**仅转发给 `UserMessage`**  |

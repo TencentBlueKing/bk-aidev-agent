@@ -2071,6 +2071,20 @@ describe('ChatContainer', () => {
       expect(onAgentAction).toHaveBeenCalledWith(copyTool, []);
     });
 
+    it('handleAgentAction 应原样返回 onAgentAction 的返回值（保留同步与 Promise 语义）', async () => {
+      const syncHandler = vi.fn(() => undefined);
+      wrapper = mount(ChatContainer, { props: { ...defaultProps, messages, onAgentAction: syncHandler } });
+      await nextTick();
+
+      expect(getAgentAction()({ id: 'fork' }, [])).toBeUndefined();
+
+      const pending = Promise.resolve();
+      const asyncHandler = vi.fn(() => pending);
+      await wrapper.setProps({ onAgentAction: asyncHandler });
+
+      expect(getAgentAction()({ id: 'fork' }, [])).toBe(pending);
+    });
+
     it('确认多选应 emit confirmShare 并携带来源工具对象作为第二参数', async () => {
       wrapper = mount(ChatContainer, { props: { ...defaultProps, messages } });
       await nextTick();

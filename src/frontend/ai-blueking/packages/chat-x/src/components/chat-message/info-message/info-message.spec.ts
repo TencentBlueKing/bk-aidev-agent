@@ -24,10 +24,28 @@
  * IN THE SOFTWARE.
  */
 
+import { defineComponent, h, nextTick } from 'vue';
+
 import { type VueWrapper, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import InfoMessage from './info-message.vue';
+
+vi.mock('bkui-vue', () => ({
+  Loading: defineComponent({
+    name: 'Loading',
+    props: { mode: String, size: String, theme: String },
+    setup(props) {
+      return () =>
+        h('span', {
+          class: 'mock-bk-loading',
+          'data-mode': props.mode,
+          'data-size': props.size,
+          'data-theme': props.theme,
+        });
+    },
+  }),
+}));
 
 describe('InfoMessage', () => {
   let wrapper: VueWrapper;
@@ -202,6 +220,74 @@ describe('InfoMessage', () => {
 
       await wrapper.find('.ai-info-message-fork').trigger('keydown', { key: 'Enter' });
       expect(onForkSourceClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('onForkSourceClick 返回 pending Promise 时应展示 loading、防连点并在完成后恢复', async () => {
+      let resolveClick!: () => void;
+      const onForkSourceClick = vi.fn(
+        () =>
+          new Promise<void>(resolve => {
+            resolveClick = resolve;
+          }),
+      );
+
+      wrapper = mount(InfoMessage, {
+        props: { content: '其他会话中继续', property: { fork_info: forkInfo }, onForkSourceClick },
+      });
+
+      const forkEl = wrapper.find('.ai-info-message-fork');
+      await forkEl.trigger('click');
+      await nextTick();
+
+      expect(forkEl.classes()).toContain('is-loading');
+      expect(forkEl.classes()).not.toContain('is-clickable');
+      expect(forkEl.attributes('aria-busy')).toBe('true');
+      expect(wrapper.find('.mock-bk-loading').exists()).toBe(true);
+      expect(wrapper.find('.ai-info-message-fork-icon').exists()).toBe(false);
+
+      // loading 期间重复点击与回车均应被忽略
+      await forkEl.trigger('click');
+      await forkEl.trigger('keydown', { key: 'Enter' });
+      expect(onForkSourceClick).toHaveBeenCalledTimes(1);
+
+      resolveClick();
+      await Promise.resolve();
+      await nextTick();
+
+      expect(forkEl.classes()).not.toContain('is-loading');
+      expect(forkEl.classes()).toContain('is-clickable');
+      expect(wrapper.find('.mock-bk-loading').exists()).toBe(false);
+      expect(wrapper.find('.ai-info-message-fork-icon').exists()).toBe(true);
+    });
+
+    it('onForkSourceClick 返回的 Promise 失败时也应恢复非 loading 状态', async () => {
+      let rejectClick!: (err: Error) => void;
+      const onForkSourceClick = vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectClick = reject;
+          }),
+      );
+      const errorHandler = vi.fn();
+
+      wrapper = mount(InfoMessage, {
+        props: { content: '其他会话中继续', property: { fork_info: forkInfo }, onForkSourceClick },
+        global: {
+          config: { errorHandler },
+        },
+      });
+
+      const forkEl = wrapper.find('.ai-info-message-fork');
+      await forkEl.trigger('click');
+      await nextTick();
+      expect(forkEl.classes()).toContain('is-loading');
+
+      rejectClick(new Error('load source failed'));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await nextTick();
+
+      expect(forkEl.classes()).not.toContain('is-loading');
+      expect(forkEl.classes()).toContain('is-clickable');
     });
 
     it('没有 fork_info 时保持普通提示渲染', () => {

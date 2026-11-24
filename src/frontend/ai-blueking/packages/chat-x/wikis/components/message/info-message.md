@@ -220,7 +220,7 @@ exportStatus: internal
 | status    | `MessageStatus`      | 消息状态（接收但不使用，组件无状态相关渲染逻辑）                   |
 | role      | `MessageRole.Info`   | 消息角色，固定为 `'info'`                                          |
 | property  | `{ fork_info?: MessageForkInfo; ... }` | 消息属性。存在 `fork_info` 时渲染为「从其他会话中继续」分隔线，不再显示 `content` |
-| onForkSourceClick | `(forkInfo: MessageForkInfo) => void` | 传入时，点击 / 回车分叉点分隔线调用，参数为 `property.fork_info`。未传入时分隔线不可点击 |
+| onForkSourceClick | `(forkInfo: MessageForkInfo) => Promise<void> \| void` | 传入时，点击 / 回车分叉点分隔线调用，参数为 `property.fork_info`；返回未决 Promise 期间左侧图标切换为 mini spin loading 并阻止重复点击。未传入时分隔线不可点击 |
 
 > **说明**：`content` 的 TypeScript 类型定义为 `string`（与 `BaseMessage` 泛型一致），但组件模板内部通过 `Array.isArray(content) ? content : [content]` 实际兼容字符串数组。
 

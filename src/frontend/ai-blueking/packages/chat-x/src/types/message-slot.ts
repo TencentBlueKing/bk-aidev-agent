@@ -38,15 +38,15 @@ export interface MessageSlotProps {
   message: Message;
   messageTools?: IToolBtn[];
   messageToolsStatus?: MessageToolsStatus;
+  onInterruptResume?: OnInterruptResume;
+  tippyOptions?: AITippyProps;
   onAction?: (
     tool: IToolBtn,
     content?: UserMessage['content'],
     docSchema?: TagSchema,
-  ) => Promise<string[] | void>;
+  ) => Promise<string[] | void> | string[] | void;
   /** 点击分支会话的「从其他会话中继续」分隔线 */
-  onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
+  onForkSourceClick?: (forkInfo: MessageForkInfo) => Promise<void> | void;
   onInputConfirm?: (content: UserMessage['content'], docSchema: TagSchema) => Promise<void>;
-  onInterruptResume?: OnInterruptResume;
   onShortcutConfirm?: (formModel: Record<string, unknown>) => Promise<void>;
-  tippyOptions?: AITippyProps;
 }

@@ -522,7 +522,7 @@ binaryFiles 有值   → 进入编辑模式（editContent 可为空）
 | property           | `{ docSchema?: TagSchema; extra?: MessageExtra; artifacts?: AIFileInfo[] }`                                       | 附加属性；本组件消费 `docSchema` 与 `extra.cite` / `extra.shortcut` / `extra.context`  |
 | messageTools       | `IToolBtn[]`                                                                               | 自定义用户消息工具组；按 id 与 `CONST_USER_MESSAGE_TOOLS` 合并，`{ id, hidden: true }` 可隐藏 |
 | messageToolsStatus | `MessageToolsStatus`                                                                       | 工具按钮状态，`disabled` 禁用、`hidden` 从 DOM 移除                       |
-| onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`delete` 需外部处理                   |
+| onAction           | `MessageToolsProps['onAction']`                                                            | 工具回调；`copy`/`edit` 有内置行为，`delete` 等异步操作返回未决 Promise 期间对应按钮展示 loading 且工具栏保持可见 |
 | onInputConfirm     | `(content: UserMessage['content'], docSchema: TagSchema) => Promise<void>`                 | 普通消息编辑确认回调                                                      |
 | onShortcutConfirm  | `(formModel: Record<string, unknown>) => Promise<void>`                                    | 快捷指令消息编辑确认回调                                                  |
 | tippyOptions       | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>`                 | 自定义工具栏 Tippy 配置，透传给内部 `MessageTools`                        |

@@ -346,6 +346,7 @@ click 事件：disabled=true 时被 JS 拦截，不触发 emit
 | icon         | `Component \| VNode`                                                        | 否   | —      | 自定义图标组件或 VNode；优先级高于内置 `ToolIconsMap[id]`，低于默认插槽                                             |
 | active       | `boolean`                                                                  | 否   | —      | 激活态；`true` 时追加 `.is-active`（字色由 `id` 决定：`like`/`activeLike` 为蓝色 `#3a84ff`，其他为红色 `#E71818`） |
 | disabled     | `boolean`                                                                  | 否   | —      | 禁用态；`true` 时追加 `.is-disabled`，阻止 click 事件，隐藏 tooltip                                                |
+| loading      | `boolean`                                                                  | 否   | —      | 加载态；`true` 时追加 `.is-loading` 与 `aria-busy`，图标切换为 mini spin，阻止 click 事件并隐藏 tooltip            |
 | tippyOptions | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | 否   | —      | 自定义 Tippy 配置，与内部默认配置合并；可用于控制 `content`、`appendTo`、`placement` 等                            |
 
 ### Events
@@ -372,6 +373,7 @@ interface IToolBtn {
   description?: string;
   icon?: Component | VNode; // 自定义图标，优先级高于内置 ToolIconsMap
   hidden?: boolean; // 按 id 合并时隐藏该按钮（如 { id: 'share', hidden: true } 移除内置项）
+  loading?: boolean; // 是否处于加载中态（图标切换为 mini spin 并禁用点击）
   triggerSelection?: boolean; // 标记点击后进入多选态（复用 share 选择流程），确认走 confirmShare
 }
 

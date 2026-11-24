@@ -587,6 +587,18 @@ describe('UserMessage', () => {
       });
       expect(readToolIds()).toEqual(['copy']);
     });
+
+    it('非编辑工具调用 onAction 应原样返回外部 Promise 以便 MessageTools 追踪 loading', () => {
+      const pending = Promise.resolve();
+      const onAction = vi.fn(() => pending);
+      wrapper = mount(UserMessage, {
+        props: { content: '消息', onAction },
+      });
+
+      const ret = wrapper.findComponent({ name: 'MessageTools' }).props('onAction')({ id: 'delete' });
+      expect(onAction).toHaveBeenCalledWith({ id: 'delete' });
+      expect(ret).toBe(pending);
+    });
   });
 
   describe('编辑态', () => {
@@ -859,7 +871,10 @@ describe('UserMessage', () => {
     it('历史消息的附件只剩 id 时也能剥掉标签', () => {
       wrapper = mount(UserMessage, {
         props: {
-          content: [{ ...attachment, outputId: undefined }, { type: 'text', text: '分析这个文件' }],
+          content: [
+            { ...attachment, outputId: undefined },
+            { type: 'text', text: '分析这个文件' },
+          ],
           property: { docSchema: [[{ type: 'text', text: '分析这个文件' }], [artifactTag]] },
         } as never,
       });

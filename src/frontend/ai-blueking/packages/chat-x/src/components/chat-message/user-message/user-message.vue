@@ -93,9 +93,9 @@
               }"
             >
               <Button
+                :disabled="Boolean(sendDisabledTip)"
                 size="small"
                 theme="primary"
-                :disabled="Boolean(sendDisabledTip)"
                 @click="handleSave"
                 >{{ t('发送') }}</Button
               >
@@ -241,7 +241,7 @@
       .filter((item): item is TextInputContent => item.type === MessageContentType.Text && !!item.text?.trim())
       .map(item => item.text);
   });
-  const handleAction = async (tool: IToolBtn) => {
+  const handleAction = (tool: IToolBtn) => {
     if (tool.id === 'edit') {
       if (textParts.value.length) {
         // 有富文本文档时用它回填，否则编辑态会把已选资源退化成纯文本
@@ -253,13 +253,15 @@
       }
       if (isEdit.value) {
         // 编辑态输入框此刻才开始渲染，等挂载完成再聚焦，光标落到已有内容末尾
-        await nextTick();
-        chatInputRef.value?.focus?.();
+        return nextTick().then(() => {
+          chatInputRef.value?.focus?.();
+          return props.onAction?.(tool);
+        });
       }
     } else if (tool.id === 'copy') {
       copy(typeof props.content === 'string' ? props.content : JSON.stringify(props.content || ''));
     }
-    await props.onAction?.(tool);
+    return props.onAction?.(tool);
   };
 
   /** 本次新选的附件带本地 File；原消息回填只有 id/url，取消编辑后仍属于原消息 */
@@ -345,6 +347,9 @@
       justify-content: flex-end;
 
       // margin-top: 4px;
+      &.is-loading {
+        visibility: visible;
+      }
     }
 
     .user-edit-input {

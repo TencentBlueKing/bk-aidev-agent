@@ -2,6 +2,7 @@
   <div
     ref="messageToolsRef"
     class="ai-message-tools-container"
+    :class="{ 'is-loading': hasLoadingTool }"
   >
     <div
       v-if="$slots.prepend"
@@ -18,6 +19,7 @@
           v-if="tool.id === 'delete'"
           v-bind="tool"
           :disabled="isToolDisabled(tool)"
+          :loading="isToolLoading(tool)"
           :tippy-options="tippyOptions"
           @confirm="handleDeleteConfirm(tool)"
         />
@@ -25,6 +27,7 @@
           v-else
           v-bind="tool"
           :disabled="isToolDisabled(tool)"
+          :loading="isToolLoading(tool)"
           :tippy-options="tippyOptions"
           @click="handleAction(tool)"
         />
@@ -54,6 +57,7 @@
             :id="getSubmitToolId(tool.id as 'like' | 'unlike')"
             :active="submitId === tool.id"
             :disabled="isToolDisabled(tool)"
+            :loading="isToolLoading(tool)"
             :tippy-options="{
               ...tippyOptions,
               content: getTippyContent(tool.id as 'like' | 'unlike'),
@@ -74,6 +78,7 @@
           v-else-if="tool.id === 'delete'"
           v-bind="tool"
           :disabled="isToolDisabled(tool)"
+          :loading="isToolLoading(tool)"
           :tippy-options="tippyOptions"
           @confirm="handleDeleteConfirm(tool)"
         />
@@ -81,6 +86,7 @@
           v-else
           v-bind="tool"
           :disabled="isToolDisabled(tool)"
+          :loading="isToolLoading(tool)"
           :tippy-options="tippyOptions"
           @click="handleAction(tool)"
         />
@@ -95,13 +101,14 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, onUnmounted, shallowRef, useTemplateRef } from 'vue';
+  import { computed, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue';
 
   import { type TippyContent, Tippy, useTippy } from 'vue-tippy';
 
   import { CONST_MESSAGE_TOOLS, CONST_UPDATE_TOOLS } from '../../common/constants';
   import { t } from '../../lang/lang';
   import { MessageToolsStatus } from '../../types/tool';
+  import { isPromiseLike } from '../../utils/utils';
   import ToolBtn from '../ai-buttons/tool-btn/tool-btn.vue';
   import DeleteTool from './delete-tool/delete-tool.vue';
   import UserFeedback from './user-feedback/user-feedback.vue';
@@ -114,7 +121,11 @@
   export type MessageToolsProps = {
     messageTools?: IToolBtn[];
     messageToolsStatus?: MessageToolsStatus;
-    onAction?: (tool: IToolBtn, content?: UserMessage['content'], docSchema?: TagSchema) => Promise<string[] | void>;
+    onAction?: (
+      tool: IToolBtn,
+      content?: UserMessage['content'],
+      docSchema?: TagSchema,
+    ) => Promise<string[] | void> | string[] | void;
     tippyOptions?: AITippyProps;
     updateTools?: IToolBtn[];
   };
@@ -124,6 +135,7 @@
   });
   const emit = defineEmits<{
     (e: 'feedback', tool: IToolBtn, reasonList: string[], otherReason: string): void;
+    (e: 'loadingChange', loading: boolean): void;
   }>();
 
   defineSlots<{
@@ -133,12 +145,43 @@
     prepend?: () => unknown;
   }>();
 
+  // 纯本地交互按钮不进入按钮级 loading（like/unlike 已有独立反馈弹窗 loading）
+  const LOCAL_ACTION_TOOL_IDS = new Set<string>(['copy', 'share', 'edit', 'cite']);
+
   const feedbackTippyRef = useTemplateRef<InstanceType<typeof Tippy> & ReturnType<typeof useTippy>[]>(
     'feedbackTippyRef',
   );
   const userFeedbackLoading = shallowRef(false);
   const userFeedbackReasonList = shallowRef<string[]>([]);
   const submitId = shallowRef<'like' | 'unlike' | null>(null);
+  const loadingTool = shallowRef<IToolBtn | null>(null);
+
+  const isSameTool = (a: IToolBtn | null, b: IToolBtn): boolean => {
+    if (!a) return false;
+    if (a.id !== undefined && b.id !== undefined) {
+      return a.id === b.id;
+    }
+    return a === b;
+  };
+
+  const isToolLoading = (tool: IToolBtn): boolean => Boolean(tool.loading || isSameTool(loadingTool.value, tool));
+
+  const hasLoadingTool = computed(
+    () =>
+      loadingTool.value !== null ||
+      props.messageTools.some(tool => Boolean(tool.loading)) ||
+      props.updateTools.some(tool => Boolean(tool.loading)),
+  );
+
+  watch(
+    hasLoadingTool,
+    (loading, prevLoading) => {
+      if (loading || prevLoading !== undefined) {
+        emit('loadingChange', loading);
+      }
+    },
+    { immediate: true },
+  );
 
   const tippyProps = computed(() => {
     return {
@@ -152,12 +195,33 @@
     } as InstanceType<typeof Tippy>['$props'];
   });
 
-  // 流式生成期间外部会整体下发 Disabled；复制只读取已输出内容、不改变会话状态，因此始终保持可用
+  // 流式生成或同组异步操作进行中时禁用除复制外的其余按钮；正在 loading 的按钮保持主色加载态而非置灰
   const isToolDisabled = (tool: IToolBtn) =>
-    props.messageToolsStatus === MessageToolsStatus.Disabled && tool.id !== 'copy';
+    !isToolLoading(tool) &&
+    (props.messageToolsStatus === MessageToolsStatus.Disabled || hasLoadingTool.value) &&
+    tool.id !== 'copy';
+
+  const shouldTrackAsyncLoading = (tool: IToolBtn): boolean =>
+    !tool.triggerSelection && (!tool.id || !LOCAL_ACTION_TOOL_IDS.has(tool.id));
+
+  const runTrackedAction = async (tool: IToolBtn) => {
+    if (hasLoadingTool.value) return;
+    const result = props.onAction?.(tool);
+    if (!isPromiseLike(result)) return;
+
+    loadingTool.value = tool;
+    try {
+      await result;
+    } finally {
+      if (isSameTool(loadingTool.value, tool)) {
+        loadingTool.value = null;
+      }
+    }
+  };
 
   const handleAction = async (tool: IToolBtn) => {
     if (tool.id === 'like' || tool.id === 'unlike') {
+      if (hasLoadingTool.value) return;
       try {
         userFeedbackLoading.value = true;
         userFeedbackReasonList.value = [];
@@ -167,10 +231,14 @@
       }
       return;
     }
-    await props.onAction?.(tool);
+    if (!shouldTrackAsyncLoading(tool)) {
+      await props.onAction?.(tool);
+      return;
+    }
+    await runTrackedAction(tool);
   };
   const handleDeleteConfirm = async (tool: IToolBtn) => {
-    await props.onAction?.(tool);
+    await runTrackedAction(tool);
   };
   const handleCancel = () => {
     feedbackTippyRef.value?.forEach(tippy => tippy?.hide?.());
@@ -197,7 +265,7 @@
     emit('feedback', tool, reasonList, otherReason);
   };
   const handleTippyShow = (id: IToolBtn['id']) => {
-    if (props.messageToolsStatus === MessageToolsStatus.Disabled) return false;
+    if (props.messageToolsStatus === MessageToolsStatus.Disabled || hasLoadingTool.value) return false;
     if (submitId.value && submitId.value === id) {
       submitId.value = null;
       return false;
@@ -207,6 +275,9 @@
   onUnmounted(() => {
     handleCancel();
     userFeedbackReasonList.value = [];
+    if (hasLoadingTool.value) {
+      emit('loadingChange', false);
+    }
   });
 </script>
 <style lang="scss">
