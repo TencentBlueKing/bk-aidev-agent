@@ -23,6 +23,8 @@ import re
 import shlex
 import threading
 import time
+from collections.abc import Mapping
+from contextvars import copy_context
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import NotRequired, Optional, TypedDict
@@ -111,7 +113,8 @@ TEMP_UPLOAD_SANDBOX_TTL_SECONDS = 1800
 FORK_MAX_BYTES = 300 * 1024 * 1024
 FORK_SRC_MOUNT_PATH = "/app/.storage/fork-src"
 FORK_DST_MOUNT_PATH = "/app/.storage/fork-dst"
-FORK_SANDBOX_TTL_SECONDS = 600
+# 成功路径采用异步销毁临时沙箱，缩短 TTL 以加快异常退出时的配额自动回收
+FORK_SANDBOX_TTL_SECONDS = 180
 _FORK_COPY_DONE_MARKER = "AIDEV_FORK_COPY_DONE"
 _FORK_COPY_TOO_LARGE_MARKER = "AIDEV_FORK_COPY_TOO_LARGE"
 _FORK_SRC_BYTES_PREFIX = "AIDEV_FORK_SRC_BYTES="
@@ -123,7 +126,7 @@ def _fork_helper_command(mode: str, max_bytes: int) -> str:
 
 
 def _fork_size_script(max_bytes: int = FORK_MAX_BYTES) -> str:
-    """仅扫描源卷，超限在申请目标卷前拒绝。"""
+    """仅扫描源卷，用于复制前/后大小校验。"""
     return _fork_helper_command("size", max_bytes)
 
 
@@ -785,9 +788,38 @@ class SandboxPvFileService:
         return SandboxFileServerError(message)
 
     @classmethod
+    def _extract_paas_error_context(cls, exc: Exception) -> tuple[str, str]:
+        """提取 PaaS 失败响应的 request_id 与截断响应体，仅用于诊断日志。"""
+        response = getattr(exc, "response", None)
+        if response is None:
+            return "-", ""
+        request_id = "-"
+        headers = getattr(response, "headers", None)
+        if isinstance(headers, Mapping):
+            for key, value in headers.items():
+                if str(key).lower() == "x-bkapi-request-id" and value:
+                    request_id = str(value)
+                    break
+        raw_text = getattr(response, "text", None)
+        if isinstance(raw_text, str) and raw_text:
+            body_excerpt = raw_text[:500]
+        else:
+            body = cls._parse_paas_body(exc)
+            body_excerpt = str(body)[:500] if body else ""
+        return request_id, body_excerpt
+
+    @classmethod
     def _raise_mapped_paas_error(cls, action: str, exc: Exception) -> None:
         mapped = cls._map_paas_error(exc)
-        logger.warning("call paas sandbox file api failed: action=%s error=%s", action, mapped, exc_info=True)
+        request_id, body_excerpt = cls._extract_paas_error_context(exc)
+        logger.warning(
+            "call paas sandbox file api failed: action=%s error=%s request_id=%s response_body=%s",
+            action,
+            mapped,
+            request_id,
+            body_excerpt,
+            exc_info=True,
+        )
         raise mapped from exc
 
     # ------------------------------------------------------------------
@@ -1220,31 +1252,33 @@ class SandboxPvFileService:
             except Exception:  # noqa: BLE001 TTL 兜底；不得覆盖原始复制错误
                 logger.warning("[pv_files] 销毁 fork 临时沙箱失败: sandbox_id=%s", sandbox_id, exc_info=True)
 
-    def _preflight_fork(self, backend, source_volume_id: str, snapshot: str, max_bytes: int) -> None:
-        # 只挂源卷做只读扫描；尚未申请目标 Fork PV，也没有写任何目标会话。
-        sandbox_id = ""
+    @classmethod
+    def _destroy_fork_sandbox_async(cls, backend, sandbox_id: str) -> None:
+        """拷贝成功后在后台线程异步销毁临时沙箱，继承当前上下文且不阻塞返回。"""
+        if not sandbox_id:
+            return
+        ctx = copy_context()
         try:
-            sandbox_id = backend.create_sandbox(
-                name=f"aidev-fork-check-{uuid4().hex[:12]}",
-                ttl_seconds=FORK_SANDBOX_TTL_SECONDS,
-                snapshot=snapshot,
-                snapshot_entrypoint=[],
-                volume_mounts=[{"volume_id": source_volume_id, "mount_path": FORK_SRC_MOUNT_PATH}],
+            thread = threading.Thread(
+                target=ctx.run,
+                args=(cls._destroy_fork_sandbox, backend, sandbox_id),
+                name=f"fork-destroy-{sandbox_id[:8]}",
+                daemon=True,
             )
-            result = backend.exec_command(sandbox_id, ["bash", "-c", _fork_size_script(max_bytes)])
-            self._check_fork_result(result, max_bytes)
-        finally:
-            self._destroy_fork_sandbox(backend, sandbox_id)
+            thread.start()
+        except Exception:  # noqa: BLE001 TTL 兜底；不得影响已成功的克隆结果
+            logger.warning("[pv_files] 启动异步销毁 fork 临时沙箱线程失败: sandbox_id=%s", sandbox_id, exc_info=True)
 
     def clone_volume(self, session_code: str, *, max_bytes: int = FORK_MAX_BYTES) -> str:
         """把会话 PV 复制到一个新建、未关联任何会话的 PV，返回新 volume_id。
 
         - 源会话没有 PV 或 PV 为空：返回空串，不建卷也不起沙箱
-        - 源文件逻辑大小超过 ``max_bytes``：申请目标卷前抛 ``SandboxFilesTooManyError``
+        - 单次沙箱同时挂源卷与目标卷：脚本先校验 ``max_bytes`` 再流式 tar 拷贝并复核，
+          超限时抛 ``SandboxFilesTooManyError`` 并同步销毁沙箱、删除空目标卷
         - 新卷写到哪个会话由调用方决定；调用方后续步骤失败时用 ``discard_volume`` 清理
 
         需要 ``executor_info["snapshot"]``（file-kit 镜像，带 GNU tar / Python 3 / bash）。
-        拷贝失败或超量时先销毁临时沙箱，再删掉新卷；成功时也销毁沙箱。
+        拷贝失败或超量时先同步销毁临时沙箱再删新卷；成功时后台异步销毁沙箱（TTL 兜底）。
         """
         try:
             source_volume_id = self._get_volume_id(session_code)
@@ -1274,7 +1308,6 @@ class SandboxPvFileService:
                 self._delete_volume_quietly(client, app_code, new_volume_id)
 
         try:
-            self._preflight_fork(backend, source_volume_id, snapshot, max_bytes)
             new_volume_id = self._create_volume(client, app_code, session_code)
             sandbox_id = backend.create_sandbox(
                 name=f"aidev-fork-{uuid4().hex[:12]}",
@@ -1308,9 +1341,12 @@ class SandboxPvFileService:
         except Exception as exc:
             raise SandboxFileServerError(f"复制会话文件失败: {exc}") from exc
         finally:
-            # 先卸挂载再删卷，避免 PaaS 因卷仍被沙箱占用而删失败
-            self._destroy_fork_sandbox(backend, sandbox_id)
-            if not succeeded:
+            if succeeded:
+                # 拷贝成功无需删卷，后台异步销毁临时沙箱以降低同步耗时，TTL 兜底回收
+                self._destroy_fork_sandbox_async(backend, sandbox_id)
+            else:
+                # 失败/超限时必须先同步卸挂载再删卷，避免 PaaS 因卷仍被沙箱占用而删失败
+                self._destroy_fork_sandbox(backend, sandbox_id)
                 _discard_new_volume()
 
     def discard_volume(self, volume_id: str) -> None:
