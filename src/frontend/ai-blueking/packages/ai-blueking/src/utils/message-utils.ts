@@ -136,15 +136,18 @@ export function resolveForkContentId(groupMessages: ReadonlyArray<{ id?: number 
  * 先按用户消息 id 匹配，匹配不到再按第几条用户消息匹配。
  * 服务端可能还没写入本轮回复，此时本轮只有用户消息，返回用户消息 id。
  *
+ * 参数收敛为 IMessageLike，避免从 IMessage[] 推断泛型。
+ * IMessageModule.list 的 ReturnType 会把 JSONSchema4 内联，与具名 IMessage 不能互赋。
+ *
  * @param serverMessages - 服务端消息列表
  * @param localMessages - 本地完整消息列表
  * @param anchor - 本轮中的一条 AI 消息
  * @returns 本轮（含用户消息）最后一条持久化消息 ID；对不上时返回 undefined
  */
-export function resolveTurnLastContentId<T extends IMessageLike>(
+export function resolveTurnLastContentId(
   serverMessages: ReadonlyArray<IMessageLike>,
-  localMessages: T[],
-  anchor: T | undefined,
+  localMessages: IMessageLike[],
+  anchor: IMessageLike | undefined,
 ): number | undefined {
   if (!anchor || !localMessages.includes(anchor)) {
     return undefined;
