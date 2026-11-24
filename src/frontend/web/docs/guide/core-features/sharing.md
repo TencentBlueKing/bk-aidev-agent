@@ -227,7 +227,7 @@ const cancelShare = () => {
 | `share-messages` | `messageIds: string[]` | （AIBlueking）分享完成，携带分享的消息 ID 列表 |
 | `transfer-messages` | `messageIds: string[]` | （AIBlueking）转发消息，携带消息 ID 列表 |
 | `share` | — | （AIBlueking）Header 分享按钮点击 |
-| `agent-action` | `tool: IToolBtn, messages: Message[]` | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
+| `agent-action` | `tool: IToolBtn, messages: Message[]` | 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） |
 
 ## ShareBusinessManager
 

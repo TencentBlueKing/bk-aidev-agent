@@ -167,6 +167,16 @@ AI 小鲸支持多种内容渲染格式：
 
 详见 [chat-x ChatContainer](/api/chat-x/components#chatcontainer)。
 
+## 提问吸附置顶 {#提问吸附置顶}
+
+自 **v3.2.0** 起，聊天态下用户提问组在所在问答轮次内吸附置顶。回复超过一屏时，本轮提问会盖住正在滚过的回复，便于对照问题。无新增开关。`ChatBot` / `AIBlueking` / 默认 `ChatContainer` 均自动开启。
+
+- **轮次**：组节点追加 `is-sticky`。轮次容器是 `.ai-message-turn`：每个用户消息组开启新一轮，其后的助手回复和[分叉点](/guide/core-features/session-management#分支会话)留在这一轮。滚到下一轮提问时，上一轮提问随该轮离开。
+- **不吸附**：分享态（`RenderMode.Share`）、多选态（`enableSelection`）。
+- **层级**：底部「停止生成 / 返回底部」保持 `z-index: 10`，位于吸附提问之上。
+- **背景**：吸附提问底色为 `var(--ai-message-sticky-bg, #fff)`。宿主消息区背景不是白色时，在容器上覆盖该变量。
+- **定位器**：消息组包在轮次容器里时仍能定位。目标组带 `is-sticky` 时，滚动位置取所在轮次容器的 `offsetTop`。产物侧栏「在对话中定位」若同一轮提问正在吸附，会扣掉提问高度，避免回答开头被挡住。
+
 ## 消息时间展示 {#消息时间展示}
 
 自 **v2.2.3** 起，对话区会在消息工具栏旁展示创建时间，无需额外配置即可生效。时区可通过 `timezone` 统一指定，详见 [UI 定制 · 字号与消息时间](/guide/core-features/ui-customization#字号与消息时间)。

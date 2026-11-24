@@ -16,7 +16,7 @@ v2.0 内置了 6 个核心 Manager，各司其职：
 |---------|------|------|
 | `ComponentManager` | UI 状态管理 + 事件协调中心 | 无 |
 | `ChatBusinessManager` | 消息发送、停止生成、流式处理 | `agentModule`、`sessionModule` |
-| `SessionBusinessManager` | 会话的创建、读取、更新、删除 | `sessionModule`、`messageModule`、`agentModule` |
+| `SessionBusinessManager` | 会话的创建、读取、更新、删除、分支会话 | `sessionModule`、`messageModule`、`agentModule` |
 | `ShortcutManager` | 快捷指令的注册与管理 | `agentModule` |
 | `UIStateManager` | 选择模式、编辑模式等 UI 状态 | 无 |
 | `ShareBusinessManager` | 分享流程编排 | `messageModule`、`sessionModule` |
@@ -25,7 +25,7 @@ v2.0 内置了 6 个核心 Manager，各司其职：
 
 - **ComponentManager** 是整个 Manager 体系的协调中心，负责管理组件级别的 UI 状态（如加载态、错误态），同时作为内部事件总线，协调各 Manager 之间的通信。
 - **ChatBusinessManager** 封装了与 AI 对话相关的所有业务逻辑，包括消息发送、流式响应处理、停止生成等操作。
-- **SessionBusinessManager** 管理会话的完整生命周期，包括会话列表加载、新建会话、切换会话、删除会话等。
+- **SessionBusinessManager** 管理会话的完整生命周期，包括会话列表加载、新建会话、切换会话、删除会话、[分支会话](/guide/core-features/session-management#分支会话)等。
 - **ShortcutManager** 负责快捷指令的注册、查询和执行，支持自定义指令扩展。
 - **UIStateManager** 管理与用户交互相关的 UI 状态，如消息选择模式、文本编辑模式等。
 - **ShareBusinessManager** 编排消息分享的完整流程，包括选择消息、生成分享链接、复制内容等。

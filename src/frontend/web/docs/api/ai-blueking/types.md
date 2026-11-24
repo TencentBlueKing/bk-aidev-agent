@@ -51,7 +51,7 @@ interface AIBluekingProps {
   prompts?: string[];
   /** 资源列表（输入 @ 触发）；内部映射为 menuSources */
   resources?: IHostResourceItem[];
-  /** 自定义 AI 消息主工具组（透传 ChatBot） */
+  /** 自定义 AI 消息主工具组（透传 ChatBot）。内置 fork（≥ v3.2.0）由 ChatBot 处理，不走 agent-action */
   messageTools?: IToolBtn[];
   /** 自定义 AI 消息反馈工具组（透传 ChatBot） */
   updateTools?: IToolBtn[];
@@ -266,7 +266,7 @@ interface AIBluekingEmits {
   (e: 'share-messages', data: { messageIds: string[] }): void;
   /** 确认分享/多选；自定义 source 不走内置分享 */
   (e: 'confirm-share', messages: Message[], source?: IToolBtn): void;
-  /** 自定义消息工具点击 */
+  /** 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） */
   (e: 'agent-action', tool: IToolBtn, messages: Message[]): void;
 
   // 错误事件（apiName 为业务语义，非 HTTP 层接口名）
@@ -398,7 +398,7 @@ interface ChatBotProps {
   // 高级配置
   /** MessageTools 的 tippy 弹窗配置 */
   messageToolsTippyOptions?: MessageToolsTippyOptions;
-  /** 自定义 AI 消息主工具组（与内置按 id 合并） */
+  /** 自定义 AI 消息主工具组（与内置按 id 合并）。内置 fork（≥ v3.2.0）由 ChatBot 处理，不走 agent-action */
   messageTools?: IToolBtn[];
   /** 自定义 AI 消息反馈工具组（与内置按 id 合并） */
   updateTools?: IToolBtn[];
@@ -534,7 +534,7 @@ type ChatMessageSlotProps = MessageSlotProps & {
 };
 ```
 
-`MessageSlotProps` 含 `message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`tippyOptions`。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
+`MessageSlotProps` 含 `message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`onForkSourceClick`、`tippyOptions`。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
 
 ## ChatBotEmits
 
@@ -554,6 +554,7 @@ interface ChatBotEmits {
   'agent-info-loaded': [chatHelper: IChatHelper];
   'feedback': [tool: IToolBtn, message: Message, reasonList: string[], otherReason: string];
   'confirm-share': [messages: Message[], source?: IToolBtn];
+  /** 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） */
   'agent-action': [tool: IToolBtn, messages: Message[]];
   'cancel-share': [];
   'request-share': [];

@@ -179,6 +179,8 @@ aiBluekingRef.value.updatePositionAndSize(100, 200, 600, 800);
 
 当 `agent/info` 返回 `agent_type: 'claw'` 时，ChatBot 会自动隐藏用户消息的编辑/删除，以及 AI 消息的重新生成与删除（copy / cite / share / like / unlike 仍可用），无需额外 prop。
 
+自 **v3.2.0** 起，内置「新建分支会话」（`fork`）由 `ChatBot` / `AIBlueking` 处理，**不**走 `agent-action`。隐藏：`:message-tools="[{ id: 'fork', hidden: true }]"`。详见 [分支会话](/guide/core-features/session-management#分支会话)。
+
 自 **v3.1.1** 起，工具栏处于 `disabled`（内容生成中）时，**复制（`copy`）仍可用**，可复制已经输出的内容；其余按钮显示但不可点，tooltip 与反馈弹窗也不打开。
 
 ```vue
@@ -218,6 +220,7 @@ const onConfirmShare = (messages: Message[], source?: IToolBtn) => {
 ```
 
 - `triggerSelection: true`：点击后进入多选，确认走 `confirm-share`（带 `source`）
+- 内置 `fork`：创建分支会话并切换，**不**走 `agent-action`
 - 其它自定义按钮：走 `agent-action`
 - 仅 `!source || source.id === 'share'` 时执行内置分享业务
 

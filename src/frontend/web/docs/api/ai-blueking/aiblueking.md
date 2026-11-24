@@ -122,7 +122,7 @@ function openAI() {
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `beforeNimbusClick` | `() => boolean \| Promise<boolean \| void> \| void` | — | Nimbus 点击前钩子函数，返回 `false` 阻止默认 showPanel 行为 |
-| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot |
+| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组，透传至 ChatBot。内置 `fork`（≥ v3.2.0）由内层 ChatBot 处理，不走 `agent-action`；隐藏 `{ id: 'fork', hidden: true }`。详见 [分支会话](/guide/core-features/session-management#分支会话) |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组，透传至 ChatBot |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, mainMin?, min? }` | — | ResizeLayout 配置（侧栏拖拽）。`mainMin` 是主聊天区最小宽度（**≥ v3.1.1**，默认取 `minWidth` / 400）；同时传了 `minWidth` 时以 `mainMin` 为准 |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatBot → ChatContainer（`small` 12px / `normal` 14px） |
@@ -193,7 +193,7 @@ function openAI() {
 | `transfer-messages` | `({ messageIds: string[] })` | 转移消息（用于跨面板传递） |
 | `share-messages` | `({ messageIds: string[] })` | 分享消息 |
 | `confirm-share` | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；自定义 `source` 不走内置分享 |
-| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击 |
+| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） |
 
 ### 错误事件
 

@@ -68,7 +68,7 @@ enum MessageRole {
 消息基础类型，使用泛型支持不同角色的消息结构。
 
 ```typescript
-type Message = UserMessage | AssistantMessage | ReasoningMessage | ToolMessage;
+type Message = UserMessage | AssistantMessage | ReasoningMessage | ToolMessage | InfoMessage;
 ```
 
 ### BaseMessage
@@ -107,6 +107,26 @@ interface UserMessage extends BaseMessage<MessageRole.User> {
   tools?: IToolBtn[];
 }
 ```
+
+### InfoMessage
+
+系统信息 / 会话分隔符。存在 `property.fork_info` 时渲染为分支会话分叉点（≥ v3.2.0）。
+
+```typescript
+interface InfoMessage extends BaseMessage<MessageRole.Info, string> {
+  property?: {
+    fork_info?: MessageForkInfo;
+  };
+}
+
+type MessageForkInfo = {
+  source_session_code: string;
+  source_content_id: number | string;
+  last_copied_content_id?: number | string;
+};
+```
+
+详见 [分支会话](/guide/core-features/session-management#分支会话)。
 
 ### AssistantMessage
 
@@ -241,10 +261,9 @@ function isEditConfirmTool(tool: IToolBtn): tool is IEditConfirmToolBtn;
 /** AI 助手消息默认工具栏 */
 const CONST_MESSAGE_TOOLS: IBuiltinToolBtn[] = [
   { id: 'copy' },
-  { id: 'cite' },
   { id: 'rebuild' },
-  { id: 'like' },
-  { id: 'unlike' },
+  { id: 'fork' },
+  { id: 'share' },
 ];
 
 /** 用户消息默认工具栏 */

@@ -13,6 +13,57 @@ AI 小鲸 v2.0 提供了完整的多会话管理能力，每个会话拥有独�
 
 自 **v2.4.1** 起，这个开关不阻断建会话和初始化。`loadRecentSession`、`createSession`，以及调试页的 `alwaysCreateNewSession`，在开关关闭时仍会建立当前会话。划词弹窗由 `enablePopup` / `enableWordSelectionPopup` 单独控制，与历史会话无关。
 
+## 分支会话 {#分支会话}
+
+自 **v3.2.0** 起，`ChatBot` / `AIBlueking` 内置「新建分支会话」和「从其他会话中继续」。不新增公开事件：切换完成走已有 `session-switched`（`ChatBot` 向外抛；`AIBlueking` 用它更新 Header 标题和历史列表）。
+
+### 创建分支
+
+点击 AI 消息工具栏 **新建分支会话**（`tool.id === 'fork'`，在「重新生成」和「分享」之间）：
+
+1. 从当前助手组解析持久化 `content_id`。刚流式生成的回复往往只有 `messageId`、没有数字 `id`，此时 `SessionBusinessManager.getForkContentId` 会拉一次 `session_content` 列表：先按 `messageId` 回填，取不到再按本轮用户消息对齐，取本轮（含用户消息）最后一条持久化消息；服务端尚未写入回复时即为用户消息 id。
+2. `POST session/{session_code}/fork/`，body `{ content_id }`。
+3. 新会话插入历史列表顶部并切换过去。新会话消息里带 `role: 'info'` + `property.fork_info`，chat-x 渲染分隔线。
+
+`fork` **不**走 `agent-action`。不需要该能力时隐藏：
+
+```vue
+<ChatBot url="/api/" :message-tools="[{ id: 'fork', hidden: true }]" />
+<AIBlueking url="/api/" :message-tools="[{ id: 'fork', hidden: true }]" />
+```
+
+### 切回来源会话
+
+分叉点是一条 `role: 'info'` 且 `property.fork_info` 有值的消息。chat-x 忽略 `content`，渲染「分支图标 + 从其他会话中继续」。点击按 `fork_info.source_session_code` 切回来源会话。来源已删除或请求失败时进入新会话欢迎页（请求层可能仍弹出一次错误提示）。
+
+`fork_info` 字段与后端 snake_case 一致（chat-x `MessageForkInfo` / chat-helper `IMessageForkInfo`）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `source_session_code` | 来源会话编码，切回时使用 |
+| `source_content_id` | 点击「新建分支会话」时所在消息的 ID |
+| `last_copied_content_id` | 新会话复制到的最后一条消息 ID（可选） |
+
+分享态（`RenderMode.Share`）不把 `onForkSourceClick` 传给分叉点，分隔线只展示、不可点。
+
+### 自定义渲染与原子组装
+
+- 自定义 `#message` 时，把插槽参数传给 `MessageRender`（`<MessageRender v-bind="slotProps" />`）或调用 `renderDefault()`，分隔线才会触发切回。详见 [消息自定义渲染](/guide/core-features/custom-message-rendering)。
+- 单独用 chat-x 时，要自己处理 `onAgentAction`（`tool.id === 'fork'`，第二个参数是**当前助手组**）和 `onForkSourceClick(forkInfo, message)`。详见 [原子组件组装](/guide/integration-modes/atomic-composition#工具栏回调)。
+
+### 编程入口
+
+```typescript
+await sessionBusinessManager.forkSession(contentId);
+await sessionBusinessManager.openForkSource(sourceSessionCode);
+const contentId = await sessionBusinessManager.getForkContentId(groupMessages);
+
+const forked = await chatHelper.session.forkSession(sessionCode, contentId);
+await chatHelper.http.session.forkSession(sessionCode, contentId);
+```
+
+`session.forkSession` 成功后把新会话插到 `list` 头部并 `chooseSession`。`http.session.forkSession` 只发请求，不切换当前会话。进行中时忽略重复调用（`isForkLoading`）。
+
 ## 会话概念
 
 每个会话代表一个独立的对话上下文，包含独立的消息历史。会话由 [`ISession`](/api/ai-blueking/types) 接口定义：
@@ -88,6 +139,9 @@ class SessionBusinessManager {
   loadSessions(): Promise<void>;                                  // 加载会话列表
   loadRecentSession(options?): Promise<void>;                     // 加载最近会话（初始化入口）
   getSession(sessionCode: string): Promise<void>;                 // 获取单个会话
+  getForkContentId(groupMessages: IMessage[]): Promise<number | undefined>; // 解析分叉所需 content_id
+  forkSession(contentId: number): Promise<ISession | null>;       // 从指定消息处分叉并切换
+  openForkSource(sourceSessionCode: string): Promise<void>;       // 切回来源会话，失败则新建
 }
 ```
 

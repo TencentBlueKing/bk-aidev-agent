@@ -99,6 +99,7 @@ onBeforeUnmount(() => {
 - `POST session_content/batch_delete/`：批量删除（body `{ ids: string[] }`，**仅 user 消息 id**；SDK 会乐观更新并移除对应轮次）
 - `POST chat_completion/`：流式通道（SSE，事件格式见 [AG-UI 流式](#ag-ui-流式单轮回复的事件顺序)）
 - `POST session_content/stop/`：停止生成（`stopChat`）
+- `POST session/{session_code}/fork/`：从指定消息处分叉会话（body `{ content_id }`，**≥ v3.2.0**）
 - `GET session_feedback/reasons/?rate=`、`POST session_feedback/`：点赞 / 点踩反馈（可选）
 - 分享：`POST share/`（由你在多选确认后调用 `message.shareMessages`，见 [分享（多选模式）](#分享多选模式)）
 
@@ -106,12 +107,13 @@ onBeforeUnmount(() => {
 
 ## 工具栏二次开发：MessageContainer 回调 ↔ HTTP ↔ chat-helper {#工具栏回调}
 
-`MessageContainer` 通过 **props 回调**处理「复制 / 引用 / 重新生成 / 删除 / 分享 / 点赞点踩」；**不要**再使用已废弃的 `@cite` 等事件。`copy` 由容器内部处理：自 **v3.1.1** 起，生成中工具栏 `disabled` 时复制仍可用，可复制已经输出的内容。
+`MessageContainer` 通过 **props 回调**处理「复制 / 引用 / 重新生成 / 新建分支会话 / 删除 / 分享 / 点赞点踩」；**不要**再使用已废弃的 `@cite` 等事件。`copy` 由容器内部处理：自 **v3.1.1** 起，生成中工具栏 `disabled` 时复制仍可用，可复制已经输出的内容。`ChatBot` / `AIBlueking` 已内置 `fork`，原子组装必须自己接。
 
 | 工具 `tool.id` | 回调 | 推荐实现（可与内置 ChatBot 行为对齐） | 后端接口（路径以网关为准） |
 | -------------- | ---- | -------------------------------------- | -------------------------- |
 | `cite` | `onAgentAction` / `onUserAction` | 拼文本写入输入区 `v-model:cite`，`ChatInput` `ref.focus()` | 无（纯前端） |
 | `rebuild` | `onAgentAction` | `agent.abortChat()` 后 **`agent.resendMessage(userMessageId, sessionCode)`** | `session_content/batch_delete/`、`session_content/`、`chat_completion/` |
+| `fork`（≥ v3.2.0） | `onAgentAction` | 从当前助手组取持久化 `content_id`，**`session.forkSession(sessionCode, contentId)`**；点击「从其他会话中继续」走 **`onForkSourceClick`**，按 `source_session_code` 切回，来源不存在时 `createSession` | `POST session/{session_code}/fork/` |
 | `delete`（助手条） | `onAgentAction` | 在完整消息列表里定位这一轮（锚点对不上唯一一轮则放弃），**`message.deleteMessages(turn)`**。`turn` 含用户消息，以及到下一条用户消息之前的全部消息（含未放进 `aiGroup` 的 tool） | `session_content/batch_delete/`（body 只有 user id） |
 | `delete`（用户气泡） | `onUserAction` | 从该 user 起到下一条 user 前，**`message.deleteMessages(turn)`** | 同上 |
 | `share` | `onAgentAction` | **`enable-selection`** + **`v-model:selected-user-messages`**，确认后 **`message.shareMessages(...)`** | `POST share/` |

@@ -530,6 +530,12 @@ interceptors: {
 
 **A**: 不会。`resumeUserQuestionWithInput` 走 `agent.streamRequest`，没有 `property` 形参。这是已知限制。
 
+## 分支会话（≥ v3.2.0）
+
+### Q: 如何关闭「新建分支会话」？点分隔线为什么进了新会话欢迎页？
+
+**A**: `ChatBot` / `AIBlueking` 内置处理 `fork`，不走 `agent-action`。隐藏：`:message-tools="[{ id: 'fork', hidden: true }]"`。点击「从其他会话中继续」按 `fork_info.source_session_code` 切回；来源已删除或请求失败时进入新会话欢迎页。自定义 `#message` 必须把 `onForkSourceClick` 传给 `MessageRender` 或调用 `renderDefault()`。原子组装要自己接 `onAgentAction(tool.id === 'fork')` 和 `onForkSourceClick`。
+
 ## 最佳实践检查清单
 
 ### 初始化
