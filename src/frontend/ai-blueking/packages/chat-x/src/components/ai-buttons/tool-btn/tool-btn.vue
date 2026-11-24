@@ -1,12 +1,20 @@
 <template>
   <div
     v-tippy="tippyProps"
+    :aria-busy="loading || undefined"
     class="ai-tool-btn"
-    :class="{ 'is-active': active, 'is-disabled': disabled }"
+    :class="{ 'is-active': active, 'is-disabled': disabled, 'is-loading': loading }"
     :style="{ '--ai-tool-btn-active-color': id === 'like' || id === 'activeLike' ? '#3a84ff' : '#E71818' }"
     @click="handleClick"
   >
-    <slot>
+    <Loading
+      v-if="loading"
+      class="ai-tool-btn-loading"
+      mode="spin"
+      size="mini"
+      theme="primary"
+    />
+    <slot v-else>
       <component
         :is="icon"
         v-if="icon"
@@ -22,6 +30,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
 
+  import { Loading } from 'bkui-vue';
   import { type TippyOptions, directive as vTippy } from 'vue-tippy';
 
   import { ToolIconsMap } from '../../../icons/tools';
@@ -48,12 +57,12 @@
       theme: 'ai-chat-box',
       ...(props.tippyOptions || {}),
       onShow: () => {
-        if (props.disabled) return false;
+        if (props.disabled || props.loading) return false;
       },
     };
   });
   const handleClick = (e: MouseEvent) => {
-    if (props.disabled) return;
+    if (props.disabled || props.loading) return;
     emit('click', props, e);
   };
 </script>
@@ -82,7 +91,11 @@
       cursor: not-allowed !important;
     }
 
-    &:not(.is-disabled):hover {
+    &.is-loading {
+      cursor: default;
+    }
+
+    &:not(.is-disabled, .is-loading):hover {
       color: #4d4f56;
       cursor: pointer;
       background-color: #eaebf0;

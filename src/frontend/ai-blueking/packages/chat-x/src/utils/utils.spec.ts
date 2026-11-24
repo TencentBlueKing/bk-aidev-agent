@@ -25,7 +25,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { formatDuration, formatElapsedTime } from './utils';
+import { formatDuration, formatElapsedTime, isPromiseLike } from './utils';
 
 describe('formatDuration', () => {
   it('数字与单位之间、各段之间均不留空格', () => {
@@ -57,6 +57,24 @@ describe('formatElapsedTime', () => {
     expect(formatElapsedTime(60)).toBe('1m');
     expect(formatElapsedTime(3600)).toBe('1h');
     expect(formatElapsedTime(86400)).toBe('1d');
+  });
+});
+
+describe('isPromiseLike', () => {
+  it('Promise 实例和 thenable 对象应返回 true', () => {
+    expect(isPromiseLike(Promise.resolve())).toBe(true);
+    expect(isPromiseLike({ then: () => undefined })).toBe(true);
+    const fnWithThen = Object.assign(() => undefined, { then: () => undefined });
+    expect(isPromiseLike(fnWithThen)).toBe(true);
+  });
+
+  it('非 Promise 值应返回 false', () => {
+    expect(isPromiseLike(null)).toBe(false);
+    expect(isPromiseLike(undefined)).toBe(false);
+    expect(isPromiseLike('str')).toBe(false);
+    expect(isPromiseLike(123)).toBe(false);
+    expect(isPromiseLike({})).toBe(false);
+    expect(isPromiseLike({ then: 'not-a-fn' })).toBe(false);
   });
 });
 

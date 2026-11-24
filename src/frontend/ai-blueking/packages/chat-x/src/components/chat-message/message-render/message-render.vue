@@ -19,10 +19,10 @@
   import type { Message, MessageForkInfo, MessageStatus } from '../../../ag-ui/types';
   import type { OnInterruptResume } from '../../../ag-ui/types/interrupt';
   import type { Token } from '../../../markdown-it';
+  import type { IToolBtn } from '../../../types';
   import type { MessageToolsProps } from '../../message-tools/message-tools.vue';
   import type { UserQuestionAnsweredCardSlots } from '../interrupt-message/user-question/user-question-answered-card.vue';
   import type { UserMessageActionsProps } from '../user-message/user-message.vue';
-  import type { IToolBtn } from '../../../types';
 
   defineSlots<{
     // 中断消息「已回答内容」回显的自定义 slot，透传给 InterruptMessageRender
@@ -36,7 +36,7 @@
       Pick<MessageToolsProps, 'onAction' | 'tippyOptions'> & {
         message: Partial<Message>;
         messageTools?: IToolBtn[];
-        onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
+        onForkSourceClick?: (forkInfo: MessageForkInfo) => Promise<void> | void;
         onInterruptResume?: OnInterruptResume;
       }
   >();

@@ -168,6 +168,7 @@ disabled=true 时：Tippy onShow 返回 false，弹窗不打开
 | name         | `string`                                                                   | 否   | —      | 按钮名称，`id` 无对应图标时作为文本内容渲染                          |
 | description  | `string`                                                                   | 否   | —      | `ToolBtn` 的 tooltip 文本；`disabled=true` 时不显示                  |
 | disabled     | `boolean`                                                                  | 否   | —      | 禁用态；`true` 时点击不弹出确认弹窗，`ToolBtn` 同步禁用              |
+| loading      | `boolean`                                                                  | 否   | —      | 加载态；`true` 时透传给 `ToolBtn` 展示 mini spin，同时阻止确认弹窗打开与 `confirm` 触发 |
 | tippyOptions | `Partial<Omit<TippyOptions, 'getReferenceClientRect' \| 'triggerTarget'>>` | 否   | —      | 覆盖确认弹窗（`Tippy`）的默认配置；可覆盖 `placement`、`appendTo` 等 |
 
 ### Events

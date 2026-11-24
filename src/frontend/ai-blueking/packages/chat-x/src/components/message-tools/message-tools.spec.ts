@@ -100,6 +100,7 @@ vi.mock('../ai-buttons/tool-btn/tool-btn.vue', () => ({
       description: { type: String, default: '' },
       active: { type: Boolean, default: false },
       disabled: { type: Boolean, default: false },
+      loading: { type: Boolean, default: false },
       tippyOptions: { type: Object, default: undefined },
     },
     emits: ['click'],
@@ -108,12 +109,18 @@ vi.mock('../ai-buttons/tool-btn/tool-btn.vue', () => ({
         h(
           'button',
           {
-            class: ['mock-tool-btn', props.active && 'is-active', props.disabled && 'is-disabled'],
+            class: [
+              'mock-tool-btn',
+              props.active && 'is-active',
+              props.disabled && 'is-disabled',
+              props.loading && 'is-loading',
+            ],
             'data-tool-id': props.id,
             'data-active': props.active,
             'data-disabled': props.disabled,
+            'data-loading': props.loading,
             'data-has-tippy-options': props.tippyOptions !== undefined ? 'true' : undefined,
-            onClick: () => !props.disabled && emit('click'),
+            onClick: () => !props.disabled && !props.loading && emit('click'),
           },
           props.name,
         );
@@ -130,6 +137,7 @@ vi.mock('./delete-tool/delete-tool.vue', () => ({
       name: { type: String, default: '' },
       description: { type: String, default: '' },
       disabled: { type: Boolean, default: false },
+      loading: { type: Boolean, default: false },
       tippyOptions: { type: Object, default: undefined },
     },
     emits: ['confirm', 'cancel'],
@@ -138,9 +146,10 @@ vi.mock('./delete-tool/delete-tool.vue', () => ({
         h(
           'div',
           {
-            class: ['mock-delete-tool', props.disabled && 'is-disabled'],
+            class: ['mock-delete-tool', props.disabled && 'is-disabled', props.loading && 'is-loading'],
             'data-tool-id': props.id,
             'data-disabled': props.disabled,
+            'data-loading': props.loading,
           },
           [
             h('button', { class: 'delete-confirm-btn', onClick: () => emit('confirm') }, '删除'),
@@ -706,6 +715,195 @@ describe('MessageTools', () => {
       const tippyAfter = wrapper.find('.mock-tippy');
       expect(tippyAfter.attributes('data-show-prevented')).toBeUndefined();
       expect(tippyAfter.classes()).not.toContain('show-prevented');
+    });
+  });
+
+  describe('异步操作 loading 状态测试', () => {
+    it('点击 fork 返回未决 Promise 时应进入 loading，同组除 copy 外禁用，完成后恢复', async () => {
+      let resolveAction!: () => void;
+      const onAction = vi.fn(
+        () =>
+          new Promise<void>(resolve => {
+            resolveAction = resolve;
+          }),
+      );
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [
+            { id: 'copy', name: '复制', description: '复制' },
+            { id: 'rebuild', name: '重新生成', description: '重新生成' },
+            { id: 'fork', name: '新建分支会话', description: '新建分支会话' },
+          ],
+          updateTools: [
+            { id: 'like', name: '赞', description: '点赞' },
+            { id: 'delete', name: '删除', description: '删除' },
+          ],
+          onAction,
+        },
+      });
+
+      const forkBtn = wrapper.find('[data-tool-id="fork"]');
+      await forkBtn.trigger('click');
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-tools-container').classes()).toContain('is-loading');
+      expect(wrapper.emitted('loadingChange')).toEqual([[true]]);
+      expect(forkBtn.attributes('data-loading')).toBe('true');
+      expect(forkBtn.attributes('data-disabled')).toBe('false');
+      expect(wrapper.find('[data-tool-id="copy"]').attributes('data-disabled')).toBe('false');
+      expect(wrapper.find('[data-tool-id="rebuild"]').attributes('data-disabled')).toBe('true');
+      expect(wrapper.find('[data-tool-id="like"]').attributes('data-disabled')).toBe('true');
+      expect(wrapper.find('.mock-delete-tool').attributes('data-disabled')).toBe('true');
+
+      // loading 期间阻止反馈 Tippy 打开，且重复点击不触发二次调用
+      await wrapper.find('.mock-tippy').trigger('mouseenter');
+      expect(wrapper.find('.mock-tippy').attributes('data-show-prevented')).toBe('true');
+      await forkBtn.trigger('click');
+      expect(onAction).toHaveBeenCalledTimes(1);
+
+      resolveAction();
+      await Promise.resolve();
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-tools-container').classes()).not.toContain('is-loading');
+      expect(wrapper.emitted('loadingChange')).toEqual([[true], [false]]);
+      expect(forkBtn.attributes('data-loading')).toBe('false');
+      expect(wrapper.find('[data-tool-id="rebuild"]').attributes('data-disabled')).toBe('false');
+    });
+
+    it('onAction 返回的 Promise 失败时也应正确恢复非 loading 状态', async () => {
+      let rejectAction!: (err: Error) => void;
+      const onAction = vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectAction = reject;
+          }),
+      );
+      const errorHandler = vi.fn();
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [{ id: 'fork', name: '新建分支会话', description: '新建分支会话' }],
+          updateTools: [],
+          onAction,
+        },
+        global: {
+          config: { errorHandler },
+        },
+      });
+
+      const forkBtn = wrapper.find('[data-tool-id="fork"]');
+      await forkBtn.trigger('click');
+      await nextTick();
+      expect(forkBtn.attributes('data-loading')).toBe('true');
+
+      rejectAction(new Error('fork failed'));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await nextTick();
+
+      expect(forkBtn.attributes('data-loading')).toBe('false');
+      expect(wrapper.emitted('loadingChange')).toEqual([[true], [false]]);
+    });
+
+    it('onAction 同步返回时不应进入 loading 或触发 loadingChange', async () => {
+      const onAction = vi.fn(() => undefined);
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [{ id: 'fork', name: '新建分支会话', description: '新建分支会话' }],
+          updateTools: [],
+          onAction,
+        },
+      });
+
+      await wrapper.find('[data-tool-id="fork"]').trigger('click');
+      await nextTick();
+
+      expect(wrapper.find('[data-tool-id="fork"]').attributes('data-loading')).toBe('false');
+      expect(wrapper.emitted('loadingChange')).toBeFalsy();
+    });
+
+    it('copy / share / edit / triggerSelection 等本地工具不进入按钮 loading', async () => {
+      const pending = new Promise<void>(() => {});
+      const onAction = vi.fn(() => pending);
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [
+            { id: 'copy', name: '复制', description: '复制' },
+            { id: 'share', name: '分享', description: '分享' },
+            { id: 'edit', name: '编辑', description: '编辑' },
+            { id: 'save', name: '保存', description: '保存', triggerSelection: true },
+          ],
+          updateTools: [],
+          onAction,
+        },
+      });
+
+      for (const id of ['copy', 'share', 'edit', 'save']) {
+        await wrapper.find(`[data-tool-id="${id}"]`).trigger('click');
+      }
+      await nextTick();
+
+      expect(wrapper.find('.ai-message-tools-container').classes()).not.toContain('is-loading');
+      expect(wrapper.emitted('loadingChange')).toBeFalsy();
+    });
+
+    it('DeleteTool 确认删除返回 pending Promise 时应进入 loading 并在结束后恢复', async () => {
+      let resolveDelete!: () => void;
+      const onAction = vi.fn(
+        () =>
+          new Promise<void>(resolve => {
+            resolveDelete = resolve;
+          }),
+      );
+
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [{ id: 'fork', name: '新建分支会话', description: '新建分支会话' }],
+          updateTools: [{ id: 'delete', name: '删除', description: '删除' }],
+          onAction,
+        },
+      });
+
+      await wrapper.find('.delete-confirm-btn').trigger('click');
+      await nextTick();
+
+      expect(wrapper.find('.mock-delete-tool').attributes('data-loading')).toBe('true');
+      expect(wrapper.find('[data-tool-id="fork"]').attributes('data-disabled')).toBe('true');
+      expect(wrapper.emitted('loadingChange')).toEqual([[true]]);
+
+      resolveDelete();
+      await Promise.resolve();
+      await nextTick();
+
+      expect(wrapper.find('.mock-delete-tool').attributes('data-loading')).toBe('false');
+      expect(wrapper.emitted('loadingChange')).toEqual([[true], [false]]);
+    });
+
+    it('支持通过外部 IToolBtn.loading 控制加载态，且卸载时重置 loadingChange', async () => {
+      const onLoadingChange = vi.fn();
+      wrapper = mount(MessageTools, {
+        props: {
+          messageTools: [
+            { id: 'copy', name: '复制', description: '复制' },
+            { id: 'fork', name: '新建分支会话', description: '新建分支会话', loading: true },
+            { id: 'rebuild', name: '重新生成', description: '重新生成' },
+          ],
+          updateTools: [],
+          onLoadingChange,
+        },
+      });
+
+      expect(wrapper.find('[data-tool-id="fork"]').attributes('data-loading')).toBe('true');
+      expect(wrapper.find('[data-tool-id="fork"]').attributes('data-disabled')).toBe('false');
+      expect(wrapper.find('[data-tool-id="rebuild"]').attributes('data-disabled')).toBe('true');
+      expect(wrapper.find('[data-tool-id="copy"]').attributes('data-disabled')).toBe('false');
+      expect(onLoadingChange).toHaveBeenNthCalledWith(1, true);
+
+      wrapper.unmount();
+      expect(onLoadingChange).toHaveBeenNthCalledWith(2, false);
     });
   });
 });

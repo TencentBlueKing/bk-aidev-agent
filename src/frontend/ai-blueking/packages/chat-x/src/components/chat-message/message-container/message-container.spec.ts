@@ -123,6 +123,7 @@ vi.mock('../../message-tools/message-tools.vue', () => ({
       onAction: { type: Function, default: null },
       tippyOptions: { type: Object, default: undefined },
     },
+    emits: ['feedback', 'loadingChange'],
     // 保留 append 插槽渲染，便于断言消息组时间
     setup(props, { slots }) {
       return () =>
@@ -457,7 +458,7 @@ describe('MessageContainer', () => {
 
     it('默认插槽的 onForkSourceClick 应带上当前消息回调 onForkSourceClick', async () => {
       const onForkSourceClick = vi.fn();
-      let slotProps: { onForkSourceClick?: (info: typeof forkInfo) => void } | undefined;
+      let slotProps: undefined | { onForkSourceClick?: (info: typeof forkInfo) => void };
       wrapper = mount(MessageContainer, {
         props: { ...defaultProps, messages: [infoMessage], messageGroups: buildForkGroups(), onForkSourceClick },
         slots: {
@@ -476,7 +477,7 @@ describe('MessageContainer', () => {
     });
 
     it('未传入回调或处于分享态时不向消息透传 onForkSourceClick', async () => {
-      let slotProps: { onForkSourceClick?: (info: typeof forkInfo) => void } | undefined;
+      let slotProps: undefined | { onForkSourceClick?: (info: typeof forkInfo) => void };
       const captureInfoSlot = (props: { message: Message; onForkSourceClick?: (info: typeof forkInfo) => void }) => {
         if (props.message.role === MessageRole.Info) {
           slotProps = props;
@@ -884,6 +885,60 @@ describe('MessageContainer', () => {
       await nextTick();
 
       expect(getToolsVisibility(wrapper)).toBe('visible');
+    });
+
+    it('MessageTools 触发 loadingChange(true) 后鼠标移出仍应保持 visible，结束后恢复 hidden', async () => {
+      const messages: Message[] = [createAssistantMessage('1', 'Hello', 1)];
+
+      wrapper = mount(MessageContainer, {
+        props: { ...defaultProps, messages, messageGroups: buildGroups(messages) },
+      });
+
+      await nextTick();
+
+      const messageGroup = wrapper.find('.message-group');
+      const toolsComp = wrapper.findComponent({ name: 'MessageTools' });
+
+      await messageGroup.trigger('mouseenter');
+      toolsComp.vm.$emit('loadingChange', true);
+      await messageGroup.trigger('mouseleave');
+      await nextTick();
+
+      expect(getToolsVisibility(wrapper)).toBe('visible');
+
+      toolsComp.vm.$emit('loadingChange', false);
+      await nextTick();
+
+      expect(getToolsVisibility(wrapper)).toBe('hidden');
+    });
+
+    it('handleUserAction 应透传返回 onUserAction 的 Promise', async () => {
+      const userMessage: Message = createUserMessage('u1', '你好', 1);
+      const assistantMessage: Message = createAssistantMessage('a1', '收到', 2);
+      const pending = Promise.resolve(['ok']);
+      const onUserAction = vi.fn(() => pending);
+      let capturedOnAction: ((tool: { id: string }) => unknown) | undefined;
+
+      wrapper = mount(MessageContainer, {
+        props: {
+          ...defaultProps,
+          messages: [userMessage, assistantMessage],
+          messageGroups: buildGroups([userMessage, assistantMessage]),
+          onUserAction,
+        },
+        slots: {
+          default: (slotProps: { message: Message; onAction?: (tool: { id: string }) => unknown }) => {
+            if (slotProps.message.role === MessageRole.User) {
+              capturedOnAction = slotProps.onAction;
+            }
+            return h('div', { class: 'slot-user' });
+          },
+        },
+      });
+
+      const ret = capturedOnAction?.({ id: 'delete' });
+      expect(onUserAction).toHaveBeenCalledWith({ id: 'delete' }, userMessage);
+      expect(ret).toBe(pending);
     });
 
     it('消息组最后一条为 Interrupt 时 mouseenter 不应显示 MessageTools', async () => {

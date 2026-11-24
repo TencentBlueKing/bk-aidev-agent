@@ -9,15 +9,24 @@
       class="ai-info-message-body"
     >
       <div
+        :aria-busy="forkLoading || undefined"
         class="ai-info-message-fork"
-        :class="{ 'is-clickable': forkClickable }"
+        :class="{ 'is-clickable': forkClickable, 'is-loading': forkLoading }"
         :role="forkClickable ? 'button' : undefined"
         :tabindex="forkClickable ? 0 : undefined"
         @click="handleForkClick"
         @keydown.enter="handleForkClick"
       >
+        <Loading
+          v-if="forkLoading"
+          class="ai-info-message-fork-loading"
+          mode="spin"
+          size="mini"
+          theme="primary"
+        />
         <component
           :is="ForkIcon"
+          v-else
           class="ai-info-message-fork-icon"
         />
         <span class="ai-info-message-fork-text">{{ t('从其他会话中继续') }}</span>
@@ -38,25 +47,37 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, shallowRef } from 'vue';
+
+  import { Loading } from 'bkui-vue';
 
   import { ForkIcon } from '../../../icons/tools';
   import { t } from '../../../lang/lang';
+  import { isPromiseLike } from '../../../utils/utils';
 
   import type { InfoMessage, MessageForkInfo } from '../../../ag-ui/types/messages';
 
   const props = defineProps<
     Partial<InfoMessage> & {
-      onForkSourceClick?: (forkInfo: MessageForkInfo) => void;
+      onForkSourceClick?: (forkInfo: MessageForkInfo) => Promise<void> | void;
     }
   >();
 
   const forkInfo = computed(() => props.property?.fork_info);
-  const forkClickable = computed(() => !!forkInfo.value && !!props.onForkSourceClick);
+  const forkLoading = shallowRef(false);
+  const forkClickable = computed(() => !!forkInfo.value && !!props.onForkSourceClick && !forkLoading.value);
 
-  const handleForkClick = () => {
-    if (!forkClickable.value || !forkInfo.value) return;
-    props.onForkSourceClick?.(forkInfo.value);
+  const handleForkClick = async () => {
+    if (!forkClickable.value || !forkInfo.value || forkLoading.value) return;
+    const result = props.onForkSourceClick?.(forkInfo.value);
+    if (!isPromiseLike(result)) return;
+
+    forkLoading.value = true;
+    try {
+      await result;
+    } finally {
+      forkLoading.value = false;
+    }
   };
 </script>
 <style lang="scss">
@@ -113,6 +134,14 @@
 
       &.is-clickable {
         cursor: pointer;
+      }
+
+      &.is-loading {
+        cursor: default;
+      }
+
+      &-loading {
+        flex-shrink: 0;
       }
 
       &-icon {

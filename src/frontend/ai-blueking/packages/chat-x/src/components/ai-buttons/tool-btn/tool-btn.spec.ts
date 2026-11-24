@@ -35,10 +35,32 @@ import type { IToolBtn } from '../../../types';
 
 vi.mock('tippy.js/dist/tippy.css', () => ({}));
 
+vi.mock('bkui-vue', () => ({
+  Loading: defineComponent({
+    name: 'Loading',
+    props: { mode: String, size: String, theme: String },
+    setup(props) {
+      return () =>
+        h('span', {
+          class: 'mock-bk-loading',
+          'data-mode': props.mode,
+          'data-size': props.size,
+          'data-theme': props.theme,
+        });
+    },
+  }),
+}));
+
 // Mock vue-tippy directive
+const tippyBindings = vi.hoisted(() => ({ latest: undefined as undefined | { onShow?: () => unknown } }));
 vi.mock('vue-tippy', () => ({
   directive: {
-    mounted: vi.fn(),
+    mounted: vi.fn((_el: unknown, binding: { value?: { onShow?: () => unknown } }) => {
+      tippyBindings.latest = binding.value;
+    }),
+    updated: vi.fn((_el: unknown, binding: { value?: { onShow?: () => unknown } }) => {
+      tippyBindings.latest = binding.value;
+    }),
     unmounted: vi.fn(),
   },
 }));
@@ -655,6 +677,50 @@ describe('ToolBtn', () => {
       });
 
       expect(wrapper.find('.ai-tool-btn').exists()).toBe(true);
+    });
+  });
+
+  describe('loading 状态测试', () => {
+    it('loading 为 true 时应渲染 mini spin Loading 替代图标并添加 is-loading / aria-busy', () => {
+      wrapper = mount(ToolBtn, {
+        props: { ...createToolBtnProps('fork', '新建分支会话', '新建分支会话'), loading: true },
+      });
+
+      const btn = wrapper.find('.ai-tool-btn');
+      expect(btn.classes()).toContain('is-loading');
+      expect(btn.attributes('aria-busy')).toBe('true');
+
+      const loading = wrapper.find('.mock-bk-loading');
+      expect(loading.exists()).toBe(true);
+      expect(loading.attributes('data-mode')).toBe('spin');
+      expect(loading.attributes('data-size')).toBe('mini');
+      expect(loading.attributes('data-theme')).toBe('primary');
+    });
+
+    it('loading 为 true 时点击不应触发 click 事件且应阻止 tooltip 显示', async () => {
+      wrapper = mount(ToolBtn, {
+        props: { ...createToolBtnProps('copy', '复制', '复制内容'), loading: true },
+      });
+
+      await wrapper.trigger('click');
+      expect(wrapper.emitted('click')).toBeFalsy();
+      expect(tippyBindings.latest?.onShow?.()).toBe(false);
+    });
+
+    it('loading 恢复为 false 后应重新渲染原图标并恢复可点击', async () => {
+      wrapper = mount(ToolBtn, {
+        props: { ...createToolBtnProps('copy', '复制', '复制内容'), loading: true },
+      });
+
+      expect(wrapper.find('.mock-copy-icon').exists()).toBe(false);
+
+      await wrapper.setProps({ loading: false });
+      expect(wrapper.find('.mock-bk-loading').exists()).toBe(false);
+      expect(wrapper.find('.mock-copy-icon').exists()).toBe(true);
+      expect(wrapper.find('.ai-tool-btn').classes()).not.toContain('is-loading');
+
+      await wrapper.trigger('click');
+      expect(wrapper.emitted('click')?.length).toBe(1);
     });
   });
 });

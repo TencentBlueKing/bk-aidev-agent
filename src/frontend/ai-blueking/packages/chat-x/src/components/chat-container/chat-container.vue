@@ -790,7 +790,7 @@
    * @param tool - 工具
    * @param messages - 消息
    */
-  const handleAgentAction = async (tool: IToolBtn, messages: Message[]) => {
+  const handleAgentAction = (tool: IToolBtn, messages: Message[]) => {
     // 点击分享，或业务标记了 triggerSelection 的自定义按钮（如保存），进入多选态；确认复用 confirmShare
     if (tool.id === 'share' || tool.triggerSelection) {
       selectionSource.value = tool;

@@ -239,6 +239,21 @@ describe('MessageRender', () => {
 
       expect(wrapper.findComponent({ name: 'InfoMessage' }).vm.$attrs.onForkSourceClick).toBe(onForkSourceClick);
     });
+
+    it('应该支持透传返回 Promise 的异步 onForkSourceClick 给 Info 消息', () => {
+      const onForkSourceClick = vi.fn(() => Promise.resolve());
+      wrapper = mount(MessageRender, {
+        props: {
+          message: {
+            role: MessageRole.Info,
+            content: '其他会话中继续',
+          },
+          onForkSourceClick,
+        },
+      });
+
+      expect(wrapper.findComponent({ name: 'InfoMessage' }).vm.$attrs.onForkSourceClick).toBe(onForkSourceClick);
+    });
   });
 
   describe('Reasoning 消息渲染测试', () => {

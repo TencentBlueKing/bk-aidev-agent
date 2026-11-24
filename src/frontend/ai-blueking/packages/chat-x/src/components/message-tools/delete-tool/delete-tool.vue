@@ -63,6 +63,7 @@
     name: props.name,
     description: props.description,
     disabled: props.disabled,
+    loading: props.loading,
     tippyOptions: props.tippyOptions,
   }));
 
@@ -80,7 +81,7 @@
   );
 
   const handleTippyShow = () => {
-    if (props.disabled) return false;
+    if (props.disabled || props.loading) return false;
   };
 
   const hide = () => {
@@ -88,6 +89,7 @@
   };
 
   const handleConfirm = () => {
+    if (props.disabled || props.loading) return;
     hide();
     emit('confirm');
   };
