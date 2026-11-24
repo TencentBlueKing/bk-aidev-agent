@@ -1339,6 +1339,8 @@ class TestCloneVolume:
         assert service.clone_volume("s1") == "vol-new"
         assert destroyed.wait(timeout=2)
 
+        assert _query_params(mock_client.list_files.request.call_args.kwargs["params"])["page_size"] == "1"
+        assert mock_client.list_files.request.call_args.kwargs["path_params"]["volume_id"] == "vol-abc"
         assert backend.create_sandbox.call_count == 1
         create_kwargs = backend.create_sandbox.call_args.kwargs
         assert create_kwargs["ttl_seconds"] == module.FORK_SANDBOX_TTL_SECONDS
@@ -1413,12 +1415,18 @@ class TestCloneVolume:
         backend.create_sandbox.return_value = "sbx-fork"
         exc = _mock_http_error(400, "AGENT_SANDBOX_PROCESS_OPERATION_FAILED", "Agent 沙箱进程操作失败")
         exc.response.headers = {"X-Bkapi-Request-Id": "req-abc-123"}
-        exc.response.text = '{"code":"AGENT_SANDBOX_PROCESS_OPERATION_FAILED","detail":"daemon not ready"}'
+        exc.response.json.return_value = {
+            "code": "AGENT_SANDBOX_PROCESS_OPERATION_FAILED",
+            "message": "Agent 沙箱进程操作失败",
+            "detail": "daemon not ready",
+            "secret_echo": "should-not-log",
+        }
         backend.exec_command.side_effect = exc
 
         with caplog.at_level(logging.WARNING), pytest.raises(SandboxFileServerError, match="AGENT_SANDBOX_PROCESS"):
             service.clone_volume("s1")
         assert "request_id=req-abc-123" in caplog.text
         assert "daemon not ready" in caplog.text
+        assert "should-not-log" not in caplog.text
         backend.destroy_sandbox.assert_called_once_with("sbx-fork")
         mock_client.delete_agent_sandbox_volume.request.assert_called_once()

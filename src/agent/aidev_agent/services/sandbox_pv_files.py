@@ -789,24 +789,22 @@ class SandboxPvFileService:
 
     @classmethod
     def _extract_paas_error_context(cls, exc: Exception) -> tuple[str, str]:
-        """提取 PaaS 失败响应的 request_id 与截断响应体，仅用于诊断日志。"""
+        """提取 PaaS 失败响应的 request_id 与错误体摘要，仅用于诊断日志。"""
         response = getattr(exc, "response", None)
         if response is None:
             return "-", ""
-        request_id = "-"
         headers = getattr(response, "headers", None)
-        if isinstance(headers, Mapping):
-            for key, value in headers.items():
-                if str(key).lower() == "x-bkapi-request-id" and value:
-                    request_id = str(value)
-                    break
+        request_id = (
+            next((str(v) for k, v in headers.items() if str(k).lower() == "x-bkapi-request-id" and v), "-")
+            if isinstance(headers, Mapping)
+            else "-"
+        )
+        body = cls._parse_paas_body(exc)
+        if body:
+            summary = {k: body[k] for k in ("code", "code_name", "message", "detail", "data") if k in body}
+            return request_id, str(summary or body)[:500]
         raw_text = getattr(response, "text", None)
-        if isinstance(raw_text, str) and raw_text:
-            body_excerpt = raw_text[:500]
-        else:
-            body = cls._parse_paas_body(exc)
-            body_excerpt = str(body)[:500] if body else ""
-        return request_id, body_excerpt
+        return request_id, raw_text[:500] if isinstance(raw_text, str) else ""
 
     @classmethod
     def _raise_mapped_paas_error(cls, action: str, exc: Exception) -> None:
