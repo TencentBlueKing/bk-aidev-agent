@@ -154,7 +154,7 @@ chatBizManager.setSelectedModelByName('混元预览');
 
 ## SessionBusinessManager
 
-会话业务管理器，封装会话的增删改查及切换逻辑。
+会话业务管理器，封装会话的增删改查、切换及[分支会话](/guide/core-features/session-management#分支会话)。
 
 ### 构造函数
 
@@ -179,6 +179,9 @@ new SessionBusinessManager(sessionModule, messageModule, agentModule?, options?)
 | `batchDeleteSessions` | `(codes: string[]) => Promise<void>` | 批量删除会话 |
 | `renameSession` | `(code: string) => Promise<void>` | 重命名会话 |
 | `loadRecentSession` | `(options?: object) => Promise<void>` | 加载最近会话 |
+| `getForkContentId` | `(groupMessages: IMessage[]) => Promise<number \| undefined>` | 解析分叉所需持久化 `content_id`（≥ v3.2.0） |
+| `forkSession` | `(contentId: number) => Promise<ISession \| null>` | 从指定消息处分叉当前会话并切换（≥ v3.2.0） |
+| `openForkSource` | `(sourceSessionCode: string) => Promise<void>` | 切回来源会话；失败则进入新会话欢迎页（≥ v3.2.0） |
 
 ### 响应式属性
 
@@ -207,6 +210,13 @@ await sessionBizManager.renameSession('session-abc-123');
 
 // 加载最近会话
 await sessionBizManager.loadRecentSession({ autoSwitch: true });
+
+// 分支会话（≥ v3.2.0）
+const contentId = await sessionBizManager.getForkContentId(groupMessages);
+if (contentId !== undefined) {
+  await sessionBizManager.forkSession(contentId);
+}
+await sessionBizManager.openForkSource('source-session-code');
 ```
 
 ## ShortcutManager

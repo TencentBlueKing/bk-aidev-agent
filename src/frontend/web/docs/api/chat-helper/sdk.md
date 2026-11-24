@@ -159,6 +159,7 @@ Session 模块管理会话的完整生命周期。
 | `isListLoading`        | `Ref<boolean>`          | 是否正在加载会话列表 |
 | `isDeleteLoading`      | `Ref<boolean>`          | 是否正在删除会话     |
 | `isBatchDeleteLoading` | `Ref<boolean>`          | 是否正在批量删除     |
+| `isForkLoading`        | `Ref<boolean>`          | 是否正在创建分支会话（≥ v3.2.0） |
 
 ### 方法
 
@@ -167,6 +168,7 @@ Session 模块管理会话的完整生命周期。
 | `getSessions`               | `() => Promise<ISession[]>`                                   | 获取会话列表     |
 | `chooseSession`             | `(code: string, options?) => Promise<void>`                   | 选择并切换会话   |
 | `createSession`             | `(session: Partial<ISession>, options?) => Promise<ISession>` | 创建新会话       |
+| `forkSession`               | `(code: string, contentId: number \| string) => Promise<ISession>` | 从指定消息处分叉会话并切换（≥ v3.2.0）；HTTP `POST session/{code}/fork/`，body `{ content_id }`。`http.session.forkSession` 只发请求不切换 |
 | `updateSession`             | `(session: Partial<ISession>) => Promise<void>`               | 更新会话信息     |
 | `updateReasoningEffort`     | `(sessionCode: string, reasoningEffort: ReasoningEffort \| 'default') => Promise<ISession>` | 单独写回思考深度；不要和 `model` 写在同一次请求里 |
 | `deleteSession`             | `(code: string) => Promise<void>`                             | 删除会话         |
@@ -196,6 +198,9 @@ await session.chooseSession("session-abc-123")
 // 删除会话
 await session.deleteSession("session-abc-123")
 
+// 分支会话（≥ v3.2.0）：成功后插入 list 头部并 chooseSession
+const forked = await session.forkSession("session-abc-123", 1052)
+
 // 重命名
 await session.renameSession("session-abc-123")
 ```
@@ -217,6 +222,7 @@ Message 模块管理当前会话的消息列表。
 | 方法                       | 类型                                                        | 说明                   |
 | -------------------------- | ----------------------------------------------------------- | ---------------------- |
 | `getMessages`              | `(code: string) => Promise<IMessage[]>`                     | 获取指定会话的消息列表 |
+| `syncMessageIds`           | `(code: string) => Promise<IMessage[]>`                     | 拉服务端列表、按 `messageId` 回填本地缺失的持久化 `id`（≥ v3.2.0，分支会话解析 `content_id` 时使用） |
 | `plusMessage`              | `(msg: IMessage) => void`                                   | 添加消息到列表         |
 | `createAndPlusMessage`     | `(msg: Partial<IMessage>) => IMessage`                      | 创建消息并添加到列表   |
 | `modifyMessage`            | `(msg: Partial<IMessage>) => void`                          | 修改消息               |

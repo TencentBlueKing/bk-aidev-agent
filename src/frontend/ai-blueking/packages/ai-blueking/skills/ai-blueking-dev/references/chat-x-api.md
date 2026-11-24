@@ -2,7 +2,7 @@
 
 > **约定**：以下 API 以仓库内 `packages/chat-x/src` 源码为准；发布包以 `dist` 为准。若二者不一致，以当前分支源码为准。
 >
-> **当前版本**：`@blueking/chat-x` `3.1.2-beta.2`（含 HITL、ModelSelector 思考深度、「关闭思考」回显、下拉默认向下、`useToast` 宿主注入、`resizeProps.mainMin` 保住主栏宽度、生成中可复制等）。与 `@blueking/ai-blueking` `3.1.1` 配套。
+> **当前版本**：`@blueking/chat-x` `3.2.0-beta.2`（含 HITL、ModelSelector 思考深度、「关闭思考」回显、下拉默认向下、`useToast` 宿主注入、`resizeProps.mainMin` 保住主栏宽度、生成中可复制、分支会话 fork、提问吸附置顶等）。与 `@blueking/ai-blueking` `3.2.0-beta.2` 配套。
 
 ## 包入口导出概要
 

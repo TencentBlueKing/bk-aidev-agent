@@ -96,11 +96,12 @@
 | `messageToolsStatus` | `MessageToolsStatus` | - | 消息工具栏状态。为 `disabled` 时除复制（`copy`）外的按钮不可点；自 **v3.1.1** 起生成中也可复制已输出内容 |
 | `enableSelection` | `boolean` | `false` | 是否启用多选模式 |
 | `enableMessageCollapse` | `boolean` | `true` | 是否启用消息组顶层折叠及过程状态栏。`ChatContainer` 同样透传此 prop。置 `false` 时展示全部消息并隐藏状态栏和耗时；工具栏及消息内部折叠不变。详见 [消息折叠](/guide/core-features/chat-interaction#消息折叠) |
-| `onAgentAction` | `(tool, message) => void` | - | Agent 消息工具栏点击回调 |
+| `onAgentAction` | `(tool, messages) => Promise<string[] \| void>` | - | Agent 消息工具栏点击回调。`tool.id === 'fork'` 时第二个参数是当前助手组；`ChatBot` / `AIBlueking` 已内置处理 |
 | `onAgentFeedback` | `(tool, message, reasons, other) => void` | - | Agent 反馈回调 |
 | `onUserAction` | `(tool, message) => void` | - | 用户消息工具栏点击回调 |
 | `onUserInputConfirm` | `(message, content) => void` | - | 用户编辑消息确认回调 |
 | `onUserShortcutConfirm` | `(message, formData) => void` | - | 用户快捷指令表单确认回调 |
+| `onForkSourceClick` | `(forkInfo: MessageForkInfo, message: Message) => void` | - | 点击「从其他会话中继续」分隔线（≥ v3.2.0）。`message` 为该条分叉点 info。分享态不透传；未传入时分隔线不可点。`ChatBot` / `AIBlueking` 已内置切回来源会话 |
 
 ### v-model
 
@@ -118,7 +119,7 @@
 
 | 插槽名 | 参数 | 说明 |
 | --- | --- | --- |
-| `default` | `{ message }` | 自定义单条消息渲染。终态折叠时只传入当前可见消息 |
+| `default` | `MessageSlotProps` | 自定义单条消息渲染：`message`、`messageTools`、`messageToolsStatus`、`tippyOptions`、`onAction`、`onForkSourceClick`、`onInputConfirm`、`onShortcutConfirm`、`onInterruptResume`。可 `<MessageRender v-bind="slotProps" />`。终态折叠时只传入当前可见消息 |
 | `group` | `{ group }` | 替换整组默认内容（含过程状态栏、消息列表与工具栏） |
 
 ### Expose
@@ -165,7 +166,7 @@
 | `selectedModel` | `string` | 当前选中模型的 `llm_name` |
 | `reasoningEffort` | `null \| ReasoningEffort` | 当前模型的思考深度档位；为空时按模型默认档展示 |
 
-其余 Props 继承自 [ChatInput](#chatinput) 与 [MessageContainer](#messagecontainer)。
+其余 Props 继承自 [ChatInput](#chatinput) 与 [MessageContainer](#messagecontainer)，含 `onForkSourceClick`。`#default` 作用域同样带上该回调；替换默认消息区时请传给自己的 `MessageContainer`。分支会话与提问吸附见 [分支会话](/guide/core-features/session-management#分支会话)、[提问吸附置顶](/guide/core-features/chat-interaction#提问吸附置顶)。
 
 ## MessageRender
 
@@ -177,6 +178,7 @@
 | --- | --- | --- | --- |
 | `message` | `Partial<Message>` | - | 消息对象 |
 | `onAction` | `(tool, message) => void` | - | 工具栏操作回调 |
+| `onForkSourceClick` | `(forkInfo: MessageForkInfo) => void` | - | 分支会话分叉点分隔线点击回调，**仅转发给 `InfoMessage`**（≥ v3.2.0） |
 
 ### Slots
 
@@ -193,7 +195,7 @@
 | `Reasoning` | `ReasoningMessage` | 推理过程（思考链） |
 | `Tool` | `ToolMessage` | 工具调用结果 |
 | `Activity` | `ActivityMessage` | 活动/状态消息 |
-| `Info` | `InfoMessage` | 信息提示 |
+| `Info` | `InfoMessage` | 信息提示。存在 `property.fork_info` 时渲染为「从其他会话中继续」分隔线（≥ v3.2.0） |
 | `System` | `SystemMessage` | 系统消息 |
 
 ### 用法示例

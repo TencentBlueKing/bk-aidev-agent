@@ -424,7 +424,7 @@ const blocks = parseCustomBlocks(`
 至此，当 AI 回复中出现 ` ```custom-component ` 代码块时，就会被自动识别并渲染为对应组件。可交互示例见 [示例 · 消息自定义渲染](/demos/custom-message)。
 
 ::: warning 当前行为
-`#message` 插槽会接管**全部**消息（包括用户消息）。作用域是 chat-x 的 `MessageSlotProps`：`message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`tippyOptions`。`ChatBot` / `AIBlueking` 再补一份 `renderDefault()`，可回退默认 `MessageRender`。AI 消息工具栏仍在插槽外渲染。
+`#message` 插槽会接管**全部**消息（包括用户消息）。作用域是 chat-x 的 `MessageSlotProps`：`message`、`messageTools`、`messageToolsStatus`、已绑定当前消息的 `onAction` / `onInputConfirm` / `onShortcutConfirm`、`onInterruptResume`、`onForkSourceClick`、`tippyOptions`。`ChatBot` / `AIBlueking` 再补一份 `renderDefault()`，可回退默认 `MessageRender`。AI 消息工具栏仍在插槽外渲染。自 **v3.2.0** 起，自定义渲染请 `<MessageRender v-bind="slotProps" />`（先去掉 `renderDefault`）或调用 `renderDefault()`，否则[分支会话](/guide/core-features/session-management#分支会话)分隔线无法点击。
 :::
 
 ::: info 过程折叠

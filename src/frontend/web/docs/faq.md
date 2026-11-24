@@ -372,8 +372,20 @@ v2.1.4-beta.6 起，消息区**不解析任意 HTML**。请在 AIDev Agent **系
 
 ---
 
+## 如何关闭「新建分支会话」？点了「从其他会话中继续」为什么进了新会话欢迎页？
+
+自 **v3.2.0** 起，AI 消息工具栏默认有「新建分支会话」。`ChatBot` / `AIBlueking` 内置处理，**不**走 `agent-action`。不需要时隐藏：
+
+```vue
+<ChatBot url="/api/" :message-tools="[{ id: 'fork', hidden: true }]" />
+```
+
+点击分隔线按 `property.fork_info.source_session_code` 切回来源会话。来源已删除或请求失败时会进入新会话欢迎页（请求层可能仍弹出一次错误提示）。自定义 `#message` 时必须把 `onForkSourceClick` 传给 `MessageRender` 或调用 `renderDefault()`，否则分隔线不可点。原子组装要自己接 `onAgentAction`（`tool.id === 'fork'`）和 `onForkSourceClick`。详见 [分支会话](/guide/core-features/session-management#分支会话)。
+
+---
+
 ## 为什么 executionTabVisible 不生效？
 
 chat-x 3.0.0 起，侧栏不再内建「执行情况」Tab。常驻默认 Tab 是「文件产物」。`executionTabVisible` 还在 `ChatBot` / `AIBlueking` 的类型里，也会被传下去，但 `ChatContainer` 已经不读它，所以 `true` / `false` 都看不到那个 Tab。
 
-文档站的[侧栏示例](/demos/side-render)使用 `3.1.1`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。
+文档站的[侧栏示例](/demos/side-render)使用 `3.2.0-beta.2`，侧栏默认是「文件产物」，没有「执行情况」Tab。详见 [侧栏 Tab 自定义渲染](/guide/core-features/side-render-customization#execution-tab-visible)。

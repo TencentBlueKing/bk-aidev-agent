@@ -472,6 +472,20 @@ interface IMessagesSnapshotEvent {
 }
 ```
 
+## IMessageForkInfo
+
+分支会话分叉点信息（≥ v3.2.0），字段与后端 `property.fork_info`、chat-x `MessageForkInfo` 保持 snake_case。
+
+```typescript
+interface IMessageForkInfo {
+  source_session_code: string;
+  source_content_id: number | string;
+  last_copied_content_id?: number | string;
+}
+```
+
+分叉点是 `role: 'info'` 消息，`property.fork_info` 有值时 chat-x 渲染「从其他会话中继续」。`transferMessageApi2Message` 会透传 info 的 `property`。详见 [分支会话](/guide/core-features/session-management#分支会话)。
+
 ## IMessageProperty
 
 消息 `property`。资源引用走顶层 `docSchema`（与 `extra` 同级），**不再发送** `extra.resources`。

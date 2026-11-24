@@ -95,7 +95,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `messageToolsTippyOptions` | `MessageToolsTippyOptions` | — | 消息工具栏 Tippy 配置（如 `appendTo`，用于控制弹窗挂载位置和层级） |
-| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/cite/rebuild/share）；按 id 与内置合并（覆盖/追加/`hidden`）。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `rebuild` |
+| `messageTools` | `IToolBtn[]` | — | 自定义 AI 消息主工具组（copy/rebuild/fork/share）；按 id 与内置合并（覆盖/追加/`hidden`）。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `rebuild`。内置 `fork`（≥ v3.2.0）由 ChatBot 处理，不走 `agent-action`；隐藏 `{ id: 'fork', hidden: true }`。详见 [分支会话](/guide/core-features/session-management#分支会话) |
 | `updateTools` | `IToolBtn[]` | — | 自定义 AI 消息反馈工具组（like/unlike/delete）；合并规则同上。`agentType === 'claw'` 时 ChatBot 会自动隐藏 `delete` |
 | `resizeProps` | `{ disabled?, initialDivide?, max?, mainMin?, min? }` | — | ResizeLayout 配置（侧栏拖拽）。`mainMin` 是主聊天区最小宽度（**≥ v3.1.1**，默认 400），侧栏拖拽不会把主栏挤到这个值以下 |
 | `size` | `'normal' \| 'small'` | `'small'` | 字号主题档位，透传至 ChatContainer（`small` 12px / `normal` 14px） |
@@ -130,7 +130,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 
 | 事件名 | 参数 | 说明 |
 | --- | --- | --- |
-| `session-switched` | `(session: ISession \| null)` | 会话切换完成 |
+| `session-switched` | `(session: ISession \| null)` | 会话切换完成（含分支会话创建、点击分隔线切回来源） |
 | `agent-info-loaded` | `(chatHelper: IChatHelper)` | 独立模式初始化完成（与 `whenReady` 成功时机一致，仅独立模式） |
 | `rename` | `(newName: string, sessionCode: string)` | 首条消息后 AI 自动重命名成功；AIBlueking 集成时会转发为自身 `@rename`；第二参为被改名会话编码 |
 
@@ -147,7 +147,7 @@ const chatHelper = useChatHelper({ requestData: { urlPrefix: '/api/ai' } });
 | `confirm-share` | `(messages: Message[], source?: IToolBtn)` | 确认分享/多选；`source` 为触发按钮。仅 `!source \|\| source.id === 'share'` 走内置分享 |
 | `cancel-share` | — | 取消分享 |
 | `request-share` | — | 请求进入分享模式 |
-| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击（非内置 cite/rebuild/delete/like/unlike） |
+| `agent-action` | `(tool: IToolBtn, messages: Message[])` | 自定义消息工具点击（非内置 cite/rebuild/fork/delete/like/unlike） |
 
 ### 执行情况事件
 

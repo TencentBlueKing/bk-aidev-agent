@@ -1,5 +1,38 @@
 # 更新日志
 
+## v3.2.0
+
+v3.2.0 配套 `@blueking/chat-x` `3.2.0-beta.2`、`@blueking/chat-helper` `3.2.0-beta.2`。文档站交互示例使用已发布的 `3.2.0-beta.2`。
+
+### 新功能
+
+- **分支会话（Fork）**（≥ v3.2.0）：AI 消息工具栏新增「新建分支会话」。`ChatBot` / `AIBlueking` 内置处理：`POST session/{session_code}/fork/`，body `{ content_id }`，新会话插入历史列表顶部并切换。分叉点为 `role: info` + `property.fork_info`，渲染「从其他会话中继续」分隔线；点击按 `source_session_code` 切回来源会话，来源已删除或请求失败时进入新会话欢迎页。`fork` **不**走 `agent-action`。隐藏：`:message-tools="[{ id: 'fork', hidden: true }]"`。详见 [分支会话](/guide/core-features/session-management#分支会话)
+- **提问吸附置顶**（≥ v3.2.0）：聊天态下本轮用户提问在所在问答轮次内吸附置顶。分享态、多选态不吸附。无新增开关。详见 [聊天交互 · 提问吸附置顶](/guide/core-features/chat-interaction#提问吸附置顶)
+
+### 优化
+
+- **分叉点样式与吸顶阴影**：分隔线文案使用主题色；吸附提问底色为 `var(--ai-message-sticky-bg, #fff)`，宿主消息区背景不同时可覆盖
+- **模型选择器箭头**：走查对齐设计稿
+
+### 修复
+
+- 产物侧栏「在对话中定位」滚到回答时，若同一轮用户提问正在吸附，滚动位置扣掉提问高度，回答开头不再被挡住
+- 分享态（`RenderMode.Share`）分叉点不可点击；未传入 `onForkSourceClick` 时分隔线没有按钮语义
+
+### 文档
+
+- 更新 [会话管理](/guide/core-features/session-management)、[聊天交互](/guide/core-features/chat-interaction)、[UI 定制](/guide/core-features/ui-customization)、[消息自定义渲染](/guide/core-features/custom-message-rendering)、[原子组件组装](/guide/integration-modes/atomic-composition)
+- 更新 [ChatBot](/api/ai-blueking/chatbot)、[AIBlueking](/api/ai-blueking/aiblueking)、[业务管理器](/api/ai-blueking/managers)、[类型定义](/api/ai-blueking/types)、[chat-x 组件](/api/chat-x/components)、[chat-x 类型](/api/chat-x/types)、[chat-helper SDK](/api/chat-helper/sdk)、[FAQ](/faq)
+
+### 升级建议
+
+- 不需要分支会话：`:message-tools="[{ id: 'fork', hidden: true }]"`
+- 自定义 `#message` 时用 `<MessageRender v-bind="slotProps" />` 或 `renderDefault()`，否则分叉点分隔线无法点击
+- 原子组装要自己处理 `onAgentAction`（`tool.id === 'fork'`）和 `onForkSourceClick`
+- 宿主消息区不是白底时，覆盖 `--ai-message-sticky-bg`
+
+---
+
 ## v3.1.1
 
 v3.1.1 配套 `@blueking/chat-x` `3.1.2-beta.2`、`@blueking/chat-helper` `3.1.0`。文档站交互示例使用已发布的 `3.1.1`。
