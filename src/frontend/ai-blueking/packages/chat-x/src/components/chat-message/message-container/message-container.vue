@@ -500,6 +500,10 @@
     contain: layout paint;
     overflow-y: auto;
 
+    .ai-message-turn {
+      width: 100%;
+    }
+
     .message-group {
       display: flex;
       gap: 8px;
