@@ -13,6 +13,8 @@ AIDEV_AGENT = os.environ.get("AIDEV_AGENT", "aidev_agent.services.common_agent.C
 AIDEV_RESOURCE_MANAGER = os.environ.get("AIDEV_RESOURCE_MANAGER", "")
 BKAI_CHAT_QUEUE_TIMEOUT = int(os.environ.get("BKAPP_CHAT_QUEUE_TIMEOUT", "300"))
 BKAI_CHAT_WAIT_TIMEOUT = int(os.environ.get("BKAPP_CHAT_WAIT_TIMEOUT", "1800"))
+# 普通 Chat 是否投递到 Celery worker 执行；置 "0" 时在 Web 进程内直接构建并执行 Agent（本地开发无 worker 时使用）。
+BKAI_CHAT_USE_CELERY = os.environ.get("BKAPP_CHAT_USE_CELERY", "1") == "1"
 AIDEV_AGENT_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_WORKERS", 16))
 AIDEV_AGENT_MAX_PENDING = int(os.environ.get("BKAPP_AIDEV_AGENT_MAX_PENDING", 32))
 AIDEV_AGENT_CLEANUP_MAX_WORKERS = int(os.environ.get("BKAPP_AIDEV_AGENT_CLEANUP_MAX_WORKERS", 2))
