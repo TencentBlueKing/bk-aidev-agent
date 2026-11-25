@@ -171,3 +171,30 @@ def test_custom_resource_execution_is_optional():
 
 def test_helper_uses_resource_manager_policy(helper):
     assert helper._producer_runner is run_producer_inline
+
+
+def test_poll_runner_finalizes_without_publishing(helper, monkeypatch):
+    helper._producer_runner = ProducerOnlyRunner(publish_to_queue=False)
+    handler = helper.message_handler
+    for method in ("put", "flush", "acquire_consumer"):
+        monkeypatch.setattr(handler, method, Mock(side_effect=AssertionError(method)))
+    completed = Mock()
+    assert list(helper.stream(iter(["chunk"]), on_complete=completed, expected_run_id="poll-run")) == []
+    completed.assert_called_once_with()
+    assert not handler.has_active_producer(helper.thread_id)
+    helper._schedule_session_cleanup.assert_not_called()
+
+
+def test_poll_worker_leaves_active_producer_in_charge(helper, monkeypatch):
+    acquire = Mock(return_value=False)
+    release = Mock()
+    monkeypatch.setattr(helper.message_handler, "acquire_producer", acquire)
+    monkeypatch.setattr(helper.message_handler, "release_producer", release)
+    started = Mock()
+    completed = Mock()
+    helper._producer_runner = ProducerOnlyRunner(started, publish_to_queue=False)
+    assert list(helper.stream(iter(["duplicate"]), on_complete=completed)) == []
+    acquire.assert_called_once_with(helper.thread_id)
+    started.assert_not_called()
+    completed.assert_not_called()
+    release.assert_not_called()

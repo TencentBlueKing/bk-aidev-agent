@@ -9,7 +9,11 @@ from aidev_agent.packages.resource_manager import ResourceManagerProtocol
 from aidev_agent.pydantic_models import ChatPrompt, ExecuteKwargs
 from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
-from aidev_agent.services.messages_handler import ConsumerPreemptedError, StreamCancelledError
+from aidev_agent.services.messages_handler import (
+    ConsumerPreemptedError,
+    StreamAttachUnavailableError,
+    StreamCancelledError,
+)
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
 from django.http.response import StreamingHttpResponse
@@ -20,7 +24,7 @@ from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSeri
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
 from aidev_bkplugin.services.chat_tracing import chat_request_span
-from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
+from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec, StreamLookupError
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
 
 
@@ -189,7 +193,13 @@ class ChatCompletionViewSet(PluginViewSet):
             version=execute_kwargs.version,
             channel_type=self.channel_type,
         )
-        output = ChatDispatcher(spec).execute(execute_kwargs)
+        try:
+            output = ChatDispatcher(spec).execute(execute_kwargs)
+        except StreamAttachUnavailableError as exc:
+            return Response({"code": "409", "message": str(exc)}, status=409)
+        except StreamLookupError as exc:
+            logger.exception("Failed to check Chat replay stream")
+            return Response({"code": "503", "message": str(exc)}, status=503)
         if execute_kwargs.stream:
             return self.streaming_response(
                 output, session_code=session_code, username=username, version=execute_kwargs.version

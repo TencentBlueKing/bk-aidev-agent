@@ -477,11 +477,14 @@ class RedisMessageHandler(ReplayBufferMixin, BaseMessageQueueHandler):
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("No message available within timeout")
 
+    def has_replay_stream(self, thread_id: str) -> bool:
+        return self._client.xlen(self._stream_key(thread_id)) > 0
+
     def has_pending_messages(self, thread_id: str) -> bool:
         with self._buffer_lock:
             if self._message_buffer.get(thread_id):
                 return True
-        return self._client.xlen(self._stream_key(thread_id)) > 0
+        return self.has_replay_stream(thread_id)
 
     def mark_completed(self, thread_id: str) -> None:
         """标记完成并保留短暂 replay 窗口，避免首个消费者删除其他消费者的历史。"""

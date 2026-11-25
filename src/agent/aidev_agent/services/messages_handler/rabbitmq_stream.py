@@ -755,12 +755,15 @@ class RabbitMQStreamMessageHandler(RabbitMQMessageHandler):
                     del self._live_readers[thread_id]
         super().release_consumer(thread_id, consumer_id)
 
+    def has_replay_stream(self, thread_id: str) -> bool:
+        return self._stream_runtime.stream_exists(self._get_stream_name(thread_id))
+
     def has_pending_messages(self, thread_id: str) -> bool:
         with self._buffer_lock:
             if self._message_buffer.get(thread_id):
                 return True
         try:
-            return self._stream_runtime.stream_exists(self._get_stream_name(thread_id))
+            return self.has_replay_stream(thread_id)
         except Exception:
             # 检查失败时按无待续流处理，让本轮对话继续生成而不是中断。
             logger.exception("Error checking RabbitMQ Stream for thread_id=%s, fallback to no pending", thread_id)

@@ -211,6 +211,21 @@ def test_attach_never_submits(spec, handler, monkeypatch):
     sender.assert_not_called()
 
 
+@pytest.mark.parametrize("broker_failure", [False, True])
+def test_attach_checks_replay_before_streaming(spec, handler, monkeypatch, broker_failure):
+    submit = Mock()
+    monkeypatch.setattr(ChatDispatcher, "_submit", submit)
+    handler.has_active_producer.return_value = True
+    handler.has_replay_stream.return_value = False
+    if broker_failure:
+        handler.has_replay_stream.side_effect = ConnectionError()
+    expected = producer_dispatch.StreamLookupError if broker_failure else producer_dispatch.StreamAttachUnavailableError
+    with pytest.raises(expected):
+        ChatDispatcher(spec).execute(ExecuteKwargs(stream=True, stream_mode="attach"))
+    handler.has_replay_stream.assert_called_once_with(spec.session_code)
+    submit.assert_not_called()
+
+
 def test_stream_attaches_only_after_actual_run_receipt(spec, handler, monkeypatch):
     handler.get_messages_since.side_effect = [
         ([{"kind": "received"}], 1),
@@ -240,7 +255,7 @@ def test_waiting_heartbeat_until_first_chunk(spec, handler, monkeypatch, task_id
     handler.is_stopped.return_value = False
     handler.acquire_consumer.return_value = "consumer"
     handler.CONSUMER_HEARTBEAT_TIMEOUT = 60
-    handler.has_pending_messages.side_effect = lambda _: clock >= 7
+    handler.has_pending_messages.side_effect = lambda _: task_id is None or clock >= 7
     handler.has_active_producer.side_effect = lambda _: clock >= 7
 
     def advance(seconds):
