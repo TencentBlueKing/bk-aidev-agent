@@ -1316,7 +1316,10 @@ class GeneratorStreamingHelper:
         producer_error = ""
         parent_context = tracing.context_api.get_current() if tracing.context_api is not None else None
         tracer = tracing.get_agent_tracer(__name__)
-        start_span = tracer.start_span("bkplugin.chat.producer.write.start") if tracer else None
+        span_attributes = {"publish_to_queue": publish_to_queue}
+        start_span = (
+            tracer.start_span("bkplugin.chat.producer.write.start", attributes=span_attributes) if tracer else None
+        )
         run_finished_seen = False
         cancel_error_emitted = False
         cancel_finished_emitted = False
@@ -1531,7 +1534,9 @@ class GeneratorStreamingHelper:
                     logger.exception(f"Error joining heartbeat thread for thread_id={self.thread_id}: {e}")
 
             try:
-                with tracing.recording_span("bkplugin.chat.producer.write.end", parent_context=parent_context) as span:
+                with tracing.recording_span(
+                    "bkplugin.chat.producer.write.end", attributes=span_attributes, parent_context=parent_context
+                ) as span:
                     if producer_error and span.is_recording():
                         span.set_attribute("producer_error_type", producer_error)
                         span.set_status(tracing.trace.StatusCode.ERROR, producer_error)
