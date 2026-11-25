@@ -31,7 +31,9 @@ from aidev_agent.services.agent import AgentInstanceFactory
 from aidev_agent.services.common_agent import common_agent_factory
 from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
+from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
 from aidev_agent.utils.local import request_local
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from celery import shared_task
 from django.contrib.auth import get_user_model
 
@@ -329,14 +331,21 @@ class BkpluginAgentRunner(ABC):
     ) -> dict:
         """投递 Celery 并返回 POLL storage。"""
         execute_payload["stream"] = True
-        run_bkplugin_background_agent_task.delay(
-            session_code=session_code,
-            execute_payload=execute_payload,
-            username=self.username,
-            agent_type_value=self.agent_type.value,
-            chat_context=chat_context or [],
-            trace_context=capture_trace_context(),
-        )
+        trace_context = capture_trace_context()
+        with (
+            recording_span(
+                "bkplugin.poll.enqueue", attributes={"agent_type": self.agent_type.value}, use_global_tracer=True
+            ),
+            propagated_trace_context(trace_context),
+        ):
+            run_bkplugin_background_agent_task.delay(
+                session_code=session_code,
+                execute_payload=execute_payload,
+                username=self.username,
+                agent_type_value=self.agent_type.value,
+                chat_context=chat_context or [],
+                trace_context=trace_context,
+            )
         return {
             "session_code": session_code,
             "turn_id": turn_id,
@@ -395,6 +404,17 @@ class BkpluginChat(BkpluginAgentRunner):
         turn_id = execute_payload.get("turn_id") or ""
         manager = SessionManager(self.username or "")
         ek = build_execute_kwargs(execute_payload, self.username)
+        resources = None
+        if self._worker_execution:
+            runner = run_producer_inline
+            if not ek.resume:
+                runner = ProducerOnlyRunner(
+                    on_started=lambda session, _: manager.update_session_status(session, SessionsStatus.PENDING.value),
+                    publish_to_queue=False,
+                )
+            resources = ProducerResourceManager(
+                AgentResourceManager(username=self.username) if self.username else resource_manager_factory(), runner
+            )
         agent = build_chat_agent_for_session(
             session_code=session_code,
             chat_context=chat_context or [],
@@ -403,13 +423,7 @@ class BkpluginChat(BkpluginAgentRunner):
             resume=bool(ek.resume),
             turn_id=turn_id,
             channel_type=ChannelType.BKPLUGIN.value,
-            resource_manager=(
-                ProducerResourceManager(
-                    AgentResourceManager(username=self.username) if self.username else resource_manager_factory()
-                )
-                if self._worker_execution
-                else None
-            ),
+            resource_manager=resources,
         )
         AgentExecutor.run_agent_to_completion(agent, ek, session_code, manager, turn_id=turn_id)
 

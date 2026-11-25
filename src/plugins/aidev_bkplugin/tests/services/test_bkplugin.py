@@ -368,7 +368,10 @@ def test_worker_injects_inline_resources_and_restores_execution(agent_type, monk
     runner.run_worker("session", {"stream": True, "turn_id": "turn"})
     resource_key = "resource_manager" if agent_type == AgentType.CHAT else "flow_resource_manager"
     manager = build.call_args.kwargs[resource_key]
-    assert manager.get_producer_runner() is run_producer_inline
+    if agent_type == AgentType.CHAT:
+        assert manager.get_producer_runner().publish_to_queue is False
+    else:
+        assert manager.get_producer_runner() is run_producer_inline
     assert "producer_runner" not in build.call_args.kwargs
     assert runner._worker_execution is False
 
@@ -434,7 +437,7 @@ def test_worker_keeps_custom_default_resources(monkeypatch):
     runner.run_worker("session", {"stream": True, "turn_id": "turn"})
     manager = build.call_args.kwargs["resource_manager"]
     assert manager.get_client is custom.get_client
-    assert manager.get_producer_runner() is run_producer_inline
+    assert manager.get_producer_runner().publish_to_queue is False
     assert not hasattr(custom, "get_producer_runner")
 
 
@@ -447,4 +450,8 @@ def test_worker_chat_selects_resume_history(monkeypatch, resume):
     runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="alice")
     runner.run_worker("session", {"stream": True, "resume": resume})
     assert build.call_args.kwargs["resume"] is bool(resume)
-    assert build.call_args.kwargs["resource_manager"].get_producer_runner() is run_producer_inline
+    producer = build.call_args.kwargs["resource_manager"].get_producer_runner()
+    if resume:
+        assert producer is run_producer_inline
+    else:
+        assert producer.publish_to_queue is False

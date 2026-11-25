@@ -8,7 +8,11 @@ import uuid
 from ag_ui.core import EventType, RawEvent
 from ag_ui.encoder import EventEncoder
 from aidev_agent.config import settings as agent_settings
-from aidev_agent.services.messages_handler import GeneratorStreamingHelper, InMemoryQueueMessageHandler
+from aidev_agent.services.messages_handler import (
+    GeneratorStreamingHelper,
+    InMemoryQueueMessageHandler,
+    StreamAttachUnavailableError,
+)
 from aidev_agent.services.messages_handler.factory import message_handler_factory
 from aidev_agent.services.messages_handler.rabbitmq_stream import RabbitMQStreamMessageHandler, StreamReadError
 from aidev_agent.utils.tracing import propagated_trace_context, recording_span
@@ -27,6 +31,10 @@ CHAT_TASK_NAME = "aidev_bkplugin.run_chat_producer"
 
 
 WORKER_HEARTBEAT_INTERVAL = 5
+
+
+class StreamLookupError(RuntimeError):
+    """共享消息后端无法查询会话流。"""
 
 
 class ChatExecutionSpec(BaseModel):
@@ -84,6 +92,12 @@ class ChatDispatcher:
         spec = self.spec.model_copy(deep=True)
         spec.execute_kwargs = execute_kwargs.model_dump(mode="json")
         if execute_kwargs.stream_mode == "attach":
+            try:
+                available = handler.has_replay_stream(spec.session_code)
+            except Exception as exc:
+                raise StreamLookupError("查询会话流失败，请稍后重试") from exc
+            if not available:
+                raise StreamAttachUnavailableError("当前会话没有可接入的流")
             return self._consume(spec, handler)
         task_id = self._submit(spec)
         if execute_kwargs.stream:
@@ -200,16 +214,6 @@ class ChatDispatcher:
                         break
                     if chunk := waiting_heartbeat():
                         yield chunk
-            else:
-                deadline = time.monotonic() + timeout
-                while not handler.has_active_producer(spec.session_code) and not handler.has_pending_messages(
-                    spec.session_code
-                ):
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("Chat stream did not become available")
-                    if chunk := waiting_heartbeat():
-                        yield chunk
-                    time.sleep(0.1)
         except (TimeoutError, RuntimeError) as exc:
             cause = exc.cause if isinstance(exc, StreamReadError) else exc
             if task_id:

@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 from aidev_agent.services.messages_handler import EOD_CHUNK, GeneratorStreamingHelper, InMemoryQueueMessageHandler
+from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner
 from aidev_agent.utils import tracing
 from rstream.client import BrokerResolutionMaxRetryError
 
@@ -13,8 +14,8 @@ InMemorySpanExporter = pytest.importorskip(
 StatusCode = pytest.importorskip("opentelemetry.trace").StatusCode
 
 
-@pytest.mark.parametrize("failure", [None, "write", "eod"])
-def test_producer_write_spans(monkeypatch, failure):
+@pytest.mark.parametrize(("publish_to_queue", "failure"), [(False, None), (True, None), (True, "write"), (True, "eod")])
+def test_producer_write_spans(monkeypatch, publish_to_queue, failure):
     provider = TracerProvider()
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -22,6 +23,8 @@ def test_producer_write_spans(monkeypatch, failure):
     monkeypatch.setattr(tracing, "_agent_tracer", tracer)
     handler = InMemoryQueueMessageHandler()
     helper = GeneratorStreamingHelper(handler, thread_id="producer-write")
+    if not publish_to_queue:
+        helper._producer_runner = ProducerOnlyRunner(publish_to_queue=False)
     monkeypatch.setattr(helper, "_schedule_session_cleanup", Mock())
     put = handler.put
 
@@ -35,6 +38,8 @@ def test_producer_write_spans(monkeypatch, failure):
         helper._run_producer(generator=iter(["hello"]))
     start, end, _ = exporter.get_finished_spans()
     assert [start.name, end.name] == ["bkplugin.chat.producer.write.start", "bkplugin.chat.producer.write.end"]
+    assert start.attributes["publish_to_queue"] is publish_to_queue
+    assert end.attributes["publish_to_queue"] is publish_to_queue
     assert start.parent == end.parent == request.get_span_context()
     assert end.status.status_code == (StatusCode.ERROR if failure else StatusCode.UNSET)
     if failure == "write":

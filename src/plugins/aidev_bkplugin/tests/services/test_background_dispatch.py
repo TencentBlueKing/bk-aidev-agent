@@ -4,12 +4,20 @@ import json
 from unittest.mock import Mock
 
 import pytest
+from aidev_agent.utils import tracing
 from aidev_bkplugin.services import agent_bkplugin, background_dispatch
 from opentelemetry import context, trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
 
 def test_dispatch_serializes_trace_and_routes_to_worker(monkeypatch):
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing.trace, "get_tracer", provider.get_tracer)
     task = Mock()
     monkeypatch.setattr(agent_bkplugin, "run_bkplugin_background_agent_task", task)
     runner = agent_bkplugin.BkpluginChat(chat_history=[], execute_kwargs={}, username="user")
@@ -20,6 +28,11 @@ def test_dispatch_serializes_trace_and_routes_to_worker(monkeypatch):
     assert json.loads(json.dumps(kwargs)) == kwargs
     assert kwargs["trace_context"]["traceparent"].endswith("0000000000000002-01")
     task.delay.assert_called_once()
+    (enqueue,) = exporter.get_finished_spans()
+    assert enqueue.name == "bkplugin.poll.enqueue"
+    assert enqueue.parent.span_id == 2
+    assert enqueue.attributes["agent_type"] == runner.agent_type.value
+    provider.shutdown()
 
 
 @pytest.mark.parametrize("carrier", [{}, {"traceparent": "00-00000000000000000000000000000001-0000000000000002-01"}])
