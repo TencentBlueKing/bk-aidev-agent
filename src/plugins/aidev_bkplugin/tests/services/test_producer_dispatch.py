@@ -10,6 +10,7 @@ from aidev_agent.services.messages_handler.rabbitmq_stream import StreamReadErro
 from aidev_agent.utils import tracing
 from aidev_bkplugin.services import producer_dispatch
 from aidev_bkplugin.services.chat_tasks import execute_chat_producer, mark_chat_started, run_chat_producer
+from aidev_bkplugin.services.chat_tasks_inline import ChatInlineDispatcher
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -411,3 +412,24 @@ def test_exhausted_stream_read_returns_terminal_events(spec, handler, monkeypatc
     assert receipt.status.description == "ConnectionResetError"
     assert not receipt.attributes
     provider.shutdown()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_celery_disabled_executes_inline_without_broker(spec, handler, monkeypatch, settings, stream):
+    settings.BKAI_CHAT_USE_CELERY = False
+    settings.BKAI_CHAT_RESOURCE_MANAGER_FACTORY = Mock()
+    builder = Mock()
+    builder.by_session_code.return_value.chat_history = []
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks_inline.AgentBuilder", Mock(return_value=builder))
+    executor = Mock()
+    executor.execute_with_save.return_value = "output"
+    monkeypatch.setattr("aidev_bkplugin.services.chat_tasks_inline.AgentExecutor", Mock(return_value=executor))
+    sender = Mock()
+    monkeypatch.setattr(producer_dispatch.current_app, "send_task", sender)
+    ek = ExecuteKwargs(stream=stream, input="hello")
+    assert ChatInlineDispatcher(spec).execute(ek) == "output"
+    executor.execute_with_save.assert_called_once_with(
+        builder.by_session_code.return_value, ek, "test-session", turn_id="turn-1"
+    )
+    sender.assert_not_called()
+    handler.supports_replay_from_start.assert_not_called()

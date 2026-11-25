@@ -16,6 +16,7 @@ from aidev_agent.services.messages_handler import (
 )
 from aidev_agent.services.messages_handler.streaming_helper import GeneratorStreamingHelper
 from blueapps.core.exceptions import ClientBlueException
+from django.conf import settings
 from django.http.response import StreamingHttpResponse
 from rest_framework.views import Response
 
@@ -23,6 +24,7 @@ from aidev_bkplugin.packages.drf.renderers import get_response_trace_id
 from aidev_bkplugin.serializers.chat_completion import ChatCompletionRequestSerializer
 from aidev_bkplugin.services.agent_helpers import AgentHelper
 from aidev_bkplugin.services.agent_session import SessionManager
+from aidev_bkplugin.services.chat_tasks_inline import ChatInlineDispatcher
 from aidev_bkplugin.services.chat_tracing import chat_request_span
 from aidev_bkplugin.services.producer_dispatch import ChatDispatcher, ChatExecutionSpec, StreamLookupError
 from aidev_bkplugin.views.base import IgnoreClientContentNegotiation, PluginViewSet, logger
@@ -193,8 +195,10 @@ class ChatCompletionViewSet(PluginViewSet):
             version=execute_kwargs.version,
             channel_type=self.channel_type,
         )
+        use_celery = execute_kwargs.stream_mode == "attach" or getattr(settings, "BKAI_CHAT_USE_CELERY", True)
+        dispatcher_cls = ChatDispatcher if use_celery else ChatInlineDispatcher
         try:
-            output = ChatDispatcher(spec).execute(execute_kwargs)
+            output = dispatcher_cls(spec).execute(execute_kwargs)
         except StreamAttachUnavailableError as exc:
             return Response({"code": "409", "message": str(exc)}, status=409)
         except StreamLookupError as exc:
