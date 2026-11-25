@@ -33,6 +33,7 @@ from aidev_agent.services.event_handlers.agui_writer import AGUISessionWriter
 from aidev_agent.services.messages_handler import RetryableHeartbeatTimeoutError
 from aidev_agent.services.messages_handler.producer import ProducerOnlyRunner, run_producer_inline
 from aidev_agent.utils.local import request_local
+from aidev_agent.utils.tracing import propagated_trace_context, recording_span
 from celery import shared_task
 from django.contrib.auth import get_user_model
 
@@ -330,14 +331,21 @@ class BkpluginAgentRunner(ABC):
     ) -> dict:
         """投递 Celery 并返回 POLL storage。"""
         execute_payload["stream"] = True
-        run_bkplugin_background_agent_task.delay(
-            session_code=session_code,
-            execute_payload=execute_payload,
-            username=self.username,
-            agent_type_value=self.agent_type.value,
-            chat_context=chat_context or [],
-            trace_context=capture_trace_context(),
-        )
+        trace_context = capture_trace_context()
+        with (
+            recording_span(
+                "bkplugin.poll.enqueue", attributes={"agent_type": self.agent_type.value}, use_global_tracer=True
+            ),
+            propagated_trace_context(trace_context),
+        ):
+            run_bkplugin_background_agent_task.delay(
+                session_code=session_code,
+                execute_payload=execute_payload,
+                username=self.username,
+                agent_type_value=self.agent_type.value,
+                chat_context=chat_context or [],
+                trace_context=trace_context,
+            )
         return {
             "session_code": session_code,
             "turn_id": turn_id,
