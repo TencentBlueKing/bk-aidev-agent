@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Optional
 
 import pytest
+
 from aidev_agent.packages.langchain_core.retrievers.bk_retriever import BkRetriever
 from aidev_agent.packages.resource_manager.base import BaseResourceManager
 from aidev_agent.pydantic_models import KnowledgeSettings, ModelContextSettings
@@ -509,3 +510,16 @@ def test_enable_judge_response_env_override(monkeypatch, bkai_enable, prompt_ena
     rm = _StubResourceManager(raw_factory=lambda *_: raw)
     cfg = rm.get_agent_config("a")
     assert cfg.model_context_options_data["enable_judge_response"] == expected
+
+
+def test_related_tools_dict_merges_tools_and_apigws():
+    """related_tools 为 dict 协议时应同时提取 tools 与 apigws 的 tool_code 并保序去重。"""
+    raw = _build_raw(
+        related_tools={
+            "tools": [{"tool_code": "tool-a"}, {"tool_code": "tool-b"}],
+            "apigws": [{"tool_code": "apigw__gw__api1"}, {"tool_code": "tool-b"}],
+        }
+    )
+    rm = _StubResourceManager(raw_factory=lambda *_: raw)
+    cfg = rm.get_agent_config("a")
+    assert cfg.tool_codes == ["tool-a", "tool-b", "apigw__gw__api1"]
