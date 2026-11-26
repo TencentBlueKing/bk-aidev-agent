@@ -118,6 +118,18 @@ def test_stream_handler_inherits_rabbitmq_control_plane():
     assert issubclass(RabbitMQStreamMessageHandler, RabbitMQMessageHandler)
 
 
+@pytest.mark.parametrize(("configured", "expected"), [(None, 20), ("5", 5)])
+def test_stream_connection_max_retries_default_and_override(monkeypatch, configured, expected):
+    monkeypatch.setenv("RABBITMQ_STREAM_PORT", "5552")
+    if configured is None:
+        monkeypatch.delenv("RABBITMQ_STREAM_MAX_RETRIES", raising=False)
+    else:
+        monkeypatch.setenv("RABBITMQ_STREAM_MAX_RETRIES", configured)
+    handler = object.__new__(RabbitMQStreamMessageHandler)
+
+    assert handler._get_stream_connection_kwargs()["max_retries"] == expected
+
+
 def test_stream_subscription_reads_arrived_batch_and_advances_offset():
     subscription = _StreamSubscription(MagicMock(), 1, "stream", next_offset=4)
     subscription.messages.put((4, "first"))
