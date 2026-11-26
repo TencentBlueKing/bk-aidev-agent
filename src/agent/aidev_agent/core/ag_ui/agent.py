@@ -586,7 +586,10 @@ class LangGraphAgent:
         should_emit_messages = event["metadata"].get("emit-messages", True)
         should_emit_tool_calls = event["metadata"].get("emit-tool-calls", True)
 
-        if event["data"]["chunk"].response_metadata.get("finish_reason", None):
+        chunk = event["data"]["chunk"]
+        message_content = resolve_message_content(chunk.content)
+        # Some providers include the final text delta in the finish chunk.
+        if chunk.response_metadata.get("finish_reason") and not message_content:
             return
 
         current_stream = self.get_message_in_progress(self.active_run["id"])
@@ -624,11 +627,6 @@ class LangGraphAgent:
             self.active_run["has_function_streaming"] = True
 
         reasoning_data = resolve_reasoning_content(event["data"]["chunk"]) if event["data"]["chunk"] else None
-        message_content = (
-            resolve_message_content(event["data"]["chunk"].content)
-            if event["data"]["chunk"] and event["data"]["chunk"].content
-            else None
-        )
         is_message_content_event = tool_call_data is None and message_content
         is_message_end_event = (
             has_current_stream
