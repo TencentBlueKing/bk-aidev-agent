@@ -56,6 +56,12 @@ const router = createRouter({
       meta: { title: 'requestOptions 响应式', group: 'example' },
     },
     {
+      path: '/examples/welcome-context-action',
+      name: 'WelcomeContextAction',
+      component: () => import('./views/WelcomeContextActionView.vue'),
+      meta: { title: '动态上下文 + 欢迎按钮', group: 'example' },
+    },
+    {
       path: '/examples/header-left-slot',
       name: 'HeaderLeftSlot',
       component: () => import('./views/HeaderLeftSlotView.vue'),

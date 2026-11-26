@@ -32,6 +32,7 @@
 | `HeaderActionsSlotView.vue` | `#headerActions` 插槽：页面内展示实现原理 + AIHeader/AIBlueking 源码；`SourceGuideDialog` 可复制 Vue3/Vue2 示例 | [SKILL.md](../SKILL.md) |
 | `UrlSwitchView.vue` | `url` 动态切换与重初始化（`whenReady` / `ChatBotInitStaleError`） | [ChatBot API#whenReady](chatbot-api.md) |
 | `RequestOptionsView.vue` | `requestOptions` 响应式（对象/函数/ref/computed） | [SKILL.md · requestOptions 响应式](../SKILL.md) |
+| `WelcomeContextActionView.vue` | 动态页面上下文 + `#welcome` 欢迎快捷按钮（方案 A），含完整数据流与前后端二开文档 | [SKILL.md · requestOptions 响应式](../SKILL.md) |
 | `RenderModeView.vue` | `renderMode`（chat / share / test） | [SKILL.md · 渲染模式](../SKILL.md) |
 | `ErrorHandlingView.vue` | `@error`（独立）vs `@sdk-error`（集成） | [集成模式#错误处理](integration-patterns.md) |
 | `CustomMessageSlotView.vue` | `#message` + `custom-component` 自定义渲染 | [自定义消息渲染](custom-message-rendering.md) |
