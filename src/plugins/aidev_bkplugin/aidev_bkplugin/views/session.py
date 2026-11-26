@@ -190,16 +190,21 @@ class ChatSessionViewSet(PluginViewSet):
         if not username:
             username = request.META.get("HTTP_X_BKAIDEV_USER", "")
         tenant_id = resolve_tenant_id(request)
-        rm = PluginResourceManager(username=username, tenant_id=tenant_id)
+        # 与 self.client 共用 get_resource_manager()，接入方覆盖的子智能体凭证与换票逻辑才对 PV 接口生效；
+        # 无用户名时 get_username() 会抛错，沿用默认 rm 交由下游 PaaS 拒绝
+        rm = (self.get_resource_manager() if username else None) or PluginResourceManager(
+            username=username, tenant_id=tenant_id
+        )
 
         # 用户ticket获取优先级：
         # 1) cookie[BKAUTH_BACKEND_TYPE]：前端浏览器同域直调场景
         # 2) HTTP_AIDEV_TICKET header：cookie 缺失时的手动兜底
-        # 3) access_token：apigw 场景，用 username 通过 bkoauth 换取
+        # 3) access_token：apigw 场景，用 username 通过 rm 换取
         ticket_key, bk_ticket = _request_ticket(request)
         executor_info = {
-            "app_code": settings.BK_APP_CODE,
-            "app_secret": settings.BK_APP_SECRET,
+            # agent 运行时按 rm.app_code 创建会话 PV，沙箱接口路径中的 app_code 必须一致
+            "app_code": getattr(rm, "app_code", "") or settings.BK_APP_CODE,
+            "app_secret": getattr(rm, "app_secret", "") or settings.BK_APP_SECRET,
             "executor": username,
             "bk_ticket_key": ticket_key,
             "bk_ticket_value": bk_ticket,
@@ -337,9 +342,7 @@ class ChatSessionViewSet(PluginViewSet):
             self._raise_pv_exc(exc)
 
         svc = self._make_pv_file_service(request)
-        snapshot = self._resolve_upload_snapshot(
-            PluginResourceManager(username=request.user.username, tenant_id=resolve_tenant_id(request))
-        )
+        snapshot = self._resolve_upload_snapshot(svc._rm)
         if snapshot:
             svc._executor_info["snapshot"] = snapshot
         try:

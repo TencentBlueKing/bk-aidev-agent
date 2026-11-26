@@ -2,7 +2,7 @@
 """aidev_bkplugin ChatSessionViewSet.pv_files* action 单测。
 
 覆盖点：
-- 构造沙箱文件 Service 时正确注入 PluginResourceManager + executor_info
+- 构造沙箱文件 Service 时注入 get_resource_manager() 的 rm + executor_info（含接入方覆盖场景）
 - 6 个 action 参数透传（GET list / DELETE / stat / preview / download_url / upload）
 - 上传会话归属校验与沙箱文件异常映射
 - 沙箱文件异常 → blueapps 异常映射（404 / 400 / 500）
@@ -92,6 +92,8 @@ def view():
     instance = session_mod.ChatSessionViewSet()
     # PluginViewSet 是假基类（object），client 非 property，可直接实例赋值
     instance.client = fake_client
+    # 对齐真实基类的默认实现：按请求用户构造 PluginResourceManager
+    instance.get_resource_manager = lambda: session_mod.PluginResourceManager(username="alice", tenant_id="")
     return instance
 
 
@@ -101,8 +103,22 @@ def mock_svc():
     with patch.object(session_mod, "SandboxPvFileService") as svc_cls:
         instance = MagicMock()
         instance._executor_info = {}
-        svc_cls.return_value = instance
+
+        def _build(resource_manager, executor_info):
+            instance._rm = resource_manager
+            return instance
+
+        svc_cls.side_effect = _build
         yield instance, svc_cls
+
+
+def _sub_agent_rm(access_token="sub-agent-token"):
+    """接入方覆盖 get_resource_manager() 返回的子智能体 rm。"""
+    rm = MagicMock()
+    rm.app_code = "sub-agent"
+    rm.app_secret = "sub-agent-secret"
+    rm.resolve_access_token.return_value = access_token
+    return rm
 
 
 @pytest.fixture(autouse=True)
@@ -112,8 +128,14 @@ def _reset_retrieve_chat_session_mock():
     side_effect 泄露到后续 TestPvFiles* 用例（那些用例默认应"归属校验通过"）。
     """
     fake_client.api.retrieve_chat_session.reset_mock(side_effect=True, return_value=True)
+    session_mod.PluginResourceManager.reset_mock()
+    # 标准插件部署下 SaaS 即 Agent，默认 rm 的应用凭证与 settings 一致
+    session_mod.PluginResourceManager.return_value.app_code = settings.BK_APP_CODE
+    session_mod.PluginResourceManager.return_value.app_secret = settings.BK_APP_SECRET
     session_mod.PluginResourceManager.return_value.resolve_access_token.return_value = None
-    latest_image = session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image
+    latest_image = (
+        session_mod.PluginResourceManager.return_value.get_client.return_value.api.retrieve_latest_skill_version_image
+    )
     latest_image.reset_mock()
     yield
 
@@ -190,10 +212,96 @@ class TestMakePvFileService:
         view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
 
         assert "snapshot" not in svc_cls.call_args.kwargs["executor_info"]
-        assert instance._executor_info["snapshot"] == (
-            "mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9"
-        )
+        assert instance._executor_info["snapshot"] == ("mirrors.tencent.com/bkpaas-sandbox/bkaidev/file-kit:0.0.9")
         rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
+
+    def test_uses_overridden_resource_manager(self, view, mock_svc):
+        """接入方覆盖 get_resource_manager()：PV 接口用其 rm，应用凭证与 access_token 均取自该 rm。"""
+        _, svc_cls = mock_svc
+        sub_rm = _sub_agent_rm()
+        view.get_resource_manager = lambda: sub_rm
+
+        view._make_pv_file_service(_request())
+
+        call_kwargs = svc_cls.call_args.kwargs
+        assert call_kwargs["resource_manager"] is sub_rm
+        assert call_kwargs["executor_info"]["app_code"] == "sub-agent"
+        assert call_kwargs["executor_info"]["app_secret"] == "sub-agent-secret"
+        assert call_kwargs["executor_info"]["access_token"] == "sub-agent-token"
+        sub_rm.resolve_access_token.assert_called_once_with("alice")
+        session_mod.PluginResourceManager.assert_not_called()
+
+    def test_falls_back_to_settings_when_rm_has_no_app_credential(self, view, mock_svc):
+        """自定义 rm 未提供 app_code/app_secret 时回退 settings，保持旧行为。"""
+        _, svc_cls = mock_svc
+        bare_rm = MagicMock(spec=["resolve_access_token", "retrieve_chat_session", "get_paas_sbx_client"])
+        bare_rm.resolve_access_token.return_value = None
+        view.get_resource_manager = lambda: bare_rm
+
+        view._make_pv_file_service(_request())
+
+        executor_info = svc_cls.call_args.kwargs["executor_info"]
+        assert svc_cls.call_args.kwargs["resource_manager"] is bare_rm
+        assert executor_info["app_code"] == settings.BK_APP_CODE
+        assert executor_info["app_secret"] == settings.BK_APP_SECRET
+
+    def test_falls_back_to_default_rm_when_override_returns_none(self, view, mock_svc):
+        _, svc_cls = mock_svc
+        view.get_resource_manager = lambda: None
+
+        view._make_pv_file_service(_request())
+
+        session_mod.PluginResourceManager.assert_called_once_with(username="alice", tenant_id="")
+        assert svc_cls.call_args.kwargs["resource_manager"] is session_mod.PluginResourceManager.return_value
+
+    def test_no_username_keeps_degraded_path(self, view, mock_svc):
+        """无用户名时不调 get_resource_manager()（其 get_username 会抛错），仍返回 service 交由下游拒绝。"""
+        instance, svc_cls = mock_svc
+        view.get_resource_manager = MagicMock(side_effect=ValueError("无法获取用户名"))
+
+        result = view._make_pv_file_service(_request(username=""))
+
+        assert result is instance
+        view.get_resource_manager.assert_not_called()
+        session_mod.PluginResourceManager.assert_called_once_with(username="", tenant_id="")
+        assert svc_cls.call_args.kwargs["executor_info"]["executor"] == ""
+
+    def test_upload_snapshot_uses_overridden_resource_manager(self, view, mock_svc):
+        instance, _ = mock_svc
+        sub_rm = _sub_agent_rm()
+        sub_rm.get_client.return_value.api.retrieve_latest_skill_version_image.return_value = {
+            "data": {"image": "file-kit:1.0.0"}
+        }
+        view.get_resource_manager = lambda: sub_rm
+        uploaded_file = SimpleUploadedFile("report.txt", b"report", content_type="text/plain")
+
+        view.pv_files_upload(_request(method="POST", files=[uploaded_file]), pk="s1")
+
+        sub_rm.get_client.return_value.api.retrieve_latest_skill_version_image.assert_called_once_with()
+        session_mod.PluginResourceManager.assert_not_called()
+        assert instance._executor_info["snapshot"] == "file-kit:1.0.0"
+
+
+class TestPvFilesWithOverriddenResourceManager:
+    def test_download_url_queries_session_and_paas_with_sub_agent_credential(self, view):
+        """真实 SandboxPvFileService 链路：会话查询与 PaaS 沙箱请求都使用覆盖后的 rm 和其 app_code。"""
+        sub_rm = _sub_agent_rm()
+        sub_rm.retrieve_chat_session.return_value = {"session_property": {"sandbox_pv_id": "v1"}}
+        paas_client = sub_rm.get_paas_sbx_client.return_value
+        paas_client.get_download_url.request.return_value.json.return_value = {"download_url": "https://cdn/x"}
+        view.get_resource_manager = lambda: sub_rm
+
+        response = view.pv_files_download_url(_request({"path": "report.md"}), pk="[sub-agent]s1")
+
+        assert response.data == {"download_url": "https://cdn/x"}
+        sub_rm.retrieve_chat_session.assert_called_once_with("[sub-agent]s1")
+        executor_info = sub_rm.get_paas_sbx_client.call_args.args[0]
+        assert executor_info["app_code"] == "sub-agent"
+        assert executor_info["access_token"] == "sub-agent-token"
+        request_kwargs = paas_client.get_download_url.request.call_args.kwargs
+        assert request_kwargs["path_params"] == {"app_code": "sub-agent", "volume_id": "v1"}
+        session_mod.PluginResourceManager.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # pv_files (GET / DELETE)
