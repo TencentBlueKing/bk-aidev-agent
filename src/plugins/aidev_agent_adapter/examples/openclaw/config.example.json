@@ -1,0 +1,19 @@
+{
+  "endpoint": "https://personal-apigw.example.com/prod",
+  "agent_code": "demo",
+  "agent_app_code": "demo-app",
+  "tenant_id": "default",
+  "version": "1.0.0",
+  "engine": "openclaw",
+  "root": "/var/lib/aidev-adapter/demo",
+  "openclaw_model_provider": "bkaidev",
+  "native_config": {
+    "plugins": {"allow": ["openai"]},
+    "gateway": {"mode": "local"},
+    "models": {"providers": {"bkaidev": {
+      "baseUrl": "https://model-gateway.example.com/v1",
+      "api": "openai-completions",
+      "apiKey": "${OPENCLAW_MODEL_KEY}"
+    }}}
+  }
+}

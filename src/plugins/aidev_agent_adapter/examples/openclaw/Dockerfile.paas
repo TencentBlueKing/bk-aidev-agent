@@ -1,0 +1,25 @@
+FROM python:3.11-slim-bookworm
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git \
+    && cd /tmp \
+    && curl -fsSLO https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz \
+    && curl -fsSLo node-sums https://nodejs.org/dist/v24.22.3/SHASUMS256.txt \
+    && grep -F '  node-v24.22.3-linux-x64.tar.gz' node-sums | sha256sum -c - \
+    && tar xzf node-v24.22.3-linux-x64.tar.gz --strip-components=1 -C /usr/local \
+    && npm install --prefix /app/runtime --no-audit --no-fund openclaw@2026.11.6 \
+    && npm install --prefix /app/otel --no-audit --no-fund @openclaw/diagnostics-otel@2026.11.6 \
+    && ln -s /app/runtime/node_modules/.bin/openclaw /usr/local/bin/openclaw \
+    && npm cache clean --force && rm -f node-v24.22.3-linux-x64.tar.gz node-sums \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /app/.venv \
+    && /app/.venv/bin/pip install --no-cache-dir --index-url https://mirrors.tencent.com/repository/pypi/tencent_pypi/simple aidev-agent-adapter==0.2.5 \
+    && /app/.venv/bin/python -m aidev_agent_adapter.openclaw_trace_bridge /app/runtime/node_modules/openclaw \
+    && /app/.venv/bin/aidev-openclaw-adapter --help
+RUN useradd --uid 1000 --create-home adapter \
+    && install -d /app/.storage/agent /app/.storage/user /app/.storage/session \
+    && install -d -o adapter -g adapter -m 700 /app/workspace
+ENV OPENCLAW_STATE_DIR=/app/.storage/user/state
+WORKDIR /app/workspace
+USER adapter
