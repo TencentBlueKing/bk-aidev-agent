@@ -8,10 +8,10 @@ import zipfile
 import pytest
 from acp.schema import AgentMessageChunk, TextContentBlock, ToolCallStart
 from ag_ui.core import CustomEvent, ToolCallArgsEvent, ToolCallEndEvent, ToolCallStartEvent
-from aidev_agent_adapter.config_sync import ConfigSynchronizer, render_mcp, unpack_skill
-from aidev_agent_adapter.events import EventMapper
-from aidev_agent_adapter.journal import Journal
-from aidev_agent_adapter.platform import PlatformError
+from aidev_agent_adapter.exceptions import PlatformError
+from aidev_agent_adapter.protocols.events import EventMapper
+from aidev_agent_adapter.services.config_sync import ConfigSynchronizer, render_mcp, unpack_skill
+from aidev_agent_adapter.services.journal import Journal
 
 
 def text_update(value):

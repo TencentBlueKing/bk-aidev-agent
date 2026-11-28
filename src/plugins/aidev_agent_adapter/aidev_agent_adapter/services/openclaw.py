@@ -10,29 +10,22 @@ import shutil
 import sys
 import tempfile
 import uuid
-from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 
 import httpx
-from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from .adapter import Adapter
-from .cli import load_settings
-from .config_sync import ConfigSynchronizer, Snapshot, private_directory, write_private
-from .models import Settings
-from .platform import PlatformClient
+from .config_sync import ConfigSynchronizer, Snapshot
 from .runner import serve_runner
+from ..api.platform import PlatformClient
+from ..cli import load_settings
+from ..packages.storage import open_private_log, private_directory, write_private
+from ..protocols.models import Settings
+from ..telemetry.otel import configure_otel
 
 logger = logging.getLogger(__name__)
-OTEL_PLUGIN_DIR = Path("/app/otel/node_modules/@openclaw/diagnostics-otel")
 GATEWAY_PORT = 18789
 GATEWAY_READY_TIMEOUT = 100
 
@@ -97,54 +90,6 @@ async def run_runner_with_gateway(gateway: asyncio.subprocess.Process, runner_co
             if not task.done():
                 task.cancel()
         await asyncio.gather(runner_task, gateway_task, return_exceptions=True)
-
-
-def configure_otel(settings: Settings, endpoint: str) -> tuple[TracerProvider, MeterProvider]:
-    resource = Resource.create({"service.name": "aidev-agent-adapter"})
-    provider = TracerProvider(resource=resource)
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    trace.set_tracer_provider(provider)
-    meter_provider = MeterProvider(
-        resource=resource,
-        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(), export_interval_millis=5000)],
-    )
-    metrics.set_meter_provider(meter_provider)
-    if not OTEL_PLUGIN_DIR.is_dir():
-        logger.warning(
-            "OpenClaw diagnostics-otel plugin directory not found (%s); skipping engine OTLP plugin",
-            OTEL_PLUGIN_DIR,
-        )
-        return provider, meter_provider
-    plugins = settings.native_config.setdefault("plugins", {})
-    allowed = plugins.setdefault("allow", ["openai"])
-    if "diagnostics-otel" not in allowed:
-        allowed.append("diagnostics-otel")
-    plugins.setdefault("entries", {})["diagnostics-otel"] = {"enabled": True}
-    load_paths = plugins.setdefault("load", {}).setdefault("paths", [])
-    plugin_str = str(OTEL_PLUGIN_DIR)
-    if plugin_str not in load_paths:
-        load_paths.append(plugin_str)
-    settings.native_config["diagnostics"] = {
-        "enabled": True,
-        "otel": {
-            "enabled": True,
-            "traces": True,
-            "metrics": True,
-            "logs": False,
-            "captureContent": False,
-            "serviceName": "openclaw-gateway",
-        },
-    }
-    settings.engine_env["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint
-    return provider, meter_provider
-
-
-@contextmanager
-def _open_private_log(path: Path):
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        yield stream
 
 
 @asynccontextmanager
@@ -236,7 +181,7 @@ async def run(config: Path, prompt: str | None) -> None:
             stack.callback(meter_provider.shutdown)
         adapter = await stack.enter_async_context(Adapter(settings, snapshot))
         gateway_log = stack.enter_context(
-            _open_private_log(private_directory(settings.root / "logs") / "gateway.stderr.log")
+            open_private_log(private_directory(settings.root / "logs") / "gateway.stderr.log")
         )
         gateway = await stack.enter_async_context(_managed_gateway(binary, env, gateway_log))
         await wait_for_gateway(gateway)

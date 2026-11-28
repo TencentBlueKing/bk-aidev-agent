@@ -12,10 +12,11 @@ from acp.schema import ClientCapabilities, RequestPermissionResponse
 from opentelemetry import metrics, trace
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from .config_sync import Snapshot, private_directory
-from .events import EventMapper
+from .config_sync import Snapshot
 from .journal import Journal
-from .models import Settings
+from ..packages.storage import private_directory
+from ..protocols.events import EventMapper
+from ..protocols.models import Settings
 
 logger = logging.getLogger(__name__)
 SESSION_VOLUME = Path("/app/.storage/session")

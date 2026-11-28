@@ -3,9 +3,11 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+
+from ..enums import EngineType
 
 
 class Settings(BaseModel):
@@ -20,7 +22,7 @@ class Settings(BaseModel):
     app_secret: SecretStr = SecretStr("")
     subject_id: str = ""
     version: str = Field(min_length=1)
-    engine: Literal["openclaw", "hermes"]
+    engine: EngineType
     mounted_storage: bool = False
     root: Path
     mcp_names: list[str] | None = None

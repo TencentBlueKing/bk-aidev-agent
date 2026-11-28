@@ -11,51 +11,20 @@ import shutil
 import stat
 import tempfile
 import zipfile
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 
-from .models import Bundle, Settings
-from .platform import PlatformClient, PlatformError, origin
+from ..api.platform import PlatformClient, origin
+from ..exceptions import PlatformError
+from ..packages.storage import directory_fd, private_directory, write_private
+from ..protocols.models import Bundle, Settings
 
 AGENT_VOLUME = Path("/app/.storage/agent")
 NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
 _READ_CHUNK_SIZE = 65536
-
-
-@contextmanager
-def directory_fd(path: Path):
-    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        yield descriptor
-    finally:
-        os.close(descriptor)
-
-
-def private_directory(path: Path) -> Path:
-    path = path.absolute()
-    for part in (path, *path.parents):
-        if part.is_symlink():
-            raise ValueError("symlinked state path is not allowed")
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if path.stat().st_uid != os.getuid():
-        raise ValueError("state directory must belong to the adapter user")
-    path.chmod(0o700)
-    return path
-
-
-def write_private(path: Path, data: str | bytes) -> None:
-    """以原子 0o600 权限及 O_NOFOLLOW 创建私有文件，避免先建再 chmod 的权限窗口。"""
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(data.encode("utf-8") if isinstance(data, str) else data)
-        stream.flush()
-        os.fsync(stream.fileno())
 
 
 def _read_bounded_entry(archive: zipfile.ZipFile, item: zipfile.ZipInfo, remaining: int) -> bytes:

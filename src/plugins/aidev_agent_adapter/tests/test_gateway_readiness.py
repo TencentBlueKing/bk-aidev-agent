@@ -4,8 +4,9 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from aidev_agent_adapter import openclaw
-from aidev_agent_adapter.openclaw import configure_otel, run_runner_with_gateway, wait_for_gateway
+from aidev_agent_adapter.services.openclaw import run_runner_with_gateway, wait_for_gateway
+from aidev_agent_adapter.telemetry import otel
+from aidev_agent_adapter.telemetry.otel import configure_otel
 
 
 async def test_register_only_after_gateway_is_ready(monkeypatch):
@@ -48,9 +49,9 @@ async def test_run_runner_with_gateway_aborts_when_gateway_exits():
 
 
 def test_configure_otel_skips_missing_plugin_directory(monkeypatch, tmp_path):
-    monkeypatch.setattr(openclaw, "OTEL_PLUGIN_DIR", Path(tmp_path / "missing-plugin"))
-    monkeypatch.setattr(openclaw.trace, "set_tracer_provider", lambda provider: None)
-    monkeypatch.setattr(openclaw.metrics, "set_meter_provider", lambda provider: None)
+    monkeypatch.setattr(otel, "OTEL_PLUGIN_DIR", Path(tmp_path / "missing-plugin"))
+    monkeypatch.setattr(otel.trace, "set_tracer_provider", lambda provider: None)
+    monkeypatch.setattr(otel.metrics, "set_meter_provider", lambda provider: None)
     settings = SimpleNamespace(native_config={}, engine_env={})
     tracer_provider, meter_provider = configure_otel(settings, "http://127.0.0.1:4318")
     tracer_provider.shutdown()

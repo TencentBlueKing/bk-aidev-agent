@@ -18,7 +18,7 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest>=8,<9", "pytest-cov>=6,<8", "pytest-asyncio>=0.24,<1", "ruff>=0.14,<0.15"]
 [project.scripts]
-aidev-openclaw-adapter = "aidev_agent_adapter.openclaw:main"
+aidev-openclaw-adapter = "aidev_agent_adapter.services.openclaw:main"
 aidev-agent-adapter = "aidev_agent_adapter.cli:main"
 [build-system]
 requires = ["hatchling"]

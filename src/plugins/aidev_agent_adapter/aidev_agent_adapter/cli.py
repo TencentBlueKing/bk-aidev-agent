@@ -7,11 +7,11 @@ import os
 import sys
 from pathlib import Path
 
-from .adapter import Adapter
-from .config_sync import ConfigSynchronizer
-from .journal import Journal
-from .models import Settings
-from .platform import PlatformClient
+from .api.platform import PlatformClient
+from .protocols.models import Settings
+from .services.adapter import Adapter
+from .services.config_sync import ConfigSynchronizer
+from .services.journal import Journal
 
 
 def load_settings(path: Path) -> Settings:

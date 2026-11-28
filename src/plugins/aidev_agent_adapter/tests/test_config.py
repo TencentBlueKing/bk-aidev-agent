@@ -5,8 +5,9 @@ import zipfile
 import httpx
 import pytest
 import yaml
-from aidev_agent_adapter.config_sync import ConfigSynchronizer, render_mcp, unpack_skill
-from aidev_agent_adapter.platform import PlatformClient, PlatformError
+from aidev_agent_adapter.api.platform import PlatformClient
+from aidev_agent_adapter.exceptions import PlatformError
+from aidev_agent_adapter.services.config_sync import ConfigSynchronizer, render_mcp, unpack_skill
 
 
 @pytest.mark.parametrize("engine", ["openclaw", "hermes"])

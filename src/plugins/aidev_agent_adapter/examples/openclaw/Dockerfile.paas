@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 RUN python -m venv /app/.venv \
     && /app/.venv/bin/pip install --no-cache-dir --index-url https://mirrors.tencent.com/repository/pypi/tencent_pypi/simple aidev-agent-adapter==0.2.5 \
-    && /app/.venv/bin/python -m aidev_agent_adapter.openclaw_trace_bridge /app/runtime/node_modules/openclaw \
+    && /app/.venv/bin/python -m aidev_agent_adapter.telemetry.trace_bridge /app/runtime/node_modules/openclaw \
     && /app/.venv/bin/aidev-openclaw-adapter --help
 RUN useradd --uid 1000 --create-home adapter \
     && install -d /app/.storage/agent /app/.storage/user /app/.storage/session \

@@ -1,9 +1,9 @@
 import json
 
 import pytest
-from aidev_agent_adapter import adapter as adapter_module
-from aidev_agent_adapter.config_sync import Snapshot
-from aidev_agent_adapter.openclaw import install_user_config
+from aidev_agent_adapter.services import adapter as adapter_module
+from aidev_agent_adapter.services.config_sync import Snapshot
+from aidev_agent_adapter.services.openclaw import install_user_config
 
 
 def test_persistent_config_replacement_preserves_data_and_hides_headers(settings, tmp_path):

@@ -11,21 +11,15 @@ from typing import Any
 
 from ag_ui.core import RunStartedEvent
 
-from .config_sync import private_directory
-from .events import build_abort_events
-
-
-def _open_lock_file(path: Path):
-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
-    return os.fdopen(fd, "a", encoding="utf-8")
+from ..packages.storage import open_lock_file, private_directory
+from ..protocols.events import build_abort_events
 
 
 class Journal:
     def __init__(self, root: Path, identity: str, on_event: Callable[[str], None] | None = None):
         self.root = private_directory(root)
         self._on_event = on_event
-        self._lock = _open_lock_file(self.root / ".journal.lock")
+        self._lock = open_lock_file(self.root / ".journal.lock")
         self.db = None
         try:
             fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

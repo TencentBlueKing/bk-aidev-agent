@@ -6,11 +6,8 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from .models import Bundle, Settings
-
-
-class PlatformError(RuntimeError):
-    """面向调用者的脱敏错误。"""
+from ..exceptions import PlatformError
+from ..protocols.models import Bundle, Settings
 
 
 def origin(url: str) -> str:

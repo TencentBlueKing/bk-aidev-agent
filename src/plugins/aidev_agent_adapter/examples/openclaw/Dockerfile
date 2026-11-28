@@ -12,7 +12,7 @@ WORKDIR /opt/adapter
 COPY pyproject.toml readme.md ./
 COPY aidev_agent_adapter/ ./aidev_agent_adapter/
 RUN python -m venv /app/.venv && /app/.venv/bin/pip install --no-cache-dir . \
-    && /app/.venv/bin/python -m aidev_agent_adapter.openclaw_trace_bridge /app/runtime/openclaw
+    && /app/.venv/bin/python -m aidev_agent_adapter.telemetry.trace_bridge /app/runtime/openclaw
 COPY examples/openclaw/demo.py /opt/adapter/demo.py
 RUN useradd --create-home adapter && install -d -o adapter -g adapter -m 700 /var/lib/aidev-adapter /app/workspace \
     && install -d /app/.storage/agent /app/.storage/user /app/.storage/session

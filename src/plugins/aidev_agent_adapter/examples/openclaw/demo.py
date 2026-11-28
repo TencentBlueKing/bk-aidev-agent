@@ -1,6 +1,6 @@
 """Compatibility entrypoint for existing OpenClaw demo images."""
 
-from aidev_agent_adapter.openclaw import main, run
+from aidev_agent_adapter.services.openclaw import main, run
 
 __all__ = ["main", "run"]
 

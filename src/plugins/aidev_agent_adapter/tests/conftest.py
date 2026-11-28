@@ -9,10 +9,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import pytest_asyncio
-from aidev_agent_adapter.adapter import Adapter
-from aidev_agent_adapter.config_sync import ConfigSynchronizer
-from aidev_agent_adapter.models import Settings
-from aidev_agent_adapter.platform import PlatformClient
+from aidev_agent_adapter.api.platform import PlatformClient
+from aidev_agent_adapter.protocols.models import Settings
+from aidev_agent_adapter.services.adapter import Adapter
+from aidev_agent_adapter.services.config_sync import ConfigSynchronizer
 
 
 @pytest.fixture

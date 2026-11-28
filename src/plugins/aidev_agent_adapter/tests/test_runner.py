@@ -3,8 +3,8 @@ import json
 import ssl
 import subprocess
 
-from aidev_agent_adapter import runner as runner_module
-from aidev_agent_adapter.runner import send_frame, serve_runner
+from aidev_agent_adapter.services import runner as runner_module
+from aidev_agent_adapter.services.runner import send_frame, serve_runner
 from websockets.asyncio.server import serve
 
 

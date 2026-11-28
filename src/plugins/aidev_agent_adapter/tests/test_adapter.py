@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 from acp.schema import AgentMessageChunk, TextContentBlock
-from aidev_agent_adapter.adapter import Adapter
-from aidev_agent_adapter.events import EventMapper
-from aidev_agent_adapter.journal import Journal
+from aidev_agent_adapter.protocols.events import EventMapper
+from aidev_agent_adapter.services.adapter import Adapter
+from aidev_agent_adapter.services.journal import Journal
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
